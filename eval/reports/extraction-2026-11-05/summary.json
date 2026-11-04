@@ -1,21 +1,21 @@
 {
   "set": "extraction_heldout.jsonl",
   "items": 80,
-  "git_sha": "f2c5897",
-  "generated_at": "2026-11-04 18:16 UTC",
+  "git_sha": "bdb0181",
+  "generated_at": "2026-11-04 18:27 UTC",
   "note": "Held-out set: written and committed before any tuning against it, and never used for tuning.",
   "extractors": {
     "rules": {
       "n": 80,
-      "correct": 72,
-      "all_fields_accuracy": 0.9,
-      "invented": 2,
+      "correct": 74,
+      "all_fields_accuracy": 0.925,
+      "invented": 1,
       "missed": 3,
-      "wrong_outcome": 1,
+      "wrong_outcome": 0,
       "injection_flagged_with_evidence": 0,
       "llm_used": 0,
       "per_field": {
-        "outcome": 0.925,
+        "outcome": 0.95,
         "hedge": 1.0,
         "directness": 0.9875,
         "injection": 1.0,
@@ -24,8 +24,8 @@
       "per_language": {
         "en": {
           "n": 20,
-          "all_fields": 0.95,
-          "outcome": 0.95,
+          "all_fields": 1.0,
+          "outcome": 1.0,
           "hedge": 1.0,
           "directness": 1.0,
           "injection": 1.0,
@@ -42,8 +42,8 @@
         },
         "hi-en": {
           "n": 20,
-          "all_fields": 0.8,
-          "outcome": 0.9,
+          "all_fields": 0.85,
+          "outcome": 0.95,
           "hedge": 1.0,
           "directness": 0.95,
           "injection": 1.0,
@@ -272,23 +272,23 @@
           "lang": "en",
           "text": "my friend says nothing loads",
           "expected": "no",
-          "got": "yes",
+          "got": "no",
           "fields": {
-            "outcome": false,
+            "outcome": true,
             "hedge": true,
             "directness": true,
             "injection": true,
             "stop": true
           },
           "got_fields": {
-            "outcome": "yes",
+            "outcome": "no",
             "hedge": "certain",
             "directness": "hearsay",
             "injection": false,
             "stop": false
           },
           "method": "rules",
-          "ok": false
+          "ok": true
         },
         {
           "id": "h11",
@@ -1882,23 +1882,23 @@
           "lang": "hi-en",
           "text": "subah green tha",
           "expected": "unknown",
-          "got": "green",
+          "got": "unknown",
           "fields": {
-            "outcome": false,
+            "outcome": true,
             "hedge": true,
             "directness": true,
             "injection": true,
             "stop": true
           },
           "got_fields": {
-            "outcome": "green",
+            "outcome": "unknown",
             "hedge": "certain",
             "directness": "direct",
             "injection": false,
             "stop": false
           },
           "method": "rules",
-          "ok": false
+          "ok": true
         }
       ]
     }

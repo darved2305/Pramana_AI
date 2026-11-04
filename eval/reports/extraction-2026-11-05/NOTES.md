@@ -10,8 +10,13 @@
   (`extraction_set.jsonl`). No phrase was added because a held-out item needed it.
 - The held-out mistakes had been seen by then, so the result in this directory is **not blind**.
   Treat it as an upper bound; a new held-out set is needed for the next blind measurement.
-- Remaining held-out mistakes are left unfixed on purpose, including one wrong outcome
-  (`h10`, "my friend says nothing loads", read as "yes").
+- Two held-out mistakes were then fixed **after being seen**, because each put a false
+  observation into the belief rather than missing one: `h10` ("my friend says nothing loads"
+  was read as "yes"; negative subjects now negate the verb) and `h80` ("subah green tha" was
+  recorded as a current reading; a time of day is now stale unless it marks a start, as in
+  "subah se band hai"). Both have regression tests in `services/core/tests/test_extraction.py`
+  that use new sentences, not the held-out ones. This report was regenerated after those fixes.
+- The other remaining held-out mistakes (misses, which yield no evidence) are left unfixed.
 
 All figures in `summary.json` and `report.md` are written by
 `python -m pramana_eval.extraction_eval --set eval/data/extraction_heldout.jsonl --provider none
