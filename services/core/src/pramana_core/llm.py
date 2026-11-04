@@ -55,7 +55,9 @@ PROVIDERS: dict[str, tuple[str, str, ProviderLimits]] = {
     "gemini": (
         "https://generativelanguage.googleapis.com/v1beta/openai",
         "GEMINI_API_KEY",
-        ProviderLimits(requests_per_min=8, tokens_per_min=200_000, requests_per_day=240),
+        # Free tier, per model and day: gemini-3.5-flash allowed 20 (its 429 said "limit: 20" on
+        # 2026-11-04). Other models default to the same until their limit is known.
+        ProviderLimits(requests_per_min=8, tokens_per_min=200_000, requests_per_day=20),
     ),
 }
 DEFAULT_MODELS = {"groq": "openai/gpt-oss-120b", "gemini": "gemini-3.5-flash"}
@@ -95,6 +97,14 @@ class _Budget:
             return 0
         data = json.loads(self.day_file.read_text(encoding="utf-8"))
         return int(data.get(self._day_key(), 0))
+
+    def exhaust_today(self) -> None:
+        """The provider said the daily quota is used up: stop sending until tomorrow."""
+        data = (
+            json.loads(self.day_file.read_text(encoding="utf-8")) if self.day_file.exists() else {}
+        )
+        data[self._day_key()] = max(int(data.get(self._day_key(), 0)), self.limits.requests_per_day)
+        self.day_file.write_text(json.dumps(data), encoding="utf-8")
 
     def _count_today(self) -> None:
         data = (
@@ -171,7 +181,10 @@ class LlmClient:
         self.provider, self.model = provider, model or DEFAULT_MODELS[provider]
         self.cache_dir = cache_dir
         cache_dir.mkdir(parents=True, exist_ok=True)
-        self._budget = _Budget(limits or default_limits, cache_dir / f"{provider}_daily.json")
+        safe_model = re.sub(r"[^A-Za-z0-9.-]+", "_", self.model)
+        self._budget = _Budget(
+            limits or default_limits, cache_dir / f"{provider}_{safe_model}_daily.json"
+        )
         self._http = httpx.Client(
             base_url=base,
             timeout=timeout_s,
@@ -245,6 +258,16 @@ class LlmClient:
                 )
                 return LlmResult(data, self.model, False, tokens)
             last = f"HTTP {r.status_code}: {r.text[:200]}"
+            body = r.text.lower()
+            if (
+                r.status_code == 429
+                and "quota" in body
+                and ("per day" in body or "perday" in body or "free_tier_requests" in body)
+            ):
+                # A daily quota cannot recover by backing off: fail fast, remember it.
+                with self._lock:
+                    self._budget.exhaust_today()
+                raise LlmError(f"daily quota exhausted for {self.model}")
             if r.status_code in (429, 500, 502, 503, 504):
                 retry_after = r.headers.get("retry-after")
                 time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else backoff)

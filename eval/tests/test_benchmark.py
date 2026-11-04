@@ -216,3 +216,25 @@ def test_site_rendering_covers_the_pack(pack: DomainPack) -> None:
 
 def test_conclusion_type() -> None:
     assert Conclusion(None, 0.1).decision is None
+
+
+def test_daily_quota_error_fails_fast_and_is_remembered(tmp_path: Path) -> None:
+    calls = 0
+    body = (
+        '{"error": {"code": 429, "message": "You exceeded your current quota ... Quota '
+        "exceeded for metric: generativelanguage.googleapis.com/"
+        'generate_content_free_tier_requests, limit: 20"}}'
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, text=body)
+
+    c = client(tmp_path, handler)
+    with pytest.raises(LlmError, match="daily quota exhausted"):
+        c.complete_json([{"role": "user", "content": "1"}], {})
+    assert calls == 1  # no retry storm
+    with pytest.raises(LlmError, match="daily request budget"):
+        c.complete_json([{"role": "user", "content": "2"}], {})
+    assert calls == 1  # remembered: not even attempted
