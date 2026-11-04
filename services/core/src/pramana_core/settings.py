@@ -56,10 +56,37 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default=["http://localhost:3000"], alias="CORS_ORIGINS")
 
-    @field_validator("gnani_api_key", "gemini_api_key", "groq_api_key", mode="before")
+    auth_required: bool | None = Field(default=None, alias="AUTH_REQUIRED")
+    """Enforce sign-in and roles. Unset means: on, except in ``PRAMANA_MODE=test``, where the
+    engine and runtime suites exercise behaviour, not access (the auth suite turns it on)."""
+    automation_key: SecretStr | None = Field(default=None, alias="CORE_AUTOMATION_KEY")
+    """Shared secret for scripts and bots (``X-Automation-Key``): acts as operator and approver.
+    Never sent to the browser."""
+    session_ttl_s: int = Field(default=12 * 3600, ge=60, le=7 * 24 * 3600, alias="SESSION_TTL_S")
+    session_cookie_secure: bool | None = Field(default=None, alias="SESSION_COOKIE_SECURE")
+    """Mark the session cookie ``Secure``. Unset means: only in ``PRAMANA_MODE=demo`` (HTTPS)."""
+    login_max_failures: int = Field(default=5, ge=1, le=100, alias="LOGIN_MAX_FAILURES")
+    login_lockout_s: float = Field(default=300.0, gt=0, alias="LOGIN_LOCKOUT_S")
+    eval_reports_dir: str = Field(default="eval/reports", alias="EVAL_REPORTS_DIR")
+
+    @field_validator(
+        "gnani_api_key", "gemini_api_key", "groq_api_key", "automation_key", mode="before"
+    )
     @classmethod
     def _empty_is_none(cls, v: object) -> object:
         return None if v in ("", None) else v
+
+    @property
+    def enforce_auth(self) -> bool:
+        return self.mode != "test" if self.auth_required is None else self.auth_required
+
+    @property
+    def secure_cookies(self) -> bool:
+        return (
+            self.mode == "demo"
+            if self.session_cookie_secure is None
+            else self.session_cookie_secure
+        )
 
     @property
     def browser_sim_url(self) -> str:

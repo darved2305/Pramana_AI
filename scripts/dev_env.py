@@ -24,6 +24,7 @@ def main() -> None:
         "PARTICIPANT_SIGNING_KEY": private,
         "SIM_PARTICIPANT_PUBLIC_KEY": public_key_b64(private_key_from_b64(private)),
         "SIM_ORACLE_KEY": secrets.token_urlsafe(24),
+        "CORE_AUTOMATION_KEY": secrets.token_urlsafe(24),
     }
     out = []
     for line in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines():

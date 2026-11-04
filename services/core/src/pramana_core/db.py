@@ -61,6 +61,8 @@ class InvestigationRow(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    __table_args__ = (Index("investigations_created_at", "created_at"),)
+
 
 class EventRow(Base):
     __tablename__ = "events"
@@ -148,6 +150,44 @@ class VoiceUsageRow(Base):
     units: Mapped[float] = mapped_column(Float)
     cost_inr: Mapped[float] = mapped_column(Float)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserRow(Base):
+    """A staff member who signs in to the console (operator and/or approver)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)
+    """Stored lower-cased; compared case-insensitively."""
+    display_name: Mapped[str] = mapped_column(String(80))
+    password_hash: Mapped[str] = mapped_column(String(256))
+    roles: Mapped[list[str]] = mapped_column(JSONB)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SessionRow(Base):
+    """A browser session. Only the SHA-256 of the cookie value is stored."""
+
+    __tablename__ = "sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class DirectoryParticipantRow(Base):
+    """A person in a site's directory. ``spec`` is a validated ``ParticipantSpec``."""
+
+    __tablename__ = "directory_participants"
+
+    pack_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 def make_engine(settings: Settings) -> AsyncEngine:

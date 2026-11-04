@@ -13,6 +13,7 @@ from fastapi.responses import Response
 
 from pramana_contracts import Modality, SubmitAnswer, VoiceAnswerResult
 
+from ..auth.deps import authorize_participant
 from ..errors import ApiError
 from ..investigations import InvestigationService
 from ..observability import log
@@ -32,6 +33,7 @@ async def question_audio(inv_id: str, question_id: str, request: Request) -> Res
     """The pending question, spoken in the participant's language (WAV)."""
     svc, gnani, cache = _deps(request)
     q = await svc.pending_question(inv_id, question_id)
+    await authorize_participant(request, inv_id, q.participant.id)  # before any paid call
     audio, cached = await speak_question(gnani, cache, q.text, q.language)
     return Response(
         audio,
@@ -49,6 +51,7 @@ async def voice_answer(
     audio: Annotated[UploadFile, File()],
 ) -> VoiceAnswerResult:
     svc, gnani, _ = _deps(request)
+    await authorize_participant(request, inv_id, participant_id)
     q = await svc.pending_question(inv_id, question_id, participant_id)
     limit: int = request.app.state.settings.voice_max_upload_bytes
     data = await audio.read(limit + 1)

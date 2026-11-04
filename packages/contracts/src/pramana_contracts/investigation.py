@@ -59,7 +59,8 @@ class RequestApproval(StrictModel):
 
 class ApprovalDecision(StrictModel):
     decision: Literal["approve", "deny"]
-    approver_id: Identifier
+    approver_id: Identifier | None = None
+    """Ignored when sign-in is enforced: the approval records the signed-in approver."""
     note: str | None = Field(default=None, max_length=500)
 
 

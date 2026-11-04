@@ -117,9 +117,17 @@
       "additionalProperties": false,
       "properties": {
         "approver_id": {
-          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
-          "title": "Approver Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approver Id"
         },
         "decision": {
           "enum": [
@@ -144,8 +152,7 @@
         }
       },
       "required": [
-        "decision",
-        "approver_id"
+        "decision"
       ],
       "title": "ApprovalDecision",
       "type": "object"
@@ -159,6 +166,49 @@
       ],
       "title": "ApprovalStatus",
       "type": "string"
+    },
+    "AuthSession": {
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "email": {
+          "title": "Email",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "method": {
+          "default": "session",
+          "title": "Method",
+          "type": "string"
+        },
+        "roles": {
+          "items": {
+            "$ref": "#/$defs/StaffRole"
+          },
+          "title": "Roles",
+          "type": "array"
+        },
+        "user_id": {
+          "title": "User Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_id",
+        "display_name",
+        "email",
+        "roles",
+        "expires_at"
+      ],
+      "title": "AuthSession",
+      "type": "object"
     },
     "BeliefSnapshot": {
       "additionalProperties": false,
@@ -411,6 +461,119 @@
       ],
       "title": "Directness",
       "type": "string"
+    },
+    "DirectoryParticipant": {
+      "additionalProperties": false,
+      "description": "A person in the site directory, ready to be added to an investigation.",
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "pack_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "participant": {
+          "$ref": "#/$defs/ParticipantSpec"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pack_id",
+        "participant",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "DirectoryParticipant",
+      "type": "object"
+    },
+    "EvaluationReport": {
+      "additionalProperties": false,
+      "properties": {
+        "modified_at": {
+          "format": "date-time",
+          "title": "Modified At",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "summary": {
+          "additionalProperties": true,
+          "title": "Summary",
+          "type": "object"
+        }
+      },
+      "required": [
+        "run_id",
+        "modified_at",
+        "summary"
+      ],
+      "title": "EvaluationReport",
+      "type": "object"
+    },
+    "EvaluationReportSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "git_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Git Sha"
+        },
+        "modified_at": {
+          "format": "date-time",
+          "title": "Modified At",
+          "type": "string"
+        },
+        "policies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Policies",
+          "type": "array"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seeds": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seeds"
+        }
+      },
+      "required": [
+        "run_id",
+        "policies",
+        "modified_at"
+      ],
+      "title": "EvaluationReportSummary",
+      "type": "object"
     },
     "EventEnvelope": {
       "additionalProperties": false,
@@ -669,6 +832,38 @@
       "title": "InfeasibleAction",
       "type": "object"
     },
+    "InvestigationPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/InvestigationSummary"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "limit": {
+          "title": "Limit",
+          "type": "integer"
+        },
+        "offset": {
+          "title": "Offset",
+          "type": "integer"
+        },
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "limit",
+        "offset"
+      ],
+      "title": "InvestigationPage",
+      "type": "object"
+    },
     "InvestigationState": {
       "additionalProperties": false,
       "properties": {
@@ -781,6 +976,80 @@
       "title": "InvestigationStatus",
       "type": "string"
     },
+    "InvestigationSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "decision_class": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Class"
+        },
+        "decision_probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Probability"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "pack_id": {
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "participant_count": {
+          "title": "Participant Count",
+          "type": "integer"
+        },
+        "report_text": {
+          "title": "Report Text",
+          "type": "string"
+        },
+        "reporter_id": {
+          "title": "Reporter Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/InvestigationStatus"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "pack_id",
+        "status",
+        "created_at",
+        "updated_at",
+        "report_text",
+        "reporter_id",
+        "participant_count"
+      ],
+      "title": "InvestigationSummary",
+      "type": "object"
+    },
     "LanguageProfile": {
       "additionalProperties": false,
       "description": "How we speak to and listen to one participant.\n\n``stt_candidates`` maps to the Prisma v3.0 ``language_code`` list (1-4 codes); one code\nforces the language, several act as a hint (docs.gnani.ai/api/STT/models/prisma-v3).",
@@ -827,6 +1096,29 @@
         "stt_candidates"
       ],
       "title": "LanguageProfile",
+      "type": "object"
+    },
+    "LoginRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "maxLength": 254,
+          "minLength": 3,
+          "title": "Email",
+          "type": "string"
+        },
+        "password": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Password",
+          "type": "string"
+        }
+      },
+      "required": [
+        "email",
+        "password"
+      ],
+      "title": "LoginRequest",
       "type": "object"
     },
     "MediaClientMessage": {
@@ -1158,6 +1450,139 @@
         "decision_probability"
       ],
       "title": "OutcomePreview",
+      "type": "object"
+    },
+    "PackSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "locations": {
+          "title": "Locations",
+          "type": "integer"
+        },
+        "probes": {
+          "title": "Probes",
+          "type": "integer"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "title",
+        "locations",
+        "probes"
+      ],
+      "title": "PackSummary",
+      "type": "object"
+    },
+    "ParticipantPatch": {
+      "additionalProperties": false,
+      "description": "Fields to change on a directory entry. The id never changes.",
+      "properties": {
+        "available": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Available"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "languages": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LanguageProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "location_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Id"
+        },
+        "question_budget": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question Budget"
+        },
+        "roles": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Role"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roles"
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Skill"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ParticipantPatch",
       "type": "object"
     },
     "ParticipantSpec": {
@@ -1669,6 +2094,15 @@
       "title": "Skill",
       "type": "string"
     },
+    "StaffRole": {
+      "description": "What a signed-in person may do. Participants never sign in: they hold a signed link.",
+      "enum": [
+        "operator",
+        "approver"
+      ],
+      "title": "StaffRole",
+      "type": "string"
+    },
     "SttResult": {
       "additionalProperties": false,
       "properties": {
@@ -1936,23 +2370,47 @@
     "ApprovalDecision": {
       "$ref": "#/$defs/ApprovalDecision"
     },
+    "AuthSession": {
+      "$ref": "#/$defs/AuthSession"
+    },
     "CapabilityGrant": {
       "$ref": "#/$defs/CapabilityGrant"
     },
     "CreateInvestigation": {
       "$ref": "#/$defs/CreateInvestigation"
     },
+    "DirectoryParticipant": {
+      "$ref": "#/$defs/DirectoryParticipant"
+    },
+    "EvaluationReport": {
+      "$ref": "#/$defs/EvaluationReport"
+    },
+    "EvaluationReportSummary": {
+      "$ref": "#/$defs/EvaluationReportSummary"
+    },
     "EventEnvelope": {
       "$ref": "#/$defs/EventEnvelope"
     },
+    "InvestigationPage": {
+      "$ref": "#/$defs/InvestigationPage"
+    },
     "InvestigationState": {
       "$ref": "#/$defs/InvestigationState"
+    },
+    "LoginRequest": {
+      "$ref": "#/$defs/LoginRequest"
     },
     "MediaClientMessage": {
       "$ref": "#/$defs/MediaClientMessage"
     },
     "MediaServerMessage": {
       "$ref": "#/$defs/MediaServerMessage"
+    },
+    "PackSummary": {
+      "$ref": "#/$defs/PackSummary"
+    },
+    "ParticipantPatch": {
+      "$ref": "#/$defs/ParticipantPatch"
     },
     "ParticipantView": {
       "$ref": "#/$defs/ParticipantView"

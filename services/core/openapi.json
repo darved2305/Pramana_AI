@@ -116,9 +116,16 @@
     "additionalProperties": false,
     "properties": {
      "approver_id": {
-      "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
-      "title": "Approver Id",
-      "type": "string"
+      "anyOf": [
+       {
+        "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Approver Id"
      },
      "decision": {
       "enum": [
@@ -142,8 +149,7 @@
      }
     },
     "required": [
-     "decision",
-     "approver_id"
+     "decision"
     ],
     "title": "ApprovalDecision",
     "type": "object"
@@ -157,6 +163,49 @@
     ],
     "title": "ApprovalStatus",
     "type": "string"
+   },
+   "AuthSession": {
+    "additionalProperties": false,
+    "properties": {
+     "display_name": {
+      "title": "Display Name",
+      "type": "string"
+     },
+     "email": {
+      "title": "Email",
+      "type": "string"
+     },
+     "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "method": {
+      "default": "session",
+      "title": "Method",
+      "type": "string"
+     },
+     "roles": {
+      "items": {
+       "$ref": "#/components/schemas/StaffRole"
+      },
+      "title": "Roles",
+      "type": "array"
+     },
+     "user_id": {
+      "title": "User Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "user_id",
+     "display_name",
+     "email",
+     "roles",
+     "expires_at"
+    ],
+    "title": "AuthSession",
+    "type": "object"
    },
    "BeliefSnapshot": {
     "additionalProperties": false,
@@ -462,6 +511,117 @@
     "title": "Directness",
     "type": "string"
    },
+   "DirectoryParticipant": {
+    "additionalProperties": false,
+    "description": "A person in the site directory, ready to be added to an investigation.",
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "pack_id": {
+      "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+      "title": "Pack Id",
+      "type": "string"
+     },
+     "participant": {
+      "$ref": "#/components/schemas/ParticipantSpec"
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "pack_id",
+     "participant",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "DirectoryParticipant",
+    "type": "object"
+   },
+   "EvaluationReport": {
+    "additionalProperties": false,
+    "properties": {
+     "modified_at": {
+      "format": "date-time",
+      "title": "Modified At",
+      "type": "string"
+     },
+     "run_id": {
+      "title": "Run Id",
+      "type": "string"
+     },
+     "summary": {
+      "additionalProperties": true,
+      "title": "Summary",
+      "type": "object"
+     }
+    },
+    "required": [
+     "run_id",
+     "modified_at",
+     "summary"
+    ],
+    "title": "EvaluationReport",
+    "type": "object"
+   },
+   "EvaluationReportSummary": {
+    "additionalProperties": false,
+    "properties": {
+     "git_sha": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Git Sha"
+     },
+     "modified_at": {
+      "format": "date-time",
+      "title": "Modified At",
+      "type": "string"
+     },
+     "policies": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Policies",
+      "type": "array"
+     },
+     "run_id": {
+      "title": "Run Id",
+      "type": "string"
+     },
+     "seeds": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Seeds"
+     }
+    },
+    "required": [
+     "run_id",
+     "policies",
+     "modified_at"
+    ],
+    "title": "EvaluationReportSummary",
+    "type": "object"
+   },
    "EventEnvelope": {
     "additionalProperties": false,
     "properties": {
@@ -732,6 +892,38 @@
     "title": "InfeasibleAction",
     "type": "object"
    },
+   "InvestigationPage": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/InvestigationSummary"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "offset": {
+      "title": "Offset",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "limit",
+     "offset"
+    ],
+    "title": "InvestigationPage",
+    "type": "object"
+   },
    "InvestigationState": {
     "additionalProperties": false,
     "properties": {
@@ -843,6 +1035,78 @@
     "title": "InvestigationStatus",
     "type": "string"
    },
+   "InvestigationSummary": {
+    "additionalProperties": false,
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "decision_class": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decision Class"
+     },
+     "decision_probability": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decision Probability"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "pack_id": {
+      "title": "Pack Id",
+      "type": "string"
+     },
+     "participant_count": {
+      "title": "Participant Count",
+      "type": "integer"
+     },
+     "report_text": {
+      "title": "Report Text",
+      "type": "string"
+     },
+     "reporter_id": {
+      "title": "Reporter Id",
+      "type": "string"
+     },
+     "status": {
+      "$ref": "#/components/schemas/InvestigationStatus"
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "pack_id",
+     "status",
+     "created_at",
+     "updated_at",
+     "report_text",
+     "reporter_id",
+     "participant_count"
+    ],
+    "title": "InvestigationSummary",
+    "type": "object"
+   },
    "LanguageProfile": {
     "additionalProperties": false,
     "description": "How we speak to and listen to one participant.\n\n``stt_candidates`` maps to the Prisma v3.0 ``language_code`` list (1-4 codes); one code\nforces the language, several act as a hint (docs.gnani.ai/api/STT/models/prisma-v3).",
@@ -889,6 +1153,29 @@
      "stt_candidates"
     ],
     "title": "LanguageProfile",
+    "type": "object"
+   },
+   "LoginRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "email": {
+      "maxLength": 254,
+      "minLength": 3,
+      "title": "Email",
+      "type": "string"
+     },
+     "password": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     }
+    },
+    "required": [
+     "email",
+     "password"
+    ],
+    "title": "LoginRequest",
     "type": "object"
    },
    "Modality": {
@@ -1057,6 +1344,132 @@
      "decision_probability"
     ],
     "title": "OutcomePreview",
+    "type": "object"
+   },
+   "PackSummary": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "locations": {
+      "title": "Locations",
+      "type": "integer"
+     },
+     "probes": {
+      "title": "Probes",
+      "type": "integer"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "version",
+     "title",
+     "locations",
+     "probes"
+    ],
+    "title": "PackSummary",
+    "type": "object"
+   },
+   "ParticipantPatch": {
+    "additionalProperties": false,
+    "description": "Fields to change on a directory entry. The id never changes.",
+    "properties": {
+     "available": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Available"
+     },
+     "display_name": {
+      "anyOf": [
+       {
+        "maxLength": 80,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Display Name"
+     },
+     "languages": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/LanguageProfile"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "location_id": {
+      "anyOf": [
+       {
+        "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Location Id"
+     },
+     "question_budget": {
+      "anyOf": [
+       {
+        "maximum": 20.0,
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Question Budget"
+     },
+     "roles": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/Role"
+        },
+        "minItems": 1,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Roles"
+     },
+     "skill": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Skill"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "title": "ParticipantPatch",
     "type": "object"
    },
    "ParticipantSpec": {
@@ -1516,6 +1929,15 @@
     "title": "Skill",
     "type": "string"
    },
+   "StaffRole": {
+    "description": "What a signed-in person may do. Participants never sign in: they hold a signed link.",
+    "enum": [
+     "operator",
+     "approver"
+    ],
+    "title": "StaffRole",
+    "type": "string"
+   },
    "SttResult": {
     "additionalProperties": false,
     "properties": {
@@ -1830,7 +2252,245 @@
     "summary": "Ready"
    }
   },
+  "/v1/auth/login": {
+   "post": {
+    "description": "Sign in. Sets the ``pramana_session`` cookie (httpOnly, SameSite=Lax).",
+    "operationId": "login_v1_auth_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthSession"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Login",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/v1/auth/logout": {
+   "post": {
+    "operationId": "logout_v1_auth_logout_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Logout",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/v1/auth/session": {
+   "get": {
+    "description": "Who is signed in. ``401 AUTH_REQUIRED`` when nobody is.",
+    "operationId": "get_session_v1_auth_session_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthSession"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Session",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/v1/evaluation/reports": {
+   "get": {
+    "description": "Runs found under ``eval/reports/*/summary.json`` (``EVAL_REPORTS_DIR``), newest first.",
+    "operationId": "list_reports_v1_evaluation_reports_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/EvaluationReportSummary"
+         },
+         "title": "Response List Reports V1 Evaluation Reports Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Reports",
+    "tags": [
+     "evaluation"
+    ]
+   }
+  },
+  "/v1/evaluation/reports/{run_id}": {
+   "get": {
+    "operationId": "get_report_v1_evaluation_reports__run_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EvaluationReport"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Report",
+    "tags": [
+     "evaluation"
+    ]
+   }
+  },
   "/v1/investigations": {
+   "get": {
+    "description": "Newest first. ``status`` may repeat; ``q`` searches the report text and the id.",
+    "operationId": "list_investigations_v1_investigations_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "items": {
+          "$ref": "#/components/schemas/InvestigationStatus"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 200,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "Offset",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationPage"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Investigations",
+    "tags": [
+     "investigations"
+    ]
+   },
    "post": {
     "operationId": "create_investigation_v1_investigations_post",
     "requestBody": {
@@ -2133,6 +2793,7 @@
   },
   "/v1/investigations/{inv_id}/approvals/{approval_id}/decision": {
    "post": {
+    "description": "Needs the approver role. The approval records the signed-in approver; a free-text\n``approver_id`` is used only when sign-in is not enforced (tests).",
     "operationId": "decide_approval_v1_investigations__inv_id__approvals__approval_id__decision_post",
     "parameters": [
      {
@@ -2316,7 +2977,7 @@
   },
   "/v1/investigations/{inv_id}/participants/{participant_id}/token": {
    "post": {
-    "description": "Mint the participant's simulator token (development console; no auth in this slice).",
+    "description": "Mint the participant's join token (operator only). It works at the simulator and, for\nthat participant's own answers and actions, at the core.",
     "operationId": "participant_token_v1_investigations__inv_id__participants__participant_id__token_post",
     "parameters": [
      {
@@ -2462,6 +3123,32 @@
     ]
    }
   },
+  "/v1/packs": {
+   "get": {
+    "description": "Every valid pack in ``packs/``. Public: packs hold documented layout, no secrets.",
+    "operationId": "list_packs_v1_packs_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/PackSummary"
+         },
+         "title": "Response List Packs V1 Packs Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Packs",
+    "tags": [
+     "packs"
+    ]
+   }
+  },
   "/v1/packs/{pack_id}": {
    "get": {
     "operationId": "get_pack_v1_packs__pack_id__get",
@@ -2503,6 +3190,275 @@
     "summary": "Get Pack",
     "tags": [
      "packs"
+    ]
+   }
+  },
+  "/v1/participants": {
+   "get": {
+    "operationId": "list_participants_v1_participants_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "pack_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Pack Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/DirectoryParticipant"
+         },
+         "title": "Response List Participants V1 Participants Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Participants",
+    "tags": [
+     "directory"
+    ]
+   },
+   "post": {
+    "description": "Add a person. ``409 PARTICIPANT_EXISTS`` when the id is taken for this pack.",
+    "operationId": "add_participant_v1_participants_post",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "pack_id",
+      "required": false,
+      "schema": {
+       "default": "campus_block_c",
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Pack Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ParticipantSpec"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DirectoryParticipant"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Participant",
+    "tags": [
+     "directory"
+    ]
+   }
+  },
+  "/v1/participants/{participant_id}": {
+   "delete": {
+    "description": "Remove a person from the directory. Past investigations keep their own copy.",
+    "operationId": "delete_participant_v1_participants__participant_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "participant_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Participant Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "pack_id",
+      "required": false,
+      "schema": {
+       "default": "campus_block_c",
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Pack Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Participant",
+    "tags": [
+     "directory"
+    ]
+   },
+   "get": {
+    "operationId": "get_participant_v1_participants__participant_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "participant_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Participant Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "pack_id",
+      "required": false,
+      "schema": {
+       "default": "campus_block_c",
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Pack Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DirectoryParticipant"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Participant",
+    "tags": [
+     "directory"
+    ]
+   },
+   "patch": {
+    "operationId": "update_participant_v1_participants__participant_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "participant_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Participant Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "pack_id",
+      "required": false,
+      "schema": {
+       "default": "campus_block_c",
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Pack Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ParticipantPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DirectoryParticipant"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Participant",
+    "tags": [
+     "directory"
     ]
    }
   },

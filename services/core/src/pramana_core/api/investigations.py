@@ -11,12 +11,18 @@ from pramana_contracts import (
     CapabilityGrant,
     CreateInvestigation,
     EventEnvelope,
+    InvestigationPage,
     InvestigationState,
+    InvestigationStatus,
     ReportIntervention,
     RequestApproval,
+    StaffRole,
     SubmitAnswer,
 )
 
+from ..auth.deps import authorize_participant, authorize_read, require_staff
+from ..auth.service import Principal
+from ..directory import ConsoleQueries
 from ..investigations import InvestigationService
 
 router = APIRouter(prefix="/v1/investigations", tags=["investigations"])
@@ -28,24 +34,43 @@ def service(request: Request) -> InvestigationService:
 
 
 Svc = Annotated[InvestigationService, Depends(service)]
+Operator = Depends(require_staff(StaffRole.OPERATOR))
+Approver = Annotated[Principal, Depends(require_staff(StaffRole.APPROVER))]
 
 
-@router.post("", status_code=201)
+@router.get("", dependencies=[Depends(require_staff())])
+async def list_investigations(
+    request: Request,
+    status: Annotated[list[InvestigationStatus] | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> InvestigationPage:
+    """Newest first. ``status`` may repeat; ``q`` searches the report text and the id."""
+    queries: ConsoleQueries = request.app.state.console
+    return await queries.list_investigations(statuses=status or [], q=q, limit=limit, offset=offset)
+
+
+@router.post("", status_code=201, dependencies=[Operator])
 async def create_investigation(body: CreateInvestigation, svc: Svc) -> InvestigationState:
     return await svc.create(body)
 
 
 @router.get("/{inv_id}")
-async def get_investigation(inv_id: str, svc: Svc) -> InvestigationState:
+async def get_investigation(inv_id: str, svc: Svc, request: Request) -> InvestigationState:
+    await authorize_read(request, inv_id)
     return await svc.get(inv_id)
 
 
 @router.post("/{inv_id}/answers")
-async def submit_answer(inv_id: str, body: SubmitAnswer, svc: Svc) -> AnswerResult:
+async def submit_answer(
+    inv_id: str, body: SubmitAnswer, svc: Svc, request: Request
+) -> AnswerResult:
+    await authorize_participant(request, inv_id, body.participant_id)
     return await svc.answer(inv_id, body)
 
 
-@router.post("/{inv_id}/reveal")
+@router.post("/{inv_id}/reveal", dependencies=[Operator])
 async def reveal_ground_truth(inv_id: str, svc: Svc) -> InvestigationState:
     return await svc.reveal(inv_id)
 
@@ -54,13 +79,15 @@ async def reveal_ground_truth(inv_id: str, svc: Svc) -> InvestigationState:
 async def list_events(
     inv_id: str,
     svc: Svc,
+    request: Request,
     after_seq: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ) -> list[EventEnvelope]:
+    await authorize_read(request, inv_id)
     return await svc.events(inv_id, after_seq, limit)
 
 
-@router.post("/{inv_id}/approvals", status_code=201)
+@router.post("/{inv_id}/approvals", status_code=201, dependencies=[Operator])
 async def request_approval(inv_id: str, body: RequestApproval, svc: Svc) -> InvestigationState:
     """Ask a human approver for a consequential action the decision calls for."""
     return await svc.request_approval(inv_id, body)
@@ -68,29 +95,35 @@ async def request_approval(inv_id: str, body: RequestApproval, svc: Svc) -> Inve
 
 @router.post("/{inv_id}/approvals/{approval_id}/decision")
 async def decide_approval(
-    inv_id: str, approval_id: str, body: ApprovalDecision, svc: Svc
+    inv_id: str, approval_id: str, body: ApprovalDecision, svc: Svc, who: Approver
 ) -> InvestigationState:
-    return await svc.decide_approval(inv_id, approval_id, body)
+    """Needs the approver role. The approval records the signed-in approver; a free-text
+    ``approver_id`` is used only when sign-in is not enforced (tests)."""
+    approver = (body.approver_id or who.id) if who.kind == "open" else who.id
+    return await svc.decide_approval(inv_id, approval_id, body, approver_id=approver)
 
 
 @router.post("/{inv_id}/approvals/{approval_id}/capability")
 async def issue_capability(
-    inv_id: str, approval_id: str, participant_id: str, svc: Svc
+    inv_id: str, approval_id: str, participant_id: str, svc: Svc, request: Request
 ) -> CapabilityGrant:
     """The approved executor collects the single-use capability (expires in 5 minutes)."""
+    await authorize_participant(request, inv_id, participant_id)
     return await svc.capability_for(inv_id, approval_id, participant_id)
 
 
 @router.post("/{inv_id}/interventions")
 async def report_intervention(
-    inv_id: str, body: ReportIntervention, svc: Svc
+    inv_id: str, body: ReportIntervention, svc: Svc, request: Request
 ) -> InvestigationState:
     """The executor reports the action as done; verification questions follow."""
+    await authorize_participant(request, inv_id, body.participant_id)
     return await svc.report_intervention(inv_id, body)
 
 
-@router.post("/{inv_id}/participants/{participant_id}/token")
+@router.post("/{inv_id}/participants/{participant_id}/token", dependencies=[Operator])
 async def participant_token(inv_id: str, participant_id: str, svc: Svc) -> dict[str, str]:
-    """Mint the participant's simulator token (development console; no auth in this slice)."""
+    """Mint the participant's join token (operator only). It works at the simulator and, for
+    that participant's own answers and actions, at the core."""
     out = await svc.participant_token(inv_id, participant_id)
     return out
