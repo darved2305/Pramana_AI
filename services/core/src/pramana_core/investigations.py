@@ -202,6 +202,8 @@ class InvestigationService:
                 )
             elif type_ == "ParticipantUnavailable":
                 engine.set_available(payload["participant_id"], False)
+            elif type_ == "Reopened":
+                engine.reopen()
             elif type_ == "InterventionReported":
                 engine.apply_intervention(
                     payload["action"], payload["target"], payload["participant_id"]
@@ -342,6 +344,11 @@ class InvestigationService:
             }
             row.outcome = {**(row.outcome or {}), "verification": verdict}
             self._event(session, row.id, "VerificationResult", verdict)
+            if plan.rule == "verification_failed":
+                # The repair did not resolve it: reopen with the alternatives promoted.
+                engine.reopen()
+                self._event(session, row.id, "Reopened", {"reason": plan.reason})
+                self._apply_plan(session, row, engine, engine.plan())
             return
         decided = plan.kind == PlanKind.DECIDE
         row.status = (

@@ -114,6 +114,7 @@ class Engine:
         self._evidence: dict[SiteKey, Evidence] = {}
         self._log_terms = np.zeros(len(model.hypotheses), dtype=np.float64)
         self._repair: _Repair | None = None
+        self._past_repair_evidence: dict[SiteKey, Evidence] = {}
 
     # -- evidence ----------------------------------------------------------------------------
 
@@ -217,7 +218,7 @@ class Engine:
 
     def evidence(self) -> list[Evidence]:
         after = list(self._repair.evidence.values()) if self._repair else []
-        return [*self._evidence.values(), *after]
+        return [*self._evidence.values(), *self._past_repair_evidence.values(), *after]
 
     # -- repairs -------------------------------------------------------------------------------
 
@@ -261,6 +262,20 @@ class Engine:
             lt_not_fixed=self._log_terms + np.where(could_fix, np.log(p_fail), 0.0),
             diagnosis_sites={(probe, loc) for _, probe, loc in self._evidence},
         )
+
+    def reopen(self) -> None:
+        """Verification showed the repair did not resolve the problem: resume diagnosis.
+
+        Conditioning on "not fixed" keeps only that branch. It already contains every answer
+        given after the repair, read against the unrepaired world, so the alternatives the
+        repair could not explain are promoted. The repair's own failure prior stays in.
+        """
+        rep = self._repair
+        if rep is None:
+            raise EvidenceError("there is no repair to reopen")
+        self._log_terms = rep.lt_not_fixed.copy()
+        self._past_repair_evidence.update(rep.evidence)
+        self._repair = None
 
     def p_fixed(self) -> float:
         """P(symptoms resolved): the repaired component was the cause and the repair held."""
@@ -376,8 +391,12 @@ class Engine:
                             walk = w
                 if loc.restricted and not set(ps.roles) & {r.value for r in loc.access_roles}:
                     reasons.append(f"no access to {loc_id}")
-                answered = self._repair.evidence if self._repair else self._evidence
-                if (pid, probe_id, loc_id) in answered:
+                asked = (pid, probe_id, loc_id)
+                if self._repair is not None:
+                    answered = asked in self._repair.evidence
+                else:
+                    answered = asked in self._evidence or asked in self._past_repair_evidence
+                if answered:
                     reasons.append("already answered")
                 if reasons:
                     if "already answered" not in reasons:

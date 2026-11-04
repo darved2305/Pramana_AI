@@ -97,4 +97,4 @@ The backend, the engine and the simulator are implemented and tested. The curren
 - **Benchmark:** `python -m pramana_eval --n 300 --seed-start 10000 --out <dir>` compares our
   planner with a checklist, random questions, greedy entropy, ablations and LLM policies
   (Groq, Gemini). Results go to `summary.json` and `report.md`.
-- **Not yet built:** reopening after a failed verification, and two-fault diagnosis.
+- **Not yet built:** two-fault diagnosis, and full-duplex voice calls with barge-in.

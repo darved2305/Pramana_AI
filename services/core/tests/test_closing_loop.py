@@ -102,22 +102,26 @@ def test_full_closing_loop_verifies_the_repair(core: TestClient) -> None:
         assert t in types
 
 
-def test_misled_diagnosis_fails_verification(core: TestClient) -> None:
-    """People misreported the closet; the switch was dead. The reset changes nothing."""
+def test_misled_diagnosis_fails_verification_and_reopens(core: TestClient) -> None:
+    """People misreported the closet; the switch was dead. The reset changes nothing, so
+    verification fails and the investigation reopens with the alternatives promoted."""
     sim = TestClient(core.sim_app)  # type: ignore[attr-defined]
-    inv = decided(
-        core, sim, "SW_C2.dead", override={"nvr_screen": "off", "breaker_c2_7": "tripped"}
-    )
+    lies = {"nvr_screen": "off", "breaker_c2_7": "tripped"}
+    inv = decided(core, sim, "SW_C2.dead", override=lies)
     _, aid = approve(core, inv)
     reset_in_simulator(core, sim, inv["id"], aid)
     state = core.post(
         f"/v1/investigations/{inv['id']}/interventions",
         json={"approval_id": aid, "participant_id": "p_imran"},
     ).json()
-    final = verify(core, sim, state)
-    assert final["status"] == "not_verified", final["plan"]["reason"]
-    gt = core.post(f"/v1/investigations/{inv['id']}/reveal").json()["ground_truth"]
-    assert gt["correct"] is False  # the reveal confirms the decision was wrong
+    while state["status"] == "verifying":
+        state = answer_pending(core, sim, state, override=lies)["state"]
+    events = core.get(f"/v1/investigations/{inv['id']}/events").json()
+    verdicts = [e["payload"] for e in events if e["type"] == "VerificationResult"]
+    assert verdicts[-1]["rule"] == "verification_failed"
+    assert "Reopened" in [e["type"] for e in events]
+    assert state["status"] in ("investigating", "decided", "abstained")
+    assert state["belief"]["repair"] is None
 
 
 def test_approval_rules(core: TestClient) -> None:

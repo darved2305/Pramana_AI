@@ -131,3 +131,41 @@ def test_repair_of_something_that_was_not_the_cause_cannot_verify(
     eng.apply_intervention("reset_breaker", "CB_C2_7")
     assert eng.p_fixed() < 0.1
     assert eng.plan().kind == PlanKind.NOT_VERIFIED
+
+
+def test_failed_verification_reopens_with_the_alternative_promoted(
+    campus: DomainPack, campus_model: CompiledModel, s1_people: list[ParticipantSpec]
+) -> None:
+    lie = {"nvr_screen": "off", "breaker_c2_7": "tripped"}
+    eng = diagnose(campus, campus_model, s1_people, ("SW_C2", "dead"), lie=lie)
+    eng.apply_intervention("reset_breaker", "CB_C2_7", "p_imran")
+    outcome, _ = verify(campus, eng, {("SW_C2", "dead")})
+    assert outcome == "not_verified"
+    assert eng.plan().rule == "verification_failed"
+    sw_before = next(h.probability for h in eng.snapshot().hypotheses if h.id == "SW_C2.dead")
+    eng.reopen()
+    assert eng.snapshot().repair is None
+    # Keep diagnosing in the real (unrepaired) world: the switch should now be found.
+    world = World(campus, frozenset({("SW_C2", "dead")}))
+    for _ in range(10):
+        plan = eng.plan()
+        if plan.kind != PlanKind.ASK:
+            break
+        a = plan.action
+        assert a is not None
+        assert (a.participant_id, a.probe_id, a.location_id) not in {
+            (e.participant_id, e.probe_id, e.location_id) for e in eng.evidence()
+        }
+        eng.record_question(a.participant_id)
+        eng.observe(
+            Evidence(
+                a.participant_id,
+                a.probe_id,
+                a.location_id,
+                world.observe(campus.probe_by_id[a.probe_id], a.location_id),
+            )
+        )
+    sw_after = next(h.probability for h in eng.snapshot().hypotheses if h.id == "SW_C2.dead")
+    assert sw_after > sw_before
+    with pytest.raises(EvidenceError, match="no repair"):
+        eng.reopen()

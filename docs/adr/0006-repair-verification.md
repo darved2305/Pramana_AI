@@ -35,5 +35,10 @@ P(fixed) = P(cause) × 0.9.
 - The capability rules hold (wrong person, reused token, wrong target, not approved).
 - The engine rebuilt from events matches the live one.
 
-**Limitation.** One repair per investigation. A failed verification currently ends the
-investigation; it does not yet reopen it with the repair applied.
+**Failed verification reopens.** If P(fixed) falls to 0.10 or below, the engine keeps only the
+*not fixed* branch, which already holds every post-repair answer, and resumes diagnosis with the
+alternatives promoted. The event log records `Reopened`, so the rebuilt engine matches. An
+inconclusive verification (nothing left that could tell fixed from not fixed) ends as
+*not verified* instead.
+
+**Limitation.** At most one repair is in flight at a time.
