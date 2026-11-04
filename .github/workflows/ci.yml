@@ -39,3 +39,30 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://pramana@localhost:5433/pramana_test
         run: uv run pytest
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Types, lint and copy rules
+        run: npm run typecheck && npm run lint && npm run check:copy
+      - name: API types match the core OpenAPI spec
+        run: npm run gen:api && git diff --exit-code -- src/lib/api/schema.gen.ts
+      - name: Build
+        run: npm run build
+      - name: No secrets in the browser bundle
+        run: |
+          if grep -rEl "GNANI_API_KEY|PARTICIPANT_SIGNING_KEY|SIM_OPERATOR_KEY|SIM_ORACLE_KEY|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|gsk_[A-Za-z0-9]{20,}" .next/static; then
+            echo "secret-like strings found in the client bundle"; exit 1
+          fi
+      - name: Playwright (installed Chrome, production build)
+        run: npm run test:e2e
