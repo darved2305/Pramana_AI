@@ -28,6 +28,14 @@ apps/web/playwright-report/
 # Local artefacts
 eval/reports/
 recordings/
+voice-samples/
+# Never commit voice recordings of real people
 *.wav
+*.mp3
+*.m4a
+*.ogg
+*.opus
+*.flac
+*.aac
 !tests/fixtures/audio/*.wav
 .DS_Store
