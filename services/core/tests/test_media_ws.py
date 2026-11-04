@@ -1,0 +1,393 @@
+"""Per-question media WebSocket against the local Prisma emulation (no credits)."""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import wave
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from typing import Any
+
+import httpx
+import pytest
+from core_testkit import body, core_settings, truncate_all
+from fake_gnani import FakeGnani
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from participant_bot import PHRASES
+from starlette.websockets import WebSocketDisconnect
+
+from pramana_core.main import create_app
+
+pytestmark = pytest.mark.db
+
+PCM = b"\x01\x00" * 1600  # 0.1 s at 16 kHz
+
+
+def wav(seconds: float = 0.5, rate: int = 24000) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"\x00\x00" * int(seconds * rate))
+    return buf.getvalue()
+
+
+class Tts:
+    def __init__(self) -> None:
+        self.status = 200
+        self.calls = 0
+
+    def __call__(self, _req: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        if self.status != 200:
+            return httpx.Response(self.status, json={"detail": "no"})
+        return httpx.Response(200, content=wav())
+
+
+@dataclass
+class Env:
+    client: TestClient
+    sim: TestClient
+    fake: FakeGnani
+    tts: Tts
+    settings: dict[str, Any] = field(default_factory=dict)
+
+
+@pytest.fixture
+def fake() -> Iterator[FakeGnani]:
+    server = FakeGnani().start()
+    yield server
+    server.stop()
+
+
+def make_env(migrated_db: str, sim_app: FastAPI, fake: FakeGnani, **overrides: Any) -> Any:
+    asyncio.run(truncate_all(migrated_db))
+    tts = Tts()
+    settings = {"GNANI_API_KEY": "k", "GNANI_BASE_URL": fake.base_url, **overrides}
+    app = create_app(
+        core_settings(migrated_db, **settings),
+        sim_transport=httpx.ASGITransport(app=sim_app),
+        gnani_transport=httpx.MockTransport(tts),
+    )
+    return app, tts
+
+
+@pytest.fixture
+def env(migrated_db: str, sim_app: FastAPI, fake: FakeGnani) -> Iterator[Env]:
+    app, tts = make_env(migrated_db, sim_app, fake)
+    with TestClient(app) as client:
+        yield Env(client, TestClient(sim_app), fake, tts)
+
+
+def start(env: Env) -> tuple[dict[str, Any], dict[str, Any], str]:
+    """Create S1; return (state, pending question, truthful spoken answer)."""
+    state = env.client.post("/v1/investigations", json=body(fault="CB_C2_7.tripped")).json()
+    q = state["pending_question"]
+    a = q["action"]
+    tok = env.client.post(
+        f"/v1/investigations/{state['id']}/participants/{a['participant_id']}/token"
+    ).json()
+    h = {"Authorization": f"Bearer {tok['token']}"}
+    if a["requires_move"]:
+        env.sim.post(
+            f"/sim/v1/scenarios/{tok['scenario_id']}/move", json={"to": a["location_id"]}, headers=h
+        )
+    seen = env.sim.post(
+        f"/sim/v1/scenarios/{tok['scenario_id']}/observe",
+        json={"probe_id": a["probe_id"]},
+        headers=h,
+    ).json()
+    return state, q, PHRASES[seen["value"]]
+
+
+def token(env: Env, inv_id: str, pid: str) -> str:
+    out: str = env.client.post(f"/v1/investigations/{inv_id}/participants/{pid}/token").json()[
+        "token"
+    ]
+    return out
+
+
+def url(state: dict[str, Any], q: dict[str, Any]) -> str:
+    return f"/v1/investigations/{state['id']}/questions/{q['id']}/media"
+
+
+def drain(ws: Any) -> tuple[list[dict[str, Any]], int, int | None]:
+    """Read until the server closes: (json messages, binary bytes, close code)."""
+    msgs: list[dict[str, Any]] = []
+    binary = 0
+    while True:
+        try:
+            m = ws.receive()
+        except WebSocketDisconnect as exc:
+            return msgs, binary, exc.code
+        if m["type"] == "websocket.close":
+            return msgs, binary, m.get("code")
+        if m.get("bytes") is not None:
+            binary += len(m["bytes"])
+        elif m.get("text") is not None:
+            msgs.append(json.loads(m["text"]))
+
+
+def until(ws: Any, kind: str) -> list[dict[str, Any]]:
+    out = []
+    while True:
+        m = ws.receive()
+        if m.get("text") is None:
+            continue
+        msg = json.loads(m["text"])
+        out.append(msg)
+        if msg["type"] == kind:
+            return out
+
+
+def test_spoken_answer_end_to_end(env: Env) -> None:
+    state, q, phrase = start(env)
+    env.fake.transcript = phrase
+    pid = q["action"]["participant_id"]
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": token(env, state["id"], pid)}))
+        ready = json.loads(ws.receive_text())
+        assert ready["type"] == "ready"
+        assert ready["question_id"] == q["id"]
+        assert ready["text"] == q["text"]
+        assert ready["model_confirmed"] is True
+        tts_start = json.loads(ws.receive_text())
+        assert tts_start["type"] == "tts_start"
+        got = 0
+        while got < tts_start["bytes"]:
+            got += len(ws.receive_bytes())
+        assert json.loads(ws.receive_text()) == {"type": "tts_end", "utt_id": 1}
+        ws.send_bytes(PCM)
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs, _, code = drain(ws)
+    kinds = [m["type"] for m in msgs]
+    assert kinds == ["speech_start", "processing", "transcript", "answer"]
+    assert msgs[2]["text"] == phrase
+    result = msgs[3]["result"]
+    assert result["observation"]["modality"] == "voice"
+    assert result["observation"]["question_id"] == q["id"]
+    assert code == 1000
+    # Question-conditioned Prisma session.
+    h = env.fake.seen_headers[-1]
+    assert h["model"] == "prisma-v3.0"
+    assert h["x-min-segment-ms"] == "100"
+    assert h["x-language-candidates"] == "hi-IN,en-IN"
+    assert h["format"] == "codemix"
+    assert json.loads(h["keyterms"])
+    assert env.fake.frame_sizes
+    assert set(env.fake.frame_sizes) == {1024}
+    after = env.client.get(f"/v1/investigations/{state['id']}").json()
+    assert after["pending_question"]["id"] != q["id"]
+    assert env.client.get(f"/v1/investigations/{state['id']}/replay").json()["identical"]
+
+
+def test_empty_transcript_records_nothing_and_keeps_listening(env: Env) -> None:
+    state, q, phrase = start(env)
+    env.fake.transcripts = ["", phrase]
+    pid = q["action"]["participant_id"]
+    before = len(env.client.get(f"/v1/investigations/{state['id']}").json()["observations"])
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(
+            json.dumps(
+                {"type": "start", "token": token(env, state["id"], pid), "play_question": False}
+            )
+        )
+        until(ws, "ready")
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        until(ws, "empty_transcript")
+        mid = env.client.get(f"/v1/investigations/{state['id']}").json()
+        assert len(mid["observations"]) == before
+        assert mid["pending_question"]["id"] == q["id"]
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs, _, code = drain(ws)
+    assert [m["type"] for m in msgs][-2:] == ["transcript", "answer"]
+    assert code == 1000
+    assert env.tts.calls == 0  # play_question false: no paid TTS
+
+
+def test_tap_answer_over_the_media_socket(env: Env) -> None:
+    state, q, _ = start(env)
+    pid = q["action"]["participant_id"]
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(
+            json.dumps(
+                {"type": "start", "token": token(env, state["id"], pid), "play_question": False}
+            )
+        )
+        until(ws, "ready")
+        ws.send_text(json.dumps({"type": "tap_answer", "outcome": q["outcomes"][0]}))
+        msgs, _, code = drain(ws)
+    assert msgs[-1]["type"] == "answer"
+    assert msgs[-1]["result"]["extraction"]["method"] == "structured"
+    assert code == 1000
+
+
+@pytest.mark.parametrize(
+    ("who", "expect"),
+    [("forged", 4401), ("other", 4403)],
+)
+def test_tokens_are_checked(env: Env, who: str, expect: int) -> None:
+    state, q, _ = start(env)
+    pid = q["action"]["participant_id"]
+    other = next(p["id"] for p in state["participants"] if p["id"] != pid)
+    tok = "abc.def" if who == "forged" else token(env, state["id"], other)
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": tok}))
+        _msgs, _, code = drain(ws)
+    assert code == expect
+    assert not env.fake.seen_headers  # nothing reached Gnani
+
+
+def test_first_message_must_be_start(env: Env) -> None:
+    state, q, _ = start(env)
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs, _, code = drain(ws)
+    assert code == 4400
+    assert msgs[0]["code"] == "MEDIA_EXPECTED_START"
+
+
+def test_unknown_and_answered_questions_are_refused(env: Env) -> None:
+    state, q, phrase = start(env)
+    pid = q["action"]["participant_id"]
+    tok = token(env, state["id"], pid)
+    bad = f"/v1/investigations/{state['id']}/questions/q_nope/media"
+    with env.client.websocket_connect(bad) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": tok}))
+        _, _, code = drain(ws)
+    assert code == 4404
+    env.client.post(
+        f"/v1/investigations/{state['id']}/answers",
+        json={"question_id": q["id"], "participant_id": pid, "text": phrase},
+    )
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": tok}))
+        msgs, _, code = drain(ws)
+    assert code == 4409
+    assert msgs[0]["code"] == "QUESTION_NOT_PENDING"
+
+
+def test_question_answered_elsewhere_mid_stream(env: Env) -> None:
+    state, q, phrase = start(env)
+    pid = q["action"]["participant_id"]
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(
+            json.dumps(
+                {"type": "start", "token": token(env, state["id"], pid), "play_question": False}
+            )
+        )
+        until(ws, "ready")
+        ws.send_bytes(PCM)
+        r = env.client.post(
+            f"/v1/investigations/{state['id']}/answers",
+            json={"question_id": q["id"], "participant_id": pid, "text": phrase},
+        )
+        assert r.status_code == 200
+        msgs, _, code = drain(ws)
+    assert code == 4409
+    assert msgs[-1]["code"] == "QUESTION_NOT_PENDING"
+    obs = env.client.get(f"/v1/investigations/{state['id']}").json()["observations"]
+    assert [o["modality"] for o in obs if o["question_id"] == q["id"]] == ["text"]
+
+
+def test_one_session_per_token(env: Env) -> None:
+    state, q, _ = start(env)
+    tok = token(env, state["id"], q["action"]["participant_id"])
+    start_msg = json.dumps({"type": "start", "token": tok, "play_question": False})
+    with env.client.websocket_connect(url(state, q)) as first:
+        first.send_text(start_msg)
+        until(first, "ready")
+        with env.client.websocket_connect(url(state, q)) as second:
+            second.send_text(start_msg)
+            msgs, _, code = drain(second)
+        assert code == 4409
+        assert msgs[0]["code"] == "MEDIA_SESSION_ACTIVE"
+        first.send_text(json.dumps({"type": "stop"}))
+        _, _, code = drain(first)
+    assert code == 1000
+
+
+def test_bad_audio_frames_are_refused(env: Env) -> None:
+    state, q, _ = start(env)
+    tok = token(env, state["id"], q["action"]["participant_id"])
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": tok, "play_question": False}))
+        until(ws, "ready")
+        ws.send_bytes(b"\x01\x02\x03")  # not whole PCM16 samples
+        msgs, _, code = drain(ws)
+    assert code == 4400
+    assert msgs[-1]["code"] == "MEDIA_BAD_FRAME"
+
+
+def test_tts_failure_is_not_fatal(env: Env) -> None:
+    state, q, phrase = start(env)
+    env.fake.transcript = phrase
+    env.tts.status = 402  # out of credit for TTS
+    tok = token(env, state["id"], q["action"]["participant_id"])
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": tok}))
+        msgs = until(ws, "error")
+        assert msgs[-1]["fatal"] is False
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs, _, code = drain(ws)
+    assert msgs[-1]["type"] == "answer"
+    assert code == 1000
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        ({"VOICE_DAILY_BUDGET_INR": 0.001}, "VOICE_BUDGET_EXCEEDED"),
+        ({"GNANI_API_KEY": ""}, "VOICE_NOT_CONFIGURED"),
+    ],
+)
+def test_voice_limits_close_with_typed_errors(
+    migrated_db: str, sim_app: FastAPI, fake: FakeGnani, overrides: dict[str, Any], error: str
+) -> None:
+    app, tts = make_env(migrated_db, sim_app, fake, **overrides)
+    with TestClient(app) as client:
+        env = Env(client, TestClient(sim_app), fake, tts)
+        state, q, _ = start(env)
+        tok = token(env, state["id"], q["action"]["participant_id"])
+        with client.websocket_connect(url(state, q)) as ws:
+            ws.send_text(json.dumps({"type": "start", "token": tok}))
+            msgs, _, code = drain(ws)
+    assert msgs[-1]["code"] == error
+    assert code == (4503 if error == "VOICE_NOT_CONFIGURED" else 4429)
+    assert not fake.seen_headers
+
+
+def test_concurrent_stream_cap(migrated_db: str, sim_app: FastAPI, fake: FakeGnani) -> None:
+    app, tts = make_env(migrated_db, sim_app, fake, GNANI_MAX_STREAMS=1)
+    with TestClient(app) as client:
+        env = Env(client, TestClient(sim_app), fake, tts)
+        state, q, _ = start(env)
+        pid = q["action"]["participant_id"]
+        with client.websocket_connect(url(state, q)) as first:
+            first.send_text(
+                json.dumps(
+                    {
+                        "type": "start",
+                        "token": token(env, state["id"], pid),
+                        "play_question": False,
+                    }
+                )
+            )
+            until(first, "ready")
+            with client.websocket_connect(url(state, q)) as second:
+                second.send_text(
+                    json.dumps({"type": "start", "token": token(env, state["id"], pid)})
+                )
+                msgs, _, code = drain(second)
+            assert code == 4429
+            assert msgs[-1]["code"] == "VOICE_TOO_MANY_STREAMS"
+            first.send_text(json.dumps({"type": "stop"}))
+            drain(first)

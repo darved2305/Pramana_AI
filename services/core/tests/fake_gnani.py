@@ -25,6 +25,8 @@ class FakeGnani:
     confirm_v3: bool = True
     close_code: int | None = None
     transcript: str = "बंद आहे"
+    transcripts: list[str] = field(default_factory=list)
+    """If set, each commit answers with the next one (then falls back to ``transcript``)."""
     seen_headers: list[Headers] = field(default_factory=list)
     frame_sizes: list[int] = field(default_factory=list)
     port: int = 0
@@ -57,11 +59,12 @@ class FakeGnani:
             elif json.loads(msg).get("type") == "commit":
                 await ws.send(json.dumps({"type": "processing", "timestamp": "t"}))
                 await asyncio.sleep(0.05)
+                text = self.transcripts.pop(0) if self.transcripts else self.transcript
                 await ws.send(
                     json.dumps(
                         {
                             "type": "transcript",
-                            "text": self.transcript,
+                            "text": text,
                             "segment_id": "r-seg-1",
                             "segment_index": 1,
                             "latency": 320,

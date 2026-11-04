@@ -32,6 +32,7 @@ from .sim_client import SimClient
 from .voice.conversation import QuestionAudioCache
 from .voice.gnani import GnaniClient
 from .voice.governor import DbLedger, GovernorLimits, VoiceGovernor
+from .voice.media import ActiveSessions
 
 
 def _llm_extractor(cfg: Settings) -> LlmClient | None:
@@ -104,6 +105,7 @@ def create_app(
         broadcaster = EventBroadcaster()
         db.commit_listeners.append(broadcaster.publish)
         app.state.broadcaster = broadcaster
+        app.state.media_sessions = ActiveSessions()
         app.state.recovery = (
             (await recover(app.state.investigations)).as_dict() if cfg.recover_on_startup else None
         )

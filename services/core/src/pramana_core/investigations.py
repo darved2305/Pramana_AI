@@ -57,7 +57,13 @@ from pramana_contracts import (
     SubmitAnswer,
     TemplateLanguage,
 )
-from pramana_contracts.tokens import mint, mint_capability, private_key_from_b64
+from pramana_contracts.tokens import (
+    ParticipantClaims,
+    mint,
+    mint_capability,
+    private_key_from_b64,
+)
+from pramana_contracts.tokens import verify as verify_token
 from pramana_domain import NO_FAULT, DomainPack, load_pack
 from pramana_engine import (
     CompiledModel,
@@ -102,6 +108,7 @@ class PendingQuestion:
     probe_id: str
     participant: ParticipantSpec
     pack: DomainPack
+    scenario_id: str = ""
 
 
 def _now() -> datetime:
@@ -1056,7 +1063,12 @@ class InvestigationService:
             probe_id=q.probe_id,
             participant=person,
             pack=self.pack(row.pack_id),
+            scenario_id=row.scenario_id,
         )
+
+    def verify_participant_token(self, token: str) -> ParticipantClaims:
+        """Check a participant token this core issued (signature, expiry, audience)."""
+        return verify_token(self._signing_key.public_key(), token)
 
     def evict(self, inv_id: str) -> None:
         self._cache.pop(inv_id, None)

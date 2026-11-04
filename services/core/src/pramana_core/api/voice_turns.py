@@ -8,7 +8,7 @@ Validation happens before any paid call, so wrong or stale requests cost nothing
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket
 from fastapi.responses import Response
 
 from pramana_contracts import Modality, SubmitAnswer, VoiceAnswerResult
@@ -18,6 +18,7 @@ from ..investigations import InvestigationService
 from ..observability import log
 from ..voice.conversation import QuestionAudioCache, answer_keyterms, speak_question, stt_options
 from ..voice.gnani import GnaniClient
+from ..voice.media import MediaSession
 
 router = APIRouter(prefix="/v1/investigations", tags=["voice turns"])
 
@@ -38,6 +39,24 @@ async def question_audio(inv_id: str, question_id: str, request: Request) -> Res
         media_type="audio/wav",
         headers={"X-Audio-Cached": str(cached).lower(), "Cache-Control": "no-store"},
     )
+
+
+@router.websocket("/{inv_id}/questions/{question_id}/media")
+async def question_media(ws: WebSocket, inv_id: str, question_id: str) -> None:
+    """Live voice turn for one pending question (protocol in ``voice/media.py``)."""
+    state = ws.app.state
+    session = MediaSession(
+        ws,
+        inv_id,
+        question_id,
+        state.investigations,
+        state.gnani,
+        state.question_audio,
+        state.broadcaster,
+        state.media_sessions,
+        state.settings.voice_max_stream_s,
+    )
+    await session.run()
 
 
 @router.post("/{inv_id}/answers/voice")
