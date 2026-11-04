@@ -35,9 +35,12 @@ def test_create_investigation_round_trips_through_json() -> None:
         pack_id="campus_block_c",
         participants=[_participant()],
         report=Report(text="Floor 3 pe WiFi nahi chal raha", reporter_id="p_riya"),
-        scenario=ScenarioRequest(seed=7, fault=FaultSpec.model_validate(
-            {"faults": [{"component_id": "CB_C2_7", "mode": "tripped"}]}
-        )),
+        scenario=ScenarioRequest(
+            seed=7,
+            fault=FaultSpec.model_validate(
+                {"faults": [{"component_id": "CB_C2_7", "mode": "tripped"}]}
+            ),
+        ),
     )
     again = CreateInvestigation.model_validate_json(req.model_dump_json())
     assert again == req
