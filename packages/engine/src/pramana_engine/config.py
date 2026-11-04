@@ -43,6 +43,10 @@ class EngineConfig:
     setup_s: float = 15.0
     fatigue_s: float = 5.0
     hearsay_factor: float = 0.5
+    voice_weight: float = 0.9
+    """Extra mixing toward uniform for spoken answers. Speech recognition adds an error channel
+    with no confidence signal: on real short code-mixed turns, a few were transcribed
+    confidently as different words (private evaluation, 2026-11-04)."""
     reliability: dict[tuple[Skill, str], float] = field(
         default_factory=lambda: dict(DEFAULT_RELIABILITY)
     )

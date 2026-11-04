@@ -35,6 +35,7 @@ from pramana_contracts import (
     Hedge,
     InvestigationState,
     InvestigationStatus,
+    Modality,
     Observation,
     ObservationState,
     ParticipantSpec,
@@ -182,6 +183,7 @@ class InvestigationService:
                         e["outcome"],
                         Hedge(e["hedge"]),
                         Directness(e["directness"]),
+                        Modality(e.get("modality", "text")),
                     )
                 )
             elif type_ == "ParticipantUnavailable":
@@ -237,6 +239,7 @@ class InvestigationService:
                     "outcome": ev.outcome,
                     "hedge": ev.hedge.value,
                     "directness": ev.directness.value,
+                    "modality": ev.modality.value,
                 },
                 "used_as_evidence": result.used_as_evidence,
                 "reason": result.reason,
@@ -449,6 +452,7 @@ class InvestigationService:
                         extraction.outcome,
                         extraction.hedge,
                         extraction.directness,
+                        ans.modality,
                     )
                     obs = self._record_observation(
                         session,

@@ -19,6 +19,7 @@ from pramana_contracts import (
     Hedge,
     HypothesisBelief,
     InfeasibleAction,
+    Modality,
     OutcomePreview,
     ParticipantSpec,
     PlanDecision,
@@ -56,6 +57,7 @@ class Evidence:
     outcome: str
     hedge: Hedge = Hedge.CERTAIN
     directness: Directness = Directness.DIRECT
+    modality: Modality = Modality.TEXT
 
 
 @dataclass
@@ -120,6 +122,8 @@ class Engine:
         w = self.cfg.hedge_weight[ev.hedge]
         if ev.directness == Directness.HEARSAY:
             w *= self.cfg.hearsay_factor
+        if ev.modality == Modality.VOICE:
+            w *= self.cfg.voice_weight
         return w
 
     def _validate(self, ev: Evidence) -> int:

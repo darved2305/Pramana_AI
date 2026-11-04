@@ -208,3 +208,17 @@ def test_posterior_is_always_a_distribution(
             abs(sum(d.probability for d in snap.decisions) + snap.open_world_probability - 1.0)
             < 1e-9
         )
+
+
+def test_voice_answers_count_slightly_less_than_typed_ones(toy_model: CompiledModel) -> None:
+    from pramana_contracts import Modality
+
+    typed, spoken = toy_engine(toy_model), toy_engine(toy_model)
+    typed.observe(Evidence("p_ele", "lamp", "ROOM", "off"))
+    spoken.observe(Evidence("p_ele", "lamp", "ROOM", "off", modality=Modality.VOICE))
+    nf = toy_model.hypothesis_index(NO_FAULT)
+    assert typed.posterior()[nf] < spoken.posterior()[nf] < toy_model.prior[nf]
+    # Hand check: technician visual r = 0.95, voice weight 0.9 -> M' = 0.9*M + 0.1/2
+    off_pred, on_pred = 0.9 * 0.95 + 0.05, 0.9 * 0.05 + 0.05
+    unnorm = [0.006 * off_pred, 0.004 * off_pred, 0.0015 * on_pred, 0.0005 * 0.5]
+    np.testing.assert_allclose(spoken.posterior(), np.array(unnorm) / sum(unnorm), atol=1e-12)
