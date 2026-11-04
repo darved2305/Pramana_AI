@@ -29,6 +29,7 @@ apps/web/playwright-report/
 eval/reports/
 recordings/
 voice-samples/
+recorder/
 # Never commit voice recordings of real people
 *.wav
 *.mp3
