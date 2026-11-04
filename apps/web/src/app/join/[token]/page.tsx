@@ -64,6 +64,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const [error, setError] = useState<unknown>(null);
   const [understood, setUnderstood] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [text, setText] = useState("");
   const [moved, setMoved] = useState<string | null>(null);
@@ -159,7 +160,11 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
    */
   const startLive = async (question: NonNullable<typeof q>): Promise<boolean> => {
     let heard = "";
+    let finished = false;
+    setHint(null);
     const done = (session: QuestionMediaSession) => {
+      finished = true;
+      setHint(null);
       session.close();
       if (liveRef.current === session) liveRef.current = null;
       levelRef.current = 0;
@@ -189,6 +194,20 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         onError: (e) => {
           if (!e.fatal) return;
           setMsg(describeError(new ApiError(e.status, e.code, e.message, null)));
+          done(session);
+        },
+        // The call runtime asks again after a silence; show what it said.
+        onReprompt: (text) => setHint(text || "Are you still there? Please answer when you are ready."),
+        onClose: (code) => {
+          if (finished) return;
+          // 4408: twenty seconds of silence. The question stays open, so they can simply retry.
+          setMsg(
+            code === 4408
+              ? "We could not hear you. Tap Answer by voice and try again, or answer by tapping or typing."
+              : code === 1000
+                ? null
+                : "The voice connection closed. Try again, or answer by tapping or typing.",
+          );
           done(session);
         },
       },
@@ -370,6 +389,11 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         </section>
       )}
 
+      {hint ? (
+        <p aria-live="polite" className="mt-5 rounded-[14px] bg-cream/10 px-4 py-3 text-[15px] text-cream">
+          {hint}
+        </p>
+      ) : null}
       {understood ? (
         <p role="status" className="mt-5 rounded-[14px] bg-ok/10 px-4 py-3 text-[15px] text-ok">
           {understood}

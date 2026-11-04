@@ -73,6 +73,12 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   const pack = await api<{ probes: { id: string; label: string }[] }>(request, "GET", "/v1/packs/campus_block_c");
   const label = (probe: string) => pack.probes.find((x) => x.id === probe)?.label ?? probe;
 
+  // The console follows events over server-sent events (polling is only the fallback).
+  const streams: string[] = [];
+  page.on("request", (r) => {
+    if (/\/v1\/investigations\/[^/]+\/stream\?after_seq=/.test(r.url())) streams.push(r.url());
+  });
+
   // 1. The operator creates S1 in the console.
   await signIn(page, "operator", "/app/investigations/new");
   const next = () => page.getByRole("button", { name: "Continue" }).click();
@@ -129,7 +135,8 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   expect(state.plan.decision_class).toBe("DISPATCH_ELECTRICIAN_DB_C2");
   expect(state.questions_asked).toBeLessThanOrEqual(6);
 
-  // The console followed along without a reload.
+  // The console followed along without a reload, over the event stream.
+  expect(streams.length).toBeGreaterThan(0);
   await expect(page.getByText("Decided").first()).toBeVisible();
   await expect.poll(() => page.getByRole("table").first().getByRole("row").count()).toBeGreaterThan(answered);
 
