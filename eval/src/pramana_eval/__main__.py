@@ -25,12 +25,20 @@ from .scenarios import generate
 
 
 def _git_sha() -> str:
+    """Commit of the code being run; "-dirty" if tracked files were modified."""
     try:
-        return subprocess.run(
+        sha = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+    return sha + ("-dirty" if dirty else "")
 
 
 SHORT = {"E": "E_ours", "A": "A_checklist", "C": "C_random", "D": "D_greedy_entropy"}
@@ -70,6 +78,7 @@ def main() -> None:
     )
     args = ap.parse_args()
 
+    code_version = _git_sha()  # captured before running, not after
     pack = load_pack("campus_block_c")
     model = compile_pack(pack)
     policies = build_policies(args.policies.split(","), args.llm_provider, args.llm_model)
@@ -85,7 +94,7 @@ def main() -> None:
 
     ours = results.get("E_ours")
     summary: dict[str, Any] = {
-        "git_sha": _git_sha(),
+        "git_sha": code_version,
         "python": platform.python_version(),
         "seeds": [args.seed_start, args.seed_start + args.n - 1],
         "scenario_mix": {
