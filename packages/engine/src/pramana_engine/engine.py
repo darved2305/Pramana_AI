@@ -494,20 +494,18 @@ class Engine:
         w = self._belief().weights
         if mask is not None:
             w = np.where(mask, w, 0.0)
-        out: FloatArray = np.bincount(
-            self._rows[:, -1], weights=w, minlength=len(self.model.hypotheses)
-        )
-        return out
+        out = np.bincount(self._rows[:, -1], weights=w, minlength=len(self.model.hypotheses))
+        return out.astype(np.float64, copy=False)
 
     def posterior(self) -> FloatArray:
         """[H] posterior. While a repair is being verified: over the cause before the repair."""
         if self._repair is None:
             return self._current()
         before = self._rows[:, self._repair.era - 1]
-        out: FloatArray = np.bincount(
+        out = np.bincount(
             before, weights=self._belief().weights, minlength=len(self.model.hypotheses)
         )
-        return out
+        return out.astype(np.float64, copy=False)
 
     def snapshot(self) -> BeliefSnapshot:
         model = self.model
