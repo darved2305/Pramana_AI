@@ -298,8 +298,10 @@ class Engine:
                     )
                 )
         observable_now = {(a.probe_id, a.location_id) for a in feasible}
+        already_seen = {(probe_id, loc) for _, probe_id, loc in self._evidence}
         for key in list(blocked):
-            if key in observable_now:
+            # "What would help" must not suggest something that was already observed.
+            if key in observable_now or key in already_seen:
                 del blocked[key]
         return feasible, blocked
 

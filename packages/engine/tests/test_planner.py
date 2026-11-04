@@ -353,3 +353,31 @@ def test_chosen_action_is_always_in_the_trace(
         plan = eng.plan()
         if plan.kind == PlanKind.ASK:
             assert plan.action in [c.action for c in plan.candidates]
+
+
+def test_abstention_never_suggests_an_observation_already_made(
+    campus_model: CompiledModel,
+) -> None:
+    """Regression (live voice run): the guard had read the CCTV screen, yet the abstention
+    said that reading "would help". Only the electrician's breaker check remains useful."""
+    eng = Engine(
+        campus_model,
+        [
+            person("p_riya", ["student"], "lay", "F3_R304"),
+            person("p_g", ["guard"], "access", "GUARD_DESK"),
+        ],
+    )
+    for who, probe, loc, out in [
+        ("p_riya", "wifi_status", "F3_R304", "no_network"),
+        ("p_riya", "corridor_lights", "F3_R304", "on"),
+        ("p_g", "internet_works", "GUARD_DESK", "yes"),
+        ("p_g", "nvr_screen", "IDF2", "on"),
+    ]:
+        eng.record_question(who)
+        eng.observe(Evidence(who, probe, loc, out))
+    plan = eng.plan()
+    suggested = {(i.probe_id, i.location_id) for i in plan.infeasible}
+    assert ("nvr_screen", "IDF2") not in suggested
+    if plan.kind == PlanKind.ABSTAIN:
+        assert ("breaker_c2_7", "DB_C2_PANEL") in suggested
+        assert "breaker_c2_7" in plan.reason
