@@ -1,0 +1,45 @@
+# Minimal pack for hand-computed tests: one breaker feeding one lamp.
+pack: toy
+version: 0.0.1
+title: Toy room
+locations:
+  - { id: ROOM,  floor: 1, kind: room,  label: { en: "the room", hi: "kamra", mr: "खोली" } }
+  - { id: PANEL, floor: 1, kind: panel, label: { en: "the panel", hi: "panel", mr: "पॅनेल" }, restricted: true, access_roles: [electrician] }
+walks:
+  - [ROOM, PANEL, 30]
+walking_roles: [electrician, guard]
+components:
+  - { id: FEED_MAIN, kind: feed, label: "Main feed" }
+  - { id: CB_1, kind: breaker, label: "Breaker 1", powered_by: FEED_MAIN, location: PANEL,
+      failure_modes: [{ id: tripped, prior: 0.006, label: "Breaker 1 tripped" }] }
+  - { id: LAMP, kind: light, label: "Lamp", powered_by: CB_1, location: ROOM,
+      failure_modes: [{ id: dead, prior: 0.004, label: "Lamp failed" }] }
+no_fault_prior: 0.0015
+open_world_prior: 0.0005
+probes:
+  - id: lamp
+    label: "Lamp"
+    kind: powered
+    class: visual
+    outcomes: ["on", "off"]
+    roles: [any]
+    exec_s: 5
+    observes: [{ at: ROOM, target: LAMP }]
+    templates: { en: "Is the lamp on?", hi-en: "Lamp on hai?", hi: "लैंप जल रहा है?", mr: "दिवा चालू आहे का?" }
+  - id: breaker
+    label: "Breaker 1"
+    kind: breaker
+    class: panel
+    outcomes: [up, tripped]
+    roles: [electrician]
+    exec_s: 10
+    observes: [{ at: PANEL, target: CB_1 }]
+    templates: { en: "At {place}, is breaker 1 up or tripped?", hi-en: "{place} pe breaker 1 up hai ya trip?", hi: "{place} पर ब्रेकर 1 ऊपर है या ट्रिप?", mr: "{place} वर ब्रेकर 1 वर आहे की ट्रिप?" }
+move_templates: { en: "Please go to {place}. ", hi-en: "{place} jaiye. ", hi: "{place} जाइए। ", mr: "{place} ला जा. " }
+decision_classes:
+  - { id: RESET_BREAKER, label: "Reset breaker 1", hypotheses: [CB_1.tripped] }
+  - { id: REPLACE_LAMP, label: "Replace the lamp", hypotheses: [LAMP.dead] }
+  - { id: NOTHING, label: "Nothing to do", hypotheses: [NO_FAULT] }
+loss_minutes:
+  wrong_default: 20
+  any_under_open_world: 30

@@ -75,7 +75,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers --import-mode=importlib"
+pythonpath = ["packages/engine/tests", "services/core/tests", "tests"]
 markers = [
     "db: requires the PostgreSQL test database (make db-up)",
     "live_gnani: calls the real Gnani API and spends credits (needs GNANI_API_KEY)",

@@ -92,6 +92,17 @@ class PlanKind(StrEnum):
     ABSTAIN = "abstain"
 
 
+PlanRule = Literal[
+    "confident",
+    "positive_value",
+    "no_value_confident_enough",
+    "no_value_low_confidence",
+    "open_world",
+    "no_feasible_action",
+]
+"""Which branch of the stopping rule produced a plan."""
+
+
 class PlanDecision(StrictModel):
     kind: PlanKind
     action: ProbeAction | None = None
@@ -100,14 +111,7 @@ class PlanDecision(StrictModel):
     moderate_confidence: bool = False
     reason: str
     """Generated from the scoring trace by a fixed template, never by an LLM."""
-    rule: Literal[
-        "confident",
-        "positive_value",
-        "no_value_confident_enough",
-        "no_value_low_confidence",
-        "open_world",
-        "no_feasible_action",
-    ]
+    rule: PlanRule
     candidates: list[CandidateScore]
     """Top feasible candidates, best first."""
     infeasible: list[InfeasibleAction]

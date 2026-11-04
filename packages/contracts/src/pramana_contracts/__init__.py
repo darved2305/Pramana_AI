@@ -42,6 +42,7 @@ from .reasoning import (
     OutcomePreview,
     PlanDecision,
     PlanKind,
+    PlanRule,
     ProbeAction,
 )
 from .sim import (
@@ -98,6 +99,7 @@ __all__ = [
     "ParticipantView",
     "PlanDecision",
     "PlanKind",
+    "PlanRule",
     "ProbeAction",
     "Question",
     "QuestionStatus",
