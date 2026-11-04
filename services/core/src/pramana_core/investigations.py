@@ -1,0 +1,608 @@
+"""Investigation runtime: the only code path that mutates an investigation.
+
+Consistency model:
+
+* One writer per investigation. Commands for the same investigation are serialised by an
+  in-process ``asyncio.Lock`` and, across processes, by ``SELECT ... FOR UPDATE`` on its row.
+* Events are the source of truth. The engine is rebuilt by replaying ``QuestionAsked``,
+  ``ObservationRecorded`` and ``ParticipantUnavailable`` in sequence order; replay is exact
+  because the engine is deterministic.
+* The in-memory engine is a cache keyed by the row's ``version``. A command mutates the cached
+  engine before committing, so any failure evicts it; the next command rebuilds from events.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import secrets
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from pramana_contracts import (
+    TERMINAL_STATUSES,
+    UNKNOWN_OUTCOME,
+    AnswerResult,
+    CreateInvestigation,
+    CreateScenario,
+    Directness,
+    EventEnvelope,
+    Extraction,
+    GroundTruthComparison,
+    Hedge,
+    InvestigationState,
+    InvestigationStatus,
+    Observation,
+    ObservationState,
+    ParticipantSpec,
+    PlanDecision,
+    PlanKind,
+    Question,
+    QuestionStatus,
+    Report,
+    SimParticipant,
+    SubmitAnswer,
+)
+from pramana_contracts.tokens import mint, private_key_from_b64
+from pramana_domain import NO_FAULT, DomainPack, load_pack
+from pramana_engine import (
+    CompiledModel,
+    Engine,
+    EngineConfig,
+    Evidence,
+    EvidenceError,
+    compile_pack,
+)
+
+from .db import Database, EventRow, InvestigationRow, ObservationRow, QuestionRow
+from .errors import ApiError, not_found
+from .language.extraction import Extractor
+from .language.realize import realize
+from .observability import log
+from .sim_client import SimClient
+
+INTAKE_PROBE = "internet_works"
+
+
+@dataclass(frozen=True)
+class StoredRequest:
+    """The parts of a creation request the core keeps. The requested fault is never stored."""
+
+    participants: list[ParticipantSpec]
+    report: Report
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_hex(6)}"
+
+
+class InvestigationService:
+    def __init__(
+        self,
+        db: Database,
+        sim: SimClient,
+        extractor: Extractor,
+        signing_key_b64: str,
+        engine_config: EngineConfig | None = None,
+    ) -> None:
+        self.db = db
+        self.sim = sim
+        self.extractor = extractor
+        self._signing_key = private_key_from_b64(signing_key_b64)
+        self._engine_config = engine_config or EngineConfig()
+        self._models: dict[str, CompiledModel] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._cache: dict[str, tuple[int, Engine]] = {}
+
+    # -- helpers ---------------------------------------------------------------------------------
+
+    def model(self, pack_id: str) -> CompiledModel:
+        if pack_id not in self._models:
+            try:
+                self._models[pack_id] = compile_pack(load_pack(pack_id))
+            except (FileNotFoundError, ValueError) as exc:
+                raise ApiError(422, "UNKNOWN_PACK", f"unknown pack {pack_id}") from exc
+        return self._models[pack_id]
+
+    def pack(self, pack_id: str) -> DomainPack:
+        return self.model(pack_id).pack
+
+    def _lock(self, inv_id: str) -> asyncio.Lock:
+        return self._locks.setdefault(inv_id, asyncio.Lock())
+
+    @staticmethod
+    def _event(
+        session: AsyncSession,
+        inv_id: str,
+        type_: str,
+        payload: dict[str, Any],
+        key: str | None = None,
+    ) -> None:
+        session.add(
+            EventRow(investigation_id=inv_id, type=type_, payload=payload, idempotency_key=key)
+        )
+
+    @staticmethod
+    def _request(row: InvestigationRow) -> StoredRequest:
+        return StoredRequest(
+            participants=[ParticipantSpec.model_validate(p) for p in row.request["participants"]],
+            report=Report.model_validate(row.request["report"]),
+        )
+
+    async def _load_row(self, session: AsyncSession, inv_id: str, lock: bool) -> InvestigationRow:
+        stmt = select(InvestigationRow).where(InvestigationRow.id == inv_id)
+        if lock:
+            stmt = stmt.with_for_update()
+        row = (await session.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            raise not_found("investigation")
+        return row
+
+    async def _engine(self, session: AsyncSession, row: InvestigationRow) -> Engine:
+        cached = self._cache.get(row.id)
+        if cached is not None and cached[0] == row.version:
+            return cached[1]
+        req = self._request(row)
+        engine = Engine(self.model(row.pack_id), list(req.participants), self._engine_config)
+        events = await session.execute(
+            select(EventRow.type, EventRow.payload)
+            .where(EventRow.investigation_id == row.id)
+            .order_by(EventRow.seq)
+        )
+        for type_, payload in events.all():
+            if type_ == "QuestionAsked":
+                engine.record_question(payload["action"]["participant_id"])
+            elif type_ == "ObservationRecorded":
+                e = payload["evidence"]
+                engine.observe(
+                    Evidence(
+                        e["participant_id"],
+                        e["probe_id"],
+                        e["location_id"],
+                        e["outcome"],
+                        Hedge(e["hedge"]),
+                        Directness(e["directness"]),
+                    )
+                )
+            elif type_ == "ParticipantUnavailable":
+                engine.set_available(payload["participant_id"], False)
+        self._cache[row.id] = (row.version, engine)
+        return engine
+
+    def _record_observation(
+        self,
+        session: AsyncSession,
+        inv_id: str,
+        engine: Engine,
+        ev: Evidence,
+        extraction: Extraction,
+        *,
+        question_id: str | None,
+        modality: str,
+        transcript: str | None,
+    ) -> Observation:
+        try:
+            result = engine.observe(ev)
+        except EvidenceError as exc:
+            raise ApiError(422, "INVALID_OBSERVATION", str(exc)) from exc
+        obs = Observation(
+            id=_id("obs"),
+            question_id=question_id,
+            participant_id=ev.participant_id,
+            probe_id=ev.probe_id,
+            location_id=ev.location_id,
+            outcome=ev.outcome,
+            hedge=ev.hedge,
+            directness=ev.directness,
+            modality=modality,
+            transcript=transcript,
+            extraction_method=extraction.method,
+            injection_suspected=extraction.injection_suspected,
+            state=ObservationState.COMMITTED
+            if result.used_as_evidence
+            else ObservationState.DISCARDED,
+            committed_at=_now(),
+        )
+        session.add(ObservationRow(investigation_id=inv_id, **obs.model_dump()))
+        self._event(
+            session,
+            inv_id,
+            "ObservationRecorded",
+            {
+                "observation_id": obs.id,
+                "evidence": {
+                    "participant_id": ev.participant_id,
+                    "probe_id": ev.probe_id,
+                    "location_id": ev.location_id,
+                    "outcome": ev.outcome,
+                    "hedge": ev.hedge.value,
+                    "directness": ev.directness.value,
+                },
+                "used_as_evidence": result.used_as_evidence,
+                "reason": result.reason,
+                "superseded_previous": result.superseded,
+                "contradiction": result.contradiction,
+                "surprise_bits": result.surprise_bits,
+                "extraction": extraction.model_dump(mode="json"),
+            },
+        )
+        return obs
+
+    async def _supersede(self, session: AsyncSession, inv_id: str, obs: Observation) -> None:
+        """Mark earlier committed answers by the same person to the same site as superseded."""
+        rows = await session.execute(
+            select(ObservationRow).where(
+                ObservationRow.investigation_id == inv_id,
+                ObservationRow.participant_id == obs.participant_id,
+                ObservationRow.probe_id == obs.probe_id,
+                ObservationRow.location_id == obs.location_id,
+                ObservationRow.state == ObservationState.COMMITTED.value,
+                ObservationRow.id != obs.id,
+            )
+        )
+        for old in rows.scalars():
+            old.state = ObservationState.SUPERSEDED.value
+
+    def _apply_plan(
+        self, session: AsyncSession, row: InvestigationRow, engine: Engine, plan: PlanDecision
+    ) -> None:
+        """Record the plan; ask the next question or conclude."""
+        self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
+        self._event(session, row.id, "PlanComputed", plan.model_dump(mode="json"))
+        if plan.kind == PlanKind.ASK:
+            assert plan.action is not None
+            req = self._request(row)
+            person = next(p for p in req.participants if p.id == plan.action.participant_id)
+            lang = person.languages.template_language
+            text = realize(self.pack(row.pack_id), plan.action, lang)
+            qid = _id("q")
+            session.add(
+                QuestionRow(
+                    id=qid,
+                    investigation_id=row.id,
+                    participant_id=plan.action.participant_id,
+                    probe_id=plan.action.probe_id,
+                    location_id=plan.action.location_id,
+                    requires_move=plan.action.requires_move,
+                    language=lang,
+                    text=text,
+                    status=QuestionStatus.PENDING.value,
+                    asked_at=_now(),
+                )
+            )
+            engine.record_question(plan.action.participant_id)
+            self._event(
+                session,
+                row.id,
+                "QuestionAsked",
+                {
+                    "question_id": qid,
+                    "action": plan.action.model_dump(mode="json"),
+                    "language": lang,
+                    "text": text,
+                },
+            )
+            row.status = InvestigationStatus.INVESTIGATING.value
+            return
+        decided = plan.kind == PlanKind.DECIDE
+        row.status = (
+            InvestigationStatus.DECIDED if decided else InvestigationStatus.ABSTAINED
+        ).value
+        row.outcome = {
+            "kind": plan.kind.value,
+            "decision_class": plan.decision_class,
+            "decision_probability": plan.decision_probability,
+            "rule": plan.rule,
+            "moderate_confidence": plan.moderate_confidence,
+            "reason": plan.reason,
+        }
+        self._event(session, row.id, "DecisionReached" if decided else "Abstained", row.outcome)
+
+    # -- commands --------------------------------------------------------------------------------
+
+    async def create(self, req: CreateInvestigation) -> InvestigationState:
+        pack = self.pack(req.pack_id)
+        for p in req.participants:
+            if p.location_id not in pack.location_by_id:
+                raise ApiError(
+                    422, "UNKNOWN_LOCATION", f"participant {p.id}: unknown location {p.location_id}"
+                )
+        scenario = await self.sim.create_scenario(
+            CreateScenario(
+                pack_id=req.pack_id,
+                seed=req.scenario.seed,
+                fault=req.scenario.fault,
+                participants=[
+                    SimParticipant(
+                        id=p.id, location_id=p.location_id, roles=[r.value for r in p.roles]
+                    )
+                    for p in req.participants
+                ],
+            )
+        )
+        inv_id = _id("inv")
+        # The requested fault (if any) is NOT stored by the core: only the simulator keeps it.
+        stored = req.model_dump(mode="json")
+        stored["scenario"] = {"seed": req.scenario.seed, "fault": "sealed"}
+        row = InvestigationRow(
+            id=inv_id,
+            pack_id=req.pack_id,
+            status=InvestigationStatus.INVESTIGATING.value,
+            scenario_id=scenario.scenario_id,
+            commitment=scenario.commitment,
+            request=stored,
+            version=0,
+        )
+        engine = Engine(self.model(req.pack_id), list(req.participants), self._engine_config)
+        async with self._lock(inv_id), self.db.transaction() as session:
+            session.add(row)
+            await session.flush()
+            self._event(
+                session,
+                inv_id,
+                "InvestigationCreated",
+                {
+                    "pack_id": req.pack_id,
+                    "scenario_id": scenario.scenario_id,
+                    "commitment": scenario.commitment,
+                    "participants": stored["participants"],
+                },
+            )
+            self._event(session, inv_id, "ReportReceived", req.report.model_dump(mode="json"))
+            await self._intake(session, row, engine, req)
+            self._apply_plan(session, row, engine, engine.plan())
+            row.version = 1
+        self._cache[inv_id] = (row.version, engine)
+        log.info("investigation_created", investigation_id=inv_id, status=row.status)
+        return await self.get(inv_id)
+
+    async def _intake(
+        self, session: AsyncSession, row: InvestigationRow, engine: Engine, req: CreateInvestigation
+    ) -> None:
+        """Map the report to evidence only when it explicitly answers the intake probe."""
+        reporter = next(p for p in req.participants if p.id == req.report.reporter_id)
+        probe = self.pack(req.pack_id).probe_by_id.get(INTAKE_PROBE)
+        if probe is None or probe.binding_at(reporter.location_id) is None:
+            return
+        extraction = await self.extractor.extract(req.report.text, probe.outcomes)
+        if extraction.outcome == UNKNOWN_OUTCOME:
+            self._event(session, row.id, "IntakeUnmapped", extraction.model_dump(mode="json"))
+            return
+        ev = Evidence(
+            reporter.id,
+            INTAKE_PROBE,
+            reporter.location_id,
+            extraction.outcome,
+            extraction.hedge,
+            extraction.directness,
+        )
+        self._record_observation(
+            session,
+            row.id,
+            engine,
+            ev,
+            extraction,
+            question_id=None,
+            modality="text",
+            transcript=req.report.text,
+        )
+
+    async def answer(self, inv_id: str, ans: SubmitAnswer) -> AnswerResult:
+        async with self._lock(inv_id):
+            try:
+                async with self.db.transaction() as session:
+                    row = await self._load_row(session, inv_id, lock=True)
+                    if row.status != InvestigationStatus.INVESTIGATING.value:
+                        raise ApiError(
+                            409, "INVESTIGATION_NOT_ACTIVE", f"investigation is {row.status}"
+                        )
+                    q = await session.get(QuestionRow, ans.question_id, with_for_update=True)
+                    if q is None or q.investigation_id != inv_id:
+                        raise not_found("question")
+                    if q.status != QuestionStatus.PENDING.value:
+                        raise ApiError(409, "QUESTION_NOT_PENDING", "question already answered")
+                    if q.participant_id != ans.participant_id:
+                        raise ApiError(
+                            403,
+                            "WRONG_PARTICIPANT",
+                            "question was addressed to another participant",
+                        )
+                    engine = await self._engine(session, row)
+                    outcomes = list(self.model(row.pack_id).outcomes[q.probe_id])
+                    if ans.text is not None:
+                        extraction = await self.extractor.extract(ans.text, outcomes)
+                    else:
+                        if ans.outcome not in (*outcomes, UNKNOWN_OUTCOME):
+                            raise ApiError(
+                                422, "INVALID_OUTCOME", f"outcome must be one of {outcomes}"
+                            )
+                        extraction = Extraction(
+                            outcome=ans.outcome or UNKNOWN_OUTCOME,
+                            hedge=ans.hedge,
+                            directness=ans.directness,
+                            method="structured",
+                        )
+                    ev = Evidence(
+                        q.participant_id,
+                        q.probe_id,
+                        q.location_id,
+                        extraction.outcome,
+                        extraction.hedge,
+                        extraction.directness,
+                    )
+                    obs = self._record_observation(
+                        session,
+                        inv_id,
+                        engine,
+                        ev,
+                        extraction,
+                        question_id=q.id,
+                        modality=ans.modality.value,
+                        transcript=ans.text,
+                    )
+                    await self._supersede(session, inv_id, obs)
+                    q.status, q.answered_at = QuestionStatus.ANSWERED.value, _now()
+                    if extraction.wants_to_stop:
+                        engine.set_available(q.participant_id, False)
+                        self._event(
+                            session,
+                            inv_id,
+                            "ParticipantUnavailable",
+                            {"participant_id": q.participant_id, "reason": "asked to stop"},
+                        )
+                    self._apply_plan(session, row, engine, engine.plan())
+                    row.version += 1
+                    version = row.version
+            except BaseException:
+                self._cache.pop(inv_id, None)  # the engine may have been mutated
+                raise
+            self._cache[inv_id] = (version, engine)
+        return AnswerResult(observation=obs, extraction=extraction, state=await self.get(inv_id))
+
+    async def reveal(self, inv_id: str) -> InvestigationState:
+        async with self._lock(inv_id), self.db.transaction() as session:
+            row = await self._load_row(session, inv_id, lock=True)
+            if row.status == InvestigationStatus.CLOSED.value:
+                pass
+            elif row.status not in {s.value for s in TERMINAL_STATUSES}:
+                raise ApiError(
+                    409,
+                    "INVESTIGATION_ACTIVE",
+                    "ground truth is revealed only after a decision or abstention",
+                )
+            else:
+                await self.sim.close(row.scenario_id)
+                reveal = await self.sim.reveal(row.scenario_id)
+                pack = self.pack(row.pack_id)
+                true_hyps = [f"{f.component_id}.{f.mode}" for f in reveal.fault_spec.faults]
+                true_decisions = sorted(
+                    {pack.decision_of.get(h, "UNMODELLED") for h in true_hyps or [NO_FAULT]}
+                )
+                outcome = row.outcome or {}
+                concluded = outcome.get("decision_class")
+                abstained = outcome.get("kind") == PlanKind.ABSTAIN.value
+                cmp = GroundTruthComparison(
+                    reveal=reveal,
+                    true_decision_classes=true_decisions,
+                    concluded_decision=concluded,
+                    abstained=abstained,
+                    correct=None if abstained else concluded in true_decisions,
+                )
+                row.ground_truth = cmp.model_dump(mode="json")
+                row.status = InvestigationStatus.CLOSED.value
+                row.version += 1
+                self._event(session, inv_id, "GroundTruthRevealed", row.ground_truth)
+        return await self.get(inv_id)
+
+    # -- queries ---------------------------------------------------------------------------------
+
+    async def get(self, inv_id: str) -> InvestigationState:
+        # The lock prevents reading a cached engine that a command has mutated but not committed.
+        async with self._lock(inv_id), self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+            engine = await self._engine(session, row)
+            snapshot, plan = engine.snapshot(), engine.plan()
+            req = self._request(row)
+            questions = (
+                (
+                    await session.execute(
+                        select(QuestionRow)
+                        .where(QuestionRow.investigation_id == inv_id)
+                        .order_by(QuestionRow.asked_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            observations = (
+                (
+                    await session.execute(
+                        select(ObservationRow)
+                        .where(ObservationRow.investigation_id == inv_id)
+                        .order_by(ObservationRow.committed_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        pending = next((q for q in questions if q.status == QuestionStatus.PENDING.value), None)
+        model = self.model(row.pack_id)
+        return InvestigationState(
+            id=row.id,
+            pack_id=row.pack_id,
+            status=InvestigationStatus(row.status),
+            created_at=row.created_at,
+            report=req.report,
+            participants=req.participants,
+            sealed_commitment=row.commitment,
+            belief=snapshot,
+            plan=plan,
+            pending_question=None
+            if pending is None
+            else Question(
+                id=pending.id,
+                action={
+                    "participant_id": pending.participant_id,
+                    "probe_id": pending.probe_id,
+                    "location_id": pending.location_id,
+                    "requires_move": pending.requires_move,
+                },
+                language=pending.language,
+                text=pending.text,
+                outcomes=list(model.outcomes[pending.probe_id]),
+                status=QuestionStatus(pending.status),
+                asked_at=pending.asked_at,
+            ),
+            observations=[
+                Observation.model_validate({c: getattr(o, c) for c in Observation.model_fields})
+                for o in observations
+            ],
+            questions_asked=len(questions),
+            ground_truth=None
+            if row.ground_truth is None
+            else GroundTruthComparison.model_validate(row.ground_truth),
+        )
+
+    async def events(self, inv_id: str, after_seq: int, limit: int) -> list[EventEnvelope]:
+        async with self.db.read() as session:
+            await self._load_row(session, inv_id, lock=False)
+            rows = (
+                (
+                    await session.execute(
+                        select(EventRow)
+                        .where(EventRow.investigation_id == inv_id, EventRow.seq > after_seq)
+                        .order_by(EventRow.seq)
+                        .limit(limit)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [
+            EventEnvelope(
+                seq=r.seq,
+                investigation_id=r.investigation_id,
+                type=r.type,
+                payload=r.payload,
+                ts=r.ts,
+            )
+            for r in rows
+        ]
+
+    async def participant_token(self, inv_id: str, participant_id: str) -> dict[str, str]:
+        async with self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+        if participant_id not in {p.id for p in self._request(row).participants}:
+            raise not_found("participant")
+        token = mint(self._signing_key, participant_id=participant_id, scenario_id=row.scenario_id)
+        return {"token": token, "scenario_id": row.scenario_id, "participant_id": participant_id}
+
+    def evict(self, inv_id: str) -> None:
+        self._cache.pop(inv_id, None)
