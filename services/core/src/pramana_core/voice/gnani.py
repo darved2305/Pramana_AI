@@ -27,6 +27,7 @@ import struct
 import time
 import uuid
 from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +39,7 @@ from pramana_contracts import SttResult
 
 from ..errors import ApiError
 from ..observability import log
+from .governor import GovernorLimits, MemoryLedger, VoiceGovernor, stt_cost, tts_cost
 
 FRAME_BYTES = 1024
 SAMPLE_RATE = 16_000
@@ -113,6 +115,16 @@ class GnaniSttStream:
         # v3.0 sessions echo language_code/format; v2.5 (the silent fallback) does not.
         self.model_confirmed = (not expect_v3) or ("language_code" in cfg)
         self._pending = bytearray()
+        self._bytes_sent = 0
+
+    @property
+    def audio_seconds_sent(self) -> float:
+        """Billable audio actually streamed to Gnani (16 kHz, 16-bit mono)."""
+        return self._bytes_sent / (2 * SAMPLE_RATE)
+
+    async def _send_frame(self, frame: bytes) -> None:
+        await self._ws.send(frame)
+        self._bytes_sent += len(frame)
 
     async def send_pcm(self, pcm: bytes) -> None:
         """Buffer arbitrary PCM and send exact 1,024-byte frames (protocol requirement)."""
@@ -120,12 +132,12 @@ class GnaniSttStream:
         while len(self._pending) >= FRAME_BYTES:
             frame = bytes(self._pending[:FRAME_BYTES])
             del self._pending[:FRAME_BYTES]
-            await self._ws.send(frame)
+            await self._send_frame(frame)
 
     async def commit(self) -> None:
         """Flush a final partial frame (zero-padded) and close the open utterance now."""
         if self._pending:
-            await self._ws.send(bytes(self._pending).ljust(FRAME_BYTES, b"\x00"))
+            await self._send_frame(bytes(self._pending).ljust(FRAME_BYTES, b"\x00"))
             self._pending.clear()
         await self._ws.send(json.dumps({"type": "commit"}))
 
@@ -166,13 +178,14 @@ class GnaniClient:
         api_key: str | None,
         base_url: str,
         timeout_s: float,
-        max_concurrency: int = 1,
+        governor: VoiceGovernor | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._key = api_key
         self.base_url = base_url.rstrip("/")
         self._timeout = timeout_s
-        self._limit = asyncio.Semaphore(max_concurrency)
+        # Every call goes through a governor; tests get conservative in-memory defaults.
+        self.governor = governor or VoiceGovernor(GovernorLimits(), MemoryLedger())
         self._http = httpx.AsyncClient(
             base_url=self.base_url, timeout=httpx.Timeout(timeout_s), transport=transport
         )
@@ -189,7 +202,7 @@ class GnaniClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+    async def _request(self, method: str, path: str, service: str, **kwargs: Any) -> httpx.Response:
         key = self._require_key()
         headers = {
             "X-API-Key-ID": key,
@@ -197,26 +210,26 @@ class GnaniClient:
             **kwargs.pop("headers", {}),
         }
         last: VoiceError | None = None
-        async with self._limit:
-            for attempt, backoff in enumerate((*RETRY_BACKOFF_S, None)):
-                try:
-                    resp = await self._http.request(method, path, headers=headers, **kwargs)
-                except httpx.TimeoutException:
-                    last = VoiceError(504, "VOICE_TIMEOUT", "Gnani request timed out")
-                except httpx.HTTPError as exc:
-                    last = VoiceError(
-                        502, "VOICE_UNREACHABLE", f"Gnani unreachable: {type(exc).__name__}"
-                    )
-                else:
-                    if resp.status_code < 400:
-                        return resp
-                    last = _error_for(resp.status_code, resp.text)
-                    if resp.status_code != 429 and resp.status_code < 500:
-                        raise last
-                log.warning("gnani_retry", path=path, attempt=attempt, code=last.code)
-                if backoff is None:
-                    break
-                await asyncio.sleep(backoff)
+        for attempt, backoff in enumerate((*RETRY_BACKOFF_S, None)):
+            await self.governor.pace(service)  # every attempt counts against the per-minute cap
+            try:
+                resp = await self._http.request(method, path, headers=headers, **kwargs)
+            except httpx.TimeoutException:
+                last = VoiceError(504, "VOICE_TIMEOUT", "Gnani request timed out")
+            except httpx.HTTPError as exc:
+                last = VoiceError(
+                    502, "VOICE_UNREACHABLE", f"Gnani unreachable: {type(exc).__name__}"
+                )
+            else:
+                if resp.status_code < 400:
+                    return resp
+                last = _error_for(resp.status_code, resp.text)
+                if resp.status_code != 429 and resp.status_code < 500:
+                    raise last
+            log.warning("gnani_retry", path=path, attempt=attempt, code=last.code)
+            if backoff is None:
+                break
+            await asyncio.sleep(backoff)
         assert last is not None
         raise last
 
@@ -247,11 +260,15 @@ class GnaniClient:
             data["topic"] = topic[:1600]
         if previous_text:
             data["previous_text"] = previous_text[-600:]
-        start = time.perf_counter()
-        resp = await self._request(
-            "POST", "/stt/v3", data=data, files={"audio_file": (filename, audio)}
-        )
-        wall_ms = (time.perf_counter() - start) * 1000
+        self._require_key()
+        # Non-WAV durations are unknown before upload: price the 30 s maximum, bill it too.
+        billable_s = duration if duration is not None else MAX_REST_AUDIO_S
+        async with self.governor.rest_call("stt_rest", billable_s, stt_cost(billable_s)):
+            start = time.perf_counter()
+            resp = await self._request(
+                "POST", "/stt/v3", "stt_rest", data=data, files={"audio_file": (filename, audio)}
+            )
+            wall_ms = (time.perf_counter() - start) * 1000
         body = resp.json()
         if not body.get("success", False):
             err = body.get("error") or {}
@@ -300,9 +317,12 @@ class GnaniClient:
                 "container": "wav",
             },
         }
-        start = time.perf_counter()
-        resp = await self._request("POST", "/api/v1/tts/inference", json=body)
-        wall_ms = (time.perf_counter() - start) * 1000
+        self._require_key()
+        chars = len(text)  # audio tags are billable characters too
+        async with self.governor.rest_call("tts", chars, tts_cost(chars)):
+            start = time.perf_counter()
+            resp = await self._request("POST", "/api/v1/tts/inference", "tts", json=body)
+            wall_ms = (time.perf_counter() - start) * 1000
         audio = resp.content
         if not audio:
             raise VoiceError(502, "VOICE_EMPTY_AUDIO", "Gnani returned no audio")
@@ -313,6 +333,24 @@ class GnaniClient:
                 f"expected WAV, got {resp.headers.get('content-type')}",
             )
         return audio, wall_ms
+
+    @asynccontextmanager
+    async def stream(
+        self, language_codes: Sequence[str], **kwargs: Any
+    ) -> AsyncIterator[GnaniSttStream]:
+        """A realtime session holding one of the account's concurrent-session slots.
+
+        Billable seconds are metered from the audio actually sent; the upstream session is
+        closed when the block exits, however it exits.
+        """
+        self._require_key()
+        async with self.governor.stream_slot() as seconds:
+            upstream = await self.open_stream(language_codes, **kwargs)
+            try:
+                yield upstream
+            finally:
+                seconds[0] = upstream.audio_seconds_sent
+                await upstream.aclose()
 
     async def open_stream(
         self,

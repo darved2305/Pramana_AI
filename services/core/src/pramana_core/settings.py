@@ -34,8 +34,15 @@ class Settings(BaseSettings):
     gnani_api_key: SecretStr | None = Field(default=None, alias="GNANI_API_KEY")
     gnani_base_url: str = Field(default="https://api.vachana.ai", alias="GNANI_BASE_URL")
     gnani_timeout_s: float = Field(default=15.0, gt=0, alias="GNANI_TIMEOUT_S")
-    gnani_max_concurrency: int = Field(default=1, ge=1, le=16, alias="GNANI_MAX_CONCURRENCY")
-    """Upper bound on simultaneous Gnani requests. The account limit is unpublished; start at 1."""
+    gnani_rest_max_inflight: int = Field(default=1, ge=1, le=16, alias="GNANI_REST_MAX_INFLIGHT")
+    """Simultaneous REST calls. Gnani's documented 429 says one active request at a time."""
+    gnani_stt_rest_per_min: int = Field(default=50, ge=1, le=60, alias="GNANI_STT_REST_PER_MIN")
+    gnani_tts_per_min: int = Field(default=50, ge=1, le=60, alias="GNANI_TTS_PER_MIN")
+    """Account limit is 60 requests/minute for each; we keep headroom."""
+    gnani_max_streams: int = Field(default=16, ge=1, le=20, alias="GNANI_MAX_STREAMS")
+    """Account limit is 20 concurrent realtime sessions."""
+    voice_daily_budget_inr: float = Field(default=150.0, gt=0, alias="VOICE_DAILY_BUDGET_INR")
+    voice_max_stream_s: float = Field(default=300.0, gt=0, le=900, alias="VOICE_MAX_STREAM_S")
     voice_max_upload_bytes: int = Field(default=2_000_000, alias="VOICE_MAX_UPLOAD_BYTES")
 
     cors_origins: list[str] = Field(default=["http://localhost:3000"], alias="CORS_ORIGINS")

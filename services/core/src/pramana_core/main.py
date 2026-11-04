@@ -23,6 +23,7 @@ from .observability import RequestContextMiddleware, configure_logging, log
 from .settings import Settings, get_settings
 from .sim_client import SimClient
 from .voice.gnani import GnaniClient
+from .voice.governor import DbLedger, GovernorLimits, VoiceGovernor
 
 
 def create_app(
@@ -44,7 +45,17 @@ def create_app(
             api_key=cfg.gnani_api_key.get_secret_value() if cfg.gnani_api_key else None,
             base_url=cfg.gnani_base_url,
             timeout_s=cfg.gnani_timeout_s,
-            max_concurrency=cfg.gnani_max_concurrency,
+            governor=VoiceGovernor(
+                GovernorLimits(
+                    stt_rest_per_min=cfg.gnani_stt_rest_per_min,
+                    tts_per_min=cfg.gnani_tts_per_min,
+                    max_streams=cfg.gnani_max_streams,
+                    rest_max_inflight=cfg.gnani_rest_max_inflight,
+                    daily_budget_inr=cfg.voice_daily_budget_inr,
+                    max_stream_s=cfg.voice_max_stream_s,
+                ),
+                DbLedger(db),
+            ),
         )
         app.state.settings = cfg
         app.state.db = db

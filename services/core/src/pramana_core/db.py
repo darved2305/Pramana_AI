@@ -10,13 +10,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -113,6 +115,19 @@ class ObservationRow(Base):
     injection_suspected: Mapped[bool] = mapped_column(Boolean, default=False)
     state: Mapped[str] = mapped_column(String(16))
     committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class VoiceUsageRow(Base):
+    """One metered Gnani call: billable units (audio seconds or characters) and priced cost."""
+
+    __tablename__ = "voice_usage"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    service: Mapped[str] = mapped_column(String(16))
+    units: Mapped[float] = mapped_column(Float)
+    cost_inr: Mapped[float] = mapped_column(Float)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 def make_engine(settings: Settings) -> AsyncEngine:

@@ -10,7 +10,7 @@ import asyncio
 import contextlib
 import json
 import time
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
@@ -20,11 +20,10 @@ from pramana_contracts import MediaClientMessage, MediaServerMessage, SttResult,
 
 from ..errors import ApiError
 from ..observability import log
-from ..voice.gnani import GnaniClient, GnaniSttStream, VoiceError
+from ..voice.gnani import GnaniClient, GnaniSttStream
 
 router = APIRouter(prefix="/v1/voice", tags=["voice"])
 
-MAX_STREAM_S = 300.0
 MAX_FRAME_BYTES = 64 * 1024
 
 
@@ -41,6 +40,19 @@ async def voice_status(request: Request) -> dict[str, object]:
         "stt_model": "prisma-v3.0",
         "tts_models": ["timbre-v3.0", "timbre-v2.5"],
         "base_url": g.base_url,
+    }
+
+
+@router.get("/usage")
+async def voice_usage(request: Request) -> dict[str, object]:
+    """Today's metered Gnani usage, the configured caps, and live limiter state."""
+    g = _gnani(request)
+    ledger = g.governor.ledger
+    by_service = await ledger.by_service_today() if hasattr(ledger, "by_service_today") else {}
+    return {
+        "spent_today_inr": round(await ledger.spent_today(), 4),
+        "by_service": by_service,
+        **g.governor.status(),
     }
 
 
@@ -96,19 +108,26 @@ async def stream(ws: WebSocket) -> None:
         await send(MediaServerMessage(type="error", message="expected a start message"))
         await ws.close(code=1008)
         return
+    max_s: float = ws.app.state.settings.voice_max_stream_s
     try:
-        upstream = await gnani.open_stream(
+        async with gnani.stream(
             start.language_code or ["hi-IN", "en-IN"],
             codemix=start.codemix,
             keyterms=start.keyterms or (),
-        )
-    except VoiceError as exc:
+        ) as upstream:
+            await send(MediaServerMessage(type="ready", model_confirmed=upstream.model_confirmed))
+            await _pump(ws, upstream, send, max_s)
+    except ApiError as exc:  # no slot, over budget, or Gnani refused the session
         await send(MediaServerMessage(type="error", message=f"{exc.code}: {exc.message}"))
-        await ws.close(code=1011)
-        return
-    await send(MediaServerMessage(type="ready", model_confirmed=upstream.model_confirmed))
+    with contextlib.suppress(Exception):
+        await send(MediaServerMessage(type="closed"))
+        await ws.close()
+
+
+async def _pump(ws: WebSocket, upstream: GnaniSttStream, send: Any, max_s: float) -> None:
+    """Forward browser audio upstream until stop, disconnect, or the session time cap."""
     relay = asyncio.create_task(_relay_upstream(upstream, send))
-    deadline = time.monotonic() + MAX_STREAM_S
+    deadline = time.monotonic() + max_s
     try:
         while time.monotonic() < deadline and not relay.done():
             msg = await asyncio.wait_for(ws.receive(), timeout=deadline - time.monotonic())
@@ -134,10 +153,6 @@ async def stream(ws: WebSocket) -> None:
         relay.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await relay
-        await upstream.aclose()
-        with contextlib.suppress(Exception):
-            await send(MediaServerMessage(type="closed"))
-            await ws.close()
 
 
 async def _relay_upstream(upstream: GnaniSttStream, send: object) -> None:
