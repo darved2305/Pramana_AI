@@ -4,6 +4,9 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from pramana_contracts.tokens import (
+    CAPABILITY_TTL_S,
+    CLOCK_SKEW_S,
+    PARTICIPANT_TTL_S,
     TokenError,
     generate_private_key_b64,
     mint,
@@ -75,3 +78,48 @@ def test_capability_expires() -> None:
     )
     with pytest.raises(TokenError, match="expired"):
         verify_capability(key.public_key(), tok, now=1301)
+
+
+def test_a_fast_minting_clock_cannot_stretch_a_lifetime() -> None:
+    key = Ed25519PrivateKey.generate()
+    pub = key.public_key()
+    cap, _ = mint_capability(
+        key,
+        scenario_id="s",
+        investigation_id="i",
+        participant_id="p",
+        action="a",
+        target="t",
+        now=1000 + CLOCK_SKEW_S,
+    )
+    assert verify_capability(pub, cap, now=1000).sub == "p"  # within the skew allowance
+    far, _ = mint_capability(
+        key,
+        scenario_id="s",
+        investigation_id="i",
+        participant_id="p",
+        action="a",
+        target="t",
+        now=1000 + CLOCK_SKEW_S + 1,
+    )
+    with pytest.raises(TokenError, match="lifetime"):
+        verify_capability(pub, far, now=1000)
+    tok = mint(key, participant_id="p", scenario_id="s", now=1000 + 10 * 60)
+    with pytest.raises(TokenError, match="lifetime"):
+        verify(pub, tok, now=1000)
+
+
+def test_lifetimes_cannot_be_requested_longer_than_the_maximum() -> None:
+    key = Ed25519PrivateKey.generate()
+    with pytest.raises(ValueError):
+        mint_capability(
+            key,
+            scenario_id="s",
+            investigation_id="i",
+            participant_id="p",
+            action="a",
+            target="t",
+            ttl_s=CAPABILITY_TTL_S + 1,
+        )
+    with pytest.raises(ValueError):
+        mint(key, participant_id="p", scenario_id="s", ttl_s=PARTICIPANT_TTL_S + 1)

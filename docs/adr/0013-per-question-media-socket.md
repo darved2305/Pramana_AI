@@ -28,8 +28,8 @@ question (`services/core/src/pramana_core/voice/media.py`).
 
 **Consequences.** Opening a socket per question costs one WebSocket and one Prisma handshake per
 question; the handshake can overlap with question playback because the session opens before
-the audio is sent. When the call runtime (`calls/runtime.py`) is wired in, a per-call socket can
-multiplex these per-question sessions without changing the answer path.
+the audio is sent. The call runtime (`calls/runtime.py`) now drives each session (barge-in, one re-prompt,
+silence timeout). A per-call socket can later multiplex these per-question sessions without changing the answer path.
 
 **Tests.** `services/core/tests/test_media_ws.py`, against the local Prisma emulation: spoken
 answer end to end (headers, frames, transcript, answer, replay identical), empty transcript,

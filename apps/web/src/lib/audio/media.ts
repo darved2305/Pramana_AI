@@ -54,8 +54,12 @@ export interface MediaHandlers {
   onAnswer?: (result: unknown) => void;
   onError?: (e: MediaError) => void;
   onLevel?: (rms: number) => void;
-  /** Socket closed; `code` follows the server's close codes (1000 normal, 4409 already answered...). */
+  /** Socket closed; `code` follows the server's close codes (1000 normal, 4408 silent, 4409 already answered...). */
   onClose?: (code: number) => void;
+  /** Nothing was heard for a while: the question is being asked once more. */
+  onReprompt?: (text: string) => void;
+  /** The server's call runtime changed state (ASKING, LISTENING, EXTRACTING, ENDED...). */
+  onCallState?: (state: string) => void;
 }
 
 export interface MediaOptions {
@@ -238,6 +242,15 @@ export class QuestionMediaSession {
       case "error":
         if (msg.fatal) this.setState("error");
         this.handlers.onError?.(msg as unknown as MediaError);
+        break;
+      case "stop_playback":
+        this.stopPlayback();
+        break;
+      case "reprompt":
+        this.handlers.onReprompt?.(String(msg.text ?? ""));
+        break;
+      case "call_state":
+        this.handlers.onCallState?.(String(msg.state));
         break;
     }
   }

@@ -5,6 +5,10 @@ Format: ``base64url(json payload) "." base64url(Ed25519 signature over the first
 The core holds the private key; the simulator is configured with the public key only, so a
 compromised simulator cannot mint identities. Payload fields: ``sub`` (participant id), ``scn``
 (scenario id), ``aud`` (intended audience), ``exp`` (unix seconds), ``jti`` (unique id).
+
+Clock skew: verifiers reject a token whose ``exp`` lies further ahead than its maximum lifetime
+plus ``CLOCK_SKEW_S``. A minting clock that runs fast therefore cannot stretch a five-minute
+capability, and expiry itself is strict (no leeway after ``exp``).
 """
 
 from __future__ import annotations
@@ -23,6 +27,11 @@ from cryptography.hazmat.primitives.serialization import (
     PrivateFormat,
     PublicFormat,
 )
+
+PARTICIPANT_TTL_S = 12 * 3600
+CAPABILITY_TTL_S = 300
+CLOCK_SKEW_S = 120
+"""Largest difference between the minting and verifying clocks that is tolerated."""
 
 
 class TokenError(ValueError):
@@ -64,9 +73,11 @@ def mint(
     participant_id: str,
     scenario_id: str,
     aud: str = "sim",
-    ttl_s: int = 12 * 3600,
+    ttl_s: int = PARTICIPANT_TTL_S,
     now: float | None = None,
 ) -> str:
+    if ttl_s > PARTICIPANT_TTL_S:
+        raise ValueError(f"participant tokens live at most {PARTICIPANT_TTL_S} s")
     claims = {
         "typ": "participant",
         "sub": participant_id,
@@ -111,9 +122,16 @@ def verify(
         raise TokenError("invalid token") from exc
     if claims.aud != aud:
         raise TokenError("token audience mismatch")
-    if claims.exp < (now if now is not None else time.time()):
-        raise TokenError("token expired")
+    _check_lifetime(claims.exp, PARTICIPANT_TTL_S, now, "token")
     return claims
+
+
+def _check_lifetime(exp: int, max_ttl_s: int, now: float | None, what: str) -> None:
+    t = now if now is not None else time.time()
+    if exp < t:
+        raise TokenError(f"{what} expired")
+    if exp - t > max_ttl_s + CLOCK_SKEW_S:
+        raise TokenError(f"{what} lifetime exceeds {max_ttl_s} s (clock skew?)")
 
 
 def generate_private_key_b64() -> str:
@@ -142,9 +160,11 @@ def mint_capability(
     participant_id: str,
     action: str,
     target: str,
-    ttl_s: int = 300,
+    ttl_s: int = CAPABILITY_TTL_S,
     now: float | None = None,
 ) -> tuple[str, CapabilityClaims]:
+    if ttl_s > CAPABILITY_TTL_S:
+        raise ValueError(f"capabilities live at most {CAPABILITY_TTL_S} s")
     claims = CapabilityClaims(
         jti=secrets.token_hex(12),
         scn=scenario_id,
@@ -177,6 +197,5 @@ def verify_capability(
         )
     except (KeyError, ValueError) as exc:
         raise TokenError("invalid capability") from exc
-    if claims.exp < (now if now is not None else time.time()):
-        raise TokenError("capability expired")
+    _check_lifetime(claims.exp, CAPABILITY_TTL_S, now, "capability")
     return claims

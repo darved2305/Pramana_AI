@@ -115,7 +115,11 @@ def url(state: dict[str, Any], q: dict[str, Any]) -> str:
     return f"/v1/investigations/{state['id']}/questions/{q['id']}/media"
 
 
-def drain(ws: Any) -> tuple[list[dict[str, Any]], int, int | None]:
+CALL_FRAMES = {"call_state", "stop_playback", "reprompt"}
+"""Call-runtime frames, checked by their own tests; the protocol tests skip them."""
+
+
+def drain(ws: Any, *, calls: bool = False) -> tuple[list[dict[str, Any]], int, int | None]:
     """Read until the server closes: (json messages, binary bytes, close code)."""
     msgs: list[dict[str, Any]] = []
     binary = 0
@@ -129,7 +133,9 @@ def drain(ws: Any) -> tuple[list[dict[str, Any]], int, int | None]:
         if m.get("bytes") is not None:
             binary += len(m["bytes"])
         elif m.get("text") is not None:
-            msgs.append(json.loads(m["text"]))
+            msg = json.loads(m["text"])
+            if calls or msg["type"] not in CALL_FRAMES:
+                msgs.append(msg)
 
 
 def until(ws: Any, kind: str) -> list[dict[str, Any]]:
@@ -139,9 +145,19 @@ def until(ws: Any, kind: str) -> list[dict[str, Any]]:
         if m.get("text") is None:
             continue
         msg = json.loads(m["text"])
+        if msg["type"] in CALL_FRAMES and kind not in CALL_FRAMES:
+            continue
         out.append(msg)
         if msg["type"] == kind:
             return out
+
+
+def text_frame(ws: Any) -> dict[str, Any]:
+    """The next protocol (non call-runtime) JSON frame."""
+    while True:
+        msg: dict[str, Any] = json.loads(ws.receive_text())
+        if msg["type"] not in CALL_FRAMES:
+            return msg
 
 
 def test_spoken_answer_end_to_end(env: Env) -> None:
@@ -150,17 +166,17 @@ def test_spoken_answer_end_to_end(env: Env) -> None:
     pid = q["action"]["participant_id"]
     with env.client.websocket_connect(url(state, q)) as ws:
         ws.send_text(json.dumps({"type": "start", "token": token(env, state["id"], pid)}))
-        ready = json.loads(ws.receive_text())
+        ready = text_frame(ws)
         assert ready["type"] == "ready"
         assert ready["question_id"] == q["id"]
         assert ready["text"] == q["text"]
         assert ready["model_confirmed"] is True
-        tts_start = json.loads(ws.receive_text())
+        tts_start = text_frame(ws)
         assert tts_start["type"] == "tts_start"
         got = 0
         while got < tts_start["bytes"]:
             got += len(ws.receive_bytes())
-        assert json.loads(ws.receive_text()) == {"type": "tts_end", "utt_id": 1}
+        assert text_frame(ws) == {"type": "tts_end", "utt_id": 1}
         ws.send_bytes(PCM)
         ws.send_bytes(PCM)
         ws.send_text(json.dumps({"type": "commit"}))
@@ -391,3 +407,85 @@ def test_concurrent_stream_cap(migrated_db: str, sim_app: FastAPI, fake: FakeGna
             assert msgs[-1]["code"] == "VOICE_TOO_MANY_STREAMS"
             first.send_text(json.dumps({"type": "stop"}))
             drain(first)
+
+
+# -- the call runtime drives the session ---------------------------------------------------
+
+
+def states(msgs: list[dict[str, Any]]) -> list[str]:
+    return [m["state"] for m in msgs if m["type"] == "call_state"]
+
+
+def test_call_runtime_runs_a_spoken_turn(env: Env) -> None:
+    state, q, phrase = start(env)
+    env.fake.transcript = phrase
+    tok = token(env, state["id"], q["action"]["participant_id"])
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": tok}))
+        until(ws, "tts_end")
+        ws.send_text(json.dumps({"type": "playback_done"}))
+        until(ws, "call_state")  # LISTENING
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs, _, code = drain(ws, calls=True)
+    assert code == 1000
+    assert states(msgs) == ["EXTRACTING", "IDLE", "CLOSING", "ENDED"]
+    assert not [m for m in msgs if m["type"] == "stop_playback"]  # no barge-in
+
+
+def test_speaking_over_the_question_stops_playback(env: Env) -> None:
+    state, q, phrase = start(env)
+    env.fake.transcript = phrase
+    tok = token(env, state["id"], q["action"]["participant_id"])
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": tok}))
+        before = until(ws, "tts_end")
+        ws.send_bytes(PCM)  # speech before playback_done: barge-in
+        stop = until(ws, "stop_playback")
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs, _, code = drain(ws, calls=True)
+    utt = next(m for m in before if m["type"] == "tts_start")["utt_id"]
+    assert stop[-1] == {"type": "stop_playback", "utt_id": utt}
+    assert {"type": "call_state", "state": "LISTENING", "event": "barge_in", "utt_id": utt} in stop
+    assert msgs[-1]["state"] == "ENDED"
+    assert code == 1000
+
+
+def test_silence_reprompts_once_then_gives_up(
+    migrated_db: str, sim_app: FastAPI, fake: FakeGnani, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pramana_core.calls.runtime import CallTimers
+    from pramana_core.voice import media
+
+    monkeypatch.setattr(media, "CALL_TIMERS", CallTimers(reprompt_s=0.4, unavailable_s=1.2))
+    monkeypatch.setattr(media, "TIMER_POLL_S", 0.05)
+    app, tts = make_env(migrated_db, sim_app, fake)
+    with TestClient(app) as client:
+        env = Env(client, TestClient(sim_app), fake, tts)
+        state, q, _ = start(env)
+        tok = token(env, state["id"], q["action"]["participant_id"])
+        with env.client.websocket_connect(url(state, q)) as ws:
+            ws.send_text(json.dumps({"type": "start", "token": tok, "play_question": False}))
+            msgs, _, code = drain(ws, calls=True)
+        after = env.client.get(f"/v1/investigations/{state['id']}").json()
+    kinds = [m["type"] for m in msgs]
+    assert kinds.count("reprompt") == 1
+    assert next(m for m in msgs if m["type"] == "reprompt")["text"] == q["text"]
+    assert states(msgs)[-2:] == ["UNAVAILABLE", "ENDED"]
+    assert msgs[-1]["type"] == "error"
+    assert msgs[-1]["code"] == "PARTICIPANT_SILENT"
+    assert code == 4408
+    assert after["pending_question"]["id"] == q["id"]  # nothing recorded; ask again later
+    assert tts.calls == 0
+
+
+def test_hanging_up_ends_the_call(env: Env) -> None:
+    state, q, _ = start(env)
+    tok = token(env, state["id"], q["action"]["participant_id"])
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": tok, "play_question": False}))
+        until(ws, "ready")
+        ws.send_text(json.dumps({"type": "stop"}))
+        msgs, _, code = drain(ws, calls=True)
+    assert states(msgs)[-2:] == ["CLOSING", "ENDED"]
+    assert code == 1000

@@ -12,6 +12,11 @@
 The simulator checks the token, its single use, the executor's role and that the executor is
 physically at the target. Its reply never reveals whether the action fixed anything.
 
+**Clock skew.** Expiry is strict. A token whose expiry lies more than its lifetime plus 120 s
+ahead of the simulator's clock is refused, so a minting clock that runs fast cannot stretch a
+5-minute capability (`pramana_contracts.tokens.CLOCK_SKEW_S`; `test_tokens.py`,
+`test_edge_cases.py::test_capability_from_a_clock_far_ahead_is_refused`).
+
 **Verification model.** When the executor reports the repair, every hypothesis the action could
 clear is split into two branches:
 - *fixed* (probability 1 − p, with p = 0.1): later answers are read against the repaired world;
