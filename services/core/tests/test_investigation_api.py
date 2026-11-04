@@ -358,3 +358,18 @@ def test_database_outage_is_reported(sim_app: Any) -> None:
         r = client.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
         assert r.status_code == 503
         assert r.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+
+
+def test_returned_plan_is_the_one_that_chose_the_pending_question(core: TestClient) -> None:
+    sim = TestClient(core.sim_app)  # type: ignore[attr-defined]
+    inv = create(core, fault="SW_C2.dead")
+    for _ in range(6):
+        if inv["pending_question"] is None:
+            break
+        assert inv["plan"]["kind"] == "ask"
+        assert inv["plan"]["action"] == inv["pending_question"]["action"]
+        assert inv["plan"]["action"] in [c["action"] for c in inv["plan"]["candidates"]]
+        inv = answer_pending(core, sim, inv)["state"]
+    events = core.get(f"/v1/investigations/{inv['id']}/events").json()
+    last_plan = [e for e in events if e["type"] == "PlanComputed"][-1]["payload"]
+    assert inv["plan"] == last_plan

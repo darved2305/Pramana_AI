@@ -508,7 +508,18 @@ class InvestigationService:
         async with self._lock(inv_id), self.db.read() as session:
             row = await self._load_row(session, inv_id, lock=False)
             engine = await self._engine(session, row)
-            snapshot, plan = engine.snapshot(), engine.plan()
+            snapshot = engine.snapshot()
+            # Return the persisted trace that produced the current question or conclusion.
+            # Recomputing would differ: asking a question changes that person's effort cost.
+            plan_payload = (
+                await session.execute(
+                    select(EventRow.payload)
+                    .where(EventRow.investigation_id == inv_id, EventRow.type == "PlanComputed")
+                    .order_by(EventRow.seq.desc())
+                    .limit(1)
+                )
+            ).scalar_one()
+            plan = PlanDecision.model_validate(plan_payload)
             req = self._request(row)
             questions = (
                 (
