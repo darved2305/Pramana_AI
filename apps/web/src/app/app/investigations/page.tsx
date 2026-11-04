@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -10,18 +10,19 @@ import {
   Card,
   Dialog,
   EmptyState,
+  ErrorState,
   Field,
   Input,
-  Notice,
   PageHeader,
   PreviewBadge,
+  Skeleton,
   Tabs,
 } from "@/components/ui";
-import { IconHistory, IconPlus, IconSearch, IconTrash } from "@/components/ui/icons";
-import { history, useHistory, usePreviewMode, type HistoryEntry } from "@/lib/store/local";
+import { IconHistory, IconPlus, IconSearch } from "@/components/ui/icons";
+import { usePreviewMode } from "@/lib/store/local";
+import { useInvestigationList } from "@/lib/data/hooks";
 import { STATUS_LABEL, STATUS_TONE, relative } from "@/lib/data/derive";
-import { PREVIEW_ID } from "@/lib/preview/ids";
-import type { InvestigationStatus } from "@/lib/api/types";
+import type { InvestigationStatus, InvestigationSummary } from "@/lib/api/types";
 
 type Filter = "all" | "active" | "settled";
 const ACTIVE: string[] = ["investigating", "awaiting_approval", "acting", "verifying"];
@@ -34,47 +35,37 @@ export default function InvestigationsPage() {
   );
 }
 
+const PAGE = 24;
+const SETTLED_STATUSES: InvestigationStatus[] = ["decided", "abstained", "verified", "not_verified", "closed"];
+const STATUS_FILTER: Record<Filter, InvestigationStatus[]> = {
+  all: [],
+  active: ACTIVE as InvestigationStatus[],
+  settled: SETTLED_STATUSES,
+};
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
 function InvestigationsInner() {
   const params = useSearchParams();
   const router = useRouter();
   const preview = usePreviewMode();
-  const stored = useHistory();
   const [q, setQ] = useState(params.get("q") ?? "");
   const [filter, setFilter] = useState<Filter>("all");
+  const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState(false);
-  const [removing, setRemoving] = useState<HistoryEntry | null>(null);
-
-  const rows: HistoryEntry[] = useMemo(
-    () =>
-      preview
-        ? [
-            {
-              id: PREVIEW_ID,
-              createdAt: "2026-11-04T09:12:00Z",
-              packId: "campus_block_c",
-              report: "Floor 3 pe WiFi nahi chal raha",
-              reporter: "Riya",
-              lastStatus: "investigating",
-            },
-          ]
-        : stored,
-    [preview, stored],
-  );
-
-  const filtered = rows.filter((r) => {
-    const s = r.lastStatus ?? "investigating";
-    if (filter === "active" && !ACTIVE.includes(s)) return false;
-    if (filter === "settled" && ACTIVE.includes(s)) return false;
-    const needle = q.trim().toLowerCase();
-    if (!needle) return true;
-    return [r.id, r.report, r.reporter, r.packId].some((v) => v.toLowerCase().includes(needle));
-  });
-
-  const counts = {
-    all: rows.length,
-    active: rows.filter((r) => ACTIVE.includes(r.lastStatus ?? "investigating")).length,
-    settled: rows.filter((r) => !ACTIVE.includes(r.lastStatus ?? "investigating")).length,
-  };
+  const needle = useDebounced(q, 250);
+  const query = useMemo(() => ({ status: STATUS_FILTER[filter], q: needle, limit: PAGE, offset: page * PAGE }), [filter, needle, page]);
+  const list = useInvestigationList(query);
+  const rows = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
+  const filtering = filter !== "all" || needle.trim() !== "";
 
   return (
     <div className="flex flex-col gap-5">
@@ -91,43 +82,50 @@ function InvestigationsInner() {
         }
       />
 
-      {!preview ? (
-        <Notice>
-          The core does not list investigations yet, so this history holds the ones started from this browser. Open any
-          other investigation by its ID.
-        </Notice>
-      ) : null}
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs<Filter>
           label="Filter investigations"
           value={filter}
-          onChange={setFilter}
+          onChange={(f) => {
+            setFilter(f);
+            setPage(0);
+          }}
           items={[
-            { value: "all", label: "All", count: counts.all },
-            { value: "active", label: "In progress", count: counts.active },
-            { value: "settled", label: "Settled", count: counts.settled },
+            { value: "all", label: "All", count: filter === "all" ? total : undefined },
+            { value: "active", label: "In progress", count: filter === "active" ? total : undefined },
+            { value: "settled", label: "Settled", count: filter === "settled" ? total : undefined },
           ]}
         />
         <div className="flex h-[38px] w-full max-w-[300px] items-center gap-2 rounded-full border-[0.8px] border-line px-3.5 focus-within:border-accent/60">
           <IconSearch className="h-4 w-4 text-muted" />
           <label htmlFor="inv-filter" className="sr-only">
-            Filter by report, reporter or ID
+            Search by report or ID
           </label>
           <input
             id="inv-filter"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
+              setPage(0);
               router.replace(`/app/investigations${e.target.value ? `?q=${encodeURIComponent(e.target.value)}` : ""}`, { scroll: false });
             }}
-            placeholder="Filter by report, reporter or ID"
+            placeholder="Search by report or ID"
             className="w-full bg-transparent text-[14px] outline-none placeholder:text-muted"
           />
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {list.status === "loading" ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
+          <Skeleton className="h-[160px]" />
+          <Skeleton className="h-[160px]" />
+          <Skeleton className="h-[160px]" />
+        </div>
+      ) : list.status === "error" ? (
+        <Card>
+          <ErrorState error={list.error} onRetry={list.reload} />
+        </Card>
+      ) : rows.length === 0 && !filtering && page === 0 ? (
         <Card>
           <EmptyState
             icon={<IconHistory />}
@@ -140,74 +138,83 @@ function InvestigationsInner() {
             }
           />
         </Card>
-      ) : filtered.length === 0 ? (
+      ) : rows.length === 0 ? (
         <Card>
-          <EmptyState title="No matches" body="Nothing matches this filter. Clear the search or pick another tab." action={<Button onClick={() => { setQ(""); setFilter("all"); }}>Clear filters</Button>} />
+          <EmptyState
+            title="No matches"
+            body="Nothing matches this filter. Clear the search or pick another tab."
+            action={
+              <Button
+                onClick={() => {
+                  setQ("");
+                  setFilter("all");
+                  setPage(0);
+                }}
+              >
+                Clear filters
+              </Button>
+            }
+          />
         </Card>
       ) : (
-        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((r) => {
-            const s = (r.lastStatus as InvestigationStatus) ?? "investigating";
-            return (
-              <li key={r.id} className="card group relative flex flex-col p-4 transition-colors hover:bg-card-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Badge tone={STATUS_TONE[s]} dot>
-                    {STATUS_LABEL[s]}
-                  </Badge>
-                  <span className="text-[12px] text-muted">{relative(r.createdAt)}</span>
-                </div>
-                <Link href={`/app/investigations/${r.id}`} className="mt-3 block text-[16px] leading-snug text-fg after:absolute after:inset-0 after:rounded-[16px]">
-                  &ldquo;{r.report}&rdquo;
-                </Link>
-                <p className="mt-1.5 text-[13px] text-muted">
-                  {r.reporter} · {r.packId}
-                </p>
-                <div className="relative z-10 mt-4 flex items-center justify-between gap-2 border-t border-line pt-3">
-                  <span className="truncate font-mono text-[11px] text-muted">{r.id}</span>
-                  <div className="flex items-center gap-1">
-                    <Link href={`/app/investigations/${r.id}/replay`} className="rounded-full px-2.5 py-1 text-[12px] text-fg-2 hover:bg-white/[.06]">
-                      Replay
-                    </Link>
-                    {!preview ? (
-                      <button
-                        type="button"
-                        onClick={() => setRemoving(r)}
-                        className="grid h-7 w-7 place-items-center rounded-full text-muted hover:bg-white/[.06] hover:text-bad"
-                        aria-label={`Remove ${r.id} from this browser's history`}
-                      >
-                        <IconTrash className="h-4 w-4" />
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Investigations">
+            {rows.map((r) => (
+              <InvestigationCard key={r.id} r={r} />
+            ))}
+          </ul>
+          {total > PAGE ? (
+            <nav className="flex items-center justify-between gap-3 text-[13px] text-muted" aria-label="Pages">
+              <span>
+                {page * PAGE + 1} to {Math.min(total, (page + 1) * PAGE)} of {total}
+              </span>
+              <span className="flex gap-2">
+                <Button size="sm" onClick={() => setPage((p) => p - 1)} disabled={page === 0}>
+                  Previous
+                </Button>
+                <Button size="sm" onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * PAGE >= total}>
+                  Next
+                </Button>
+              </span>
+            </nav>
+          ) : null}
+        </>
       )}
 
       <OpenByIdDialog open={openId} onClose={() => setOpenId(false)} />
-      <Dialog
-        open={!!removing}
-        onClose={() => setRemoving(null)}
-        title="Remove from history?"
-        description="This only forgets the link in this browser. The investigation itself stays in the core."
-        footer={
-          <>
-            <Button onClick={() => setRemoving(null)}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                if (removing) history.remove(removing.id);
-                setRemoving(null);
-              }}
-            >
-              Remove
-            </Button>
-          </>
-        }
-      />
     </div>
+  );
+}
+
+function InvestigationCard({ r }: { r: InvestigationSummary }) {
+  const people = r.participant_count === 1 ? "1 person" : `${r.participant_count} people`;
+  return (
+    <li className="card group relative flex flex-col p-4 transition-colors hover:bg-card-2">
+      <div className="flex items-center justify-between gap-2">
+        <Badge tone={STATUS_TONE[r.status]} dot>
+          {STATUS_LABEL[r.status]}
+        </Badge>
+        <span className="text-[12px] text-muted">{relative(r.created_at)}</span>
+      </div>
+      <Link href={`/app/investigations/${r.id}`} className="mt-3 block text-[16px] leading-snug text-fg after:absolute after:inset-0 after:rounded-[16px]">
+        &ldquo;{r.report_text}&rdquo;
+      </Link>
+      <p className="mt-1.5 text-[13px] text-muted">
+        {r.reporter_id} · {people} · {r.pack_id}
+      </p>
+      {r.decision_class ? (
+        <p className="mt-1 text-[13px] text-fg-2">
+          {r.decision_class}
+          {r.decision_probability != null ? ` at P = ${r.decision_probability.toFixed(2)}` : ""}
+        </p>
+      ) : null}
+      <div className="relative z-10 mt-4 flex items-center justify-between gap-2 border-t border-line pt-3">
+        <span className="truncate font-mono text-[11px] text-muted">{r.id}</span>
+        <Link href={`/app/investigations/${r.id}/replay`} className="rounded-full px-2.5 py-1 text-[12px] text-fg-2 hover:bg-white/[.06]">
+          Replay
+        </Link>
+      </div>
+    </li>
   );
 }
 

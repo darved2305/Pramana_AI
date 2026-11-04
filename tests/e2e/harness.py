@@ -121,6 +121,8 @@ class Services:
     oracle_key: str
     sim: Process
     core: Process
+    automation_key: str = ""
+    """The core enforces sign-in (docs/adr/0010); the harness acts through the automation key."""
 
     def wait_ready(self, proc: Process, url: str, timeout_s: float = 60.0) -> None:
         deadline = time.monotonic() + timeout_s
@@ -144,4 +146,9 @@ class Services:
         self.wait_ready(self.core, f"{self.core_url}/ready")
 
     def client(self, base: str) -> httpx.Client:
-        return httpx.Client(base_url=base, timeout=30)
+        headers = (
+            {"X-Automation-Key": self.automation_key}
+            if base == self.core_url and self.automation_key
+            else {}
+        )
+        return httpx.Client(base_url=base, timeout=30, headers=headers)

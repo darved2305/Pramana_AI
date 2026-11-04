@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { clsx } from "clsx";
 import {
   Badge,
@@ -26,10 +26,10 @@ import { IconArrowLeft, IconArrowRight, IconCheck, IconPlus, IconUsers } from "@
 import { BuildingMap } from "@/components/app/BuildingMap";
 import { Avatar } from "@/components/app/Avatar";
 import { ParticipantForm, TEMPLATE_LANGS, langLabel, roleLabel } from "@/components/app/ParticipantForm";
-import { usePack } from "@/lib/data/hooks";
-import { core, KNOWN_PACKS } from "@/lib/api/core";
+import { useDirectory, usePack, usePacks } from "@/lib/data/hooks";
+import { core, DEFAULT_PACK } from "@/lib/api/core";
 import { describeError } from "@/lib/api/http";
-import { history, roster, usePreviewMode, useRoster } from "@/lib/store/local";
+import { usePreviewMode } from "@/lib/store/local";
 import type { CreateInvestigation, ParticipantSpec, TemplateLanguage } from "@/lib/api/types";
 
 const STEPS = ["Site", "Problem", "Participants", "Languages", "Permissions", "Configuration", "Confirm"] as const;
@@ -38,16 +38,12 @@ type Step = (typeof STEPS)[number];
 export default function NewInvestigationPage() {
   const router = useRouter();
   const preview = usePreviewMode();
-  const stored = useRoster();
-  const [fixtures, setFixtures] = useState<ParticipantSpec[]>([]);
-  useEffect(() => {
-    if (preview) import("@/lib/preview/fixtures").then((f) => setFixtures(f.previewParticipants));
-  }, [preview]);
-  const people = preview ? fixtures : stored;
-
   const [step, setStep] = useState(0);
-  const [packId, setPackId] = useState<string>(KNOWN_PACKS[0]);
+  const [packId, setPackId] = useState<string>(DEFAULT_PACK);
   const pack = usePack(packId);
+  const packs = usePacks();
+  const directory = useDirectory(packId);
+  const people = useMemo(() => directory.data?.map((d) => d.participant) ?? [], [directory.data]);
   const [report, setReport] = useState("");
   const [affected, setAffected] = useState<string>("");
   const [chosen, setChosen] = useState<string[]>([]);
@@ -119,14 +115,6 @@ export default function NewInvestigationPage() {
     setSubmitError(null);
     try {
       const s = await core.createInvestigation(body);
-      history.add({
-        id: s.id,
-        createdAt: s.created_at,
-        packId: s.pack_id,
-        report: s.report.text,
-        reporter: participants.find((p) => p.id === reporter)?.display_name ?? reporter,
-        lastStatus: s.status,
-      });
       router.push(`/app/investigations/${s.id}`);
     } catch (e) {
       setSubmitError(e);
@@ -191,9 +179,9 @@ export default function NewInvestigationPage() {
                   <Field label="Site model">
                     {(a) => (
                       <Select {...a} value={packId} onChange={(e) => setPackId(e.target.value)}>
-                        {KNOWN_PACKS.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
+                        {(packs.data ?? [{ id: packId, title: packId }]).map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title} ({p.id})
                           </option>
                         ))}
                       </Select>
@@ -248,7 +236,7 @@ export default function NewInvestigationPage() {
               <EmptyState
                 icon={<IconUsers />}
                 title="No participants yet"
-                body="Add the people who can answer questions on site. They are saved to your roster for next time."
+                body="Add the people who can answer questions on site. They are saved to the site directory for next time."
                 action={
                   <Button variant="primary" onClick={() => setAdding(true)}>
                     <IconPlus className="h-4 w-4" /> Add participant
@@ -523,14 +511,16 @@ export default function NewInvestigationPage() {
         </div>
       </Card>
 
-      <Dialog wide open={adding} onClose={() => setAdding(false)} title="Add participant" description="Saved to your roster in this browser.">
+      <Dialog wide open={adding} onClose={() => setAdding(false)} title="Add participant" description="Saved to the site directory, so everyone on this site can call on them.">
         {adding ? (
           <ParticipantForm
             pack={pack.data}
             existingIds={people.map((p) => p.id)}
             onCancel={() => setAdding(false)}
-            onSubmit={(p) => {
-              roster.upsert(p);
+            onSubmit={async (p) => {
+              if (preview) throw new Error("The preview does not save participants.");
+              await core.addParticipant(packId, p);
+              directory.reload();
               setChosen((c) => [...c, p.id]);
               setAdding(false);
             }}

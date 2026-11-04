@@ -23,7 +23,8 @@ npm run typecheck
 npm run lint
 npm run check:copy   # fails on any em dash in frontend source
 npm run build
-npm run test:e2e     # Playwright; starts its own server on port 3012
+npm run test:e2e     # Playwright with mocked responses; own server on port 3012 (PW_PORT)
+npm run test:e2e:real  # Playwright against a real core, simulator and test database
 ```
 
 ## Layout
@@ -39,16 +40,27 @@ npm run test:e2e     # Playwright; starts its own server on port 3012
 | `src/lib/api/schema.gen.ts` | Generated from `services/core/openapi.json` with `npm run gen:api` |
 | `src/lib/data` | Data hooks (live or preview) and pure derivations |
 | `src/lib/preview` | Preview fixtures, loaded only in preview mode |
-| `src/lib/store` | Browser storage: history, roster, preferences, preview flag |
+| `src/lib/store` | Browser storage: display preferences and the preview flag |
 
-## What is not connected yet
+## Sign-in and data
 
-The core has no routes for these, so the screens say so instead of faking them:
+- **Staff sign in** at `/login` (email and password; the core sets an httpOnly session cookie,
+  docs/adr/0010-authentication.md). Create accounts with
+  `uv run python -m pramana_core.auth.bootstrap --email ... --name ... --roles operator,approver`.
+  Console pages send a signed-out visitor to `/login` and back afterwards.
+- **Approvals** record the signed-in approver; there is no name field to fill in.
+- **Participants** never sign in: the link from the command center carries their own token,
+  which the core accepts only for their own questions and actions.
+- **Investigations, the participant directory, site packs and benchmark runs** all come from
+  the core (`GET /v1/investigations`, `/v1/participants`, `/v1/packs`, `/v1/evaluation/reports`).
+  Only display preferences are stored in the browser.
+- Live updates poll the event log. `useInvestigation` takes an `EventSource`, so a push channel
+  can replace polling without touching the screens.
 
-- Sign-in. `src/lib/api/auth.ts` defines the boundary; every call fails with `AUTH_NOT_CONNECTED`.
-- Listing investigations. History holds the ones started from this browser; any other opens by ID.
-- A participant directory. The roster lives in this browser and is sent with each new investigation.
-- Evaluation results. The page renders a `summary.json` from `eval/reports` that you load.
+## Tests against a real backend
+
+`npm run test:e2e:real` migrates a fresh test database, starts the simulator, the core and this
+app, then drives the console and the participant pages end to end (`tests-real/`).
 
 ## Fonts
 

@@ -5,9 +5,19 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from pramana_contracts import PackSummary
+
+from ..directory import ConsoleQueries
 from ..investigations import InvestigationService
 
 router = APIRouter(prefix="/v1/packs", tags=["packs"])
+
+
+@router.get("")
+async def list_packs(request: Request) -> list[PackSummary]:
+    """Every valid pack in ``packs/``. Public: packs hold documented layout, no secrets."""
+    q: ConsoleQueries = request.app.state.console
+    return q.list_packs()
 
 
 @router.get("/{pack_id}")

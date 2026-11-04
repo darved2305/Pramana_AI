@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Card, CardHeader, Dialog, Field, Input, KeyValue, Notice, PageHeader, Select, Skeleton, Switch } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, Dialog, Field, KeyValue, Notice, PageHeader, Select, Skeleton, Switch } from "@/components/ui";
 import { useCoreHealth, useVoiceStatus } from "@/lib/data/hooks";
 import { clearLocalData, prefs, previewMode, usePrefs, usePreviewMode } from "@/lib/store/local";
 import { describeError } from "@/lib/api/http";
@@ -14,8 +14,6 @@ export default function SettingsPage() {
   const preview = usePreviewMode();
   const router = useRouter();
   const [confirmClear, setConfirmClear] = useState(false);
-  const [approver, setApprover] = useState(p.approverId);
-  const [saved, setSaved] = useState(false);
 
   return (
     <div className="flex flex-col gap-5">
@@ -72,23 +70,6 @@ export default function SettingsPage() {
               onChange={(v) => prefs.set({ reduceMotion: v })}
             />
           </div>
-          <div className="mt-6 border-t border-line pt-5">
-            <CardHeader title="Approvals" subtitle="Used to attribute approval decisions you make in the console." />
-            <form
-              className="mt-3 flex items-end gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                prefs.set({ approverId: approver.trim() });
-                setSaved(true);
-                setTimeout(() => setSaved(false), 1500);
-              }}
-            >
-              <div className="flex-1">
-                <Field label="Approver name or ID">{(a) => <Input {...a} value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="facilities_lead" />}</Field>
-              </div>
-              <Button type="submit">{saved ? "Saved" : "Save"}</Button>
-            </form>
-          </div>
         </Card>
 
         <Card className="p-5">
@@ -111,7 +92,7 @@ export default function SettingsPage() {
         </Card>
 
         <Card className="p-5">
-          <CardHeader title="Local data" subtitle="Investigation history, participant roster and preferences kept in this browser." />
+          <CardHeader title="Local data" subtitle="Display preferences kept in this browser. Investigations and participants live in the core." />
           <Notice className="mt-4">Clearing this does not delete anything in the core.</Notice>
           <Button variant="danger" className="mt-4" onClick={() => setConfirmClear(true)}>
             Clear local data
@@ -123,7 +104,7 @@ export default function SettingsPage() {
         open={confirmClear}
         onClose={() => setConfirmClear(false)}
         title="Clear local data?"
-        description="Your roster, the list of investigations started here and your preferences will be removed from this browser."
+        description="Your display preferences will be reset in this browser. Nothing in the core changes."
         footer={
           <>
             <Button onClick={() => setConfirmClear(false)}>Cancel</Button>

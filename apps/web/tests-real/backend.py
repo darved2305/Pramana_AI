@@ -1,0 +1,106 @@
+"""Start a real simulator or core for the browser end-to-end tests.
+
+    uv run python tests-real/backend.py sim
+    uv run python tests-real/backend.py core   # recreates the test database first
+
+Configuration comes from the environment set by playwright.real.config.ts: fresh keys for
+every run, a dedicated database (``E2E_DATABASE``, never the development one) and test users.
+Nothing here is mocked: the core talks to the simulator over HTTP and to PostgreSQL.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+from pathlib import Path
+
+import uvicorn
+
+ROOT = Path(__file__).resolve().parents[3]
+CORE_DIR = ROOT / "services" / "core"
+
+
+def _db_url() -> str:
+    name = os.environ["E2E_DATABASE"]
+    if not name.startswith("pramana_") or name in ("pramana", "pramana_test"):
+        raise SystemExit(f"refusing to reset database {name!r}: use a dedicated e2e database")
+    port = os.environ.get("PRAMANA_DB_PORT", "5433")
+    return f"postgresql+asyncpg://pramana@localhost:{port}/{name}"
+
+
+def _ensure_database() -> None:
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import dev_db  # type: ignore[import-not-found]
+
+    dev_db.run(
+        dev_db.pg_bin("createdb"),
+        "-h",
+        "localhost",
+        "-p",
+        str(dev_db.PORT),
+        "-U",
+        dev_db.USER,
+        os.environ["E2E_DATABASE"],
+        check=False,  # already exists
+    )
+
+
+def _migrate(url: str) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config(str(CORE_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(CORE_DIR / "alembic"))
+    cfg.attributes["url"] = url
+    command.downgrade(cfg, "base")
+    command.upgrade(cfg, "head")
+
+
+async def _users(url: str) -> None:
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from pramana_contracts import StaffRole
+    from pramana_core.auth.service import AuthService, LoginThrottle
+    from pramana_core.db import Database
+
+    db = Database(create_async_engine(url))
+    try:
+        svc = AuthService(db, 3600, LoginThrottle(50, 60))
+        password = os.environ["E2E_PASSWORD"]
+        await svc.create_user("operator@e2e.test", "Olu Operator", password, [StaffRole.OPERATOR])
+        await svc.create_user("approver@e2e.test", "Asha Approver", password, [StaffRole.APPROVER])
+    finally:
+        await db.dispose()
+
+
+def main() -> None:
+    which = sys.argv[1]
+    if which == "sim":
+        os.environ["SIM_PORT"] = os.environ.get("E2E_SIM_PORT", "8120")
+        uvicorn.run(
+            "pramana_sim.app:create_app",
+            factory=True,
+            host="127.0.0.1",
+            port=int(os.environ["SIM_PORT"]),
+            log_level="warning",
+        )
+        return
+    if which != "core":
+        raise SystemExit("usage: backend.py sim|core")
+    url = _db_url()
+    _ensure_database()
+    _migrate(url)
+    asyncio.run(_users(url))
+    os.environ["DATABASE_URL"] = url
+    uvicorn.run(
+        "pramana_core.main:create_app",
+        factory=True,
+        host="127.0.0.1",
+        port=int(os.environ.get("E2E_CORE_PORT", "8020")),
+        log_level="warning",
+    )
+
+
+if __name__ == "__main__":
+    main()

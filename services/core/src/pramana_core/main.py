@@ -13,12 +13,18 @@ from fastapi.responses import JSONResponse
 from pramana_contracts import CONTRACTS_VERSION
 from pramana_domain import load_pack
 
+from .api import auth as auth_api
+from .api import directory as directory_api
+from .api import evaluation as evaluation_api
 from .api import investigations as investigations_api
 from .api import packs as packs_api
 from .api import stream as stream_api
 from .api import voice as voice_api
 from .api import voice_turns as voice_turns_api
+from .auth.deps import participant_public_key
+from .auth.service import AuthService, LoginThrottle
 from .db import Database, make_engine
+from .directory import make_queries
 from .errors import install_error_handlers
 from .investigations import InvestigationService
 from .language.extraction import RuleExtractor
@@ -102,6 +108,13 @@ def create_app(
             cfg.participant_signing_key.get_secret_value(),
             browser_sim_url=cfg.browser_sim_url,
         )
+        app.state.auth = AuthService(
+            db, cfg.session_ttl_s, LoginThrottle(cfg.login_max_failures, cfg.login_lockout_s)
+        )
+        app.state.participant_public_key = participant_public_key(
+            cfg.participant_signing_key.get_secret_value()
+        )
+        app.state.console = make_queries(db, cfg.eval_reports_dir)
         broadcaster = EventBroadcaster()
         db.commit_listeners.append(broadcaster.publish)
         app.state.broadcaster = broadcaster
@@ -109,7 +122,12 @@ def create_app(
         app.state.recovery = (
             (await recover(app.state.investigations)).as_dict() if cfg.recover_on_startup else None
         )
-        log.info("startup", mode=cfg.mode, gnani_configured=gnani.configured)
+        log.info(
+            "startup",
+            mode=cfg.mode,
+            gnani_configured=gnani.configured,
+            auth_enforced=cfg.enforce_auth,
+        )
         try:
             yield
         finally:
@@ -124,8 +142,8 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type", "X-Request-ID"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Content-Type", "X-Request-ID", "X-Pramana-CSRF", "Authorization"],
         expose_headers=["X-Request-ID"],
     )
     install_error_handlers(app)
@@ -157,7 +175,10 @@ def create_app(
             status_code=200 if ok else 503,
         )
 
+    app.include_router(auth_api.router)
     app.include_router(investigations_api.router)
+    app.include_router(directory_api.router)
+    app.include_router(evaluation_api.router)
     app.include_router(stream_api.router)
     app.include_router(packs_api.router)
     app.include_router(voice_api.router)

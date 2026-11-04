@@ -1,0 +1,25 @@
+{
+  "git_sha": "e2efixture",
+  "seeds": [1, 2],
+  "scenario_mix": { "single": 2 },
+  "note": "Test fixture for the browser tests. Not a benchmark result.",
+  "policies": {
+    "E_ours": {
+      "n": 2,
+      "failed_runs": 0,
+      "success_rate": 0.5,
+      "decision_accuracy": 0.5,
+      "decided": 2,
+      "accuracy_on_identifiable": 0.5,
+      "false_confidence_rate": 0.0,
+      "abstention_recall": null,
+      "abstention_precision": null,
+      "probes_mean": 4.0,
+      "probes_median": 4.0,
+      "effort_s_mean": 100.0,
+      "people_mean": 2.0,
+      "hit_step_limit": 0
+    }
+  },
+  "paired_vs_E": {}
+}

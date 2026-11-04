@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Header, Query, Request
 from pydantic import BaseModel
 
+from ..auth.deps import authorize_read
 from ..errors import ApiError
 from ..investigations import InvestigationService
 from ..runtime.broadcast import EventBroadcaster, TooManySubscribersError
@@ -51,6 +52,7 @@ async def stream_events(
 ) -> EventStreamResponse:
     """Push the investigation's events: backfill after ``after_seq`` (or the browser's
     ``Last-Event-ID``, whichever is later), then follow new events live."""
+    await authorize_read(request, inv_id)
     svc: InvestigationService = request.app.state.investigations
     broadcaster: EventBroadcaster = request.app.state.broadcaster
     cfg = request.app.state.settings
@@ -82,6 +84,7 @@ async def stream_events(
 @router.get("/{inv_id}/replay")
 async def replay_check(inv_id: str, request: Request) -> ReplayResult:
     """Rebuild the investigation from its event log and compare with the recorded belief."""
+    await authorize_read(request, inv_id)
     svc: InvestigationService = request.app.state.investigations
     check = await svc.replay(inv_id)
     return ReplayResult(

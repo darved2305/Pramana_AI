@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
-import { Badge, Button, Card, CardHeader, EmptyState, Notice, PageHeader, PreviewBadge } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Notice, PageHeader, PreviewBadge, Select } from "@/components/ui";
 import { IconChart, IconUpload } from "@/components/ui/icons";
 import { usePreviewMode } from "@/lib/store/local";
+import { useEvaluationReport, useEvaluationReports } from "@/lib/data/hooks";
 
 /** Shape written by eval/src/pramana_eval/runner.py `summarize()`. */
 interface PolicySummary {
@@ -52,10 +53,17 @@ export default function EvaluationPage() {
   const preview = usePreviewMode();
   const [loaded, setData] = useState<{ summary: Summary; name: string; sample: boolean } | null>(null);
   // Preview sample data never outlives preview mode.
-  const data = loaded?.sample && !preview ? null : loaded;
+  const fromFile = loaded?.sample && !preview ? null : loaded;
   const [err, setErr] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const runs = useEvaluationReports(!preview);
+  const [picked, setPicked] = useState<string | null>(null);
+  // The newest run is shown until another is chosen or a file is loaded.
+  const runId = preview ? null : (picked ?? runs.data?.[0]?.run_id ?? null);
+  const report = useEvaluationReport(loaded && !loaded.sample ? null : runId);
+  const served =
+    report.status === "ready" ? { summary: report.data.summary as unknown as Summary, name: `eval/reports/${report.data.run_id}`, sample: false } : null;
 
   useEffect(() => {
     if (!preview) return;
@@ -71,6 +79,7 @@ export default function EvaluationPage() {
     }
   };
 
+  const data = fromFile ?? served;
   const policies = data ? Object.entries(data.summary.policies) : [];
 
   return (
@@ -78,11 +87,35 @@ export default function EvaluationPage() {
       <PageHeader
         title="Evaluation"
         eyebrow={data?.sample ? <PreviewBadge /> : undefined}
-        subtitle="Benchmark results from the evaluation harness. Results are only shown from a report you load; nothing is computed or estimated here."
+        subtitle="Benchmark results from the evaluation harness, exactly as it wrote them. Nothing is computed or estimated here."
         actions={
-          <Button variant="primary" size="lg" onClick={() => input.current?.click()}>
-            <IconUpload className="h-4 w-4" /> Load summary.json
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {!preview && runs.data && runs.data.length ? (
+              <div className="w-[240px]">
+                <label htmlFor="run" className="sr-only">
+                  Benchmark run
+                </label>
+                <Select
+                  id="run"
+                  value={runId ?? ""}
+                  onChange={(e) => {
+                    setData(null);
+                    setPicked(e.target.value);
+                  }}
+                >
+                  {runs.data.map((r) => (
+                    <option key={r.run_id} value={r.run_id}>
+                      {r.run_id}
+                      {r.git_sha ? ` (${r.git_sha})` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : null}
+            <Button size="lg" onClick={() => input.current?.click()}>
+              <IconUpload className="h-4 w-4" /> Open a local file
+            </Button>
+          </div>
         }
       />
       <input
@@ -98,8 +131,24 @@ export default function EvaluationPage() {
         }}
       />
       {err ? <Notice tone="bad" title="Could not load the report">{err}</Notice> : null}
+      {!preview && runs.status === "error" ? (
+        <Card>
+          <ErrorState error={runs.error} onRetry={runs.reload} />
+        </Card>
+      ) : null}
+      {report.status === "error" ? (
+        <Card>
+          <ErrorState error={report.error} onRetry={report.reload} />
+        </Card>
+      ) : null}
 
-      {!data ? (
+      {!data && !preview && (runs.status === "loading" || (runId !== null && report.status === "loading")) ? (
+        <Card>
+          <p className="p-6 text-[14px] text-muted" aria-busy="true">
+            Loading reports...
+          </p>
+        </Card>
+      ) : !data ? (
         <Card
           className={clsx("border-dashed transition-colors", drag && "border-accent bg-accent-soft")}
           onDragOver={(e: React.DragEvent) => {
@@ -116,11 +165,11 @@ export default function EvaluationPage() {
         >
           <EmptyState
             icon={<IconChart />}
-            title="No report loaded"
+            title="No benchmark runs yet"
             body={
               <>
-                Run the benchmark, then drop its <code className="font-mono text-fg-2">eval/reports/&lt;run&gt;/summary.json</code> here. The core
-                does not serve evaluation results yet.
+                Run the benchmark with <code className="font-mono text-fg-2">python -m pramana_eval --out eval/reports/&lt;run&gt;</code>. Its runs
+                appear here. You can also drop a <code className="font-mono text-fg-2">summary.json</code> from another machine.
               </>
             }
             action={<Button onClick={() => input.current?.click()}>Choose a file</Button>}

@@ -12,7 +12,8 @@ import { sim } from "@/lib/api/sim";
 import { ApiError, describeError } from "@/lib/api/http";
 import { decodeJoin, type JoinPayload } from "@/lib/join";
 import { startRecording, type Recording } from "@/lib/audio/recorder";
-import type { Approval, InvestigationState, ParticipantView } from "@/lib/api/types";
+import { QuestionMediaSession } from "@/lib/audio/media";
+import type { AnswerResult, Approval, InvestigationState, ParticipantView } from "@/lib/api/types";
 import { outcomeWord } from "@/lib/data/derive";
 
 export default function JoinPage() {
@@ -63,10 +64,12 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const [error, setError] = useState<unknown>(null);
   const [understood, setUnderstood] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [text, setText] = useState("");
   const [moved, setMoved] = useState<string | null>(null);
   const recRef = useRef<Recording | null>(null);
+  const liveRef = useRef<QuestionMediaSession | null>(null);
   const levelRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -77,7 +80,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         setView({ location_label: "the guard desk", items: [{ label: "Hostel Wi-Fi on your phone", value: "connected" }, { label: "Lights", value: "on" }], reachable_locations: [] });
         return;
       }
-      const s = await core.getInvestigation(payload.i);
+      const s = await core.getInvestigation(payload.i, undefined, payload.t);
       setState(s);
       setError(null);
       sim.view(payload.s, payload.t).then(setView).catch(() => setView(null));
@@ -95,7 +98,13 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     return () => clearInterval(id);
   }, [load, preview]);
 
-  useEffect(() => () => recRef.current?.cancel(), []);
+  useEffect(
+    () => () => {
+      recRef.current?.cancel();
+      liveRef.current?.close();
+    },
+    [],
+  );
 
   if (error && !state)
     return (
@@ -129,7 +138,11 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     }
     setPhase("sending");
     try {
-      const r = await core.answer(state.id, { question_id: q.id, participant_id: payload.p, ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }) });
+      const r = await core.answer(
+        state.id,
+        { question_id: q.id, participant_id: payload.p, ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }) },
+        payload.t,
+      );
       setUnderstood(`I understood: ${outcomeWord(r.extraction.outcome)}`);
       setText("");
       setState(r.state);
@@ -140,9 +153,89 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     }
   };
 
+  /**
+   * Live voice over the media socket: the microphone streams to the core while the person
+   * speaks, and the answer is recorded as soon as they stop. Returns false if the socket
+   * cannot be used, so the caller falls back to recording a clip and uploading it.
+   */
+  const startLive = async (question: NonNullable<typeof q>): Promise<boolean> => {
+    let heard = "";
+    let finished = false;
+    setHint(null);
+    const done = (session: QuestionMediaSession) => {
+      finished = true;
+      setHint(null);
+      session.close();
+      if (liveRef.current === session) liveRef.current = null;
+      levelRef.current = 0;
+      setPhase("idle");
+    };
+    const session: QuestionMediaSession = new QuestionMediaSession(
+      payload.i,
+      question.id,
+      payload.t,
+      {
+        onLevel: (rms) => {
+          levelRef.current = rms;
+        },
+        onTranscript: (t) => {
+          heard = t.text;
+        },
+        onAnswer: (result) => {
+          const r = result as AnswerResult;
+          setUnderstood(`I heard "${heard}" and understood: ${outcomeWord(r.extraction.outcome)}`);
+          setState(r.state);
+          done(session);
+        },
+        onEmptyTranscript: () => {
+          setMsg("Nothing was heard. Please try again a little closer to the microphone.");
+          done(session);
+        },
+        onError: (e) => {
+          if (!e.fatal) return;
+          setMsg(describeError(new ApiError(e.status, e.code, e.message, null)));
+          done(session);
+        },
+        // The call runtime asks again after a silence; show what it said.
+        onReprompt: (text) => setHint(text || "Are you still there? Please answer when you are ready."),
+        onClose: (code) => {
+          if (finished) return;
+          // 4408: twenty seconds of silence. The question stays open, so they can simply retry.
+          setMsg(
+            code === 4408
+              ? "We could not hear you. Tap Answer by voice and try again, or answer by tapping or typing."
+              : code === 1000
+                ? null
+                : "The voice connection closed. Try again, or answer by tapping or typing.",
+          );
+          done(session);
+        },
+      },
+      { playQuestion: false },
+    );
+    try {
+      await Promise.race([
+        session.connect(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("media socket timeout")), 4000)),
+      ]);
+      await session.startMic();
+    } catch {
+      session.close();
+      return false;
+    }
+    liveRef.current = session;
+    setPhase("recording");
+    return true;
+  };
+
   const toggleVoice = async () => {
     if (!q) return;
     setMsg(null);
+    if (phase === "recording" && liveRef.current) {
+      setPhase("sending");
+      liveRef.current.commit();
+      return;
+    }
     if (phase === "recording") {
       const rec = recRef.current;
       recRef.current = null;
@@ -153,7 +246,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         if (preview) {
           setUnderstood("Recorded. (Preview: nothing was sent.)");
         } else {
-          const r = await core.answerByVoice(state.id, q.id, payload.p, wav);
+          const r = await core.answerByVoice(state.id, q.id, payload.p, wav, payload.t);
           setUnderstood(`I heard "${r.stt.transcript}" and understood: ${outcomeWord(r.result.extraction.outcome)}`);
           setState(r.result.state);
         }
@@ -165,6 +258,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       }
       return;
     }
+    if (!preview && (await startLive(q))) return;
     try {
       const rec = await startRecording();
       recRef.current = rec;
@@ -180,7 +274,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       return;
     }
     try {
-      const blob = await core.questionAudio(state.id, q.id);
+      const blob = await core.questionAudio(state.id, q.id, payload.t);
       const url = URL.createObjectURL(blob);
       const a = new Audio(url);
       a.onended = () => URL.revokeObjectURL(url);
@@ -200,7 +294,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         <VoiceField
           modes={["lens"]}
           className="absolute inset-0 h-full w-full"
-          level={phase === "recording" ? () => recRef.current?.level() ?? 0 : undefined}
+          level={phase === "recording" ? () => recRef.current?.level() ?? levelRef.current : undefined}
           ariaLabel={phase === "recording" ? "Microphone level" : "Decorative waveform"}
         />
       </div>
@@ -295,6 +389,11 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         </section>
       )}
 
+      {hint ? (
+        <p aria-live="polite" className="mt-5 rounded-[14px] bg-cream/10 px-4 py-3 text-[15px] text-cream">
+          {hint}
+        </p>
+      ) : null}
       {understood ? (
         <p role="status" className="mt-5 rounded-[14px] bg-ok/10 px-4 py-3 text-[15px] text-ok">
           {understood}
@@ -339,7 +438,8 @@ function Repair({
   preview: boolean;
   onState: (s: InvestigationState) => void;
 }) {
-  const [cap, setCap] = useState<{ capability: string; instructions: string; expires_at: string } | null>(null);
+  const [cap, setCap] = useState<{ capability: string; instructions: string; expires_at: string; location_id?: string | null } | null>(null);
+  const [there, setThere] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -357,7 +457,7 @@ function Repair({
             setBusy(true);
             setErr(null);
             try {
-              setCap(await core.collectCapability(state.id, approval.id, payload.p));
+              setCap(await core.collectCapability(state.id, approval.id, payload.p, payload.t));
             } catch (e) {
               setErr(describeError(e));
             } finally {
@@ -371,6 +471,27 @@ function Repair({
         <div className="mt-6 rounded-[16px] border-[0.8px] border-cream/20 p-4">
           <p className="text-[16px]">{cap.instructions}</p>
           <p className="mt-2 text-[13px] text-cream/60">Valid until {new Date(cap.expires_at).toLocaleTimeString()}.</p>
+          {cap.location_id && !there ? (
+            <button
+              type="button"
+              className="btn-line lg mt-4 w-full bg-cream !text-ink"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setErr(null);
+                try {
+                  await sim.move(payload.s, payload.t, cap.location_id as string);
+                  setThere(true);
+                } catch (e) {
+                  setErr(describeError(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              I am at the panel
+            </button>
+          ) : (
           <button
             type="button"
             className="btn-line lg mt-4 w-full"
@@ -380,7 +501,7 @@ function Repair({
               setErr(null);
               try {
                 await sim.act(payload.s, payload.t, { action: approval.action, target: approval.target, capability: cap.capability });
-                onState(await core.reportIntervention(state.id, { approval_id: approval.id, participant_id: payload.p }));
+                onState(await core.reportIntervention(state.id, { approval_id: approval.id, participant_id: payload.p }, payload.t));
               } catch (e) {
                 setErr(describeError(e));
               } finally {
@@ -390,6 +511,7 @@ function Repair({
           >
             I have done it
           </button>
+          )}
         </div>
       )}
       {err ? <p role="alert" className="mt-4 text-[14px] text-[#ff8a7f]">{err}</p> : null}

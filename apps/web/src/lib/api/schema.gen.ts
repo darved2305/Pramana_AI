@@ -44,7 +44,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/investigations": {
+    "/v1/auth/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -52,6 +52,104 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        put?: never;
+        /**
+         * Login
+         * @description Sign in. Sets the ``pramana_session`` cookie (httpOnly, SameSite=Lax).
+         */
+        post: operations["login_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session
+         * @description Who is signed in. ``401 AUTH_REQUIRED`` when nobody is.
+         */
+        get: operations["get_session_v1_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/evaluation/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reports
+         * @description Runs found under ``eval/reports/*\/summary.json`` (``EVAL_REPORTS_DIR``), newest first.
+         */
+        get: operations["list_reports_v1_evaluation_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/evaluation/reports/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Report */
+        get: operations["get_report_v1_evaluation_reports__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/investigations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Investigations
+         * @description Newest first. ``status`` may repeat; ``q`` searches the report text and the id.
+         */
+        get: operations["list_investigations_v1_investigations_get"];
         put?: never;
         /** Create Investigation */
         post: operations["create_investigation_v1_investigations_post"];
@@ -161,7 +259,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Decide Approval */
+        /**
+         * Decide Approval
+         * @description Needs the approver role. The approval records the signed-in approver; a free-text
+         *     ``approver_id`` is used only when sign-in is not enforced (tests).
+         */
         post: operations["decide_approval_v1_investigations__inv_id__approvals__approval_id__decision_post"];
         delete?: never;
         options?: never;
@@ -217,7 +319,8 @@ export interface paths {
         put?: never;
         /**
          * Participant Token
-         * @description Mint the participant's simulator token (development console; no auth in this slice).
+         * @description Mint the participant's join token (operator only). It works at the simulator and, for
+         *     that participant's own answers and actions, at the core.
          */
         post: operations["participant_token_v1_investigations__inv_id__participants__participant_id__token_post"];
         delete?: never;
@@ -304,6 +407,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Packs
+         * @description Every valid pack in ``packs/``. Public: packs hold documented layout, no secrets.
+         */
+        get: operations["list_packs_v1_packs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/packs/{pack_id}": {
         parameters: {
             query?: never;
@@ -319,6 +442,49 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/participants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Participants */
+        get: operations["list_participants_v1_participants_get"];
+        put?: never;
+        /**
+         * Add Participant
+         * @description Add a person. ``409 PARTICIPANT_EXISTS`` when the id is taken for this pack.
+         */
+        post: operations["add_participant_v1_participants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/participants/{participant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Participant */
+        get: operations["get_participant_v1_participants__participant_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Participant
+         * @description Remove a person from the directory. Past investigations keep their own copy.
+         */
+        delete: operations["delete_participant_v1_participants__participant_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Participant */
+        patch: operations["update_participant_v1_participants__participant_id__patch"];
         trace?: never;
     };
     "/v1/voice/status": {
@@ -437,7 +603,7 @@ export interface components {
         /** ApprovalDecision */
         ApprovalDecision: {
             /** Approver Id */
-            approver_id: string;
+            approver_id?: string | null;
             /**
              * Decision
              * @enum {string}
@@ -451,6 +617,27 @@ export interface components {
          * @enum {string}
          */
         ApprovalStatus: "pending" | "approved" | "denied" | "executed";
+        /** AuthSession */
+        AuthSession: {
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Method
+             * @default session
+             */
+            method?: string;
+            /** Roles */
+            roles: components["schemas"]["StaffRole"][];
+            /** User Id */
+            user_id: string;
+        };
         /** BeliefSnapshot */
         BeliefSnapshot: {
             /** Decision Entropy Bits */
@@ -534,6 +721,8 @@ export interface components {
             expires_at: string;
             /** Instructions */
             instructions: string;
+            /** Location Id */
+            location_id?: string | null;
             /** Scenario Id */
             scenario_id: string;
             /** Sim Url */
@@ -564,6 +753,55 @@ export interface components {
          * @enum {string}
          */
         Directness: "direct" | "hearsay" | "assumption";
+        /**
+         * DirectoryParticipant
+         * @description A person in the site directory, ready to be added to an investigation.
+         */
+        DirectoryParticipant: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Pack Id */
+            pack_id: string;
+            participant: components["schemas"]["ParticipantSpec"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** EvaluationReport */
+        EvaluationReport: {
+            /**
+             * Modified At
+             * Format: date-time
+             */
+            modified_at: string;
+            /** Run Id */
+            run_id: string;
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+        };
+        /** EvaluationReportSummary */
+        EvaluationReportSummary: {
+            /** Git Sha */
+            git_sha?: string | null;
+            /**
+             * Modified At
+             * Format: date-time
+             */
+            modified_at: string;
+            /** Policies */
+            policies: string[];
+            /** Run Id */
+            run_id: string;
+            /** Seeds */
+            seeds?: number[] | null;
+        };
         /** EventEnvelope */
         EventEnvelope: {
             /** Investigation Id */
@@ -665,6 +903,17 @@ export interface components {
             /** Reasons */
             reasons: string[];
         };
+        /** InvestigationPage */
+        InvestigationPage: {
+            /** Items */
+            items: components["schemas"]["InvestigationSummary"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** InvestigationState */
         InvestigationState: {
             /** Approvals */
@@ -698,6 +947,34 @@ export interface components {
          * @enum {string}
          */
         InvestigationStatus: "investigating" | "decided" | "abstained" | "awaiting_approval" | "acting" | "verifying" | "verified" | "not_verified" | "closed";
+        /** InvestigationSummary */
+        InvestigationSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decision Class */
+            decision_class?: string | null;
+            /** Decision Probability */
+            decision_probability?: number | null;
+            /** Id */
+            id: string;
+            /** Pack Id */
+            pack_id: string;
+            /** Participant Count */
+            participant_count: number;
+            /** Report Text */
+            report_text: string;
+            /** Reporter Id */
+            reporter_id: string;
+            status: components["schemas"]["InvestigationStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * LanguageProfile
          * @description How we speak to and listen to one participant.
@@ -719,6 +996,13 @@ export interface components {
              * @enum {string}
              */
             template_language?: "en" | "hi" | "mr" | "hi-en";
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
         };
         /**
          * Modality
@@ -780,6 +1064,37 @@ export interface components {
             top_hypothesis: string;
             /** Top Hypothesis Probability */
             top_hypothesis_probability: number;
+        };
+        /** PackSummary */
+        PackSummary: {
+            /** Id */
+            id: string;
+            /** Locations */
+            locations: number;
+            /** Probes */
+            probes: number;
+            /** Title */
+            title: string;
+            /** Version */
+            version: string;
+        };
+        /**
+         * ParticipantPatch
+         * @description Fields to change on a directory entry. The id never changes.
+         */
+        ParticipantPatch: {
+            /** Available */
+            available?: boolean | null;
+            /** Display Name */
+            display_name?: string | null;
+            languages?: components["schemas"]["LanguageProfile"] | null;
+            /** Location Id */
+            location_id?: string | null;
+            /** Question Budget */
+            question_budget?: number | null;
+            /** Roles */
+            roles?: components["schemas"]["Role"][] | null;
+            skill?: components["schemas"]["Skill"] | null;
         };
         /**
          * ParticipantSpec
@@ -979,6 +1294,12 @@ export interface components {
          * @enum {string}
          */
         Skill: "lay" | "access" | "technician";
+        /**
+         * StaffRole
+         * @description What a signed-in person may do. Participants never sign in: they hold a signed link.
+         * @enum {string}
+         */
+        StaffRole: "operator" | "approver";
         /** SttResult */
         SttResult: {
             /** Audio Ms */
@@ -1113,6 +1434,162 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    login_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_session_v1_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+        };
+    };
+    list_reports_v1_evaluation_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationReportSummary"][];
+                };
+            };
+        };
+    };
+    get_report_v1_evaluation_reports__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_investigations_v1_investigations_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["InvestigationStatus"][] | null;
+                q?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvestigationPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1588,6 +2065,26 @@ export interface operations {
             };
         };
     };
+    list_packs_v1_packs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackSummary"][];
+                };
+            };
+        };
+    };
     get_pack_v1_packs__pack_id__get: {
         parameters: {
             query?: never;
@@ -1608,6 +2105,173 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_participants_v1_participants_get: {
+        parameters: {
+            query?: {
+                pack_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryParticipant"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_participant_v1_participants_post: {
+        parameters: {
+            query?: {
+                pack_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryParticipant"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_participant_v1_participants__participant_id__get: {
+        parameters: {
+            query?: {
+                pack_id?: string;
+            };
+            header?: never;
+            path: {
+                participant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryParticipant"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_participant_v1_participants__participant_id__delete: {
+        parameters: {
+            query?: {
+                pack_id?: string;
+            };
+            header?: never;
+            path: {
+                participant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_participant_v1_participants__participant_id__patch: {
+        parameters: {
+            query?: {
+                pack_id?: string;
+            };
+            header?: never;
+            path: {
+                participant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryParticipant"];
                 };
             };
             /** @description Validation Error */

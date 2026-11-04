@@ -37,6 +37,15 @@ export type GroundTruthComparison = S["GroundTruthComparison"];
 export type Hedge = S["Hedge"];
 export type Directness = S["Directness"];
 export type Modality = S["Modality"];
+export type AuthSession = S["AuthSession"];
+export type StaffRole = S["StaffRole"];
+export type DirectoryParticipant = S["DirectoryParticipant"];
+export type ParticipantPatch = S["ParticipantPatch"];
+export type InvestigationPage = S["InvestigationPage"];
+export type InvestigationSummary = S["InvestigationSummary"];
+export type PackSummary = S["PackSummary"];
+export type EvaluationReportSummary = S["EvaluationReportSummary"];
+export type EvaluationReport = S["EvaluationReport"];
 
 export type SttLanguage = LanguageProfile["stt_candidates"][number];
 export type TemplateLanguage = LanguageProfile["template_language"];

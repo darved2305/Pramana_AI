@@ -24,6 +24,7 @@ import {
 import { IconButton } from "@/components/ui";
 import { useCoreHealth } from "@/lib/data/hooks";
 import { previewMode, usePrefs, usePreviewMode } from "@/lib/store/local";
+import { useSession } from "@/lib/data/session";
 
 const NAV = [
   { href: "/app", label: "Overview", icon: IconGrid, exact: true },
@@ -46,6 +47,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const setDrawer = (open: boolean) => setDrawerAt(open ? pathname : null);
   const preview = usePreviewMode();
   const { reduceMotion } = usePrefs();
+  const session = useSession();
+  const router = useRouter();
+
+  // The core said nobody is signed in: go to sign-in and come back here afterwards.
+  // An unreachable core is not a sign-out; the screens show that state themselves.
+  useEffect(() => {
+    if (!preview && session.status === "signed-out") router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+  }, [preview, session.status, pathname, router]);
 
   useEffect(() => {
     document.documentElement.dataset.motion = reduceMotion ? "reduce" : "";
@@ -244,6 +253,26 @@ function ConnectionCard({ collapsed }: { collapsed: boolean }) {
 }
 
 function AccountPill({ collapsed }: { collapsed: boolean }) {
+  const session = useSession();
+  const preview = usePreviewMode();
+  const name =
+    session.status === "signed-in"
+      ? session.session.displayName
+      : preview
+        ? "Preview"
+        : session.status === "loading"
+          ? "Checking sign-in"
+          : "Not signed in";
+  const detail =
+    session.status === "signed-in"
+      ? session.session.method === "open"
+        ? "Sign-in not enforced"
+        : session.session.roles.join(", ")
+      : preview
+        ? "Sample data, no account"
+        : session.status === "error"
+          ? "Sign-in status unknown"
+          : "";
   return (
     <Link
       href="/app/account"
@@ -258,8 +287,8 @@ function AccountPill({ collapsed }: { collapsed: boolean }) {
       </span>
       {!collapsed ? (
         <span className="min-w-0">
-          <span className="block truncate text-[14px] font-medium text-fg">Not signed in</span>
-          <span className="block truncate text-[12px] text-muted">Auth not connected</span>
+          <span className="block truncate text-[14px] font-medium text-fg">{name}</span>
+          <span className="block truncate text-[12px] text-muted">{detail}</span>
         </span>
       ) : null}
     </Link>

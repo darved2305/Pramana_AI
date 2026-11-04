@@ -919,8 +919,16 @@ class InvestigationService:
         return await self.get(inv_id)
 
     async def decide_approval(
-        self, inv_id: str, approval_id: str, decision: ApprovalDecision
+        self,
+        inv_id: str,
+        approval_id: str,
+        decision: ApprovalDecision,
+        approver_id: str | None = None,
     ) -> InvestigationState:
+        """``approver_id`` is the authenticated approver; it overrides any id in the body."""
+        approver = approver_id or decision.approver_id
+        if approver is None:
+            raise ApiError(422, "APPROVER_REQUIRED", "the approval needs an approver")
         async with self._lock(inv_id), self.db.transaction() as session:
             row = await self._load_row(session, inv_id, lock=True)
             approval = await session.get(ApprovalRow, approval_id, with_for_update=True)
@@ -930,7 +938,7 @@ class InvestigationService:
                 raise ApiError(409, "APPROVAL_DECIDED", f"approval is {approval.status}")
             approve = decision.decision == "approve"
             approval.status = (ApprovalStatus.APPROVED if approve else ApprovalStatus.DENIED).value
-            approval.approver_id, approval.decided_at = decision.approver_id, _now()
+            approval.approver_id, approval.decided_at = approver, _now()
             row.status = (
                 InvestigationStatus.ACTING if approve else InvestigationStatus.DECIDED
             ).value
@@ -942,7 +950,7 @@ class InvestigationService:
                 {
                     "approval_id": approval_id,
                     "decision": decision.decision,
-                    "approver_id": decision.approver_id,
+                    "approver_id": approver,
                     "note": decision.note,
                 },
             )
@@ -998,6 +1006,7 @@ class InvestigationService:
             instructions=action.instructions[lang]
             .replace("{target}", approval.target)
             .replace("{place}", place),
+            location_id=comp.location if action.at_target_location else None,
         )
 
     async def report_intervention(

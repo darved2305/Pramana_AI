@@ -1,21 +1,31 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { clsx } from "clsx";
 import { Wordmark } from "@/components/brand/Wordmark";
 import { VoiceField } from "@/components/voice/VoiceField";
 import { BlurText } from "@/components/motion/BlurText";
-import { auth, validateEmail, validatePassword, AuthUnavailableError } from "@/lib/api/auth";
+import { auth, validateEmail, validatePassword } from "@/lib/api/auth";
+import { describeError } from "@/lib/api/http";
+import { setSession } from "@/lib/data/session";
 import { IconEye, IconEyeOff } from "@/components/ui/icons";
 
+/** Only same-site paths are followed after sign-in, never another origin. */
+function nextPath(): string {
+  const n = new URLSearchParams(window.location.search).get("next") ?? "";
+  return n.startsWith("/") && !n.startsWith("//") ? n : "/app";
+}
+
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [touched, setTouched] = useState({ email: false, password: false });
   const [submitted, setSubmitted] = useState(false);
-  const [busy, setBusy] = useState<"password" | "google" | null>(null);
+  const [busy, setBusy] = useState<"password" | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const pwRef = useRef<HTMLInputElement>(null);
@@ -33,22 +43,10 @@ export default function LoginPage() {
     if (pErr) return pwRef.current?.focus();
     setBusy("password");
     try {
-      await auth.signInWithPassword(email.trim(), password);
+      setSession(await auth.signInWithPassword(email.trim(), password));
+      router.replace(nextPath());
     } catch (x) {
-      setFormError(x instanceof AuthUnavailableError ? x.message : "Sign-in failed. Please try again.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const google = async () => {
-    setFormError(null);
-    setBusy("google");
-    try {
-      await auth.signInWithGoogle();
-    } catch (x) {
-      setFormError(x instanceof AuthUnavailableError ? x.message : "Sign-in failed. Please try again.");
-    } finally {
+      setFormError(describeError(x));
       setBusy(null);
     }
   };
@@ -85,22 +83,7 @@ export default function LoginPage() {
           <h1 className="display-slab text-[clamp(44px,4.4vw,64px)]">Log in</h1>
           <p className="mt-3 text-[16px] leading-relaxed text-cream/70">Welcome back. Sign in to open the Pramana console.</p>
 
-          <button
-            type="button"
-            onClick={google}
-            disabled={busy !== null}
-            className="btn-line mt-9 w-full gap-3 normal-case tracking-normal disabled:opacity-50"
-            style={{ fontSize: 15, fontWeight: 500 }}
-          >
-            {busy === "google" ? <Spin /> : <GoogleMark />}
-            Continue with Google
-          </button>
-
-          <div className="my-7 flex items-center gap-4 text-[12px] uppercase tracking-[0.12em] text-cream/40" aria-hidden>
-            <span className="h-px flex-1 bg-cream/15" /> or <span className="h-px flex-1 bg-cream/15" />
-          </div>
-
-          <form onSubmit={submit} noValidate className="flex flex-col gap-5" aria-describedby={formError ? "form-error" : undefined}>
+          <form onSubmit={submit} noValidate className="mt-9 flex flex-col gap-5" aria-describedby={formError ? "form-error" : undefined}>
             <div className="flex flex-col gap-2">
               <label htmlFor="email" className="text-[13px] font-medium uppercase tracking-[0.06em] text-cream/70">
                 Email
@@ -210,7 +193,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="text-[12px] text-cream/40">Pramana. Sign-in is not connected to a backend yet.</p>
+        <p className="text-[12px] text-cream/40">Pramana. Accounts are created by your site operator.</p>
       </main>
     </div>
   );
@@ -218,12 +201,4 @@ export default function LoginPage() {
 
 function Spin() {
   return <span aria-hidden className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />;
-}
-
-function GoogleMark() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden>
-      <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.8-5.5 3.8-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 3.2 14.6 2.2 12 2.2 6.6 2.2 2.2 6.6 2.2 12s4.4 9.8 9.8 9.8c5.7 0 9.4-4 9.4-9.6 0-.6-.1-1.1-.2-1.6H12z" />
-    </svg>
-  );
 }

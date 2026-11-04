@@ -1,61 +1,74 @@
 /**
- * Authentication boundary.
+ * Authentication boundary (docs/adr/0010-authentication.md).
  *
- * The core has no authentication routes yet. This module defines the shape the login
- * screen depends on so a real provider can be dropped in later. Until then every call
- * fails with `AUTH_NOT_CONNECTED`: no credentials are checked, no session is created and
- * nothing is stored.
+ * Staff sign in with email and password. The core keeps the session server-side and sets an
+ * httpOnly cookie, so no token is ever visible to page scripts or stored by this module.
+ * Participants never sign in: they use the signed link the operator sends them.
  */
+import { core } from "./core";
+import { ApiError } from "./http";
+import type { AuthSession, StaffRole } from "./types";
 
 export interface Session {
   userId: string;
   displayName: string;
   email: string;
+  roles: StaffRole[];
   expiresAt: string;
+  /** "session" for a signed-in person; "open" when the core does not enforce sign-in. */
+  method: string;
 }
 
 export interface AuthProvider {
   readonly connected: boolean;
   signInWithPassword(email: string, password: string): Promise<Session>;
-  signInWithGoogle(): Promise<Session>;
   requestPasswordReset(email: string): Promise<void>;
   signOut(): Promise<void>;
-  currentSession(): Promise<Session | null>;
+  currentSession(signal?: AbortSignal): Promise<Session | null>;
 }
 
+/** Raised for things the core deliberately does not offer (self-service password reset). */
 export class AuthUnavailableError extends Error {
-  readonly code = "AUTH_NOT_CONNECTED";
-  constructor() {
-    super("Sign-in is not connected yet. Use the development preview to explore the console.");
+  readonly code = "AUTH_NOT_OFFERED";
+  constructor(message: string) {
+    super(message);
     this.name = "AuthUnavailableError";
   }
 }
 
-const notConnected: AuthProvider = {
-  connected: false,
-  async signInWithPassword() {
-    await delay(650);
-    throw new AuthUnavailableError();
-  },
-  async signInWithGoogle() {
-    await delay(400);
-    throw new AuthUnavailableError();
+function toSession(s: AuthSession): Session {
+  return {
+    userId: s.user_id,
+    displayName: s.display_name || s.email || s.user_id,
+    email: s.email,
+    roles: s.roles,
+    expiresAt: s.expires_at,
+    method: s.method ?? "session",
+  };
+}
+
+export const auth: AuthProvider = {
+  connected: true,
+  async signInWithPassword(email, password) {
+    return toSession(await core.login(email, password));
   },
   async requestPasswordReset() {
-    await delay(500);
-    throw new AuthUnavailableError();
+    throw new AuthUnavailableError("Passwords are reset by your site operator. Ask them to set a new one for you.");
   },
-  async signOut() {},
-  async currentSession() {
-    return null;
+  async signOut() {
+    await core.logout();
+  },
+  async currentSession(signal) {
+    try {
+      return toSession(await core.session(signal));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return null;
+      throw e;
+    }
   },
 };
 
-export const auth: AuthProvider = notConnected;
-
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+export const hasRole = (s: Session | null | undefined, role: StaffRole) => !!s?.roles.includes(role);
 
 export function validateEmail(v: string): string | null {
   const s = v.trim();

@@ -10,12 +10,19 @@ import { bits, duration, locationLabel, outcomeWord, participantName, pct, probe
 
 /* ---------- Hypotheses ---------- */
 
+const OPEN_WORLD = "OPEN_WORLD";
+/** With single faults and every two-fault pair there are about a hundred causes. */
+const TOP_N = 6;
+
 export function HypothesisPanel({ state }: { state: InvestigationState }) {
   const [showAll, setShowAll] = useState(false);
   const b = state.belief;
-  const hyps = [...b.hypotheses].sort((a, c) => c.probability - a.probability);
-  const shown = showAll ? hyps : hyps.slice(0, 6);
-  const maxBits = Math.log2(Math.max(2, hyps.length + 1));
+  // The unknown cause has its own row below, so it is not repeated in the list.
+  const hyps = b.hypotheses.filter((h) => h.id !== OPEN_WORLD).sort((a, c) => c.probability - a.probability);
+  const shown = showAll ? hyps : hyps.slice(0, TOP_N);
+  const hidden = hyps.slice(TOP_N);
+  const hiddenMass = hidden.reduce((sum, h) => sum + h.probability, 0);
+  const maxBits = Math.log2(Math.max(2, b.hypotheses.length));
 
   return (
     <Card className="flex flex-col p-4" aria-labelledby="hyp-title">
@@ -27,7 +34,7 @@ export function HypothesisPanel({ state }: { state: InvestigationState }) {
       />
       <UncertaintyMeter value={b.hypothesis_entropy_bits} max={maxBits} />
       <LayoutGroup>
-        <ol className="mt-3 flex flex-col">
+        <ol className={clsx("mt-3 flex flex-col", showAll && hyps.length > 12 && "max-h-[520px] overflow-y-auto pr-1")} aria-label="Causes, most likely first">
           {shown.map((h, i) => (
             <motion.li
               layout
@@ -46,10 +53,19 @@ export function HypothesisPanel({ state }: { state: InvestigationState }) {
           ))}
         </ol>
       </LayoutGroup>
-      {hyps.length > 6 ? (
-        <button type="button" onClick={() => setShowAll((s) => !s)} className="mt-1 self-start text-[13px] text-accent hover:underline">
-          {showAll ? "Show fewer" : `Show all ${hyps.length}`}
-        </button>
+      {hidden.length ? (
+        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
+          {!showAll ? (
+            <span className="text-muted">
+              {hidden.length} more {hidden.length === 1 ? "cause" : "causes"}, {pct(hiddenMass, hiddenMass < 0.1 ? 1 : 0)} together
+            </span>
+          ) : (
+            <span />
+          )}
+          <button type="button" onClick={() => setShowAll((v) => !v)} aria-expanded={showAll} className="text-accent hover:underline">
+            {showAll ? "Show fewer" : `Show all ${hyps.length}`}
+          </button>
+        </div>
       ) : null}
       <div className="mt-3 rounded-[10px] border border-dashed border-line-strong px-3 py-2.5">
         <div className="flex items-baseline justify-between gap-3">

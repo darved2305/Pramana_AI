@@ -41,6 +41,7 @@ def services() -> Iterator[Services]:
 
     signing = generate_private_key_b64()
     operator, oracle = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
+    automation = secrets.token_urlsafe(24)
     work = Path(tempfile.mkdtemp(prefix="pramana-e2e-"))  # no .env here: settings come from env
     base = {k: v for k, v in os.environ.items() if not k.startswith(("SIM_", "GNANI_", "LLM_"))}
     base |= {"PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
@@ -57,6 +58,7 @@ def services() -> Iterator[Services]:
         "SIM_URL": f"http://127.0.0.1:{SIM_PORT}",
         "SIM_OPERATOR_KEY": operator,
         "PARTICIPANT_SIGNING_KEY": signing,
+        "CORE_AUTOMATION_KEY": automation,
         "GNANI_API_KEY": "",
         "LLM_EXTRACTOR_PROVIDER": "none",
         "LLM_CACHE_DIR": str(work / "llm"),
@@ -69,6 +71,7 @@ def services() -> Iterator[Services]:
         signing_key=signing,
         operator_key=operator,
         oracle_key=oracle,
+        automation_key=automation,
         sim=Process("sim", [sys.executable, "-m", "pramana_sim"], sim_env, work, work / "sim.log"),
         core=Process(
             "core", [sys.executable, "-m", "pramana_core"], core_env, work, work / "core.log"
