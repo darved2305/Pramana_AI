@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+*.egg-info/
+dist/
+build/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node / web
+node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/test-results/
+apps/web/playwright-report/
+*.tsbuildinfo
+
+# Local artefacts
+eval/reports/
+recordings/
+*.wav
+!tests/fixtures/audio/*.wav
+.DS_Store

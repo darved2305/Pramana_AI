@@ -1,0 +1,13 @@
+[project]
+name = "pramana-contracts"
+version = "0.1.0"
+description = "Canonical typed contracts shared by every Pramana component"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.9"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pramana_contracts"]

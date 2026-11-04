@@ -1,0 +1,110 @@
+[project]
+name = "pramana-workspace"
+version = "0.1.0"
+description = "Pramana: an AI that investigates physical faults it cannot see, by asking people"
+requires-python = ">=3.11"
+dependencies = [
+    "pramana-contracts",
+    "pramana-domain",
+    "pramana-engine",
+    "pramana-sim",
+    "pramana-core",
+    "pramana-eval",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "hypothesis>=6.112",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "import-linter>=2.1",
+    "types-PyYAML>=6.0",
+    "websockets>=14,<16",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "packages/contracts",
+    "packages/domain",
+    "packages/engine",
+    "services/sim",
+    "services/core",
+    "eval",
+]
+
+[tool.uv.sources]
+pramana-contracts = { workspace = true }
+pramana-domain = { workspace = true }
+pramana-engine = { workspace = true }
+pramana-sim = { workspace = true }
+pramana-core = { workspace = true }
+pramana-eval = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["apps/web", "**/alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "ASYNC", "PT", "N"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # Devanagari and typographic characters are intentional
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["N802", "PT011"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+mypy_path = "packages/contracts/src:packages/domain/src:packages/engine/src:services/sim/src:services/core/src:eval/src"
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["asyncpg.*", "anthropic.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q --strict-markers"
+markers = [
+    "db: requires the PostgreSQL test database (make db-up)",
+    "live_gnani: calls the real Gnani API and spends credits (needs GNANI_API_KEY)",
+]
+testpaths = [
+    "packages/contracts/tests",
+    "packages/domain/tests",
+    "packages/engine/tests",
+    "services/sim/tests",
+    "services/core/tests",
+    "eval/tests",
+    "tests",
+]
+
+[tool.importlinter]
+root_packages = ["pramana_contracts", "pramana_domain", "pramana_engine", "pramana_sim", "pramana_core", "pramana_eval"]
+
+[[tool.importlinter.contracts]]
+name = "The engine and the core never import the simulator (hidden truth isolation)"
+type = "forbidden"
+source_modules = ["pramana_engine", "pramana_core", "pramana_domain", "pramana_contracts"]
+forbidden_modules = ["pramana_sim", "pramana_eval"]
+
+[[tool.importlinter.contracts]]
+name = "The engine is pure: no web, database, or provider code"
+type = "forbidden"
+source_modules = ["pramana_engine"]
+forbidden_modules = ["pramana_core", "fastapi", "sqlalchemy", "httpx", "websockets"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Contracts depend on nothing internal"
+type = "forbidden"
+source_modules = ["pramana_contracts"]
+forbidden_modules = ["pramana_domain", "pramana_engine", "pramana_core"]

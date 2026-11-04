@@ -1,0 +1,13 @@
+[project]
+name = "pramana-engine"
+version = "0.1.0"
+description = "Bayesian diagnosis engine and value-of-information planner (pure, no I/O)"
+requires-python = ">=3.11"
+dependencies = ["pramana-contracts", "pramana-domain", "numpy>=1.26"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pramana_engine"]
