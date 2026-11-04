@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     groq_api_key: SecretStr | None = Field(default=None, alias="GROQ_API_KEY")
     llm_cache_dir: str = Field(default=".cache/llm", alias="LLM_CACHE_DIR")
 
+    event_stream_heartbeat_s: float = Field(
+        default=15.0, gt=0, le=25, alias="EVENT_STREAM_HEARTBEAT_S"
+    )
+    """Below the 30 s idle timeout of proxied requests in Next.js rewrites."""
+    event_stream_max_s: float = Field(default=1800.0, gt=0, alias="EVENT_STREAM_MAX_S")
+    """Streams end (with ``bye``) after this long; clients reconnect and resume."""
+    event_stream_stall_s: float = Field(default=10.0, gt=0, alias="EVENT_STREAM_STALL_S")
+    """A client that does not read for this long is dropped; it resumes on reconnect."""
+    recover_on_startup: bool = Field(default=True, alias="RECOVER_ON_STARTUP")
+
     cors_origins: list[str] = Field(default=["http://localhost:3000"], alias="CORS_ORIGINS")
 
     @field_validator("gnani_api_key", "gemini_api_key", "groq_api_key", mode="before")

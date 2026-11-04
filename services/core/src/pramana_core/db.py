@@ -8,7 +8,7 @@ work and never shared between concurrent tasks.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any, ClassVar
@@ -161,16 +161,32 @@ def make_engine(settings: Settings) -> AsyncEngine:
     )
 
 
+CommitListener = Callable[[set[str]], None]
+
+
 class Database:
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+        self.commit_listeners: list[CommitListener] = []
+        """Called after a transaction commits, with the investigations it appended events to.
+        Used by the event push channel: nothing is announced before it is durable."""
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[AsyncSession]:
         """One session, one transaction: commits on success, rolls back on any exception."""
-        async with self._sessions() as session, session.begin():
-            yield session
+        async with self._sessions() as session:
+            async with session.begin():
+                yield session
+                await session.flush()
+                touched = {
+                    obj.investigation_id
+                    for obj in session.identity_map.values()
+                    if isinstance(obj, EventRow)
+                }
+            # Committed (``begin()`` exited without an exception).
+            for listener in list(self.commit_listeners):
+                listener(touched)
 
     @asynccontextmanager
     async def read(self) -> AsyncIterator[AsyncSession]:
