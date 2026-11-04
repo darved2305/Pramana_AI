@@ -187,7 +187,7 @@ def render_report(summary: dict[str, Any]) -> str:
             wrong_fields = ", ".join(
                 f"{f}: got {r['got_fields'][f]}" for f, ok in r["fields"].items() if not ok
             )
-            lines.append(f"- `{r['id']}` ({r['lang']}) \"{r['text']}\": {wrong_fields}")
+            lines.append(f'- `{r["id"]}` ({r["lang"]}) "{r["text"]}": {wrong_fields}')
         lines.append("")
     return "\n".join(lines)
 
@@ -236,8 +236,7 @@ def main(argv: list[str] | None = None) -> None:
                 "Held-out set: written and committed before any tuning against it, and never "
                 "used for tuning."
                 if heldout
-                else "Development set: the rules were tuned on it, so these figures are "
-                "optimistic."
+                else "Development set: the rules were tuned on it, so these figures are optimistic."
             ),
             "extractors": results,
         }
