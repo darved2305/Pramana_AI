@@ -221,7 +221,11 @@ async def test_stream_headers_frames_and_transcript(fake: FakeGnani) -> None:
     h = fake.seen_headers[-1]
     assert h["x-api-key-id"] == "k"
     assert h["model"] == "prisma-v3.0"
-    assert h["language_code"] == "mr-IN,hi-IN"
+    # Live server (2026-11-04) rejects a comma list; candidates go as indic-auto + header.
+    assert h["language_code"] == "indic-auto"
+    assert h["lang_code"] == "indic-auto"
+    assert h["x-language-candidates"] == "mr-IN,hi-IN"
+    assert json.loads(h["x-keywords"]) == ["NAVA-WiFi", "बंद"]
     assert h["x-sample-rate"] == "16000"
     assert h["x-min-segment-ms"] == "100"
     assert json.loads(h["keyterms"]) == ["NAVA-WiFi", "बंद"]

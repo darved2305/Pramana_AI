@@ -1,7 +1,7 @@
 # Gnani integration report
 
-Status on 2026-11-04: **adapters implemented and protocol-tested; no live call made.**
-No `GNANI_API_KEY` was available in this environment. Every statement below is labelled as
+Status on 2026-11-04: **adapters implemented, protocol-tested, and exercised live** (TTS v3.0 and
+v2.5, STT REST v3.0, STT realtime v3.0, three simultaneous streams). Every statement below is labelled as
 **doc** (docs.gnani.ai page), **src** (installed package source), or **test** (our executable
 tests against a local protocol emulation). Nothing here is a measured Gnani result. Per EULA §16,
 measured Gnani accuracy or latency numbers must not be published outside the team.
@@ -49,16 +49,47 @@ measured Gnani accuracy or latency numbers must not be published outside the tea
   of the silent model fallback, 401/429 at handshake, and the close-1001 surface.
 - The browser relay `/v1/voice/stream` end to end against the emulation.
 
-## Blocked: needs a Gnani API key
+## Verified live (2026-11-04), integration facts only
 
-Put it in `.env` as `GNANI_API_KEY=...`; it is read server-side only. Then run these, in order:
+Per the EULA, accuracy and latency results stay out of this repository; they are kept privately.
 
-1. `GET /ready`: should show `"gnani": "configured"`.
-2. STT REST with short Hindi, Marathi, English and Hinglish answers ("haan", "nahi", "band aahe",
-   "chalu", "green", room numbers, negations).
-3. TTS: one Marathi and one Hinglish question; play the WAV.
-4. Realtime stream: does `model_confirmed` come back true?
-5. Concurrency: open 1 → 4 streams, and send a REST burst; record which limit triggers 429.
-6. Credit delta for 60 s of streamed speech vs silence (from the dashboard).
+- **Streaming language candidates (contradicts the docs).** `language_code: mr-IN,hi-IN` is
+  rejected with *"exactly one locale is required … Use multi_lang_codes"*. The shape that works
+  is `language_code`/`lang_code: indic-auto` plus `x-language-candidates: mr-IN,hi-IN`, as the
+  SDK sends it. `GnaniClient.open_stream` now does this, and a test pins it.
+- **v3.0 on streaming is confirmed** by the `connected` echo (`model_confirmed: true`).
+- **Concurrency:** three simultaneous realtime sessions all transcribed. The account dashboard
+  states 20 concurrent sessions; the governor caps us at 16.
+- **Account limits (dashboard):** STT REST 60 requests/min, STT WebSocket 20 concurrent, TTS 60
+  requests/min. Prices: STT Rs 20/audio hour, TTS Rs 18/10,000 characters; 1 credit = Rs 1.
+- **Billing granularity:** a 28-character TTS request was debited Rs 0.06 (list price Rs 0.0504),
+  so each request is rounded up to the next paisa. The governor meters the same way.
+  Characters are Unicode code points (Python `len` matched Gnani's count).
+- **Timbre WAV headers declare a placeholder data length (2³² bytes).** Compute duration from
+  the byte count, not the header. `wav_duration_s` already clamps to the real size.
+- **Hinglish TTS** routed to timbre-v2.5/Poorvi is accepted.
 
-Results go in a private section of this report, not in public posts.
+## Usage guards (`voice/governor.py`)
+
+| Guard | Setting | Default | Account limit |
+|---|---|---|---|
+| STT REST requests per rolling minute (retries count) | `GNANI_STT_REST_PER_MIN` | 50 | 60 |
+| TTS requests per rolling minute (retries count) | `GNANI_TTS_PER_MIN` | 50 | 60 |
+| Concurrent realtime sessions (refused, not queued) | `GNANI_MAX_STREAMS` | 16 | 20 |
+| Concurrent REST calls | `GNANI_REST_MAX_INFLIGHT` | 1 | "1 active request" in Gnani's 429 example |
+| Daily spend, checked before every call (worst case for streams) | `VOICE_DAILY_BUDGET_INR` | 150 | 5,000 credits total |
+| Max realtime session length | `VOICE_MAX_STREAM_S` | 300 s | 15 min |
+
+Spend is recorded per call in PostgreSQL (`voice_usage`), so restarts do not reset it.
+`GET /v1/voice/usage` shows today's spend and the live limiter state. The limits apply per core
+process.
+
+## Remaining live checks
+
+1. Human recordings, not just TTS audio: Marathi, Hindi and Hinglish short answers ("haan",
+   "nahi", "band aahe", "chalu", room numbers, negations).
+2. Whether more than one REST call can be in flight (raise `GNANI_REST_MAX_INFLIGHT` only if so).
+3. Whether streamed silence is billed: compare the dashboard against `/v1/voice/usage`.
+
+Run: `python scripts/gnani_live_check.py --out <dir outside the repo> [--stream-only]
+[--probe-concurrency]`.

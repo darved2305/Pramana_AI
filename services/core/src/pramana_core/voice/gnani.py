@@ -370,16 +370,27 @@ class GnaniClient:
             "x-api-key-id": key,
             "x-api-request-id": uuid.uuid4().hex,
             "model": model,
-            "x-model": model,  # legacy spelling; the canonical name wins when both are sent
-            "language_code": language_header(language_codes),
+            "x-model": model,
             "x-sample-rate": str(SAMPLE_RATE),
             "x-min-silence-ms": str(min_silence_ms),
             "x-min-segment-ms": str(min_segment_ms),  # higher values drop short "yes"/"no"
             "x-idle-timeout-sec": str(idle_timeout_s),
             "format": "codemix" if codemix else "verbatim",
+            "x-format": "codemix" if codemix else "verbatim",
         }
+        # Verified live on 2026-11-04: the streaming server rejects a comma list in
+        # language_code ("exactly one locale is required"), contrary to the docs page. Several
+        # candidates go as language_code=indic-auto plus x-language-candidates, the shape the
+        # official SDK (gnani-vachana 0.9.0) sends. Legacy and canonical names carry the same
+        # values so whichever the server reads, it reads the same thing.
+        langs = language_header(language_codes).split(",")
+        lang_code = langs[0] if len(langs) == 1 else "indic-auto"
+        headers["language_code"] = headers["lang_code"] = lang_code
+        if len(langs) > 1:
+            headers["x-language-candidates"] = ",".join(langs)
         if keyterms:
-            headers["keyterms"] = json.dumps(list(keyterms)[:200])  # headers must be ASCII
+            terms = json.dumps(list(keyterms)[:200])  # JSON-escaped: header values must be ASCII
+            headers["keyterms"] = headers["x-keywords"] = terms
         if topic:
             headers["topic"] = topic.encode("ascii", "ignore").decode()[:1600]
         url = self.base_url.replace("https://", "wss://").replace("http://", "ws://")
