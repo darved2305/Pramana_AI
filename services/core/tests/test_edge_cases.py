@@ -1,7 +1,7 @@
 """Edge cases across the core, the simulator and the voice path (in-process, real PostgreSQL).
 
 Each test pins behaviour that exists today. Where the behaviour is a deliberate choice (for
-example, no clock-skew leeway on capabilities) the test says so.
+example, no leeway after a capability expires) the test says so.
 """
 
 from __future__ import annotations
@@ -230,8 +230,8 @@ def _act(
 
 
 def test_capability_expiry_has_no_leeway(core: TestClient) -> None:
-    """Expiry is exact: one second past ``exp`` is refused. Core and simulator share a clock
-    in every deployment we run (same host), so no skew allowance is configured."""
+    """Expiry is exact: one second past ``exp`` is refused. Skew is tolerated only on the other
+    side (a token minted by a clock that runs ahead, below)."""
     inv, _, sid, h = _decided_and_approved(core)
     just_expired = _cap(sid, inv["id"], now=time.time() - 301)
     r = _act(core, sid, h, just_expired)
@@ -242,12 +242,22 @@ def test_capability_expiry_has_no_leeway(core: TestClient) -> None:
 def test_capability_from_a_clock_running_ahead_is_accepted_until_it_expires(
     core: TestClient,
 ) -> None:
-    """Tokens carry no not-before claim, so a core clock 2 minutes fast still works; the token
-    simply expires 2 minutes later in simulator time (the lifetime is never extended beyond
-    ``exp``)."""
+    """A core clock up to ``CLOCK_SKEW_S`` (2 minutes) fast still works; the token simply
+    expires that much later in simulator time."""
     inv, _, sid, h = _decided_and_approved(core)
-    ahead = _cap(sid, inv["id"], now=time.time() + 120)
+    ahead = _cap(sid, inv["id"], now=time.time() + 110)
     assert _act(core, sid, h, ahead).status_code == 200
+
+
+def test_capability_from_a_clock_far_ahead_is_refused(core: TestClient) -> None:
+    """A clock 10 minutes fast would otherwise turn a 5-minute capability into a 15-minute
+    one; the simulator refuses any capability that lives longer than 5 minutes plus the skew
+    allowance."""
+    inv, _, sid, h = _decided_and_approved(core)
+    far = _cap(sid, inv["id"], now=time.time() + 600)
+    r = _act(core, sid, h, far)
+    assert r.status_code == 403
+    assert "lifetime" in r.text
 
 
 def test_capability_scope_and_reuse(core: TestClient) -> None:
