@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from pramana_contracts import Hedge, Skill
 
@@ -55,6 +56,14 @@ class EngineConfig:
     top_infeasible: int = 5
     planning_reliability: float = 0.95
     """Reliability assumed when valuing actions nobody present can perform (abstention report)."""
+    decision_focus: bool = True
+    """Rank by information about the *decision* (EIG_D). Off: information about the cause only
+    (the "greedy entropy" baseline and the decision-focus ablation)."""
+    selection: Literal["score", "net_value"] = "score"
+    """How to choose among questions worth asking: by information per second ("score") or by
+    net decision value (expected loss avoided minus effort)."""
+    cost_aware: bool = True
+    """Divide information by the participant's effort. Off: ignore cost (ablation/baseline)."""
 
     def __post_init__(self) -> None:
         if not 0 < self.tau_lo <= self.tau_hi < 1:

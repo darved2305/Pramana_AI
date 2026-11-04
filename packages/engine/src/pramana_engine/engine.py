@@ -309,6 +309,25 @@ class Engine:
                 del blocked[key]
         return feasible, blocked
 
+    def menu(self) -> list[tuple[ProbeAction, float]]:
+        """Every action someone available could take now, with its effort cost in seconds.
+
+        Baselines choose from exactly this menu, so every policy faces the same options.
+        """
+        actions, _ = self._enumerate()
+        return [
+            (
+                ProbeAction(
+                    participant_id=a.participant.spec.id,
+                    probe_id=a.probe_id,
+                    location_id=a.location_id,
+                    requires_move=a.requires_move,
+                ),
+                a.cost_s,
+            )
+            for a in actions
+        ]
+
     def plan(self) -> PlanDecision:
         model, cfg = self.model, self.cfg
         p = self.posterior()
@@ -360,6 +379,10 @@ class Engine:
             )
 
         worth = [i for i in order if candidates[i].net_value_min > 0 and candidates[i].score > 0]
+        if cfg.selection == "net_value":
+            # Rank by the same quantity the stopping rule uses: expected loss avoided minus
+            # effort (two-step adaptive). Bits per second is the tie-break.
+            worth.sort(key=lambda i: (-candidates[i].net_value_min, -candidates[i].score, i))
         if worth:
             best = candidates[worth[0]]
             if worth[0] not in order[: cfg.top_candidates]:
@@ -459,7 +482,10 @@ class Engine:
             eig_decision_bits=eig_d,
             eig_hypothesis_bits=eig_h,
             cost_s=a.cost_s,
-            score=(eig_d + cfg.eta * eig_h) / a.cost_s,
+            score=(
+                (eig_d + cfg.eta * eig_h if cfg.decision_focus else eig_h)
+                / (a.cost_s if cfg.cost_aware else 1.0)
+            ),
             net_value_min=0.0,
             outcomes=previews,
         )
