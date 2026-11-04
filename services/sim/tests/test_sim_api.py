@@ -150,8 +150,10 @@ def test_truth_requires_the_oracle_key(client: TestClient) -> None:
 
 
 def test_truth_route_is_disabled_without_an_oracle_key() -> None:
-    settings = SimSettings(
-        operator_key=SecretStr("op-secret"), participant_public_key=public_key_b64(KEY)
+    settings = SimSettings(  # explicit None: a developer's .env must not leak into tests
+        operator_key=SecretStr("op-secret"),
+        oracle_key=None,
+        participant_public_key=public_key_b64(KEY),
     )
     with TestClient(create_app(settings)) as c:
         sid = scenario(c, CB7)
