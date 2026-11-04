@@ -18,6 +18,7 @@ from typing import Annotated
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from fastapi import Depends, Request
 from sqlalchemy import select
+from starlette.requests import HTTPConnection
 
 from pramana_contracts import StaffRole
 from pramana_contracts.tokens import TokenError, private_key_from_b64, verify
@@ -37,12 +38,12 @@ OPEN = Principal(kind="open", id="open", display_name="Sign-in not enforced", ro
 ANONYMOUS = Principal(kind="anonymous", id="anonymous")
 
 
-def _settings(request: Request) -> Settings:
+def _settings(request: HTTPConnection) -> Settings:
     cfg: Settings = request.app.state.settings
     return cfg
 
 
-async def current_principal(request: Request) -> Principal:
+async def current_principal(request: HTTPConnection) -> Principal:
     """Identify the caller. Never raises for a missing identity: role checks do that."""
     cached: Principal | None = getattr(request.state, "principal", None)
     if cached is not None:
@@ -52,7 +53,7 @@ async def current_principal(request: Request) -> Principal:
     return principal
 
 
-async def _identify(request: Request) -> Principal:
+async def _identify(request: HTTPConnection) -> Principal:
     cfg = _settings(request)
     if not cfg.enforce_auth:
         return OPEN
@@ -83,7 +84,9 @@ async def _identify(request: Request) -> Principal:
         principal = await auth.resolve(token)
         if principal is None:
             return ANONYMOUS
-        if request.method not in SAFE_METHODS and request.headers.get(CSRF_HEADER) != "1":
+        # A WebSocket handshake is a GET; SameSite=Lax keeps the cookie off cross-site ones.
+        method = request.scope.get("method", "GET")
+        if method not in SAFE_METHODS and request.headers.get(CSRF_HEADER) != "1":
             raise ApiError(403, "CSRF_HEADER_MISSING", "send X-Pramana-CSRF: 1 with this request")
         return principal
     return ANONYMOUS
@@ -107,6 +110,18 @@ def require_staff(*roles: StaffRole) -> Callable[[Request], Awaitable[Principal]
         return p
 
     return dependency
+
+
+async def staff_on_socket(conn: HTTPConnection, *roles: StaffRole) -> Principal:
+    """The same staff check as ``require_staff``, for WebSocket routes (raises ``ApiError``)."""
+    p = await current_principal(conn)
+    if p.kind == "anonymous":
+        raise ApiError(401, "AUTH_REQUIRED", "sign in first")
+    if p.kind == "participant":
+        raise ApiError(403, "ROLE_FORBIDDEN", "participants cannot do this")
+    if roles and not any(p.has(r) for r in roles):
+        raise ApiError(403, "ROLE_FORBIDDEN", "this needs another role")
+    return p
 
 
 async def _scenario_of(request: Request, inv_id: str) -> str:

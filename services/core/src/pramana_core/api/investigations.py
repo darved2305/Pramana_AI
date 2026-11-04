@@ -24,6 +24,7 @@ from ..auth.deps import authorize_participant, authorize_read, require_staff
 from ..auth.service import Principal
 from ..directory import ConsoleQueries
 from ..investigations import InvestigationService
+from ..visibility import visible_answer, visible_state
 
 router = APIRouter(prefix="/v1/investigations", tags=["investigations"])
 
@@ -58,16 +59,16 @@ async def create_investigation(body: CreateInvestigation, svc: Svc) -> Investiga
 
 @router.get("/{inv_id}")
 async def get_investigation(inv_id: str, svc: Svc, request: Request) -> InvestigationState:
-    await authorize_read(request, inv_id)
-    return await svc.get(inv_id)
+    who = await authorize_read(request, inv_id)
+    return visible_state(await svc.get(inv_id), who)
 
 
 @router.post("/{inv_id}/answers")
 async def submit_answer(
     inv_id: str, body: SubmitAnswer, svc: Svc, request: Request
 ) -> AnswerResult:
-    await authorize_participant(request, inv_id, body.participant_id)
-    return await svc.answer(inv_id, body)
+    who = await authorize_participant(request, inv_id, body.participant_id)
+    return visible_answer(await svc.answer(inv_id, body), who)
 
 
 @router.post("/{inv_id}/reveal", dependencies=[Operator])
@@ -83,7 +84,8 @@ async def list_events(
     after_seq: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ) -> list[EventEnvelope]:
-    await authorize_read(request, inv_id)
+    # The log holds everyone's answers and the engine's reasoning: staff only.
+    await require_staff()(request)
     return await svc.events(inv_id, after_seq, limit)
 
 
@@ -117,8 +119,8 @@ async def report_intervention(
     inv_id: str, body: ReportIntervention, svc: Svc, request: Request
 ) -> InvestigationState:
     """The executor reports the action as done; verification questions follow."""
-    await authorize_participant(request, inv_id, body.participant_id)
-    return await svc.report_intervention(inv_id, body)
+    who = await authorize_participant(request, inv_id, body.participant_id)
+    return visible_state(await svc.report_intervention(inv_id, body), who)
 
 
 @router.post("/{inv_id}/participants/{participant_id}/token", dependencies=[Operator])

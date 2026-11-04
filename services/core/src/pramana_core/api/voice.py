@@ -12,17 +12,37 @@ import json
 import time
 from typing import Annotated, Any
 
-from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import Response
 from pydantic import ValidationError
 
-from pramana_contracts import MediaClientMessage, MediaServerMessage, SttResult, TtsRequest
+from pramana_contracts import (
+    MediaClientMessage,
+    MediaServerMessage,
+    StaffRole,
+    SttResult,
+    TtsRequest,
+)
 
+from ..auth.deps import require_staff, staff_on_socket
 from ..errors import ApiError
 from ..observability import log
 from ..voice.gnani import GnaniClient, GnaniSttStream
 
+# Test and tooling routes. They spend Gnani credits, so they are for staff only: STT, TTS and
+# the stream need the operator role. Participants speak through their own question routes.
 router = APIRouter(prefix="/v1/voice", tags=["voice"])
+Staff = Depends(require_staff())
+Operator = Depends(require_staff(StaffRole.OPERATOR))
 
 MAX_FRAME_BYTES = 64 * 1024
 
@@ -32,7 +52,7 @@ def _gnani(request: Request) -> GnaniClient:
     return client
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Staff])
 async def voice_status(request: Request) -> dict[str, object]:
     g = _gnani(request)
     return {
@@ -43,7 +63,7 @@ async def voice_status(request: Request) -> dict[str, object]:
     }
 
 
-@router.get("/usage")
+@router.get("/usage", dependencies=[Staff])
 async def voice_usage(request: Request) -> dict[str, object]:
     """Today's metered Gnani usage, the configured caps, and live limiter state."""
     g = _gnani(request)
@@ -56,7 +76,7 @@ async def voice_usage(request: Request) -> dict[str, object]:
     }
 
 
-@router.post("/stt")
+@router.post("/stt", dependencies=[Operator])
 async def transcribe(
     request: Request,
     audio: Annotated[UploadFile, File()],
@@ -77,7 +97,7 @@ async def transcribe(
     )
 
 
-@router.post("/tts")
+@router.post("/tts", dependencies=[Operator])
 async def synthesize(request: Request, body: TtsRequest) -> Response:
     audio, wall_ms = await _gnani(request).synthesize(
         body.text, language=body.language, model=body.model, voice=body.voice, speed=body.speed
@@ -92,7 +112,13 @@ async def synthesize(request: Request, body: TtsRequest) -> Response:
 @router.websocket("/stream")
 async def stream(ws: WebSocket) -> None:
     """Protocol: client sends ``{"type":"start",...}``, then binary PCM16 16 kHz mono frames,
-    optionally ``{"type":"commit"}``; ``{"type":"stop"}`` ends the session."""
+    optionally ``{"type":"commit"}``; ``{"type":"stop"}`` ends the session. Operators only:
+    the handshake is refused (HTTP 403) before any Gnani session is opened."""
+    try:
+        await staff_on_socket(ws, StaffRole.OPERATOR)
+    except ApiError:
+        await ws.close(code=4401)
+        return
     await ws.accept()
     gnani: GnaniClient = ws.app.state.gnani
 

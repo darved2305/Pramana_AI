@@ -17,6 +17,7 @@ from ..auth.deps import authorize_participant
 from ..errors import ApiError
 from ..investigations import InvestigationService
 from ..observability import log
+from ..visibility import visible_voice_answer
 from ..voice.conversation import QuestionAudioCache, answer_keyterms, speak_question, stt_options
 from ..voice.gnani import GnaniClient
 from ..voice.media import MediaSession
@@ -70,7 +71,7 @@ async def voice_answer(
     audio: Annotated[UploadFile, File()],
 ) -> VoiceAnswerResult:
     svc, gnani, _ = _deps(request)
-    await authorize_participant(request, inv_id, participant_id)
+    who = await authorize_participant(request, inv_id, participant_id)
     q = await svc.pending_question(inv_id, question_id, participant_id)
     limit: int = request.app.state.settings.voice_max_upload_bytes
     data = await audio.read(limit + 1)
@@ -106,4 +107,4 @@ async def voice_answer(
             modality=Modality.VOICE,
         ),
     )
-    return VoiceAnswerResult(stt=stt, result=result)
+    return visible_voice_answer(VoiceAnswerResult(stt=stt, result=result), who)

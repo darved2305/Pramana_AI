@@ -32,7 +32,7 @@ Sign-in is enforced unless `PRAMANA_MODE=test`. Three kinds of caller:
 |---|---|---|
 | Operator (staff) | session cookie | create investigations, manage the directory, request approvals, mint join links, reveal |
 | Approver (staff) | session cookie | approve or deny; the approval records **their** id (any `approver_id` in the body is ignored) |
-| Participant | `Authorization: Bearer <join token>` | read their investigation; answer, hear and act on **their own** questions and approvals |
+| Participant | `Authorization: Bearer <join token>` | read **their part** of their investigation (their entry, answers, question, approvals and the status; no hypotheses, plan, other people's answers or event log); answer, hear and act on **their own** questions and approvals |
 | Script or bot | `X-Automation-Key: <CORE_AUTOMATION_KEY>` | operator and approver |
 
 ```http
@@ -159,6 +159,9 @@ The simulator's reply to `act` never says whether the repair fixed anything; tha
 in what people observe afterwards.
 
 ## 4. Voice test page
+
+Staff only: status and usage need a signed-in staff member; STT, TTS and the stream need the
+operator role (scripts send `X-Automation-Key`).
 
 | Route | Purpose |
 |---|---|

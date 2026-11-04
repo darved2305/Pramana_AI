@@ -203,7 +203,8 @@ def _answer_truthfully(c: TestClient, sim: TestClient, inv: dict[str, Any]) -> d
         headers=h,
     )
     assert r.status_code == 200, r.text
-    return dict(r.json()["state"])
+    # A participant's response shows only their part; the driver reads the whole state as staff.
+    return dict(c.get(f"/v1/investigations/{inv['id']}", headers=AUTO).json())
 
 
 def test_approval_records_the_signed_in_approver_not_the_body(secure_core: TestClient) -> None:
@@ -252,3 +253,81 @@ def test_open_mode_keeps_body_approver_for_tests(core: TestClient) -> None:
     me = core.get("/v1/auth/session").json()
     assert me["method"] == "open"
     assert set(me["roles"]) == {"operator", "approver"}
+
+
+def test_a_join_link_sees_only_its_own_part(secure_core: TestClient) -> None:
+    c = secure_core
+    sim = TestClient(c.sim_app)  # type: ignore[attr-defined]
+    inv = _create(c)
+    first = inv["pending_question"]["action"]["participant_id"]
+    inv = _answer_truthfully(c, sim, inv)
+    assert inv["observations"]  # staff see the evidence
+    nxt = inv["pending_question"]["action"]["participant_id"]
+    others = [p["id"] for p in inv["participants"] if p["id"] not in (first, nxt)]
+    pid = others[0] if others else nxt
+    h = {"Authorization": f"Bearer {_token(c, inv['id'], pid)['token']}"}
+    seen = c.get(f"/v1/investigations/{inv['id']}", headers=h).json()
+    assert [p["id"] for p in seen["participants"]] == [pid]
+    assert all(o["participant_id"] == pid for o in seen["observations"])
+    assert seen["belief"]["hypotheses"] == []
+    assert seen["belief"]["decisions"] == []
+    assert seen["plan"]["candidates"] == []
+    assert seen["plan"]["reason"] == ""
+    if nxt != pid:
+        assert seen["pending_question"] is None
+    assert seen["status"] == inv["status"]
+    # The addressee sees their question; their answer response is redacted the same way.
+    mine = {"Authorization": f"Bearer {_token(c, inv['id'], nxt)['token']}"}
+    q = c.get(f"/v1/investigations/{inv['id']}", headers=mine).json()["pending_question"]
+    assert q is not None
+    assert q["action"]["participant_id"] == nxt
+    r = c.post(
+        f"/v1/investigations/{inv['id']}/answers",
+        json={"question_id": q["id"], "participant_id": nxt, "text": "pata nahi"},
+        headers=mine,
+    )
+    assert r.status_code == 200, r.text
+    state = r.json()["state"]
+    assert [p["id"] for p in state["participants"]] == [nxt]
+    assert state["belief"]["hypotheses"] == []
+
+
+def test_event_log_stream_and_replay_are_staff_only(secure_core: TestClient) -> None:
+    c = secure_core
+    inv = _create(c)
+    pid = inv["pending_question"]["action"]["participant_id"]
+    h = {"Authorization": f"Bearer {_token(c, inv['id'], pid)['token']}"}
+    for path in ("events", "replay", "stream"):
+        r = c.get(f"/v1/investigations/{inv['id']}/{path}", headers=h)
+        assert r.status_code == 403, (path, r.text)
+        assert r.json()["error"]["code"] == "ROLE_FORBIDDEN"
+        assert c.get(f"/v1/investigations/{inv['id']}/{path}").status_code == 401
+    assert c.get(f"/v1/investigations/{inv['id']}/events", headers=AUTO).status_code == 200
+    assert c.get(f"/v1/investigations/{inv['id']}/replay", headers=AUTO).json()["identical"]
+
+
+def test_paid_voice_routes_need_staff(secure_core: TestClient) -> None:
+    c = secure_core
+    inv = _create(c)
+    pid = inv["pending_question"]["action"]["participant_id"]
+    h = {"Authorization": f"Bearer {_token(c, inv['id'], pid)['token']}"}
+    tts = {"text": "namaste", "language": "hi-IN"}
+    for headers, code in (({}, 401), (h, 403)):
+        assert c.get("/v1/voice/status", headers=headers).status_code == code
+        assert c.get("/v1/voice/usage", headers=headers).status_code == code
+        assert c.post("/v1/voice/tts", json=tts, headers=headers).status_code == code
+    login(c, "approver")
+    assert c.get("/v1/voice/status").status_code == 200
+    r = c.post("/v1/voice/tts", json=tts, headers=CSRF)
+    assert r.status_code == 403  # synthesis spends credits: operators only
+    # Authorised, but Gnani is not configured in tests: refused before any call.
+    assert c.post("/v1/voice/tts", json=tts, headers=AUTO).status_code == 503
+
+
+def test_voice_stream_refuses_the_handshake_without_an_operator(secure_core: TestClient) -> None:
+    from starlette.websockets import WebSocketDisconnect
+
+    c = secure_core
+    with pytest.raises(WebSocketDisconnect) as exc, c.websocket_connect("/v1/voice/stream") as ws:
+        ws.receive_text()
+    assert exc.value.code == 4401

@@ -64,6 +64,7 @@ from ..errors import ApiError
 from ..investigations import InvestigationService, PendingQuestion
 from ..observability import log
 from ..runtime.broadcast import EventBroadcaster
+from ..visibility import for_participant
 from .conversation import QuestionAudioCache, answer_keyterms, speak_question, stt_options
 from .gnani import GnaniClient, GnaniSttStream
 
@@ -457,7 +458,8 @@ class MediaSession:
             via="speech" if text is not None else "tap",
             ms=round((time.perf_counter() - started) * 1000),
         )
-        await self.send({"type": "answer", "result": result.model_dump(mode="json")})
+        shown = result.model_copy(update={"state": for_participant(result.state, q.participant.id)})
+        await self.send({"type": "answer", "result": shown.model_dump(mode="json")})
         await self._hang_up(CallEvent.OBSERVATION_PROPOSED)
 
 
