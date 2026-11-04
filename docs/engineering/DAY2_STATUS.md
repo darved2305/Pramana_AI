@@ -57,7 +57,7 @@ and OpenAPI drift, generated-type drift and the bundle secret scan are clean.
 | N03 simulator core | **done** | `test_sim_api.py` (commitment published at creation, verified on reveal) |
 | N09 extractor + 80 held-out | **done** | Blind baseline 62/80; current 74/80 with no wrong outcomes, **not blind** (see the report's NOTES.md) |
 | `make dev`, 14 probes, spike pointer | **done** | `scripts/dev.py`, `test_physics.py`, `docs/spike-gnani.md` |
-| M1 line 1: S1 text mode, live console, participant pages, <= 6 questions | **done** | `apps/web/tests/real/m1.spec.ts` (browser) and `tests/e2e/test_m1.py` (Python bot) |
+| M1 line 1: S1 text mode, live console, participant pages, <= 6 questions | **done** | `apps/web/tests-real/m1.spec.ts` (browser) and `tests/e2e/test_m1.py` (Python bot) |
 | M1 line 2: approval flow to `verified` or reopen | **done** | Same tests: deny then approve, capability once and expiring, act, report, verify; misled run reopens |
 | M1 line 3: byte-identical replay | **done** | `/replay` and `tests/e2e/replay.py` |
 | Decisions | **done** | ADR 0011 parallel calls go (cap 3); ADR 0012 Evon no-go (no quote or GPU without a payment method) |
