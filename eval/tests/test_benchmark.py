@@ -238,3 +238,26 @@ def test_daily_quota_error_fails_fast_and_is_remembered(tmp_path: Path) -> None:
     with pytest.raises(LlmError, match="daily request budget"):
         c.complete_json([{"role": "user", "content": "2"}], {})
     assert calls == 1  # remembered: not even attempted
+
+
+def test_model_without_reasoning_control_is_retried_without_it(tmp_path: Path) -> None:
+    sent: list[dict[str, Any]] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        sent.append(body)
+        if "reasoning_effort" in body:
+            return httpx.Response(
+                400,
+                text='{"error": {"message": "Thinking level is not supported for this model."}}',
+            )
+        return _reply({"ok": 1})
+
+    c = client(tmp_path, handler)
+    assert c.complete_json([{"role": "user", "content": "q"}], {}).data == {"ok": 1}
+    c.complete_json([{"role": "user", "content": "q2"}], {})
+    assert ["reasoning_effort" in b for b in sent] == [True, False, False]  # remembered
+
+
+def test_no_paired_data_is_reported_as_none() -> None:
+    assert paired_difference([], [], "probes")["mean"] is None

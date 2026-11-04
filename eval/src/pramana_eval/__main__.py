@@ -165,6 +165,8 @@ def render(summary: dict[str, Any]) -> str:
     for name, diffs in summary["paired_vs_E"].items():
         parts = [
             f"{f}: {d['mean']:+.3f} [{d['ci95_low']:+.3f}, {d['ci95_high']:+.3f}]"
+            if d["mean"] is not None
+            else f"{f}: no paired data"
             for f, d in diffs.items()
         ]
         lines.append(f"- vs {name}: " + "; ".join(parts))

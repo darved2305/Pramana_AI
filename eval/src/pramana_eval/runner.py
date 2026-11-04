@@ -126,8 +126,8 @@ def _rate(k: int, n: int) -> float | None:
 
 def paired_difference(
     a: list[Episode], b: list[Episode], field: str, resamples: int = 10_000, seed: int = 2026
-) -> dict[str, float]:
-    """Mean of (a - b) over the same scenarios, with a bootstrap 95% CI."""
+) -> dict[str, float | None]:
+    """Mean of (a - b) over the same scenarios, with a bootstrap 95% CI (None if no pairs)."""
     by_seed = {e.seed: e for e in b if not e.failed}
     a = [e for e in a if not e.failed]
     diffs = np.array(
@@ -137,6 +137,8 @@ def paired_difference(
             if e.seed in by_seed
         ]
     )
+    if len(diffs) == 0:  # e.g. every run of one policy failed: report no data, not NaN
+        return {"mean": None, "ci95_low": None, "ci95_high": None, "n": 0.0}
     rng = np.random.default_rng(seed)
     boots = rng.choice(diffs, size=(resamples, len(diffs)), replace=True).mean(axis=1)
     lo, hi = np.percentile(boots, [2.5, 97.5])

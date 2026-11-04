@@ -194,6 +194,8 @@ class LlmClient:
         self.calls = 0
         self.cache_hits = 0
         self.max_wait_s = max_wait_s
+        self._send_reasoning = True
+        """Ask for low reasoning effort; dropped for models that reject it (e.g. Gemma)."""
         """Interactive callers set this: fail fast (and fall back) instead of waiting on quota."""
         self._lock = threading.Lock()  # budget state is shared by worker threads
 
@@ -214,7 +216,7 @@ class LlmClient:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
-            "reasoning_effort": "low",
+            **({"reasoning_effort": "low"} if self._send_reasoning else {}),
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": name, "strict": True, "schema": schema},
@@ -272,6 +274,19 @@ class LlmClient:
                 retry_after = r.headers.get("retry-after")
                 time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else backoff)
                 backoff = min(backoff * 2, 60)
+                continue
+            if (
+                r.status_code == 400
+                and self._send_reasoning
+                and ("thinking level" in body or "reasoning" in body)
+            ):
+                # This model has no reasoning control: retry once without it, remember that.
+                self._send_reasoning = False
+                payload.pop("reasoning_effort", None)
+                cache = self._cache_path(payload)
+                if cache.exists():
+                    stored = json.loads(cache.read_text(encoding="utf-8"))
+                    return LlmResult(stored["data"], stored["model"], True, stored.get("tokens", 0))
                 continue
             raise LlmError(last)
         raise LlmError(f"gave up after {max_attempts} attempts: {last}")
