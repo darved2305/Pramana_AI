@@ -1,0 +1,88 @@
+import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { defineConfig, devices } from "@playwright/test";
+
+/**
+ * End-to-end tests against a REAL simulator, core and PostgreSQL test database. Nothing is
+ * mocked. Every run gets fresh keys and a freshly migrated database (`E2E_DATABASE`), so it
+ * never touches development data. Requires the local PostgreSQL (`make db-up`) and `uv`.
+ */
+const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 3022);
+const CORE_PORT = Number(process.env.E2E_CORE_PORT ?? 8020);
+const SIM_PORT = Number(process.env.E2E_SIM_PORT ?? 8120);
+
+// Workers re-evaluate this file; keys are generated once in the main process and inherited.
+if (!process.env.E2E_SIGNING_KEY) {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  process.env.E2E_SIGNING_KEY = privateKey.export({ format: "jwk" }).d as string;
+  process.env.E2E_PUBLIC_KEY = publicKey.export({ format: "jwk" }).x as string;
+  process.env.E2E_OPERATOR_KEY = randomBytes(18).toString("base64url");
+  process.env.E2E_AUTOMATION_KEY = randomBytes(18).toString("base64url");
+  process.env.E2E_PASSWORD = randomBytes(12).toString("base64url");
+}
+const DATABASE = process.env.E2E_DATABASE ?? "pramana_web_e2e";
+process.env.E2E_DATABASE = DATABASE;
+process.env.E2E_CORE_URL = `http://127.0.0.1:${CORE_PORT}`;
+process.env.E2E_SIM_URL = `http://127.0.0.1:${SIM_PORT}`;
+
+const shared = { E2E_DATABASE: DATABASE, E2E_CORE_PORT: String(CORE_PORT), E2E_SIM_PORT: String(SIM_PORT) };
+
+export default defineConfig({
+  testDir: "./tests-real",
+  timeout: 180_000,
+  expect: { timeout: 20_000 },
+  // One shared backend and database: tests run one at a time.
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  reporter: [["list"]],
+  use: {
+    baseURL: `http://localhost:${WEB_PORT}`,
+    channel: "chrome",
+    trace: "retain-on-failure",
+    ...devices["Desktop Chrome"],
+    viewport: { width: 1440, height: 900 },
+  },
+  webServer: [
+    {
+      command: "uv run python tests-real/backend.py sim",
+      url: `http://127.0.0.1:${SIM_PORT}/health`,
+      timeout: 120_000,
+      reuseExistingServer: false,
+      env: {
+        ...shared,
+        PRAMANA_MODE: "dev",
+        SIM_OPERATOR_KEY: process.env.E2E_OPERATOR_KEY as string,
+        SIM_PARTICIPANT_PUBLIC_KEY: process.env.E2E_PUBLIC_KEY as string,
+      },
+    },
+    {
+      command: "uv run python tests-real/backend.py core",
+      url: `http://127.0.0.1:${CORE_PORT}/health`,
+      timeout: 180_000,
+      reuseExistingServer: false,
+      env: {
+        ...shared,
+        PRAMANA_MODE: "dev",
+        AUTH_REQUIRED: "true",
+        LOG_JSON: "false",
+        LOG_LEVEL: "WARNING",
+        SIM_URL: `http://127.0.0.1:${SIM_PORT}`,
+        SIM_PUBLIC_URL: `http://127.0.0.1:${SIM_PORT}`,
+        SIM_OPERATOR_KEY: process.env.E2E_OPERATOR_KEY as string,
+        PARTICIPANT_SIGNING_KEY: process.env.E2E_SIGNING_KEY as string,
+        CORE_AUTOMATION_KEY: process.env.E2E_AUTOMATION_KEY as string,
+        E2E_PASSWORD: process.env.E2E_PASSWORD as string,
+        GNANI_API_KEY: "",
+        LLM_EXTRACTOR_PROVIDER: "none",
+        EVAL_REPORTS_DIR: "apps/web/tests-real/fixtures/reports",
+      },
+    },
+    {
+      command: `npx next build && npx next start -p ${WEB_PORT}`,
+      url: `http://localhost:${WEB_PORT}`,
+      timeout: 300_000,
+      reuseExistingServer: false,
+      env: { PRAMANA_CORE_URL: `http://127.0.0.1:${CORE_PORT}`, PRAMANA_SIM_URL: `http://127.0.0.1:${SIM_PORT}` },
+    },
+  ],
+});

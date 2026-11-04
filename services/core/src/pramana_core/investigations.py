@@ -963,6 +963,7 @@ class InvestigationService:
             instructions=action.instructions[lang]
             .replace("{target}", approval.target)
             .replace("{place}", place),
+            location_id=comp.location if action.at_target_location else None,
         )
 
     async def report_intervention(

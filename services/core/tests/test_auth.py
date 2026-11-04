@@ -242,7 +242,9 @@ def test_approval_records_the_signed_in_approver_not_the_body(secure_core: TestC
     riya = {"Authorization": f"Bearer {_token(c, inv['id'], 'p_riya')['token']}"}
     cap = f"{url}/{aid}/capability"
     assert c.post(cap, params={"participant_id": "p_imran"}, headers=riya).status_code == 403
-    assert c.post(cap, params={"participant_id": "p_imran"}, headers=imran).status_code == 200
+    grant = c.post(cap, params={"participant_id": "p_imran"}, headers=imran)
+    assert grant.status_code == 200
+    assert grant.json()["location_id"] == "DB_C2_PANEL"  # the executor must stand here to act
 
 
 def test_open_mode_keeps_body_approver_for_tests(core: TestClient) -> None:

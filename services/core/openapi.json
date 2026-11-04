@@ -417,6 +417,18 @@
       "title": "Instructions",
       "type": "string"
      },
+     "location_id": {
+      "anyOf": [
+       {
+        "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Location Id"
+     },
      "scenario_id": {
       "title": "Scenario Id",
       "type": "string"

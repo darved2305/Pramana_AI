@@ -343,7 +343,8 @@ function Repair({
   preview: boolean;
   onState: (s: InvestigationState) => void;
 }) {
-  const [cap, setCap] = useState<{ capability: string; instructions: string; expires_at: string } | null>(null);
+  const [cap, setCap] = useState<{ capability: string; instructions: string; expires_at: string; location_id?: string | null } | null>(null);
+  const [there, setThere] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -375,6 +376,27 @@ function Repair({
         <div className="mt-6 rounded-[16px] border-[0.8px] border-cream/20 p-4">
           <p className="text-[16px]">{cap.instructions}</p>
           <p className="mt-2 text-[13px] text-cream/60">Valid until {new Date(cap.expires_at).toLocaleTimeString()}.</p>
+          {cap.location_id && !there ? (
+            <button
+              type="button"
+              className="btn-line lg mt-4 w-full bg-cream !text-ink"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setErr(null);
+                try {
+                  await sim.move(payload.s, payload.t, cap.location_id as string);
+                  setThere(true);
+                } catch (e) {
+                  setErr(describeError(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              I am at the panel
+            </button>
+          ) : (
           <button
             type="button"
             className="btn-line lg mt-4 w-full"
@@ -394,6 +416,7 @@ function Repair({
           >
             I have done it
           </button>
+          )}
         </div>
       )}
       {err ? <p role="alert" className="mt-4 text-[14px] text-[#ff8a7f]">{err}</p> : null}

@@ -680,6 +680,8 @@ export interface components {
             expires_at: string;
             /** Instructions */
             instructions: string;
+            /** Location Id */
+            location_id?: string | null;
             /** Scenario Id */
             scenario_id: string;
             /** Sim Url */

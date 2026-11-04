@@ -90,6 +90,8 @@ class CapabilityGrant(StrictModel):
     scenario_id: str
     sim_url: str
     instructions: str
+    location_id: Identifier | None = None
+    """Where the action must be carried out; the executor has to be there."""
 
 
 class ReportIntervention(StrictModel):
