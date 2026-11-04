@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 import httpx
+from core_auth import automation_headers
 
 from pramana_core.language.extraction import RuleExtractor
 from pramana_core.voice.conversation import answer_keyterms
@@ -79,7 +80,9 @@ async def main() -> None:
 
     extractor = RuleExtractor()
     rows = []
-    async with httpx.AsyncClient(base_url=args.core, timeout=60) as client:
+    async with httpx.AsyncClient(
+        base_url=args.core, timeout=60, headers=automation_headers()
+    ) as client:
         for f, lang, probe, expected in jobs:
             name = f.name if f.suffix.lower() != ".opus" else f.with_suffix(".ogg").name
             r = await client.post(

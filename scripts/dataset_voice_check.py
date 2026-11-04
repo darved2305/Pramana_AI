@@ -24,6 +24,7 @@ import unicodedata
 from pathlib import Path
 
 import httpx
+from core_auth import automation_headers
 
 from pramana_core.language.extraction import RuleExtractor
 
@@ -74,7 +75,7 @@ def main() -> None:
     try:
         with (
             httpx.Client(timeout=60, follow_redirects=True) as hub,
-            httpx.Client(base_url=args.core, timeout=60) as core,
+            httpx.Client(base_url=args.core, timeout=60, headers=automation_headers()) as core,
         ):
             rows = hub.get(
                 ROWS_API,

@@ -20,6 +20,7 @@ from pathlib import Path
 
 import httpx
 import websockets
+from core_auth import automation_headers
 
 PHRASES = [
     ("mr-IN", ["mr-IN", "hi-IN"], "स्क्रीन बंद आहे"),
@@ -48,7 +49,9 @@ def to_16k_mono_pcm(wav_bytes: bytes) -> bytes:
 
 
 async def stream_once(core_ws: str, pcm: bytes, langs: list[str]) -> dict[str, object]:
-    async with websockets.connect(core_ws, max_size=2**20) as ws:
+    async with websockets.connect(
+        core_ws, max_size=2**20, additional_headers=automation_headers()
+    ) as ws:
         await ws.send(json.dumps({"type": "start", "language_code": langs}))
         ready = json.loads(await ws.recv())
         if ready.get("type") != "ready":
@@ -96,7 +99,7 @@ async def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     ws_url = args.core.replace("http", "ws", 1) + "/v1/voice/stream"
 
-    async with httpx.AsyncClient(base_url=args.core, timeout=60) as c:
+    async with httpx.AsyncClient(base_url=args.core, timeout=60, headers=automation_headers()) as c:
         ready = (await c.get("/ready")).json()
         print("ready:", ready["checks"])
         clips: list[tuple[str, list[str], str, bytes]] = []

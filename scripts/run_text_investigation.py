@@ -18,14 +18,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
 
 import httpx
-
-from pramana_core.llm import read_env_file
+from core_auth import automation_headers
 
 PHRASES = {
     "yes": "haan, khul rahi hai",
@@ -203,11 +201,7 @@ def main() -> None:
         fault = {"faults": [{"component_id": comp, "mode": mode}]}
 
     # The core enforces sign-in outside tests; scripts act through the automation key.
-    key = os.environ.get("CORE_AUTOMATION_KEY") or read_env_file(ROOT / ".env").get(
-        "CORE_AUTOMATION_KEY", ""
-    )
-    auth = {"X-Automation-Key": key} if key else {}
-    core = httpx.Client(base_url=args.core, timeout=60, headers=auth)
+    core = httpx.Client(base_url=args.core, timeout=60, headers=automation_headers())
     sim = httpx.Client(base_url=args.sim)
     inv = check(
         core.post(
