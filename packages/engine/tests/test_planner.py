@@ -333,3 +333,23 @@ def test_plan_latency_budget(campus_model: CompiledModel, s1_people: list[Partic
         eng.plan()
         times.append(time.perf_counter() - t)
     assert sorted(times)[int(0.9 * len(times))] < 0.25  # NFR target is 100 ms on a server
+
+
+@pytest.mark.parametrize("top", [1, 8])
+def test_chosen_action_is_always_in_the_trace(
+    campus_model: CompiledModel, s1_people: list[ParticipantSpec], top: int
+) -> None:
+    from pramana_engine import EngineConfig
+
+    eng = Engine(campus_model, s1_people, EngineConfig(top_candidates=top))
+    for probe, loc, who, out in [
+        ("wifi_status", "F3_R304", "p_riya", "no_network"),
+        ("corridor_lights", "F3_R304", "p_riya", "on"),
+        ("internet_works", "MAINT_ROOM", "p_imran", "yes"),
+        ("breaker_c2_7", "DB_C2_PANEL", "p_imran", "up"),
+    ]:
+        eng.record_question(who)
+        eng.observe(Evidence(who, probe, loc, out))
+        plan = eng.plan()
+        if plan.kind == PlanKind.ASK:
+            assert plan.action in [c.action for c in plan.candidates]

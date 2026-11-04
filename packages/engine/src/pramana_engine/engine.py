@@ -356,6 +356,8 @@ class Engine:
         worth = [i for i in order if candidates[i].net_value_min > 0 and candidates[i].score > 0]
         if worth:
             best = candidates[worth[0]]
+            if worth[0] not in order[: cfg.top_candidates]:
+                top = [*top, best]  # the trace must always contain the chosen action
             a = best.action
             ps = self.participants[a.participant_id]
             alt = next((candidates[i] for i in worth[1:]), None)
