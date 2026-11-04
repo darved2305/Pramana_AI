@@ -36,6 +36,10 @@ from ..observability import log
 
 STT_INR_PER_SECOND = 20.0 / 3600.0
 TTS_INR_PER_CHAR = 18.0 / 10_000.0
+STT_MIN_CHARGE_INR = 0.02
+"""Observed on the dashboard (2026-11-04): a 0.03-minute stream (list Rs 0.01) cost Rs 0.02, and
+20 STT requests were billed where 17 transcribed. We meter every STT request that reaches Gnani
+at no less than this, so the budget errs high, never low."""
 
 
 def _per_request(raw_inr: float) -> float:
@@ -45,7 +49,9 @@ def _per_request(raw_inr: float) -> float:
 
 
 def stt_cost(seconds: float) -> float:
-    return _per_request(max(0.0, seconds) * STT_INR_PER_SECOND)
+    if seconds <= 0:
+        return 0.0
+    return max(STT_MIN_CHARGE_INR, _per_request(seconds * STT_INR_PER_SECOND))
 
 
 def tts_cost(chars: int) -> float:
@@ -221,7 +227,11 @@ class VoiceGovernor:
 
     @asynccontextmanager
     async def stream_slot(self) -> AsyncIterator[list[float]]:
-        """Hold one realtime session slot; yields a list to update with audio seconds sent."""
+        """Hold one realtime session slot; yields ``[audio_seconds_sent, attempted]``.
+
+        A session that reached Gnani is charged at least the STT minimum even if it failed or
+        carried no audio (failed sessions appear as billed requests on the dashboard).
+        """
         if self._streams.locked():
             raise ApiError(
                 429,
@@ -232,13 +242,16 @@ class VoiceGovernor:
         await self._reserve(worst)
         await self._streams.acquire()
         self._open_streams += 1
-        seconds = [0.0]
+        usage = [0.0, 0.0]
         try:
-            yield seconds
+            yield usage
         finally:
             self._open_streams -= 1
             self._streams.release()
-            await self._settle(worst, "stt_stream", seconds[0], stt_cost(seconds[0]))
+            seconds, attempted = usage[0], usage[1] > 0
+            cost = stt_cost(seconds) if seconds > 0 else (STT_MIN_CHARGE_INR if attempted else 0)
+            billable = max(seconds, 1e-3) if attempted else seconds
+            await self._settle(worst, "stt_stream", billable, cost)
 
     def status(self) -> dict[str, object]:
         return {

@@ -344,12 +344,13 @@ class GnaniClient:
         closed when the block exits, however it exits.
         """
         self._require_key()
-        async with self.governor.stream_slot() as seconds:
+        async with self.governor.stream_slot() as usage:
+            usage[1] = 1.0  # the session attempt reaches Gnani from here on
             upstream = await self.open_stream(language_codes, **kwargs)
             try:
                 yield upstream
             finally:
-                seconds[0] = upstream.audio_seconds_sent
+                usage[0] = upstream.audio_seconds_sent
                 await upstream.aclose()
 
     async def open_stream(

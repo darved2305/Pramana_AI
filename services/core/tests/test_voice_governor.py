@@ -55,7 +55,10 @@ def test_prices_match_the_account_price_list() -> None:
     assert tts_cost(10_000) == pytest.approx(18.0)  # Rs 18 per 10,000 characters
     # Observed debit on the Gnani dashboard: 28 characters cost Rs 0.06 (rounded up per request)
     assert tts_cost(28) == pytest.approx(0.06)
-    assert stt_cost(2.0) == pytest.approx(0.02)  # Rs 0.0111 rounds up to one paisa more
+    assert stt_cost(2.0) == pytest.approx(0.02)  # observed per-request STT minimum
+    assert stt_cost(0.5) == pytest.approx(0.02)
+    assert stt_cost(30) == pytest.approx(0.17)  # Rs 0.1667 rounded up
+    assert stt_cost(0) == 0.0
 
 
 async def test_rate_window_refuses_or_waits_for_a_free_slot() -> None:
@@ -194,3 +197,14 @@ async def test_db_ledger_persists_across_instances(migrated_db: str) -> None:
     summary = await DbLedger(db).by_service_today()
     assert summary["tts"]["requests"] == 1
     await db.dispose()
+
+
+async def test_failed_stream_attempt_is_charged_the_minimum() -> None:
+    ledger = MemoryLedger()
+    g = GnaniClient("k", "http://127.0.0.1:1", 1, governor=VoiceGovernor(GovernorLimits(), ledger))
+    with pytest.raises(ApiError):
+        async with g.stream(["hi-IN"]):
+            pass
+    assert ledger.rows[-1][1] == "stt_stream"
+    assert ledger.rows[-1][3] == pytest.approx(0.02)
+    await g.aclose()
