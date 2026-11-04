@@ -1,15 +1,15 @@
 # Benchmark report (generated; do not edit)
 
-Commit `aea1929`, seeds 10000-10299, scenario mix {'single': 206, 'pair': 39, 'no_fault': 15, 'access_limited': 40}.
+Commit `296040c`, seeds 10000-10299, scenario mix {'single': 206, 'pair': 39, 'no_fault': 15, 'access_limited': 40}.
 
-| Policy | Success | Accuracy (decided) | Accuracy (identifiable) | False confidence | Abstention recall | Probes (mean) | Effort s (mean) | People |
-|---|---|---|---|---|---|---|---|---|
-| E_ours | 84.7% | 92.9% | 79.0% | 1.7% | 46.3% | 5.50 | 189.15 | 2.52 |
-| A_checklist | 64.0% | 97.1% | 48.3% | 0.3% | 62.1% | 11.66 | 493.95 | 3.62 |
-| C_random | 56.3% | 96.2% | 36.1% | 0.0% | 72.6% | 10.64 | 580.38 | 3.34 |
-| D_greedy_entropy | 83.3% | 92.3% | 77.6% | 1.7% | 47.4% | 4.74 | 231.04 | 2.28 |
-| E-no_decision_focus | 85.0% | 93.0% | 79.5% | 2.0% | 46.3% | 5.49 | 188.24 | 2.53 |
-| E-no_cost | 84.3% | 92.8% | 79.0% | 1.7% | 48.4% | 4.74 | 235.97 | 2.28 |
+| Policy | Success | Accuracy (decided) | Accuracy (identifiable) | False confidence | Abstention recall (unidentifiable) | Pair accuracy | Probes (mean) | Effort s (mean) | People |
+|---|---|---|---|---|---|---|---|---|---|
+| E_ours | 84.7% | 92.9% | 79.0% | 1.7% | 67.9% | 79.5% | 5.50 | 189.15 | 2.52 |
+| A_checklist | 64.0% | 97.1% | 48.3% | 0.3% | 78.6% | 56.4% | 11.66 | 493.95 | 3.62 |
+| C_random | 56.3% | 96.2% | 36.1% | 0.0% | 78.6% | 35.9% | 10.64 | 580.38 | 3.34 |
+| D_greedy_entropy | 83.3% | 92.3% | 77.6% | 1.7% | 69.6% | 76.9% | 4.74 | 231.04 | 2.28 |
+| E-no_decision_focus | 85.0% | 93.0% | 79.5% | 2.0% | 67.9% | 79.5% | 5.49 | 188.24 | 2.53 |
+| E-no_cost | 84.3% | 92.8% | 79.0% | 1.7% | 69.6% | 74.4% | 4.74 | 235.97 | 2.28 |
 
 Paired differences, E minus each policy (bootstrap 95% CI):
 

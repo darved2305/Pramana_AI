@@ -73,12 +73,15 @@ replay and paid voice test routes are staff only.
 ## Benchmark (logic mode, `eval/reports/benchmark-2026-11-05/`)
 
 Our planner beats the checklist and random selection with intervals excluding zero; it is not
-significantly better than greedy entropy; abstention recall is low (about 46%). See NOTES.md.
+significantly better than greedy entropy. Where abstaining is the safe answer it abstains 68% of
+the time and is right 94% of the time when it decides anyway; it diagnoses two-fault worlds 80%
+of the time (best of all policies). An earlier 46% recall counted correct pair diagnoses as
+missed abstentions; the metric was fixed. See NOTES.md.
 
 ## Known gaps
 
 - No live Gnani run of the media socket (emulation only); the browser-to-core socket path is tested.
-- Abstention recall is a calibration target for the stopping rule.
+- Abstention on unidentifiable scenarios (68%) is a calibration target for the stopping rule.
 - The held-out extraction set has been seen; a fresh blind set is needed.
 - Per-call sockets with in-call consent, and preemption across parallel calls (D17, Nov 7).
 - Incremental TTS (Timbre streaming chunk format unverified); login throttle is per process.
