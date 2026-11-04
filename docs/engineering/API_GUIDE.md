@@ -66,7 +66,7 @@ The core never stores the fault; only the simulator does.
 | `plan.reason` | A one-paragraph explanation generated from the numbers, not by an LLM |
 | `plan.candidates[]` | "Why this question?": `eig_decision_bits`, `cost_s`, `score`, `net_value_min`, and `outcomes[]`, the predicted result of each possible answer |
 | `plan.infeasible[]` | Observations nobody available can make, and why ("needs role electrician") |
-| `pending_question` | The question waiting for an answer: who, what and where, plus `text` in their language |
+| `pending_question` | The question waiting for an answer: who, what and where, plus `text` in their language. `kind` is `probe` or `confirm`: a spoken answer the decision hinges on is re-asked once before it is relied on. Show "just checking" for `confirm` |
 | `observations[]` | The evidence ledger: outcome, hedge, directness, modality, transcript and `state` (`committed`, `discarded` or `superseded`) |
 | `approvals[]` | Approval cards: action, target, risk, reversibility, rationale and status |
 | `ground_truth` | After the reveal: the fault, `commitment_verified`, and whether the decision was `correct` |
@@ -80,6 +80,7 @@ Poll `GET /v1/investigations/{id}/events?after_seq=N`. It returns new events in 
 - `DecisionReached`, `Abstained`
 - `ApprovalRequested`, `ApprovalDecided`, `CapabilityIssued`, `InterventionReported`
 - `VerificationResult`, `Reopened`, `GroundTruthRevealed`
+- `ObservationConfirmed` (`agreed`: true, false, or null if the confirmation was unclear)
 
 Re-fetch the state after any event, or fold `BeliefUpdated` and `PlanComputed` payloads
 directly.
