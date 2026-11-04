@@ -65,6 +65,32 @@ INJECTION = _phrases(
     "forget",
     "disregard",
     "developer mode",
+    # Role and authority claims, and attempts to steer the investigation's outcome.
+    "system",
+    "admin",
+    "you are now",
+    "act as",
+    "pretend",
+    "close the ticket",
+    "close ticket",
+    "ticket close",
+    "mark investigation",
+    "investigation resolved",
+    # Hindi and Marathi: "instructions", "forget", "ignore"; Latin and Devanagari script.
+    "सूचना",
+    "सूचनांकडे",
+    "विसरा",
+    "विसरून",
+    "दुर्लक्ष",
+    "निर्देश",
+    "निर्देशों",
+    "भूल जाओ",
+    "भूल जाइए",
+    "bhool jao",
+    "bhul jao",
+    "suchna",
+    "vishara",
+    "visra",
 )
 STOP = _phrases(
     "baad mein",
@@ -79,7 +105,30 @@ STOP = _phrases(
     "stop calling",
     "call me later",
     "not now",
+    "stop",
+    "i want to stop",
+    "stop asking",
+    "thambaycha",
+    "thambaycha aahe",
+    "थांबायचं",
+    "थांबायचे",
+    "थांबा",
+    "vicharu naka",
+    "विचारू नका",
+    "bas karo",
+    "बस करो",
+    "mat pucho",
+    "mat poocho",
+    "mat puchho",
+    "मत पूछो",
+    "मत पूछिए",
 )
+# Bare agreement and refusal words, used only by the polarity rule (see ``_polar``).
+AFFIRM = frozenset(tokenize("yes yeah yep yup haan haa han haanji हाँ हां हा ho hoy होय हो ji"))
+DENY = frozenset(tokenize("no nope nahi nahin nai नहीं नही na नाही"))
+FILLER = frozenset(tokenize("re ji bhai yaar sir madam ok please"))
+POLAR = {("off", "on"): "on"}
+"""Probe outcome sets a yes/no question can be about, and the outcome "yes" means."""
 UNSURE = _phrases(
     "not sure",
     "no idea",
@@ -273,6 +322,13 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "not opening",
         "not loading",
         "not working",
+        "never load",
+        "never loads",
+        "keep spinning",
+        "keeps spinning",
+        "times out",
+        "timed out",
+        "timeout",
     ),
     "on": _phrases(
         "on",
@@ -293,6 +349,12 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "लागतो",
         "lagto",
         "light hai",
+        "video aa raha",
+        "video aa rahi",
+        "picture aa rahi",
+        "लागलेत",
+        "लागले आहेत",
+        "laglet",
     ),
     "off": _phrases(
         "off",
@@ -312,6 +374,12 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "kuch nahi",
         "काहीच नाही",
         "kahich nahi",
+        "blank",
+        "काळी",
+        "काळा",
+        "kaali",
+        "काहीच दिसत नाही",
+        "काहीच दिसत नाहीये",
     ),
     "green": _phrases("green", "hara", "hari", "हरा", "हरी", "हिरवा", "हिरवे", "hirva", "hirve"),
     "amber": _phrases(
@@ -364,6 +432,8 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "wifi nahi dikh",
         "isn't there",
         "not in the list",
+        "isn't in the list",
+        "is not in the list",
     ),
     "stuck_connecting": _phrases(
         "connecting",
@@ -380,6 +450,9 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "connect ho raha",
         "connect ho rahi",
         "jud raha",
+        "connect hi nahi ho raha",
+        "connect nahi ho raha",
+        "ip le raha",
     ),
     "connected": _phrases(
         "connected",
@@ -394,6 +467,23 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
     ),
 }
 FLIP = {"yes": "no", "no": "yes", "on": "off", "off": "on", "up": "tripped", "tripped": "up"}
+
+
+def _polar(question: str | None, outcomes: Sequence[str]) -> str | None:
+    """The outcome a bare "yes" affirms, if the question was a yes/no question about it.
+
+    Rule: "Does the ceiling light come on?" names one outcome, so it is a yes/no question
+    about it: "yes" means on and "no" means off. "Is the screen on or off?" names both, so a
+    bare "yes" does not say which and stays ``unknown``. Without the question text there is
+    no polarity. (A word test for "or" cannot work: Hindi "की" is both "or" in Marathi and the
+    possessive "of" in "छत की लाइट".)
+    """
+    key = tuple(sorted(outcomes))
+    if question is None or key not in POLAR:
+        return None
+    q = tokenize(question)
+    named = {o for o in outcomes if _find(q, OUTCOME_LEXICON.get(o, []), o)}
+    return POLAR[key] if len(named) <= 1 else None
 
 
 @dataclass(frozen=True)
@@ -439,9 +529,11 @@ class RuleExtractor:
     async def extract(
         self, text: str, outcomes: Sequence[str], *, question: str | None = None
     ) -> Extraction:
-        return self.extract_sync(text, outcomes)
+        return self.extract_sync(text, outcomes, question=question)
 
-    def extract_sync(self, text: str, outcomes: Sequence[str]) -> Extraction:
+    def extract_sync(
+        self, text: str, outcomes: Sequence[str], *, question: str | None = None
+    ) -> Extraction:
         tokens = tokenize(text)
         taken = [False] * len(tokens)
         meta = _claim(
@@ -476,6 +568,17 @@ class RuleExtractor:
                 label = flipped
             found.add(label)
             evidence.append(f"{label}<-" + " ".join(tokens[m.start : m.end]))
+
+        polar = _polar(question, outcomes)
+        if not found and polar is not None:
+            free = [t for t, used in zip(tokens, taken, strict=True) if not used]
+            said = {t for t in free if t not in FILLER}
+            if said and said <= AFFIRM:
+                found.add(polar)
+                evidence.append(f"{polar}<-polar yes")
+            elif said and said <= DENY:
+                found.add(FLIP[polar])
+                evidence.append(f"{FLIP[polar]}<-polar no")
 
         injection = "injection" in labels
         blocked = injection or "not_observed" in labels or "stale" in labels
