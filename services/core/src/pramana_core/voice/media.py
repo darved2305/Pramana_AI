@@ -28,10 +28,21 @@ Server -> client
     {"type": "empty_transcript"}  nothing recognised: nothing recorded, keep talking
     {"type": "answer", "result": AnswerResult}   then the socket closes with 1000
     {"type": "error", "code", "message", "status", "fatal"}   fatal errors close the socket
+    {"type": "call_state", "state", "event", "utt_id"}   every call-runtime transition
+    {"type": "stop_playback", "utt_id"}   the participant started speaking over the question
+    {"type": "reprompt", "utt_id", "text"}   silence: the question is asked once more
+
+The session is driven by the call runtime (``calls/runtime.py``, PLAN section 12). Opening the
+socket from the participant page means the call was accepted and consent given, so it starts
+in ``ASKING``. ``playback_done`` (or the end of the question audio, if the client never says
+so) moves it to ``LISTENING``; speech during ``ASKING`` is barge-in. After ``reprompt_s`` of
+silence the question is asked once more; after ``unavailable_s`` the session ends with
+``PARTICIPANT_SILENT`` (close 4408) and the question stays pending.
 
 Close codes: 1000 answered or stopped, 4400 bad protocol, 4401 bad token, 4403 wrong
-participant, 4404 not found, 4409 question no longer pending or session already open,
-4429 voice limits (streams, rate, budget), 4503 voice not configured, 1011 upstream failure.
+participant, 4404 not found, 4408 participant silent or session time limit, 4409 question no
+longer pending or session already open, 4429 voice limits (streams, rate, budget), 4503 voice
+not configured, 1011 upstream failure.
 """
 
 from __future__ import annotations
@@ -48,6 +59,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from pramana_contracts import Modality, SubmitAnswer
 from pramana_contracts.tokens import TokenError
 
+from ..calls.runtime import CallEvent, CallSession, CallState, CallTimers
 from ..errors import ApiError
 from ..investigations import InvestigationService, PendingQuestion
 from ..observability import log
@@ -59,6 +71,11 @@ START_TIMEOUT_S = 10.0
 TTS_CHUNK = 16 * 1024
 MAX_CLIENT_FRAME = 64 * 1024
 COMMIT_WAIT_S = 6.0
+CALL_TIMERS = CallTimers()
+"""Silence timers for media sessions (tests shorten them)."""
+PLAYBACK_GRACE_S = 1.0
+"""Extra time after the question audio's length before assuming it finished playing."""
+TIMER_POLL_S = 0.25
 
 
 def close_code_for(status: int) -> int:
@@ -67,6 +84,7 @@ def close_code_for(status: int) -> int:
         401: 4401,
         403: 4403,
         404: 4404,
+        408: 4408,
         409: 4409,
         413: 4400,
         422: 4400,
@@ -104,7 +122,12 @@ class MediaSession:
         self.ws, self.inv_id, self.question_id = ws, inv_id, question_id
         self.svc, self.gnani, self.cache = svc, gnani, cache
         self.broadcaster, self.active, self.max_s = broadcaster, active, max_s
-        self.utterance = 0
+        self.call = CallSession(
+            call_id=f"{inv_id}:{question_id}", participant_id="", timers=CALL_TIMERS
+        )
+        self.played_until: float | None = None
+        """Monotonic time by which the question audio has surely finished playing."""
+        self.spoken: bytes | None = None
         self.submitting = False
         self.done = asyncio.Event()
         self._send_lock = asyncio.Lock()
@@ -133,6 +156,28 @@ class MediaSession:
         if fatal:
             raise MediaClosedError(close_code_for(exc.status))
 
+    async def fire(self, event: CallEvent) -> None:
+        """Apply a call-runtime event (if legal now) and tell the client the new state."""
+        if not self.call.can(event):
+            return
+        t = self.call.fire(event)
+        if t.target != CallState.ASKING:
+            self.played_until = None
+        with contextlib.suppress(Exception):
+            await self.send(
+                {
+                    "type": "call_state",
+                    "state": t.target.value,
+                    "event": t.event.value,
+                    "utt_id": t.utterance,
+                }
+            )
+
+    async def _hang_up(self, event: CallEvent) -> None:
+        await self.fire(event)
+        await self.fire(CallEvent.CLOSE)
+        await self.fire(CallEvent.CLOSED)
+
     # -- lifecycle ---------------------------------------------------------------------------
 
     async def run(self) -> None:
@@ -147,10 +192,13 @@ class MediaSession:
                 await self.fail(ApiError(409, "MEDIA_SESSION_ACTIVE", "already connected"))
             jti = claims.jti
             self.active.jtis.add(jti)
+            self.call.participant_id = q.participant.id
             await self._converse(q, bool(start.get("play_question", True)))
         except MediaClosedError as exc:
             code = exc.code
         except WebSocketDisconnect:
+            if self.call.can(CallEvent.DISCONNECTED):
+                self.call.fire(CallEvent.DISCONNECTED)
             return
         finally:
             if jti is not None:
@@ -205,8 +253,13 @@ class MediaSession:
                         "model_confirmed": upstream.model_confirmed,
                     }
                 )
+                self.call.start_question(q.id)
+                await self.fire(CallEvent.ACCEPTED)
+                await self.fire(CallEvent.CONSENT_YES)  # -> ASKING
                 if play:
                     await self._speak(q)
+                if self.played_until is None:
+                    await self.fire(CallEvent.TTS_DONE)  # nothing to play: listen now
                 await self._pump(q, upstream)
         except ApiError as exc:  # no stream slot, over budget, not configured, Gnani refused
             await self.fail(exc)
@@ -218,8 +271,12 @@ class MediaSession:
         except ApiError as exc:
             await self.fail(exc, fatal=False)
             return
-        self.utterance += 1
-        utt = self.utterance
+        await self._send_audio(audio, cached)
+
+    async def _send_audio(self, audio: bytes, cached: bool) -> None:
+        self.spoken = audio
+        utt = self.call.utterance
+        self.played_until = time.monotonic() + _wav_seconds(audio) + PLAYBACK_GRACE_S
         await self.send(
             {
                 "type": "tts_start",
@@ -240,6 +297,7 @@ class MediaSession:
             asyncio.create_task(self._from_client(q, upstream), name="client"),
             asyncio.create_task(self._from_upstream(q, upstream), name="upstream"),
             asyncio.create_task(self._watch(q), name="watch"),
+            asyncio.create_task(self._timers(q), name="timers"),
         }
         try:
             done, _ = await asyncio.wait(
@@ -282,8 +340,11 @@ class MediaSession:
                 await self._submit(q, outcome=outcome)
                 return
             elif kind == "stop":
+                await self._hang_up(CallEvent.LATER)
                 return
             elif kind == "playback_done":
+                if self.call.state == CallState.ASKING:
+                    await self.fire(CallEvent.TTS_DONE)
                 continue
             else:
                 await self.fail(ApiError(400, "MEDIA_BAD_MESSAGE", f"unknown type {kind!r}"))
@@ -291,6 +352,8 @@ class MediaSession:
     async def _from_upstream(self, q: PendingQuestion, upstream: GnaniSttStream) -> None:
         async for ev in upstream.events():
             if ev.type in ("speech_start", "processing"):
+                if ev.type == "speech_start":
+                    await self._heard_speech()
                 await self.send({"type": ev.type})
             elif ev.type == "transcript":
                 text = str(ev.raw.get("text", "")).strip()
@@ -307,6 +370,8 @@ class MediaSession:
                         "provider_latency_ms": float(latency) if latency is not None else None,
                     }
                 )
+                await self._heard_speech()
+                await self.fire(CallEvent.FINAL_TRANSCRIPT)
                 await self._submit(q, text=text[:1000])
                 return
             elif ev.type == "error":
@@ -316,6 +381,38 @@ class MediaSession:
             elif ev.type == "closed":
                 await self.fail(
                     ApiError(502, "VOICE_STREAM_CLOSED", f"upstream closed ({ev.raw.get('code')})")
+                )
+
+    async def _heard_speech(self) -> None:
+        if self.call.state == CallState.ASKING:
+            utt = self.call.utterance
+            await self.fire(CallEvent.BARGE_IN)
+            await self.send({"type": "stop_playback", "utt_id": utt})
+        self.call.heard_speech()
+
+    async def _timers(self, q: PendingQuestion) -> None:
+        """Playback end, one re-prompt after silence, and giving up on a silent participant."""
+        while True:
+            await asyncio.sleep(TIMER_POLL_S)
+            if self.submitting:
+                continue
+            if self.call.state == CallState.ASKING:
+                if self.played_until is not None and time.monotonic() >= self.played_until:
+                    await self.fire(CallEvent.TTS_DONE)
+                continue
+            due = self.call.due()
+            if due == CallEvent.SILENCE_REPROMPT:
+                await self.fire(due)  # -> ASKING, a new utterance
+                await self.send({"type": "reprompt", "utt_id": self.call.utterance, "text": q.text})
+                if self.spoken is not None:
+                    await self._send_audio(self.spoken, True)  # already paid for once
+                else:
+                    await self.fire(CallEvent.TTS_DONE)
+            elif due == CallEvent.SILENCE_TIMEOUT:
+                await self.fire(due)
+                await self.fire(CallEvent.CLOSED)
+                await self.fail(
+                    ApiError(408, "PARTICIPANT_SILENT", "no answer was heard; ask again later")
                 )
 
     async def _watch(self, q: PendingQuestion) -> None:
@@ -361,3 +458,15 @@ class MediaSession:
             ms=round((time.perf_counter() - started) * 1000),
         )
         await self.send({"type": "answer", "result": result.model_dump(mode="json")})
+        await self._hang_up(CallEvent.OBSERVATION_PROPOSED)
+
+
+def _wav_seconds(audio: bytes) -> float:
+    """Playing time of a 16-bit WAV from its byte count (Timbre headers hold a placeholder)."""
+    if len(audio) < 44:
+        return 0.0
+    channels = int.from_bytes(audio[22:24], "little") or 1
+    rate = int.from_bytes(audio[24:28], "little")
+    if rate <= 0:
+        return 0.0
+    return (len(audio) - 44) / (2 * channels * rate)

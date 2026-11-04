@@ -90,11 +90,19 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   transition table, with an injected clock for the 30 s ring, 8 s re-prompt (once) and 20 s
   unavailable timers, utterance ids for dropping stale audio, and a preemption hook. Every
   state and event pair is tested (`tests/test_call_runtime.py`).
+- **The call runtime drives each media session.** Opening the socket counts as accepted and
+  consented, so the session starts in `ASKING`. `playback_done` (or the end of the question
+  audio) moves it to `LISTENING`; speech during `ASKING` is barge-in and the server sends
+  `stop_playback`. After 8 s of silence the question is asked once more (cached audio, no new
+  charge); after 20 s the session ends with `PARTICIPANT_SILENT` (close 4408) and the question
+  stays pending. Every transition is sent as `call_state`. Tests: `test_media_ws.py`
+  (spoken turn, barge-in, re-prompt then give up, hang up).
 
 ## Not yet implemented
 
-- Driving the call runtime from the media socket (consent, re-prompts, preemption across
-  calls). The socket is per question; the state machine is ready but not yet wired to it.
+- A per-call socket spanning several questions, consent inside the call, and preemption
+  across parallel calls (ADR 0011). Today the socket is per question and consent is given on
+  the participant page.
 - Incremental TTS. Question audio is synthesised by Timbre REST and sent in chunks, because the
   chunk format of the WS/SSE endpoints is undocumented and has not been checked live.
 - Published latency figures. Measurements exist but stay private under the Gnani EULA.
