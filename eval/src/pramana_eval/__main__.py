@@ -44,16 +44,22 @@ def _git_sha() -> str:
 SHORT = {"E": "E_ours", "A": "A_checklist", "C": "C_random", "D": "D_greedy_entropy"}
 
 
-def build_policies(names: list[str], provider: str, model: str | None) -> list[Policy]:
+def build_policies(
+    names: list[str], provider: str, model: str | None, rpd: int | None = None
+) -> list[Policy]:
     available: dict[str, Policy] = {p.name: p for p in [*baseline_policies(), *ablations()]}
     chosen: list[Policy] = []
     for n in names:
         if n == "B":
-            from pramana_core.llm import LlmClient
+            from pramana_core.llm import PROVIDERS, LlmClient, ProviderLimits
 
             from .llm_policy import LlmPolicy
 
-            client = LlmClient(provider, model, cache_dir=Path(".cache/llm"))
+            limits = None
+            if rpd is not None:
+                base = PROVIDERS[provider][2]
+                limits = ProviderLimits(base.requests_per_min, base.tokens_per_min, rpd)
+            client = LlmClient(provider, model, cache_dir=Path(".cache/llm"), limits=limits)
             chosen.append(LlmPolicy(client, load_pack("campus_block_c")))
         elif SHORT.get(n, n) in available:
             chosen.append(available[SHORT.get(n, n)])
@@ -71,6 +77,12 @@ def main() -> None:
     ap.add_argument("--llm-provider", default="groq", choices=["groq", "gemini"])
     ap.add_argument("--llm-model", default=None)
     ap.add_argument(
+        "--llm-rpd",
+        type=int,
+        default=None,
+        help="local requests/day cap; a provider quota error still stops the run",
+    )
+    ap.add_argument(
         "--llm-n",
         type=int,
         default=100,
@@ -81,7 +93,9 @@ def main() -> None:
     code_version = _git_sha()  # captured before running, not after
     pack = load_pack("campus_block_c")
     model = compile_pack(pack)
-    policies = build_policies(args.policies.split(","), args.llm_provider, args.llm_model)
+    policies = build_policies(
+        args.policies.split(","), args.llm_provider, args.llm_model, args.llm_rpd
+    )
     seeds = range(args.seed_start, args.seed_start + args.n)
     scenarios = [generate(pack, model, s) for s in seeds]
     results: dict[str, list[Episode]] = {}
