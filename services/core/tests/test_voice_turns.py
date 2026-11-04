@@ -222,3 +222,71 @@ def test_question_audio_cache_is_bounded() -> None:
     assert cache.get("a") is None
     cache.put("big", b"x" * 11)
     assert cache.get("big") is None
+
+
+def _voice(client: TestClient, inv: dict[str, Any], who: str = "p_riya") -> dict[str, Any]:
+    q = inv["pending_question"]
+    r = client.post(
+        f"/v1/investigations/{inv['id']}/answers/voice",
+        data={"question_id": q["id"], "participant_id": who},
+        files={"audio": ("a.wav", wav(1.0), "audio/wav")},
+    )
+    assert r.status_code == 200, r.text
+    out: dict[str, Any] = r.json()
+    return out
+
+
+def test_decision_critical_spoken_answer_is_confirmed(
+    voice: tuple[TestClient, FakeGnaniHttp],
+) -> None:
+    client, _ = voice
+    inv = create(client)
+    first = _voice(client, inv)  # "NAVA-WiFi dikh hi nahi raha": moves the decision a lot
+    state = first["result"]["state"]
+    confirm = state["pending_question"]
+    assert confirm["kind"] == "confirm"
+    assert confirm["action"]["probe_id"] == "wifi_status"
+    assert confirm["text"].startswith("Ek baar pakka kar lete hain")  # Riya: Hinglish
+    p_before = state["belief"]["map_decision_probability"]
+    agreed = _voice(client, {**inv, "pending_question": confirm})  # same reading heard again
+    after = agreed["result"]["state"]
+    assert after["pending_question"]["kind"] == "probe"  # planning resumes
+    assert after["belief"]["map_decision_probability"] > p_before  # discount removed
+    events = client.get(f"/v1/investigations/{inv['id']}/events").json()
+    confirmed = [e["payload"] for e in events if e["type"] == "ObservationConfirmed"]
+    assert confirmed[-1]["agreed"] is True
+
+
+def test_contradicted_confirmation_discards_the_misheard_answer(
+    voice: tuple[TestClient, FakeGnaniHttp],
+) -> None:
+    client, fake = voice
+    inv = create(client)
+    first = _voice(client, inv)
+    confirm = first["result"]["state"]["pending_question"]
+    fake.transcript = "connected hai"  # the second recognition disagrees
+    second = _voice(client, {**inv, "pending_question": confirm})
+    state = second["result"]["state"]
+    original = [o for o in state["observations"] if o["probe_id"] == "wifi_status"]
+    assert original[-1]["state"] == "discarded"
+    before = {h["id"]: h["probability"] for h in inv["belief"]["hypotheses"]}
+    after = {h["id"]: h["probability"] for h in state["belief"]["hypotheses"]}
+    assert after == pytest.approx(before)  # back to the belief before the misheard answer
+    client.app.state.investigations.evict(inv["id"])  # type: ignore[attr-defined]
+    rebuilt = client.get(f"/v1/investigations/{inv['id']}").json()
+    assert rebuilt["belief"] == state["belief"]  # replay reproduces the confirmation
+
+
+def test_typed_answers_are_not_reconfirmed(voice: tuple[TestClient, FakeGnaniHttp]) -> None:
+    client, _ = voice
+    inv = create(client)
+    q = inv["pending_question"]
+    r = client.post(
+        f"/v1/investigations/{inv['id']}/answers",
+        json={
+            "question_id": q["id"],
+            "participant_id": "p_riya",
+            "text": "NAVA-WiFi dikh hi nahi raha",
+        },
+    )
+    assert r.json()["state"]["pending_question"]["kind"] == "probe"

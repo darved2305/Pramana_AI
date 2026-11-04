@@ -9,6 +9,15 @@ from __future__ import annotations
 from pramana_contracts import ProbeAction, TemplateLanguage
 from pramana_domain import DomainPack
 
+CONFIRM_PREFIX: dict[TemplateLanguage, str] = {
+    "en": "Sorry, just to be sure, once more: ",
+    "hi-en": "Ek baar pakka kar lete hain: ",
+    "hi": "एक बार पक्का कर लेते हैं: ",
+    "mr": "एकदा खात्री करून घेऊया: ",
+}
+"""Asked when a spoken answer alone would change the decision. The question is repeated in its
+original, item-specific form (not "did you say off?"), so the confirmation is not leading."""
+
 
 def realize(pack: DomainPack, action: ProbeAction, language: TemplateLanguage) -> str:
     probe = pack.probe_by_id[action.probe_id]

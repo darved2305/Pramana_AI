@@ -91,6 +91,7 @@ class QuestionRow(Base):
     language: Mapped[str] = mapped_column(String(8))
     text: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16))
+    kind: Mapped[str] = mapped_column(String(16), default="probe", server_default="probe")
     asked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

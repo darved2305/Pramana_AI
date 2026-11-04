@@ -17,7 +17,7 @@ import asyncio
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,6 +63,7 @@ from pramana_engine import (
     EngineConfig,
     Evidence,
     EvidenceError,
+    ObserveResult,
     compile_pack,
 )
 
@@ -76,7 +77,7 @@ from .db import (
 )
 from .errors import ApiError, not_found
 from .language.extraction import Extractor
-from .language.realize import realize
+from .language.realize import CONFIRM_PREFIX, realize
 from .observability import log
 from .sim_client import SimClient
 
@@ -202,6 +203,13 @@ class InvestigationService:
                 )
             elif type_ == "ParticipantUnavailable":
                 engine.set_available(payload["participant_id"], False)
+            elif type_ == "ObservationConfirmed" and payload.get("agreed") is not None:
+                engine.confirm(
+                    payload["participant_id"],
+                    payload["probe_id"],
+                    payload["location_id"],
+                    bool(payload["agreed"]),
+                )
             elif type_ == "Reopened":
                 engine.reopen()
             elif type_ == "InterventionReported":
@@ -222,7 +230,7 @@ class InvestigationService:
         question_id: str | None,
         modality: str,
         transcript: str | None,
-    ) -> Observation:
+    ) -> tuple[Observation, ObserveResult]:
         try:
             result = engine.observe(ev)
         except EvidenceError as exc:
@@ -267,9 +275,10 @@ class InvestigationService:
                 "contradiction": result.contradiction,
                 "surprise_bits": result.surprise_bits,
                 "extraction": extraction.model_dump(mode="json"),
+                "decision_critical": result.decision_critical,
             },
         )
-        return obs
+        return obs, result
 
     async def _supersede(self, session: AsyncSession, inv_id: str, obs: Observation) -> None:
         """Mark earlier committed answers by the same person to the same site as superseded."""
@@ -364,6 +373,98 @@ class InvestigationService:
         }
         self._event(session, row.id, "DecisionReached" if decided else "Abstained", row.outcome)
 
+    def _ask_confirmation(
+        self, session: AsyncSession, row: InvestigationRow, engine: Engine, asked: QuestionRow
+    ) -> None:
+        """Re-ask the same item-specific question (not "did you say X?"), same person."""
+        lang = cast(TemplateLanguage, asked.language)
+        qid = _id("q")
+        text = CONFIRM_PREFIX[lang] + asked.text
+        session.add(
+            QuestionRow(
+                id=qid,
+                investigation_id=row.id,
+                participant_id=asked.participant_id,
+                probe_id=asked.probe_id,
+                location_id=asked.location_id,
+                requires_move=False,
+                language=asked.language,
+                text=text,
+                status=QuestionStatus.PENDING.value,
+                kind="confirm",
+                asked_at=_now(),
+            )
+        )
+        engine.record_question(asked.participant_id)
+        action = {
+            "participant_id": asked.participant_id,
+            "probe_id": asked.probe_id,
+            "location_id": asked.location_id,
+            "requires_move": False,
+        }
+        self._event(
+            session,
+            row.id,
+            "QuestionAsked",
+            {
+                "question_id": qid,
+                "action": action,
+                "language": asked.language,
+                "text": text,
+                "kind": "confirm",
+                "confirms_question": asked.id,
+            },
+        )
+
+    async def _apply_confirmation(
+        self,
+        session: AsyncSession,
+        inv_id: str,
+        engine: Engine,
+        q: QuestionRow,
+        extraction: Extraction,
+    ) -> Observation:
+        """Agreement removes the speech discount; disagreement discards the earlier answer."""
+        original = (
+            await session.execute(
+                select(ObservationRow)
+                .where(
+                    ObservationRow.investigation_id == inv_id,
+                    ObservationRow.participant_id == q.participant_id,
+                    ObservationRow.probe_id == q.probe_id,
+                    ObservationRow.location_id == q.location_id,
+                    ObservationRow.state == ObservationState.COMMITTED.value,
+                )
+                .order_by(ObservationRow.committed_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if original is None:
+            raise ApiError(409, "NOTHING_TO_CONFIRM", "the answer being confirmed was not found")
+        agreed: bool | None = None
+        if extraction.outcome != UNKNOWN_OUTCOME:
+            agreed = extraction.outcome == original.outcome
+            engine.confirm(q.participant_id, q.probe_id, q.location_id, agreed)
+            if not agreed:
+                original.state = ObservationState.DISCARDED.value
+        self._event(
+            session,
+            inv_id,
+            "ObservationConfirmed",
+            {
+                "participant_id": q.participant_id,
+                "probe_id": q.probe_id,
+                "location_id": q.location_id,
+                "original_outcome": original.outcome,
+                "heard": extraction.outcome,
+                "agreed": agreed,
+                "question_id": q.id,
+            },
+        )
+        return Observation.model_validate(
+            {c: getattr(original, c) for c in Observation.model_fields}
+        )
+
     # -- commands --------------------------------------------------------------------------------
 
     async def create(self, req: CreateInvestigation) -> InvestigationState:
@@ -442,7 +543,7 @@ class InvestigationService:
             extraction.hedge,
             extraction.directness,
         )
-        self._record_observation(
+        _ = self._record_observation(
             session,
             row.id,
             engine,
@@ -499,19 +600,38 @@ class InvestigationService:
                         extraction.directness,
                         ans.modality,
                     )
-                    obs = self._record_observation(
-                        session,
-                        inv_id,
-                        engine,
-                        ev,
-                        extraction,
-                        question_id=q.id,
-                        modality=ans.modality.value,
-                        transcript=ans.text,
-                    )
-                    await self._supersede(session, inv_id, obs)
                     q.status, q.answered_at = QuestionStatus.ANSWERED.value, _now()
-                    if extraction.wants_to_stop:
+                    if q.kind == "confirm":
+                        obs = await self._apply_confirmation(session, inv_id, engine, q, extraction)
+                        self._apply_plan(session, row, engine, engine.plan())
+                        row.version += 1
+                        version = row.version
+                        continue_planning = False
+                    else:
+                        obs, observed = self._record_observation(
+                            session,
+                            inv_id,
+                            engine,
+                            ev,
+                            extraction,
+                            question_id=q.id,
+                            modality=ans.modality.value,
+                            transcript=ans.text,
+                        )
+                        await self._supersede(session, inv_id, obs)
+                        continue_planning = True
+                        if (
+                            ans.modality == Modality.VOICE
+                            and observed.used_as_evidence
+                            and observed.decision_critical
+                        ):
+                            # The decision hinges on one spoken answer, and speech recognition
+                            # gives no confidence score: confirm it before relying on it.
+                            self._ask_confirmation(session, row, engine, q)
+                            row.version += 1
+                            version = row.version
+                            continue_planning = False
+                    if continue_planning and extraction.wants_to_stop:
                         engine.set_available(q.participant_id, False)
                         self._event(
                             session,
@@ -519,9 +639,10 @@ class InvestigationService:
                             "ParticipantUnavailable",
                             {"participant_id": q.participant_id, "reason": "asked to stop"},
                         )
-                    self._apply_plan(session, row, engine, engine.plan())
-                    row.version += 1
-                    version = row.version
+                    if continue_planning:
+                        self._apply_plan(session, row, engine, engine.plan())
+                        row.version += 1
+                        version = row.version
             except BaseException:
                 self._cache.pop(inv_id, None)  # the engine may have been mutated
                 raise
@@ -643,6 +764,7 @@ class InvestigationService:
                 outcomes=list(model.outcomes[pending.probe_id]),
                 status=QuestionStatus(pending.status),
                 asked_at=pending.asked_at,
+                kind="confirm" if pending.kind == "confirm" else "probe",
             ),
             observations=[
                 Observation.model_validate({c: getattr(o, c) for c in Observation.model_fields})

@@ -82,6 +82,9 @@ class ObserveResult:
     contradiction: list[str]
     """Ids of earlier evidence sites that no single modelled cause can reconcile with this one."""
     surprise_bits: float | None
+    decision_critical: bool = False
+    """This answer on its own changed the leading decision, or moved its probability by more
+    than ``confirm_delta``. A spoken answer like that is worth confirming before relying on it."""
 
 
 @dataclass
@@ -182,9 +185,55 @@ class Engine:
         log_lik = self._site_log_lik(ev, site)
         surprise = float(-np.log2(np.exp(log_lik) @ p_before))
         contradiction = self._contradictions(ev, site)
+        dm_before = decision_marginal(self.model, p_before)[:-1]
         self._log_terms += log_lik
         self._evidence[key] = ev
-        return ObserveResult(True, "committed", previous is not None, contradiction, surprise)
+        dm_after = decision_marginal(self.model, self.posterior())[:-1]
+        d_after = int(np.argmax(dm_after))
+        critical = d_after != int(np.argmax(dm_before)) or (
+            abs(float(dm_after[d_after] - dm_before[d_after])) > self.cfg.confirm_delta
+        )
+        return ObserveResult(
+            True, "committed", previous is not None, contradiction, surprise, critical
+        )
+
+    def confirm(self, participant_id: str, probe_id: str, location_id: str, agreed: bool) -> None:
+        """Apply a confirmation of an earlier spoken answer.
+
+        Agreement means two independent recognitions of the same reading matched, so the
+        speech-recognition discount is removed (the person's own reliability still applies).
+        Disagreement means at least one was misheard: the earlier answer is discarded.
+        """
+        key: SiteKey = (participant_id, probe_id, location_id)
+        store = self._repair.evidence if self._repair is not None else self._evidence
+        ev = store.get(key)
+        if ev is None:
+            raise EvidenceError("nothing to confirm for that participant, probe and place")
+        site = self.model.site_index[(probe_id, location_id)]
+        preds = self._repair.fixed_predictions if self._repair is not None else None
+        if self._repair is not None:
+            self._repair.lt_fixed -= self._site_log_lik(ev, site, preds)
+            self._repair.lt_not_fixed -= self._site_log_lik(ev, site)
+        else:
+            self._log_terms -= self._site_log_lik(ev, site)
+        if not agreed:
+            del store[key]
+            return
+        confirmed = Evidence(
+            ev.participant_id,
+            ev.probe_id,
+            ev.location_id,
+            ev.outcome,
+            ev.hedge,
+            ev.directness,
+            Modality.TEXT,
+        )
+        store[key] = confirmed
+        if self._repair is not None:
+            self._repair.lt_fixed += self._site_log_lik(confirmed, site, preds)
+            self._repair.lt_not_fixed += self._site_log_lik(confirmed, site)
+        else:
+            self._log_terms += self._site_log_lik(confirmed, site)
 
     def _contradictions(self, ev: Evidence, site: int) -> list[str]:
         """Earlier evidence that no modelled single cause can explain together with ``ev``."""

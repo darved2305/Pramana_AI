@@ -56,6 +56,9 @@ class EngineConfig:
     top_infeasible: int = 5
     planning_reliability: float = 0.95
     """Reliability assumed when valuing actions nobody present can perform (abstention report)."""
+    confirm_delta: float = 0.15
+    """A single answer moving the leading decision's probability by more than this is
+    decision-critical (PRODUCT.md, confirmation arbiter)."""
     repair_failure_prior: float = 0.1
     """P(a repair did not take effect even though its target was the cause)."""
     verified_threshold: float = 0.97

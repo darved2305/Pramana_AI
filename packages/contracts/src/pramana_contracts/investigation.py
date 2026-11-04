@@ -142,6 +142,8 @@ class Question(StrictModel):
     outcomes: list[str]
     status: QuestionStatus
     asked_at: datetime
+    kind: Literal["probe", "confirm"] = "probe"
+    """``confirm``: re-asking a spoken answer the decision hinges on, before relying on it."""
 
 
 class SubmitAnswer(StrictModel):

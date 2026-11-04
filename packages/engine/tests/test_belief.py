@@ -222,3 +222,28 @@ def test_voice_answers_count_slightly_less_than_typed_ones(toy_model: CompiledMo
     off_pred, on_pred = 0.9 * 0.95 + 0.05, 0.9 * 0.05 + 0.05
     unnorm = [0.006 * off_pred, 0.004 * off_pred, 0.0015 * on_pred, 0.0005 * 0.5]
     np.testing.assert_allclose(spoken.posterior(), np.array(unnorm) / sum(unnorm), atol=1e-12)
+
+
+def test_decision_critical_answers_are_flagged(toy_model: CompiledModel) -> None:
+    eng = toy_engine(toy_model)
+    lamp = eng.observe(Evidence("p_ele", "lamp", "ROOM", "off"))
+    assert not lamp.decision_critical  # "reset the breaker" stays ahead: 0.50 -> 0.58
+    breaker = eng.observe(Evidence("p_ele", "breaker", "PANEL", "up"))
+    assert breaker.decision_critical  # flips the leading decision to "replace the lamp"
+    again = eng.observe(Evidence("p_stu", "lamp", "ROOM", "off"))
+    assert not again.decision_critical  # agrees with what is already believed
+
+
+def test_confirmation_removes_the_voice_discount_or_discards(toy_model: CompiledModel) -> None:
+    from pramana_contracts import Modality
+
+    spoken, typed, wrong = toy_engine(toy_model), toy_engine(toy_model), toy_engine(toy_model)
+    for eng in (spoken, wrong):
+        eng.observe(Evidence("p_ele", "lamp", "ROOM", "off", modality=Modality.VOICE))
+    typed.observe(Evidence("p_ele", "lamp", "ROOM", "off"))
+    spoken.confirm("p_ele", "lamp", "ROOM", agreed=True)
+    np.testing.assert_allclose(spoken.posterior(), typed.posterior(), atol=1e-12)
+    wrong.confirm("p_ele", "lamp", "ROOM", agreed=False)
+    np.testing.assert_allclose(wrong.posterior(), toy_model.prior, atol=1e-12)
+    with pytest.raises(EvidenceError, match="nothing to confirm"):
+        wrong.confirm("p_ele", "lamp", "ROOM", agreed=True)

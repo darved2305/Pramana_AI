@@ -1264,6 +1264,15 @@
       "title": "Id",
       "type": "string"
      },
+     "kind": {
+      "default": "probe",
+      "enum": [
+       "probe",
+       "confirm"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
      "language": {
       "enum": [
        "en",
