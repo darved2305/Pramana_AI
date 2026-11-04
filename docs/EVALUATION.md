@@ -1,0 +1,232 @@
+# EVALUATION.md — Benchmark design, baselines, metrics, ablations, falsification
+
+> **There are no results in this file.** Every number below is a target, a configuration value, or a cost estimate. Result tables are filled in only by `eval/report.py` from a `summary.json` produced by a tagged commit.
+>
+> **Pre-registration.** The metric definitions, N, seeds and thresholds in this file are frozen on **Nov 7 at 18:00 IST**, before the final runs.
+
+---
+
+## 1. Questions the benchmark must answer
+
+| ID | Hypothesis | Measured by |
+|---|---|---|
+| E-H1 | Adaptive, decision-focused, cost-aware selection reaches the correct decision with fewer probes and less time than a fixed checklist. | E vs A: accuracy, probes, time |
+| E-H2 | Our explicit belief-plus-VOI planner beats a frontier LLM that chooses from the *same* action menu, mainly on false confidence and on probes needed at equal accuracy. | E vs B |
+| E-H3 | Selection matters, not just Bayesian updating. | E vs C (random selection with our updates) and vs D (greedy entropy) |
+| E-H4 | Integrating out reliability keeps accuracy high under noisy or adversarial participants. | Ablation: E − reliability integration; robustness curves |
+| E-H5 | The system abstains when the evidence cannot settle the decision, and rarely abstains otherwise. | Abstention precision and recall |
+| E-H6 | Verification catches wrong repairs at low extra cost. | Catch rate; extra probes |
+| E-H7 | Parallel calls cut time-to-decision without hurting accuracy. | K=1 vs K=3 |
+
+---
+
+## 2. Environment and scenarios
+
+- **Pack:** `campus_block_c`, about 30 components and about 15 probes with variants. The hypothesis space holds single faults, pruned pairs, `NO_FAULT` and `OPEN_WORLD`, roughly 400–900 hypotheses in total [I].
+- **Truth vs model.** The simulator runs the *true* topology and fault. The agent sees only the *documented* topology. These are identical except in drift scenarios (P2). The simulator also contains **unmodelled faults** that are absent from the agent's library.
+- **Noise mismatch, on purpose.** Simulated participants use error processes that **differ** from the agent's priors:
+  - correlated errors (two lay people misreading the same ambiguous LED);
+  - a different acquiescence rate;
+  - occasional "answering a different question";
+  - stale reports ("it was down 10 minutes ago").
+
+  This stops the benchmark from rewarding a model that only ever meets its own assumptions.
+
+### 2.1 Curated scenarios
+
+| ID | Hidden truth | Participants | What it tests | Expected good behaviour |
+|---|---|---|---|---|
+| S1 | Breaker CB_C2_7 tripped (SW_C2 and NVR_C2 lose power) | Riya (F3, Hinglish), Mahesh (guard, Marathi, closet keys), Imran (electrician, Hindi) | Cross-domain inference; routing; verification | Ask about the CCTV/NVR; decide to dispatch the electrician; verify with the NVR boot screen |
+| S2 | AP_2A dead; Aarav on AP_2B, Neha on AP_2A | Aarav, Neha (F2 students), Mahesh | Contradiction and reconciliation | Tie-break question on AP identity; decide REPLACE_AP_2A |
+| S3 | DNS_A down | Riya, Aarav | Similar symptoms with different causes (DNS vs uplink vs ISP) | IP-bookmark probe separates DNS from routing |
+| S4 | SW_C2 dead **or** closet power (sampled); only Riya available, no closet access | Riya | Unidentifiable with the people available | Abstain, stating "needs IDF-2 access" |
+| S5 | CB_C2_7 trips; someone resets it 3 min into the run | Riya, Mahesh, Imran | Changing world | Surprise detected; refresh probe; no false contradiction |
+| S6 (P2) | AP_3B actually wired to SW_C; SW_C2 dead | Riya, Mahesh | Map drift | Drift hypothesis rises above the double-fault explanation |
+| S7 | SW_C2 dead; "Vikram" falsely claims to be at IDF-2 and reports green LEDs | Vikram (adversary), Mahesh, Riya | Adversarial testimony; presence challenge | Challenge failed; weight lowered; correct decision |
+| S8 | ISP down **and** AP_3A dead | Riya, Aarav, Mahesh | Multiple simultaneous faults | Pair hypothesis; two decisions |
+| S9 | Unmodelled AP reboot loop (LED cycling) | Riya, Mahesh | Open world | P(OPEN_WORLD) rises; abstain with recommended checks |
+| S10 | DHCP pool exhausted (connected devices fine, new devices fail) | Riya (reconnects), Aarav (already connected) | Time- and context-dependent symptoms | Reconciliation by device state; decide FIX_DHCP |
+
+### 2.2 Random scenario generator (`eval/generator.py`)
+
+- **Fault mix:**
+
+  | Fault type | Share |
+  |---|---|
+  | Single | 65% |
+  | Pair | 15% |
+  | No fault (user-side or false alarm) | 5% |
+  | Unmodelled | 5% |
+  | Mid-run change | 5% |
+  | Unidentifiable by construction (access restricted) | 5% |
+  | Drift | 0% (enabled only in P2 runs) |
+
+- **Participants:** 3–5, drawn from archetypes. Each archetype comes with skills, roles, language, post location and a device:
+  - lay student (F1, F2 or F3)
+  - guard (with keys)
+  - housekeeping (corridors)
+  - electrician
+  - IT technician (remote, 5 min away)
+- **Reliability per participant and probe class**, drawn from:
+
+  | Profile | Device checks | Visual LED/screen | Panel (technician) |
+  |---|---|---|---|
+  | lay | Beta(18, 2) | Beta(8, 3) | n/a |
+  | access | Beta(19, 1) | Beta(12, 2) | n/a |
+  | technician | Beta(38, 2) | Beta(30, 2) | Beta(48, 2) |
+
+  With 10% probability per scenario, one adversary is added (r ≈ 0.3, plus false presence claims).
+- **Behaviours:**
+  - hedge probability 0.2 (higher when the participant's sampled r is low);
+  - hearsay 0.1 for lay participants;
+  - unavailability 0.1;
+  - mid-call drop 0.05;
+  - "later" 0.05.
+- **Time model:**
+  - call setup 15 s;
+  - probe execution ~ lognormal with median `exec_s` and σ 0.4;
+  - walking times from the pack graph;
+  - parallel calls up to K.
+- **Common random numbers.** Each participant's answer noise is seeded by `(scenario_seed, participant, probe, location, ask_index)`. Two policies that ask the same person the same question get the same answer. This makes the paired comparisons fair.
+
+---
+
+## 3. Policies
+
+All policies use the same `PolicyEnv`: the same feasible action menu, the same simulated answers, clock and costs, and the same decision classes.
+
+| ID | Policy | Description |
+|---|---|---|
+| **A** | Fixed checklist | A reasonable SOP that a campus network admin would write (a decision tree of about 10 nodes, with branching on the answers). Order: reporter's Wi-Fi visible? → others on the same floor? → another floor? → guard checks the closet on the reporter's floor → electrician checks the DB → escalate to the ISP. Updates the same Bayesian belief so that a decision and confidence can be read out at the end. |
+| **B** | LLM-as-policy | Each step, a frontier LLM (`claude-opus-5-5`, effort `medium`) gets the documented topology (text), participants (location, roles, languages), the feasible action menu (IDs, descriptions, cost estimates) and the history of (action, answer). It returns strict JSON `{action_id \| "conclude", decision_class, confidence}`. It must conclude within 30 steps. In logic mode it sees structured answers; in language mode it sees utterances. |
+| **C** | Random feasible + our belief | Random action from the feasible menu. Our updates and stopping rule. |
+| **D** | Greedy hypothesis-entropy | EIG over H only, no cost, no decision classes; our stopping rule. |
+| **E** | **Ours** | EIG_D + η·EIG_H per unit cost, reliability integration, EVOI stop and abstain, verification. K = 1 or 3. |
+| **O** | Oracle (bound) | Knows the truth. Picks the minimum-cost set of probes that would make the true decision certain under noise-free answers (exhaustive search over small sets). Not achievable; only a lower bound on probes. |
+
+---
+
+## 4. Metrics (precise definitions)
+
+| Metric | Definition |
+|---|---|
+| Decision accuracy | `dec_pred == dec_true` over scenarios where the policy decided |
+| Overall success | decided correctly **or** correctly abstained (on scenarios marked unidentifiable or open-world) |
+| Exact-cause accuracy | `argmax_h == h_true` (single and pair scenarios) |
+| Top-3 hypothesis accuracy | `h_true ∈ top3(posterior)` at the time of the decision |
+| Probes | Number of committed observations (including confirmations and challenges) |
+| People contacted / walks | Counts |
+| Simulated time-to-decision | Wall-clock time under the time model and parallelism |
+| Cost | Seconds-equivalent (time + fatigue) plus an estimated ₹ for API usage (logic mode: none) |
+| Bits per probe | Mean reduction in decision entropy per committed probe |
+| False-confidence rate | `P(confidence ≥ 0.9 ∧ wrong)` over all scenarios |
+| Abstention recall / precision | Recall on unidentifiable or open-world scenarios; precision = abstentions that were appropriate |
+| Calibration | Expected calibration error (10 bins) of decision confidence; reliability diagram |
+| Verification catch rate | Over runs where a wrong repair was executed (natural, or forced in S1-wrong variants): fraction flagged NOT VERIFIED |
+| Verification overhead | Extra probes added by verification |
+| Robustness curves | Accuracy and false-confidence vs mean reliability ∈ {0.95, 0.9, 0.85, 0.8, 0.7}; with/without adversary; unavailability ∈ {0, 0.1, 0.3}; change events on/off |
+| Extraction (language level) | Outcome accuracy; hedge and directness accuracy; injection-flag recall |
+| Live end-to-end (audio level, internal) | Task completion over N live runs; turn latency p50/p95; confirmation rate; caught ASR substitutions |
+
+---
+
+## 5. Ablations (on top of E)
+
+1. − reliability integration (fixed r = 0.95)
+2. − decision focus (EIG_H only)
+3. − cost (EIG only)
+4. − batching (K = 1 vs 3)
+5. − hedge/hearsay mixing
+6. − confirmation arbiter (audio level, internal)
+7. − question-conditioned ASR (audio level, internal; EULA)
+8. − presence challenges (S7 family)
+9. − verification (catch rate drops to the symptom check)
+10. − OPEN_WORLD hypothesis (abstention behaviour)
+
+---
+
+## 6. Statistical analysis plan
+
+- **Paired design** (common random numbers). For each metric, report the per-scenario difference (E − X).
+  - Bootstrap 95% CIs, 10,000 resamples.
+  - McNemar's test for accuracy differences.
+  - Wilcoxon signed-rank for probes and time.
+  - Holm correction across the 5 primary comparisons (E vs A, B, C, D; K = 1 vs 3).
+- **Sample sizes:**
+  - Logic mode: N ≥ 500 random plus 50 per curated scenario.
+  - Baseline B: N = 150–300, depending on budget (§7).
+  - Language mode: N = 100.
+  - Audio level: N ≈ 20 live or recorded runs.
+- **Report:** medians, IQRs and means. Always report the denominators.
+
+---
+
+## 7. Cost estimates (verify on 10 scenarios first, then extrapolate)
+
+| Item | Assumptions | Estimate |
+|---|---|---|
+| Baseline B on `claude-opus-5-5` ($4 / $20 per MTok; cache reads $0.20/MTok per our SDK reference) | About 4k input tokens per step (static topology and menu cached), ~0.8–2k output tokens per step including thinking, ~8 steps per scenario | ≈ $0.15–0.45 per scenario → **$45–$135 for N = 300** |
+| Same on `claude-haiku-5-5` ($0.10 / $0.50) | Same token counts | Roughly 40× cheaper; a cheaper *but weaker* baseline. The team decides. If used, it must be labelled as such. |
+| Language-mode utterance writer | ~300 in / 100 out × 6 utterances × 100 scenarios | A few dollars |
+| Our extractor in language mode | ~1.5k in / 300 out × 600 | Low tens of dollars on Opus 5.5 |
+| Gnani credits | Logic and language modes use none; audio level ≈ 20 runs × ~3 min | Measured against the Day-1 calibration |
+
+---
+
+## 8. Falsification criteria (stated in advance)
+
+The central thesis is **falsified for this domain** if any of the following hold on frozen code with the pre-registered N:
+
+1. **E does not beat B** on probes needed at equal or better decision accuracy, **and** on false-confidence rate. Specifically: neither 95% CI excludes 0 in E's favour, using paired scenarios at N ≥ 300 (or the largest affordable N, reported).
+2. **E's accuracy falls by more than 20 points** when mean participant reliability drops from 0.95 to 0.85, which would mean reliability modelling fails.
+3. **E does not beat C** on probes, which would mean selection does not matter here and only updating does.
+4. **Abstention recall is below 50%** on unidentifiable scenarios while the false-confidence rate is above 5%, which would mean the system is overconfident.
+5. **Live extraction outcome accuracy is below 90%** on short answers, which would mean the voice layer is not viable yet.
+
+If any of these happens, we publish it in the README and the submission explanation, and say what we changed or learned.
+
+---
+
+## 9. Failure analysis protocol
+
+For every failed run in the final report:
+1. Classify the failure as one of: model misspecification, participant noise, planner myopia, stopping-rule error, extraction error, ASR error, unavailability, or bug.
+2. Link the trace (event log plus `PlanComputed` candidates).
+3. Show the top 5 exemplars with a short narrative: "the agent believed X because Y; the truth was Z".
+4. Recommend a fix (prior, cost, variant, rule) and say whether it was applied.
+5. **Never tune on the test seeds.** Use dev seeds 0–999 and final seeds 10,000–10,999.
+
+---
+
+## 10. Test cases (beyond the scenarios)
+
+- **Toy analytic cases.** Two hypotheses, one probe, known reliability; check the posterior and EIG against hand-calculated values. Plus a three-hypothesis case where the first probe that maximizes EIG_H is not the one that maximizes EIG_D, to test decision focus.
+- **Invariants (property tests):**
+  - posteriors sum to 1;
+  - EIG ≥ 0;
+  - EIG_D ≤ H(D);
+  - batch gain is monotone;
+  - adding an exact duplicate of a consistent observation never lowers the true hypothesis's posterior when r > 0.5;
+  - a participant with r → 0.5 contributes ~0 bits.
+- **Determinism.** Same seed and answers produce an identical `PlanComputed` sequence.
+- **Isolation.** The engine package import graph excludes `pramana_sim`.
+
+---
+
+## 11. Results template (auto-filled; do not edit by hand)
+
+```
+Run: <run_id>  Commit: <git_sha>  Date: <ts>  Seeds: 10000–10499 (+ curated)  Mode: logic
+| Policy | Success | Decision acc | Probes (median) | Time-to-decision (median s) | False-conf | ECE | Abstain R/P |
+| A      |         |              |                 |                             |            |     |             |
+| B      |         |              |                 |                             |            |     |             |
+| C      |         |              |                 |                             |            |     |             |
+| D      |         |              |                 |                             |            |     |             |
+| E (K=1)|         |              |                 |                             |            |     |             |
+| E (K=3)|         |              |                 |                             |            |     |             |
+| O      |   n/a   |     n/a      |                 |                             |    n/a     | n/a |     n/a     |
+Paired differences E−X with 95% CIs: …
+Ablations: …
+Robustness curves: plots/robustness_*.png
+Calibration: plots/reliability_diagram.png
+```
