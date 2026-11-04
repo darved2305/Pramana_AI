@@ -40,6 +40,11 @@ LEDS = ["green", "amber", "off"]
         ("हिरवे दिवे आहेत", LEDS, "green"),
         ("bilkul band", LEDS, "off"),
         ("breaker neeche hai", ["up", "tripped"], "tripped"),
+        ("ब्रेकर वर आहे", ["up", "tripped"], "up"),
+        ("कनेक्ट होताना अडकलंय", WIFI, "stuck_connecting"),
+        ("हाँ, खुल रही है", YES_NO, "yes"),
+        ("नहीं, खुल नहीं रही", YES_NO, "no"),
+        ("हो, उघडतं", YES_NO, "yes"),
     ],
 )
 def test_outcomes_across_languages(text: str, outcomes: list[str], expected: str) -> None:
