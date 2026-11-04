@@ -13,7 +13,6 @@ members = [
     "pramana-core",
     "pramana-domain",
     "pramana-engine",
-    "pramana-eval",
     "pramana-sim",
     "pramana-workspace",
 ]
@@ -1699,28 +1698,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "pramana-eval"
-version = "0.1.0"
-source = { editable = "eval" }
-dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "pramana-contracts" },
-    { name = "pramana-domain" },
-    { name = "pramana-engine" },
-    { name = "pramana-sim" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pramana-contracts", editable = "packages/contracts" },
-    { name = "pramana-domain", editable = "packages/domain" },
-    { name = "pramana-engine", editable = "packages/engine" },
-    { name = "pramana-sim", editable = "services/sim" },
-]
-
-[[package]]
 name = "pramana-sim"
 version = "0.1.0"
 source = { editable = "services/sim" }
@@ -1752,7 +1729,6 @@ dependencies = [
     { name = "pramana-core" },
     { name = "pramana-domain" },
     { name = "pramana-engine" },
-    { name = "pramana-eval" },
     { name = "pramana-sim" },
 ]
 
@@ -1774,7 +1750,6 @@ requires-dist = [
     { name = "pramana-core", editable = "services/core" },
     { name = "pramana-domain", editable = "packages/domain" },
     { name = "pramana-engine", editable = "packages/engine" },
-    { name = "pramana-eval", editable = "eval" },
     { name = "pramana-sim", editable = "services/sim" },
 ]
 
