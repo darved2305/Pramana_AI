@@ -38,6 +38,14 @@ available only after a decision or abstention.
    only (`services/sim`).
 5. **Voice.** A direct gateway to Gnani Prisma v3.0 and Timbre
    (`docs/engineering/VOICE_ARCHITECTURE.md`, `docs/engineering/GNANI_INTEGRATION.md`).
+6. **Closing the loop.** A decision that calls for a repair needs a human approval and a
+   single-use capability token for the named electrician; the simulator refuses anything
+   else. Then the engine verifies the fix by belief: answers after the repair are read in a
+   "fixed" and a "not fixed" world, and P(fixed) must reach 0.97 from new evidence
+   (`docs/adr/0006-repair-verification.md`).
+7. **LLMs translate, never decide.** Rules extract answers first. A free-tier LLM (Gemini
+   Flash-Lite) gives a schema-limited second opinion only when the rules cannot map an answer
+   (`docs/adr/0007-free-tier-llms.md`).
 
 ## Run it
 
@@ -60,7 +68,10 @@ Main endpoints: `POST /v1/investigations`, `GET /v1/investigations/{id}`,
 `POST /v1/investigations/{id}/answers/voice`, `POST /v1/voice/stt`, `POST /v1/voice/tts`,
 `WS /v1/voice/stream`, `GET /v1/voice/usage`, `GET /health`, `GET /ready`.
 
-`make run-text` plays an investigation in text. `uv run python scripts/run_text_investigation.py --voice`
+Approvals: `POST /v1/investigations/{id}/approvals`, `.../approvals/{aid}/decision`,
+`.../approvals/{aid}/capability?participant_id=`, `POST /v1/investigations/{id}/interventions`.
+
+`make run-text` plays an investigation in text; add `--repair` for approve, reset and verify. `uv run python scripts/run_text_investigation.py --voice`
 speaks every turn through Gnani, and spends credits.
 
 ## Repository
@@ -83,4 +94,7 @@ The backend, the engine and the simulator are implemented and tested. The curren
 - **Frontend:** being built separately.
 - **Voice:** push-to-talk spoken investigations work live. Full-duplex calls with barge-in are
   not built yet.
-- **Not yet built:** the evaluation harness and baselines, and approvals and verification.
+- **Benchmark:** `python -m pramana_eval --n 300 --seed-start 10000 --out <dir>` compares our
+  planner with a checklist, random questions, greedy entropy, ablations and LLM policies
+  (Groq, Gemini). Results go to `summary.json` and `report.md`.
+- **Not yet built:** reopening after a failed verification, and two-fault diagnosis.
