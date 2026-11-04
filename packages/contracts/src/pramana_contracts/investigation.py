@@ -12,6 +12,7 @@ from .common import Directness, Hedge, Identifier, Modality, StrictModel, Templa
 from .participants import ParticipantSpec
 from .reasoning import BeliefSnapshot, Extraction, Observation, PlanDecision, ProbeAction
 from .sim import FaultSpec, RevealResult
+from .voice import SttResult
 
 
 class InvestigationStatus(StrEnum):
@@ -104,6 +105,13 @@ class AnswerResult(StrictModel):
     state: InvestigationState
 
 
+class VoiceAnswerResult(StrictModel):
+    """A spoken answer: what Gnani heard, then the same result as a typed answer."""
+
+    stt: SttResult
+    result: AnswerResult
+
+
 class GroundTruthComparison(StrictModel):
     reveal: RevealResult
     true_decision_classes: list[str]
@@ -138,3 +146,4 @@ class EventEnvelope(StrictModel):
 
 
 AnswerResult.model_rebuild()
+VoiceAnswerResult.model_rebuild()

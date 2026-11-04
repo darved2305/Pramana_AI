@@ -28,6 +28,7 @@ from .investigation import (
     Report,
     ScenarioRequest,
     SubmitAnswer,
+    VoiceAnswerResult,
 )
 from .participants import LanguageProfile, ParticipantSpec
 from .reasoning import (
@@ -115,4 +116,5 @@ __all__ = [
     "TemplateLanguage",
     "TtsRequest",
     "ViewItem",
+    "VoiceAnswerResult",
 ]

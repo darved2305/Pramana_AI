@@ -45,6 +45,7 @@ from pramana_contracts import (
     Report,
     SimParticipant,
     SubmitAnswer,
+    TemplateLanguage,
 )
 from pramana_contracts.tokens import mint, private_key_from_b64
 from pramana_domain import NO_FAULT, DomainPack, load_pack
@@ -73,6 +74,16 @@ class StoredRequest:
 
     participants: list[ParticipantSpec]
     report: Report
+
+
+@dataclass(frozen=True)
+class PendingQuestion:
+    id: str
+    text: str
+    language: TemplateLanguage
+    probe_id: str
+    participant: ParticipantSpec
+    pack: DomainPack
 
 
 def _now() -> datetime:
@@ -621,6 +632,34 @@ class InvestigationService:
             "participant_id": participant_id,
             "sim_url": self.browser_sim_url,
         }
+
+    async def pending_question(
+        self, inv_id: str, question_id: str, participant_id: str | None = None
+    ) -> PendingQuestion:
+        """The pending question and its addressee, validated before any paid voice call."""
+        async with self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+            q = await session.get(QuestionRow, question_id)
+        if q is None or q.investigation_id != inv_id:
+            raise not_found("question")
+        if row.status != InvestigationStatus.INVESTIGATING.value:
+            raise ApiError(409, "INVESTIGATION_NOT_ACTIVE", f"investigation is {row.status}")
+        if q.status != QuestionStatus.PENDING.value:
+            raise ApiError(409, "QUESTION_NOT_PENDING", "question already answered")
+        if participant_id is not None and q.participant_id != participant_id:
+            raise ApiError(
+                403, "WRONG_PARTICIPANT", "question was addressed to another participant"
+            )
+        person = next(p for p in self._request(row).participants if p.id == q.participant_id)
+        return PendingQuestion(
+            id=q.id,
+            text=q.text,
+            # The question was rendered in the participant's registered template language.
+            language=person.languages.template_language,
+            probe_id=q.probe_id,
+            participant=person,
+            pack=self.pack(row.pack_id),
+        )
 
     def evict(self, inv_id: str) -> None:
         self._cache.pop(inv_id, None)

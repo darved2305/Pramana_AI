@@ -15,7 +15,7 @@ import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
-from core_testkit import OPERATOR_KEY, SIGNING_KEY, core_settings
+from core_testkit import OPERATOR_KEY, SIGNING_KEY, core_settings, truncate_all
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -63,15 +63,6 @@ def migrated_db() -> str:
     return TEST_DB_URL
 
 
-async def _truncate() -> None:
-    engine = create_async_engine(TEST_DB_URL)
-    async with engine.begin() as conn:
-        await conn.exec_driver_sql(
-            "truncate events, observations, questions, investigations restart identity cascade"
-        )
-    await engine.dispose()
-
-
 @pytest.fixture
 def sim_app() -> FastAPI:
     return create_sim_app(
@@ -85,7 +76,7 @@ def sim_app() -> FastAPI:
 
 @pytest.fixture
 def core(migrated_db: str, sim_app: FastAPI) -> Iterator[TestClient]:
-    asyncio.run(_truncate())
+    asyncio.run(truncate_all(migrated_db))
     app = create_app(core_settings(migrated_db), sim_transport=httpx.ASGITransport(app=sim_app))
     with TestClient(app) as client:
         client.sim_app = sim_app  # type: ignore[attr-defined]

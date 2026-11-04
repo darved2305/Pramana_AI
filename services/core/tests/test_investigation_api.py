@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
-from core_testkit import core_settings
+from core_testkit import body, core_settings
 from fastapi.testclient import TestClient
 from participant_bot import answer_pending, run_to_conclusion
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -16,54 +16,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from pramana_core.main import create_app
 
 pytestmark = pytest.mark.db
-
-PEOPLE = [
-    {
-        "id": "p_riya",
-        "display_name": "Riya",
-        "roles": ["student"],
-        "skill": "lay",
-        "location_id": "F3_R304",
-        "languages": {
-            "stt_candidates": ["hi-IN", "en-IN"],
-            "template_language": "hi-en",
-            "codemix": True,
-        },
-    },
-    {
-        "id": "p_mahesh",
-        "display_name": "Mahesh",
-        "roles": ["guard"],
-        "skill": "access",
-        "location_id": "GUARD_DESK",
-        "languages": {"stt_candidates": ["mr-IN", "hi-IN"], "template_language": "mr"},
-    },
-    {
-        "id": "p_imran",
-        "display_name": "Imran",
-        "roles": ["electrician"],
-        "skill": "technician",
-        "location_id": "MAINT_ROOM",
-        "languages": {"stt_candidates": ["hi-IN"], "template_language": "hi"},
-    },
-]
-
-
-def body(
-    fault: str | None = None,
-    people: list[dict[str, Any]] | None = None,
-    report: str = "Floor 3 pe WiFi nahi chal raha, kuch khul nahi raha",
-) -> dict[str, Any]:
-    spec: Any = "random"
-    if fault:
-        comp, mode = fault.split(".")
-        spec = {"faults": [{"component_id": comp, "mode": mode}]}
-    return {
-        "pack_id": "campus_block_c",
-        "participants": people or PEOPLE,
-        "report": {"text": report, "reporter_id": "p_riya"},
-        "scenario": {"seed": 7, "fault": spec},
-    }
 
 
 def create(core: TestClient, **kw: Any) -> dict[str, Any]:

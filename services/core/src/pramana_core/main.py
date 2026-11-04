@@ -15,6 +15,7 @@ from pramana_domain import load_pack
 from .api import investigations as investigations_api
 from .api import packs as packs_api
 from .api import voice as voice_api
+from .api import voice_turns as voice_turns_api
 from .db import Database, make_engine
 from .errors import install_error_handlers
 from .investigations import InvestigationService
@@ -22,12 +23,16 @@ from .language.extraction import RuleExtractor
 from .observability import RequestContextMiddleware, configure_logging, log
 from .settings import Settings, get_settings
 from .sim_client import SimClient
+from .voice.conversation import QuestionAudioCache
 from .voice.gnani import GnaniClient
 from .voice.governor import DbLedger, GovernorLimits, VoiceGovernor
 
 
 def create_app(
-    settings: Settings | None = None, *, sim_transport: httpx.AsyncBaseTransport | None = None
+    settings: Settings | None = None,
+    *,
+    sim_transport: httpx.AsyncBaseTransport | None = None,
+    gnani_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     cfg = settings or get_settings()
     configure_logging(cfg.log_level, cfg.log_json)
@@ -56,11 +61,13 @@ def create_app(
                 ),
                 DbLedger(db),
             ),
+            transport=gnani_transport,
         )
         app.state.settings = cfg
         app.state.db = db
         app.state.sim = sim
         app.state.gnani = gnani
+        app.state.question_audio = QuestionAudioCache()
         app.state.investigations = InvestigationService(
             db,
             sim,
@@ -118,4 +125,5 @@ def create_app(
     app.include_router(investigations_api.router)
     app.include_router(packs_api.router)
     app.include_router(voice_api.router)
+    app.include_router(voice_turns_api.router)
     return app

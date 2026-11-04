@@ -26,6 +26,7 @@ from . import (
     SttResult,
     SubmitAnswer,
     TtsRequest,
+    VoiceAnswerResult,
 )
 
 EXPORTED: tuple[type[BaseModel], ...] = (
@@ -33,6 +34,7 @@ EXPORTED: tuple[type[BaseModel], ...] = (
     InvestigationState,
     SubmitAnswer,
     AnswerResult,
+    VoiceAnswerResult,
     EventEnvelope,
     ParticipantView,
     RevealResult,
