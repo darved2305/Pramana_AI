@@ -35,7 +35,91 @@ import httpx
 
 
 class LlmError(RuntimeError):
-    pass
+    """Base class. ``code`` is stable for callers and logs; the message never holds a key."""
+
+    code = "LLM_ERROR"
+
+
+class LlmConfigError(LlmError):
+    code = "LLM_NOT_CONFIGURED"
+
+
+class LlmTimeoutError(LlmError):
+    code = "LLM_TIMEOUT"
+
+
+class LlmRateLimitedError(LlmError):
+    """Per-minute pacing or provider 429 that did not clear in the allowed time."""
+
+    code = "LLM_RATE_LIMITED"
+
+
+class LlmQuotaExhaustedError(LlmError):
+    """The daily cap (ours or the provider's) is used up: nothing is sent until tomorrow."""
+
+    code = "LLM_QUOTA_EXHAUSTED"
+
+
+class LlmSchemaError(LlmError):
+    """The model answered, but not with JSON that fits the requested schema."""
+
+    code = "SCHEMA_FAIL"
+
+
+class LlmProviderError(LlmError):
+    """A provider failure: a non-retryable response, or 5xx/connection errors that persisted."""
+
+    code = "LLM_PROVIDER_ERROR"
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+_KEY_PATTERNS = (
+    re.compile(r"AIza[0-9A-Za-z_\-]{20,}"),  # Google API keys
+    re.compile(r"gsk_[0-9A-Za-z]{20,}"),  # Groq keys
+    re.compile(r"sk-[0-9A-Za-z_\-]{20,}"),
+    re.compile(r"(?i)bearer\s+[0-9A-Za-z._\-]{8,}"),
+)
+
+
+def redact(text: str, *secrets: str) -> str:
+    """Remove API keys from text that may be logged or raised (provider bodies can echo them)."""
+    for secret in secrets:
+        if secret and len(secret) >= 4:
+            text = text.replace(secret, "[redacted]")
+    for pat in _KEY_PATTERNS:
+        text = pat.sub("[redacted]", text)
+    return text
+
+
+def check_schema(data: Any, schema: dict[str, Any]) -> None:
+    """Shallow check of the schema features our roles use: object, required, enums, no extras.
+
+    ``strict`` structured output should already guarantee this, but free-tier models do not
+    always honour it, and an out-of-enum value must never reach a caller as if it were valid.
+    """
+    if schema.get("type") == "object" and not isinstance(data, dict):
+        raise LlmSchemaError(f"expected a JSON object, got {type(data).__name__}")
+    if not isinstance(data, dict):
+        return
+    missing = [k for k in schema.get("required", []) if k not in data]
+    if missing:
+        raise LlmSchemaError(f"missing required fields {missing}")
+    props: dict[str, Any] = schema.get("properties", {})
+    if schema.get("additionalProperties") is False:
+        extra = sorted(set(data) - set(props))
+        if extra:
+            raise LlmSchemaError(f"unexpected fields {extra}")
+    for name, spec in props.items():
+        if (
+            name in data
+            and isinstance(spec, dict)
+            and "enum" in spec
+            and data[name] not in spec["enum"]
+        ):
+            raise LlmSchemaError(f"{name}={data[name]!r} is not one of {spec['enum']}")
 
 
 @dataclass(frozen=True)
@@ -115,7 +199,9 @@ class _Budget:
 
     def wait_for_slot(self, est_tokens: int, max_wait_s: float | None = None) -> None:
         if self.used_today() >= self.limits.requests_per_day:
-            raise LlmError(f"daily request budget ({self.limits.requests_per_day}) used")
+            raise LlmQuotaExhaustedError(
+                f"daily request budget ({self.limits.requests_per_day}) used"
+            )
         while True:
             now = time.monotonic()
             while self._requests and now - self._requests[0] >= 60:
@@ -132,7 +218,9 @@ class _Budget:
                 waits.append(60 - (now - self._tokens[0][0]))
             wait = max(waits)
             if max_wait_s is not None and wait > max_wait_s:
-                raise LlmError(f"quota pacing would wait {wait:.0f}s (limit {max_wait_s:.0f}s)")
+                raise LlmRateLimitedError(
+                    f"quota pacing would wait {wait:.0f}s (limit {max_wait_s:.0f}s)"
+                )
             if wait <= 0:
                 self._requests.append(now)
                 self._count_today()
@@ -169,15 +257,19 @@ class LlmClient:
         api_key: str | None = None,
         timeout_s: float = 40.0,
         max_wait_s: float | None = None,
+        total_timeout_s: float | None = None,
         limits: ProviderLimits | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         if provider not in PROVIDERS:
-            raise LlmError(f"unknown provider {provider}; choose from {sorted(PROVIDERS)}")
+            raise LlmConfigError(f"unknown provider {provider}; choose from {sorted(PROVIDERS)}")
         base, key_var, default_limits = PROVIDERS[provider]
         key = api_key or os.environ.get(key_var) or read_env_file(Path(".env")).get(key_var)
         if not key:
-            raise LlmError(f"{key_var} is not set")
+            raise LlmConfigError(f"{key_var} is not set")
+        self._key = key
+        self.total_timeout_s = total_timeout_s
+        """Wall-clock bound on one ``complete_json`` call including retries (interactive use)."""
         self.provider, self.model = provider, model or DEFAULT_MODELS[provider]
         self.cache_dir = cache_dir
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -230,26 +322,56 @@ class LlmClient:
         est = sum(len(m["content"]) for m in messages) // 3 + 600  # prompt + low reasoning
         backoff = 2.0
         last = ""
+        last_kind: type[LlmError] = LlmError
+        started = time.monotonic()
+
+        def pause(seconds: float) -> None:
+            """Back off, unless that would exceed the caller's wall-clock bound."""
+            if self.total_timeout_s is not None and (
+                time.monotonic() - started + seconds > self.total_timeout_s
+            ):
+                raise last_kind(self._safe(f"gave up within {self.total_timeout_s:g}s: {last}"))
+            time.sleep(seconds)
+
         for _ in range(max_attempts):
             with self._lock:
                 self._budget.wait_for_slot(est, self.max_wait_s)
             try:
                 r = self._http.post("/chat/completions", json=payload)
             except httpx.TimeoutException:
-                last = "timeout"
-                time.sleep(backoff)
+                last, last_kind = "timeout", LlmTimeoutError
+                pause(backoff)
+                backoff = min(backoff * 2, 60)
+                continue
+            except httpx.TransportError as exc:
+                last, last_kind = f"connection error ({type(exc).__name__})", LlmProviderError
+                pause(backoff)
                 backoff = min(backoff * 2, 60)
                 continue
             self.calls += 1
-            usage = (r.json().get("usage") or {}) if r.status_code == 200 else {}
+            body_json: Any = None
+            if r.status_code == 200:
+                try:
+                    body_json = r.json()
+                except json.JSONDecodeError:
+                    body_json = None
+            usage = (body_json.get("usage") or {}) if isinstance(body_json, dict) else {}
             with self._lock:
                 self._budget.record(int(usage.get("total_tokens", est)), r.headers)
             if r.status_code == 200:
-                content = r.json()["choices"][0]["message"].get("content") or ""
+                content = ""
                 try:
+                    content = body_json["choices"][0]["message"].get("content") or ""
                     data = json.loads(content)
+                    check_schema(data, schema)
+                except (TypeError, KeyError, IndexError, AttributeError) as exc:
+                    last, last_kind = f"malformed response ({type(exc).__name__})", LlmSchemaError
+                    continue
                 except json.JSONDecodeError:
-                    last = f"invalid JSON: {content[:120]!r}"
+                    last, last_kind = f"invalid JSON: {content[:120]!r}", LlmSchemaError
+                    continue
+                except LlmSchemaError as exc:
+                    last, last_kind = str(exc), LlmSchemaError
                     continue
                 tokens = int(usage.get("total_tokens", 0))
                 cache.write_text(
@@ -269,10 +391,11 @@ class LlmClient:
                 # A daily quota cannot recover by backing off: fail fast, remember it.
                 with self._lock:
                     self._budget.exhaust_today()
-                raise LlmError(f"daily quota exhausted for {self.model}")
+                raise LlmQuotaExhaustedError(f"daily quota exhausted for {self.model}")
             if r.status_code in (429, 500, 502, 503, 504):
+                last_kind = LlmRateLimitedError if r.status_code == 429 else LlmProviderError
                 retry_after = r.headers.get("retry-after")
-                time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else backoff)
+                pause(float(retry_after) if retry_after and retry_after.isdigit() else backoff)
                 backoff = min(backoff * 2, 60)
                 continue
             if (
@@ -288,5 +411,11 @@ class LlmClient:
                     stored = json.loads(cache.read_text(encoding="utf-8"))
                     return LlmResult(stored["data"], stored["model"], True, stored.get("tokens", 0))
                 continue
-            raise LlmError(last)
-        raise LlmError(f"gave up after {max_attempts} attempts: {last}")
+            raise LlmProviderError(self._safe(last), r.status_code)
+        raise last_kind(self._safe(f"gave up after {max_attempts} attempts: {last}"))
+
+    def _safe(self, text: str) -> str:
+        return redact(text, self._key)
+
+    def __repr__(self) -> str:  # never show the key, even in debug output
+        return f"LlmClient(provider={self.provider!r}, model={self.model!r})"

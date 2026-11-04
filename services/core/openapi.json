@@ -1352,6 +1352,70 @@
     "title": "RepairState",
     "type": "object"
    },
+   "ReplayResult": {
+    "properties": {
+     "events_replayed": {
+      "title": "Events Replayed",
+      "type": "integer"
+     },
+     "final_belief": {
+      "additionalProperties": true,
+      "title": "Final Belief",
+      "type": "object"
+     },
+     "identical": {
+      "title": "Identical",
+      "type": "boolean"
+     },
+     "investigation_id": {
+      "title": "Investigation Id",
+      "type": "string"
+     },
+     "recorded_belief": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Recorded Belief"
+     },
+     "recorded_sha256": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Recorded Sha256"
+     },
+     "replayed_sha256": {
+      "title": "Replayed Sha256",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "investigation_id",
+     "status",
+     "events_replayed",
+     "identical",
+     "replayed_sha256",
+     "recorded_sha256",
+     "final_belief",
+     "recorded_belief"
+    ],
+    "title": "ReplayResult",
+    "type": "object"
+   },
    "Report": {
     "additionalProperties": false,
     "properties": {
@@ -2420,6 +2484,49 @@
     ]
    }
   },
+  "/v1/investigations/{inv_id}/replay": {
+   "get": {
+    "description": "Rebuild the investigation from its event log and compare with the recorded belief.",
+    "operationId": "replay_check_v1_investigations__inv_id__replay_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReplayResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Replay Check",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
   "/v1/investigations/{inv_id}/reveal": {
    "post": {
     "operationId": "reveal_ground_truth_v1_investigations__inv_id__reveal_post",
@@ -2457,6 +2564,76 @@
      }
     },
     "summary": "Reveal Ground Truth",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/investigations/{inv_id}/stream": {
+   "get": {
+    "description": "Push the investigation's events: backfill after ``after_seq`` (or the browser's\n``Last-Event-ID``, whichever is later), then follow new events live.",
+    "operationId": "stream_events_v1_investigations__inv_id__stream_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "after_seq",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "After Seq",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "last-event-id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Last-Event-Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "text/event-stream": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "description": "Server-Sent Events. Each log event has `id: <seq>` and `data: <EventEnvelope>`. Control events: `ready`, `reset`, `bye`. Comments `: ping` are heartbeats."
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Stream Events",
     "tags": [
      "investigations"
     ]

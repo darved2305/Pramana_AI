@@ -15,6 +15,7 @@ from pramana_domain import load_pack
 
 from .api import investigations as investigations_api
 from .api import packs as packs_api
+from .api import stream as stream_api
 from .api import voice as voice_api
 from .api import voice_turns as voice_turns_api
 from .db import Database, make_engine
@@ -24,11 +25,14 @@ from .language.extraction import RuleExtractor
 from .language.hybrid import HybridExtractor
 from .llm import LlmClient
 from .observability import RequestContextMiddleware, configure_logging, log
+from .runtime.broadcast import EventBroadcaster
+from .runtime.recovery import recover
 from .settings import Settings, get_settings
 from .sim_client import SimClient
 from .voice.conversation import QuestionAudioCache
 from .voice.gnani import GnaniClient
 from .voice.governor import DbLedger, GovernorLimits, VoiceGovernor
+from .voice.media import ActiveSessions
 
 
 def _llm_extractor(cfg: Settings) -> LlmClient | None:
@@ -47,6 +51,7 @@ def _llm_extractor(cfg: Settings) -> LlmClient | None:
         api_key=key.get_secret_value(),
         timeout_s=8.0,
         max_wait_s=2.0,
+        total_timeout_s=10.0,
     )
 
 
@@ -97,10 +102,18 @@ def create_app(
             cfg.participant_signing_key.get_secret_value(),
             browser_sim_url=cfg.browser_sim_url,
         )
+        broadcaster = EventBroadcaster()
+        db.commit_listeners.append(broadcaster.publish)
+        app.state.broadcaster = broadcaster
+        app.state.media_sessions = ActiveSessions()
+        app.state.recovery = (
+            (await recover(app.state.investigations)).as_dict() if cfg.recover_on_startup else None
+        )
         log.info("startup", mode=cfg.mode, gnani_configured=gnani.configured)
         try:
             yield
         finally:
+            broadcaster.close()
             await gnani.aclose()
             await sim.aclose()
             await db.dispose()
@@ -145,6 +158,7 @@ def create_app(
         )
 
     app.include_router(investigations_api.router)
+    app.include_router(stream_api.router)
     app.include_router(packs_api.router)
     app.include_router(voice_api.router)
     app.include_router(voice_turns_api.router)

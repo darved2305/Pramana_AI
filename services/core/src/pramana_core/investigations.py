@@ -14,12 +14,14 @@ Consistency model:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pramana_contracts import (
@@ -55,7 +57,13 @@ from pramana_contracts import (
     SubmitAnswer,
     TemplateLanguage,
 )
-from pramana_contracts.tokens import mint, mint_capability, private_key_from_b64
+from pramana_contracts.tokens import (
+    ParticipantClaims,
+    mint,
+    mint_capability,
+    private_key_from_b64,
+)
+from pramana_contracts.tokens import verify as verify_token
 from pramana_domain import NO_FAULT, DomainPack, load_pack
 from pramana_engine import (
     MULTIPLE_FAULTS,
@@ -100,6 +108,7 @@ class PendingQuestion:
     probe_id: str
     participant: ParticipantSpec
     pack: DomainPack
+    scenario_id: str = ""
 
 
 def _now() -> datetime:
@@ -178,6 +187,12 @@ class InvestigationService:
         cached = self._cache.get(row.id)
         if cached is not None and cached[0] == row.version:
             return cached[1]
+        engine, _ = await self._rebuild(session, row)
+        self._cache[row.id] = (row.version, engine)
+        return engine
+
+    async def _rebuild(self, session: AsyncSession, row: InvestigationRow) -> tuple[Engine, int]:
+        """A fresh engine built only from the event log; also returns how many events it read."""
         req = self._request(row)
         engine = Engine(self.model(row.pack_id), list(req.participants), self._engine_config)
         events = await session.execute(
@@ -185,7 +200,8 @@ class InvestigationService:
             .where(EventRow.investigation_id == row.id)
             .order_by(EventRow.seq)
         )
-        for type_, payload in events.all():
+        rows = events.all()
+        for type_, payload in rows:
             if type_ == "QuestionAsked":
                 engine.record_question(payload["action"]["participant_id"])
             elif type_ == "ObservationRecorded":
@@ -216,8 +232,7 @@ class InvestigationService:
                 engine.apply_intervention(
                     payload["action"], payload["target"], payload["participant_id"]
                 )
-        self._cache[row.id] = (row.version, engine)
-        return engine
+        return engine, len(rows)
 
     def _record_observation(
         self,
@@ -646,6 +661,14 @@ class InvestigationService:
                         ):
                             # The decision hinges on one spoken answer, and speech recognition
                             # gives no confidence score: confirm it before relying on it.
+                            # The answer did move the belief: record that, so the console and
+                            # replay agree with the engine while the confirmation is pending.
+                            self._event(
+                                session,
+                                inv_id,
+                                "BeliefUpdated",
+                                engine.snapshot().model_dump(mode="json"),
+                            )
                             self._ask_confirmation(session, row, engine, q)
                             row.version += 1
                             version = row.version
@@ -1060,7 +1083,96 @@ class InvestigationService:
             probe_id=q.probe_id,
             participant=person,
             pack=self.pack(row.pack_id),
+            scenario_id=row.scenario_id,
         )
+
+    def verify_participant_token(self, token: str) -> ParticipantClaims:
+        """Check a participant token this core issued (signature, expiry, audience)."""
+        return verify_token(self._signing_key.public_key(), token)
 
     def evict(self, inv_id: str) -> None:
         self._cache.pop(inv_id, None)
+
+    # -- replay and recovery ----------------------------------------------------------------------
+
+    async def head_seq(self, inv_id: str) -> int:
+        """The investigation's latest event ``seq`` (404 if it does not exist)."""
+        async with self.db.read() as session:
+            await self._load_row(session, inv_id, lock=False)
+            head = await session.scalar(
+                select(func.max(EventRow.seq)).where(EventRow.investigation_id == inv_id)
+            )
+        return int(head or 0)
+
+    async def replay(self, inv_id: str, *, warm_cache: bool = False) -> ReplayCheck:
+        """Rebuild the engine from the event log alone and compare it with the recorded belief.
+
+        The recorded belief is the last ``BeliefUpdated`` payload, which every command that
+        changes the belief appends. Both are compared as canonical JSON, byte for byte.
+        """
+        async with self._lock(inv_id), self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+            engine, n = await self._rebuild(session, row)
+            recorded = (
+                await session.execute(
+                    select(EventRow.payload)
+                    .where(EventRow.investigation_id == inv_id, EventRow.type == "BeliefUpdated")
+                    .order_by(EventRow.seq.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if warm_cache:
+                self._cache[inv_id] = (row.version, engine)
+        replayed = engine.snapshot().model_dump(mode="json")
+        return ReplayCheck(
+            investigation_id=inv_id,
+            status=row.status,
+            events_replayed=n,
+            replayed=replayed,
+            recorded=recorded,
+        )
+
+    async def open_investigations(self, limit: int = 1000) -> list[str]:
+        """Investigations whose story is not over (everything but ``closed``), oldest first."""
+        async with self.db.read() as session:
+            rows = await session.execute(
+                select(InvestigationRow.id)
+                .where(InvestigationRow.status != InvestigationStatus.CLOSED.value)
+                .order_by(InvestigationRow.created_at)
+                .limit(limit)
+            )
+            return [r for (r,) in rows.all()]
+
+    async def record_engine_error(self, inv_id: str, payload: dict[str, Any]) -> None:
+        async with self._lock(inv_id), self.db.transaction() as session:
+            await self._load_row(session, inv_id, lock=True)
+            self._event(session, inv_id, "EngineError", payload)
+
+
+def canonical_json(value: Any) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+@dataclass(frozen=True)
+class ReplayCheck:
+    investigation_id: str
+    status: str
+    events_replayed: int
+    replayed: dict[str, Any]
+    recorded: dict[str, Any] | None
+
+    @property
+    def replayed_sha256(self) -> str:
+        return hashlib.sha256(canonical_json(self.replayed)).hexdigest()
+
+    @property
+    def recorded_sha256(self) -> str | None:
+        if self.recorded is None:
+            return None
+        return hashlib.sha256(canonical_json(self.recorded)).hexdigest()
+
+    @property
+    def identical(self) -> bool:
+        return self.recorded is not None and canonical_json(self.replayed) == canonical_json(
+            self.recorded
+        )
