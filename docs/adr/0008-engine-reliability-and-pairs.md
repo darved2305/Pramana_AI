@@ -68,10 +68,11 @@ today's world.
 
 ## Evidence (from code runs on the campus pack)
 
-- Hypotheses: 15 single faults, 76 identifiable pairs (29 masked pairs left out), `NO_FAULT`,
-  `OPEN_WORLD`: 93 in total; 15 decisions including `MULTIPLE_FAULTS`. Pairs hold 0.99 % of the
-  prior mass.
-- Planning p90 for the S1 first question: 11 ms on the development laptop (budget 250 ms in
+- Hypotheses (pack with 14 probes): 15 single faults, 78 identifiable pairs (27 masked pairs
+  left out), `NO_FAULT`, `OPEN_WORLD`: 95 in total; 15 decisions including `MULTIPLE_FAULTS`.
+  Pairs hold 1.01 % of the prior mass. The fibre terminal light makes the gateway + ISP pair
+  identifiable, which the gateway's own WAN light alone could not.
+- Planning p90 for the S1 first question: 19 ms on the development laptop (budget 250 ms in
   `test_plan_latency_budget`).
 - Noise-free S1 (breaker C2-7 tripped, Riya, Mahesh, Imran): `DISPATCH_ELECTRICIAN_DB_C2` after
   4 questions at P = 0.973 (3 questions at 0.965 in the single-fault model).

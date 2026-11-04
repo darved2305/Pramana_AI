@@ -25,7 +25,18 @@ OPEN_WORLD = "OPEN_WORLD"
 ANY_ROLE = "any"
 
 ComponentKind = Literal[
-    "feed", "breaker", "light", "nvr", "isp", "gateway", "dhcp", "dns", "switch", "ap"
+    "feed",
+    "breaker",
+    "light",
+    "nvr",
+    "socket",
+    "isp",
+    "ont",
+    "gateway",
+    "dhcp",
+    "dns",
+    "switch",
+    "ap",
 ]
 ObservableKind = Literal[
     "internet_works",
@@ -35,6 +46,7 @@ ObservableKind = Literal[
     "ap_light",
     "switch_leds",
     "wan_led",
+    "fibre_led",
     "breaker",
 ]
 ProbeClass = Literal["device", "visual", "panel"]
@@ -48,14 +60,16 @@ KIND_OUTCOMES: dict[str, frozenset[str]] = {
     "ap_light": frozenset({"on", "off"}),
     "switch_leds": frozenset({"green", "amber", "off"}),
     "wan_led": frozenset({"green", "red", "off"}),
+    "fibre_led": frozenset({"green", "red", "off"}),
     "breaker": frozenset({"up", "tripped"}),
 }
 # Observable kinds that read a specific component (and the component kinds they accept).
 TARGET_KINDS: dict[str, frozenset[str]] = {
-    "powered": frozenset({"light", "nvr"}),
+    "powered": frozenset({"light", "nvr", "socket"}),
     "ap_light": frozenset({"ap"}),
     "switch_leds": frozenset({"switch"}),
     "wan_led": frozenset({"gateway"}),
+    "fibre_led": frozenset({"ont"}),
     "breaker": frozenset({"breaker"}),
 }
 DEVICE_KINDS = frozenset({"internet_works", "wifi_status", "web_by_ip"})
@@ -262,6 +276,8 @@ class DomainPack(PackModel):
             "breaker": "powered_by",
             "light": "powered_by",
             "nvr": "powered_by",
+            "socket": "powered_by",
+            "ont": "powered_by",
             "switch": "powered_by",
             "gateway": "powered_by",
             "ap": "poe_from",
