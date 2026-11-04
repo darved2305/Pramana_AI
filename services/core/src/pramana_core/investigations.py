@@ -91,7 +91,9 @@ class InvestigationService:
         extractor: Extractor,
         signing_key_b64: str,
         engine_config: EngineConfig | None = None,
+        browser_sim_url: str = "http://127.0.0.1:8100",
     ) -> None:
+        self.browser_sim_url = browser_sim_url
         self.db = db
         self.sim = sim
         self.extractor = extractor
@@ -613,7 +615,12 @@ class InvestigationService:
         if participant_id not in {p.id for p in self._request(row).participants}:
             raise not_found("participant")
         token = mint(self._signing_key, participant_id=participant_id, scenario_id=row.scenario_id)
-        return {"token": token, "scenario_id": row.scenario_id, "participant_id": participant_id}
+        return {
+            "token": token,
+            "scenario_id": row.scenario_id,
+            "participant_id": participant_id,
+            "sim_url": self.browser_sim_url,
+        }
 
     def evict(self, inv_id: str) -> None:
         self._cache.pop(inv_id, None)

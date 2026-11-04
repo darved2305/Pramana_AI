@@ -51,7 +51,11 @@ def create_app(
         app.state.sim = sim
         app.state.gnani = gnani
         app.state.investigations = InvestigationService(
-            db, sim, RuleExtractor(), cfg.participant_signing_key.get_secret_value()
+            db,
+            sim,
+            RuleExtractor(),
+            cfg.participant_signing_key.get_secret_value(),
+            browser_sim_url=cfg.browser_sim_url,
         )
         log.info("startup", mode=cfg.mode, gnani_configured=gnani.configured)
         try:
