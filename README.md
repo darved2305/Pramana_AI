@@ -13,7 +13,7 @@ Engineering plan: `docs/PLAN.md`.
 |---|---|
 | The Bayesian engine, the planner and their numbers | The building (`packs/campus_block_c.yaml`), its faults, and what each person "sees" |
 | The API, database, event log and replay | Participants in automated tests (they observe only through their own simulator token) |
-| Gnani Prisma/Timbre adapters (protocol-tested; **no live call yet, no API key**) | |
+| Gnani Prisma v3.0 and Timbre, verified live, behind rate, concurrency and budget guards | |
 
 The hidden fault is sealed inside the simulator service. A SHA-256 commitment is published when
 the investigation is created; the core holds no key to read the fault, and the reveal is
@@ -56,8 +56,12 @@ make check        # lint, types, import isolation, all tests
 
 Main endpoints: `POST /v1/investigations`, `GET /v1/investigations/{id}`,
 `POST /v1/investigations/{id}/answers`, `POST /v1/investigations/{id}/reveal`,
-`GET /v1/investigations/{id}/events?after_seq=`, `POST /v1/voice/stt`, `POST /v1/voice/tts`,
-`WS /v1/voice/stream`, `GET /health`, `GET /ready`.
+`GET /v1/investigations/{id}/events?after_seq=`, `GET /v1/investigations/{id}/questions/{qid}/audio`,
+`POST /v1/investigations/{id}/answers/voice`, `POST /v1/voice/stt`, `POST /v1/voice/tts`,
+`WS /v1/voice/stream`, `GET /v1/voice/usage`, `GET /health`, `GET /ready`.
+
+`make run-text` plays an investigation in text. `uv run python scripts/run_text_investigation.py --voice`
+speaks every turn through Gnani, and spends credits.
 
 ## Repository
 
@@ -77,6 +81,6 @@ docs/                product docs, docs/engineering, docs/adr
 The backend, the engine and the simulator are implemented and tested. The current state:
 
 - **Frontend:** being built separately.
-- **Not yet built:** the voice call runtime (consent, barge-in, turn handling), the evaluation
-  harness and baselines, and approvals and verification.
-- **Voice:** live Gnani validation is blocked until an API key is configured.
+- **Voice:** push-to-talk spoken investigations work live. Full-duplex calls with barge-in are
+  not built yet.
+- **Not yet built:** the evaluation harness and baselines, and approvals and verification.

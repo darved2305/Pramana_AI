@@ -64,14 +64,17 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   1,024-byte frames, `commit`, real close codes including 1001).
 - `/v1/voice/stt`, `/v1/voice/tts`, and `/v1/voice/stream` (a browser → core → Prisma relay that
   measures end-of-speech → transcript latency).
-- A concurrency governor: `GNANI_MAX_CONCURRENCY` (default 1, because the account limit is not
-  published).
+- A usage governor (`voice/governor.py`): rate windows below the account's 60/min, at most 16
+  of the 20 concurrent sessions, one REST call in flight, and a daily rupee budget checked
+  before every call and persisted in PostgreSQL.
+- Voice turns inside an investigation: `GET /v1/investigations/{id}/questions/{qid}/audio`
+  (cached, so a replay costs nothing) and `POST /v1/investigations/{id}/answers/voice`
+  (question-conditioned STT, then the same extraction and engine path as typed answers). This
+  is half-duplex push-to-talk, verified live.
 
 ## Not yet implemented
 
 - The call runtime state machine (PLAN §12): consent, ASKING/LISTENING, barge-in, re-prompts.
-- Speaking each planned question with TTS and feeding the transcript into `/answers`. The pieces
-  exist: `realize()` gives the text, `/v1/voice/tts` speaks it, `/v1/voice/stt` or the stream
-  transcribes the answer, and `/answers` extracts it.
-- Any measured latency. No live Gnani call has been made, because no API key was available
-  (see GNANI_INTEGRATION.md).
+- Full-duplex calls with barge-in over `/v1/voice/stream` (the relay exists; the call state
+  machine does not).
+- Published latency figures. Measurements exist but stay private under the Gnani EULA.

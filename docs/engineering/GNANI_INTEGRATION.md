@@ -68,6 +68,15 @@ Per the EULA, accuracy and latency results stay out of this repository; they are
 - **Timbre WAV headers declare a placeholder data length (2³² bytes).** Compute duration from
   the byte count, not the header. `wav_duration_s` already clamps to the real size.
 - **Hinglish TTS** routed to timbre-v2.5/Poorvi is accepted.
+- **A complete spoken investigation runs end to end** (`run_text_investigation.py --voice`):
+  Timbre speaks each question in the participant's language, the answer audio is transcribed by
+  Prisma v3.0 REST with question context (language candidates, `codemix`, the probe's answer
+  vocabulary as `keyterms`, and the question as `previous_text`), then extracted and applied.
+  Runs covered Hinglish, Hindi and Marathi turns, and the reveal matched in both.
+- **Billing minimums:** a 0.03-minute stream was debited Rs 0.02 (list price Rs 0.01), and the
+  dashboard counted 20 STT requests where 17 transcribed, which suggests failed session attempts
+  are billed. The meter now charges every STT request at least Rs 0.02, including failed
+  attempts, so the budget errs high.
 
 ## Usage guards (`voice/governor.py`)
 
@@ -86,7 +95,7 @@ process.
 
 ## Remaining live checks
 
-1. Human recordings, not just TTS audio: Marathi, Hindi and Hinglish short answers ("haan",
+1. Human recordings (see VOICE_SAMPLES.md), not just synthesised audio: Marathi, Hindi and Hinglish short answers ("haan",
    "nahi", "band aahe", "chalu", room numbers, negations).
 2. Whether more than one REST call can be in flight (raise `GNANI_REST_MAX_INFLIGHT` only if so).
 3. Whether streamed silence is billed: compare the dashboard against `/v1/voice/usage`.
