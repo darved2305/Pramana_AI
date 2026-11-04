@@ -1,15 +1,24 @@
 /**
  * Core service client. Every route here is in services/core/openapi.json; nothing is
- * invented. Routes the product will need but the core does not expose yet are listed in
- * `MISSING_ROUTES` so screens can say so instead of pretending.
+ * invented. Staff calls ride on the session cookie; participant calls pass the join-link
+ * token (`token`), which the core accepts only for that participant's own actions.
  */
 import { request, requestBlob } from "./http";
 import type {
   AnswerResult,
+  AuthSession,
   CapabilityGrant,
   CreateInvestigation,
+  DirectoryParticipant,
+  EvaluationReport,
+  EvaluationReportSummary,
   EventEnvelope,
+  InvestigationPage,
   InvestigationState,
+  InvestigationStatus,
+  PackSummary,
+  ParticipantPatch,
+  ParticipantSpec,
   ParticipantToken,
   SitePack,
   SttResult,
@@ -20,22 +29,49 @@ import type {
 
 const enc = encodeURIComponent;
 
+export interface ListQuery {
+  status?: InvestigationStatus[];
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+function listParams(q: ListQuery): string {
+  const p = new URLSearchParams();
+  q.status?.forEach((s) => p.append("status", s));
+  if (q.q?.trim()) p.set("q", q.q.trim());
+  if (q.limit) p.set("limit", String(q.limit));
+  if (q.offset) p.set("offset", String(q.offset));
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
 export const core = {
   health: (signal?: AbortSignal) => request<string>("core", "/health", { signal }),
+
+  /* ---------- sign-in ---------- */
+  login: (email: string, password: string) =>
+    request<AuthSession>("core", "/v1/auth/login", { method: "POST", json: { email, password } }),
+  logout: () => request<void>("core", "/v1/auth/logout", { method: "POST" }),
+  session: (signal?: AbortSignal) => request<AuthSession>("core", "/v1/auth/session", { signal }),
+
+  /* ---------- investigations ---------- */
+  listInvestigations: (q: ListQuery = {}, signal?: AbortSignal) =>
+    request<InvestigationPage>("core", `/v1/investigations${listParams(q)}`, { signal }),
 
   createInvestigation: (body: CreateInvestigation) =>
     request<InvestigationState>("core", "/v1/investigations", { method: "POST", json: body }),
 
-  getInvestigation: (id: string, signal?: AbortSignal) =>
-    request<InvestigationState>("core", `/v1/investigations/${enc(id)}`, { signal }),
+  getInvestigation: (id: string, signal?: AbortSignal, token?: string) =>
+    request<InvestigationState>("core", `/v1/investigations/${enc(id)}`, { signal, token }),
 
-  events: (id: string, afterSeq: number, signal?: AbortSignal) =>
-    request<EventEnvelope[]>("core", `/v1/investigations/${enc(id)}/events?after_seq=${afterSeq}`, { signal }),
+  events: (id: string, afterSeq: number, signal?: AbortSignal, token?: string) =>
+    request<EventEnvelope[]>("core", `/v1/investigations/${enc(id)}/events?after_seq=${afterSeq}`, { signal, token }),
 
-  answer: (id: string, body: SubmitAnswer) =>
-    request<AnswerResult>("core", `/v1/investigations/${enc(id)}/answers`, { method: "POST", json: body }),
+  answer: (id: string, body: SubmitAnswer, token?: string) =>
+    request<AnswerResult>("core", `/v1/investigations/${enc(id)}/answers`, { method: "POST", json: body, token }),
 
-  answerByVoice: (id: string, questionId: string, participantId: string, audio: Blob) => {
+  answerByVoice: (id: string, questionId: string, participantId: string, audio: Blob, token?: string) => {
     const form = new FormData();
     form.set("question_id", questionId);
     form.set("participant_id", participantId);
@@ -43,30 +79,36 @@ export const core = {
     return request<VoiceAnswerResult>("core", `/v1/investigations/${enc(id)}/answers/voice`, {
       method: "POST",
       form,
+      token,
     });
   },
 
-  questionAudio: (id: string, questionId: string) =>
-    requestBlob("core", `/v1/investigations/${enc(id)}/questions/${enc(questionId)}/audio`),
+  questionAudio: (id: string, questionId: string, token?: string) =>
+    requestBlob("core", `/v1/investigations/${enc(id)}/questions/${enc(questionId)}/audio`, { token }),
 
   requestApproval: (id: string, body: { action: string; target: string; participant_id: string }) =>
     request<InvestigationState>("core", `/v1/investigations/${enc(id)}/approvals`, { method: "POST", json: body }),
 
-  decideApproval: (id: string, approvalId: string, body: { decision: "approve" | "deny"; approver_id: string; note?: string }) =>
+  /** The core records the signed-in approver; no identity is sent from the browser. */
+  decideApproval: (id: string, approvalId: string, body: { decision: "approve" | "deny"; note?: string }) =>
     request<InvestigationState>("core", `/v1/investigations/${enc(id)}/approvals/${enc(approvalId)}/decision`, {
       method: "POST",
       json: body,
     }),
 
-  collectCapability: (id: string, approvalId: string, participantId: string) =>
+  collectCapability: (id: string, approvalId: string, participantId: string, token?: string) =>
     request<CapabilityGrant>(
       "core",
       `/v1/investigations/${enc(id)}/approvals/${enc(approvalId)}/capability?participant_id=${enc(participantId)}`,
-      { method: "POST" },
+      { method: "POST", token },
     ),
 
-  reportIntervention: (id: string, body: { approval_id: string; participant_id: string }) =>
-    request<InvestigationState>("core", `/v1/investigations/${enc(id)}/interventions`, { method: "POST", json: body }),
+  reportIntervention: (id: string, body: { approval_id: string; participant_id: string }, token?: string) =>
+    request<InvestigationState>("core", `/v1/investigations/${enc(id)}/interventions`, {
+      method: "POST",
+      json: body,
+      token,
+    }),
 
   participantToken: (id: string, participantId: string) =>
     request<ParticipantToken>("core", `/v1/investigations/${enc(id)}/participants/${enc(participantId)}/token`, {
@@ -75,8 +117,30 @@ export const core = {
 
   reveal: (id: string) => request<InvestigationState>("core", `/v1/investigations/${enc(id)}/reveal`, { method: "POST" }),
 
+  /* ---------- packs ---------- */
+  packs: (signal?: AbortSignal) => request<PackSummary[]>("core", "/v1/packs", { signal }),
   pack: (packId: string, signal?: AbortSignal) => request<SitePack>("core", `/v1/packs/${enc(packId)}`, { signal }),
 
+  /* ---------- participant directory ---------- */
+  directory: (packId?: string, signal?: AbortSignal) =>
+    request<DirectoryParticipant[]>("core", `/v1/participants${packId ? `?pack_id=${enc(packId)}` : ""}`, { signal }),
+  addParticipant: (packId: string, p: ParticipantSpec) =>
+    request<DirectoryParticipant>("core", `/v1/participants?pack_id=${enc(packId)}`, { method: "POST", json: p }),
+  updateParticipant: (packId: string, id: string, patch: ParticipantPatch) =>
+    request<DirectoryParticipant>("core", `/v1/participants/${enc(id)}?pack_id=${enc(packId)}`, {
+      method: "PATCH",
+      json: patch,
+    }),
+  removeParticipant: (packId: string, id: string) =>
+    request<void>("core", `/v1/participants/${enc(id)}?pack_id=${enc(packId)}`, { method: "DELETE" }),
+
+  /* ---------- evaluation ---------- */
+  evaluationReports: (signal?: AbortSignal) =>
+    request<EvaluationReportSummary[]>("core", "/v1/evaluation/reports", { signal }),
+  evaluationReport: (runId: string, signal?: AbortSignal) =>
+    request<EvaluationReport>("core", `/v1/evaluation/reports/${enc(runId)}`, { signal }),
+
+  /* ---------- voice ---------- */
   voiceStatus: (signal?: AbortSignal) => request<VoiceStatus>("core", "/v1/voice/status", { signal }),
   voiceUsage: (signal?: AbortSignal) => request<Record<string, unknown>>("core", "/v1/voice/usage", { signal }),
   stt: (audio: Blob, languageCodes: string[], codemix: boolean) => {
@@ -88,17 +152,5 @@ export const core = {
   },
 };
 
-/** The one site pack the core ships today (packs/campus_block_c.yaml). */
-export const KNOWN_PACKS = ["campus_block_c"] as const;
-
-/**
- * Capabilities the interface is designed for but the core does not provide yet. Screens
- * read this to show an honest notice rather than a fake result.
- */
-export const MISSING_ROUTES = {
-  listInvestigations: "GET /v1/investigations (list)",
-  participantsDirectory: "a participant directory",
-  listPacks: "GET /v1/packs (list)",
-  auth: "authentication and sessions",
-  evaluation: "an evaluation results endpoint",
-} as const;
+/** The pack new investigations use when none is chosen. */
+export const DEFAULT_PACK = "campus_block_c";

@@ -10,31 +10,30 @@ import {
   IconUsers,
   IconPhone,
 } from "@/components/ui/icons";
-import { useHistory, usePreviewMode, useRoster } from "@/lib/store/local";
-import { usePack } from "@/lib/data/hooks";
+import { usePreviewMode } from "@/lib/store/local";
+import { useDirectory, useInvestigationList, usePack } from "@/lib/data/hooks";
 import { STATUS_LABEL, STATUS_TONE, relative } from "@/lib/data/derive";
-import { PREVIEW_ID } from "@/lib/preview/ids";
 import type { InvestigationStatus } from "@/lib/api/types";
+
+const ACTIVE: InvestigationStatus[] = ["investigating", "awaiting_approval", "acting", "verifying"];
+const ALL = { limit: 1 };
+const RUNNING = { status: ACTIVE, limit: 4 };
 
 export default function OverviewPage() {
   const preview = usePreviewMode();
-  const hist = useHistory();
-  const people = useRoster();
   const pack = usePack("campus_block_c");
-
-  const recent = preview
-    ? [
-        {
-          id: PREVIEW_ID,
-          createdAt: "2026-11-04T09:12:00Z",
-          packId: "campus_block_c",
-          report: "Floor 3 pe WiFi nahi chal raha",
-          reporter: "Riya",
-          lastStatus: "investigating",
-        },
-      ]
-    : hist;
-  const active = recent.filter((h) => !h.lastStatus || ["investigating", "awaiting_approval", "acting", "verifying"].includes(h.lastStatus));
+  const directory = useDirectory("campus_block_c");
+  const people = directory.data ?? [];
+  const all = useInvestigationList(ALL);
+  const running = useInvestigationList(RUNNING);
+  const total = all.data?.total ?? 0;
+  const active = (running.data?.items ?? []).map((r) => ({
+    id: r.id,
+    createdAt: r.created_at,
+    report: r.report_text,
+    reporter: r.reporter_id,
+    lastStatus: r.status as string,
+  }));
 
   const steps = [
     {
@@ -56,7 +55,7 @@ export default function OverviewPage() {
       icon: IconPlus,
       title: "Create an investigation",
       body: "Describe the problem in the reporter's words. Pramana takes it from there.",
-      done: recent.length > 0,
+      done: total > 0,
     },
   ];
 
@@ -99,7 +98,7 @@ export default function OverviewPage() {
                 className="flex-1 py-8"
                 icon={<IconHistory />}
                 title="Nothing in progress"
-                body="Investigations you start from this browser appear here while they are running."
+                body="Investigations appear here while they are running."
                 action={
                   <ButtonLink href="/app/investigations/new" variant="primary">
                     <IconPlus className="h-4 w-4" /> New investigation
@@ -132,14 +131,14 @@ export default function OverviewPage() {
         <QuickCard
           href="/app/investigations"
           icon={<IconHistory />}
-          title="Investigation history"
-          body={preview ? "1 preview investigation" : hist.length ? `${hist.length} started from this browser` : "None yet"}
+          title="Investigations"
+          body={all.status === "error" ? "List unavailable" : total ? `${total} in the core` : "None yet"}
         />
         <QuickCard
           href="/app/participants"
           icon={<IconUsers />}
           title="Participants"
-          body={preview ? "4 preview participants" : people.length ? `${people.length} in your roster` : "Roster is empty"}
+          body={directory.status === "error" ? "Directory unavailable" : people.length ? `${people.length} in the directory` : "Directory is empty"}
         />
         <QuickCard
           href="/app/sites"

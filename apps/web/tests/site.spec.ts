@@ -59,7 +59,13 @@ test.describe("landing", () => {
 });
 
 test.describe("login", () => {
-  test("validates input and reports that sign-in is not connected", async ({ page }) => {
+  test("validates input and shows the sign-in refusal from the core", async ({ page }) => {
+    await page.route("**/api/core/v1/auth/login", (r) =>
+      r.fulfill({
+        status: 401,
+        json: { error: { code: "AUTH_INVALID_CREDENTIALS", message: "email or password is incorrect", request_id: "t" } },
+      }),
+    );
     await page.goto("/login");
     await page.getByRole("button", { name: "Log in", exact: true }).click();
     await expect(page.getByText("Enter your email address.")).toBeVisible();
@@ -75,9 +81,43 @@ test.describe("login", () => {
     await page.getByLabel("Password", { exact: true }).fill("a-long-password");
     await page.getByRole("button", { name: "Show password" }).click();
     await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute("type", "text");
+    const sent = page.waitForRequest("**/api/core/v1/auth/login");
     await page.getByRole("button", { name: "Log in", exact: true }).click();
-    await expect(page.locator("#form-error")).toContainText("Sign-in is not connected yet");
+    const req = await sent;
+    expect(req.headers()["x-pramana-csrf"]).toBe("1");
+    expect(req.postDataJSON()).toEqual({ email: "riya@example.com", password: "a-long-password" });
+    await expect(page.locator("#form-error")).toContainText("That email and password do not match an account.");
     await expect(page).toHaveURL(/\/login$/);
+  });
+
+  test("a successful sign-in opens the page asked for", async ({ page }) => {
+    const session = { user_id: "u_1", display_name: "Olu Operator", email: "op@x.test", roles: ["operator"], expires_at: "2099-01-01T00:00:00Z", method: "session" };
+    await page.route("**/api/core/v1/auth/login", (r) => r.fulfill({ json: session }));
+    await page.route("**/api/core/v1/auth/session", (r) => r.fulfill({ json: session }));
+    await page.goto("/login?next=/app/account");
+    await page.getByLabel("Email").fill("op@x.test");
+    await page.getByLabel("Password", { exact: true }).fill("a-long-password");
+    await page.getByRole("button", { name: "Log in", exact: true }).click();
+    await expect(page).toHaveURL(/\/app\/account$/);
+    await expect(page.getByRole("main").getByText("Olu Operator")).toBeVisible();
+  });
+
+  test("never follows a sign-in redirect to another site", async ({ page }) => {
+    const session = { user_id: "u_1", display_name: "Olu Operator", email: "op@x.test", roles: ["operator"], expires_at: "2099-01-01T00:00:00Z", method: "session" };
+    await page.route("**/api/core/v1/auth/**", (r) => r.fulfill({ json: session }));
+    await page.goto("/login?next=//evil.example/steal");
+    await page.getByLabel("Email").fill("op@x.test");
+    await page.getByLabel("Password", { exact: true }).fill("a-long-password");
+    await page.getByRole("button", { name: "Log in", exact: true }).click();
+    await expect(page).toHaveURL(/localhost:\d+\/app$/);
+  });
+
+  test("a signed-out visitor is sent to sign-in", async ({ page }) => {
+    await page.route("**/api/core/v1/auth/session", (r) =>
+      r.fulfill({ status: 401, json: { error: { code: "AUTH_REQUIRED", message: "not signed in", request_id: "t" } } }),
+    );
+    await page.goto("/app/participants");
+    await expect(page).toHaveURL(/\/login\?next=%2Fapp%2Fparticipants$/);
   });
 
   test("has no Apple sign-in", async ({ page }) => {
@@ -174,12 +214,20 @@ test.describe("live console without a backend", () => {
   });
 
   test("lists nothing it does not have", async ({ page }) => {
-    await page.route("**/api/core/**", (r) => r.abort());
+    await page.route("**/api/core/v1/investigations?**", (r) => r.fulfill({ json: { items: [], total: 0, limit: 24, offset: 0 } }));
     await page.goto("/app/investigations");
     await expect(page.getByText("No investigations yet")).toBeVisible();
   });
 
-  test("adds a participant to the roster with validation", async ({ page }) => {
+  test("an unreachable core is shown, not an empty list", async ({ page }) => {
+    await page.route("**/api/core/**", (r) => r.abort());
+    await page.goto("/app/investigations");
+    await expect(page.getByText("Core not reachable")).toBeVisible();
+    await expect(page.getByText("No investigations yet")).toHaveCount(0);
+  });
+
+  test("adds a participant to the directory with validation", async ({ page }) => {
+    const directory: unknown[] = [];
     await page.route("**/api/core/v1/packs/**", (r) =>
       r.fulfill({
         json: {
@@ -193,6 +241,15 @@ test.describe("live console without a backend", () => {
         },
       }),
     );
+    await page.route("**/api/core/v1/participants?**", async (r) => {
+      if (r.request().method() === "POST") {
+        const participant = r.request().postDataJSON();
+        const entry = { pack_id: "campus_block_c", participant, created_at: "2026-11-05T00:00:00Z", updated_at: "2026-11-05T00:00:00Z" };
+        directory.push(entry);
+        return r.fulfill({ status: 201, json: entry });
+      }
+      return r.fulfill({ json: directory });
+    });
     await page.route("**/api/core/health", (r) => r.fulfill({ json: "ok" }));
     await page.goto("/app/participants");
     await page.getByRole("button", { name: /Add the first participant/ }).click();
@@ -204,8 +261,37 @@ test.describe("live console without a backend", () => {
     await dialog.getByLabel("Current location").selectOption("F3_R304");
     await dialog.getByRole("button", { name: "Save participant" }).click();
     await expect(page.getByText("Riya Sharma")).toBeVisible();
+    expect(directory).toHaveLength(1);
     await page.reload();
     await expect(page.getByText("Riya Sharma")).toBeVisible();
+  });
+
+  test("a refused save keeps the dialog open with the reason", async ({ page }) => {
+    await page.route("**/api/core/v1/packs/**", (r) =>
+      r.fulfill({
+        json: {
+          id: "campus_block_c",
+          version: "0.1.0",
+          title: "Hostel Block C (simulated)",
+          walking_roles: [],
+          probes: [],
+          decision_classes: [],
+          locations: [{ id: "F3_R304", floor: 3, kind: "room", label: "room 304", restricted: false, access_roles: [] }],
+        },
+      }),
+    );
+    await page.route("**/api/core/v1/participants?**", (r) =>
+      r.request().method() === "POST"
+        ? r.fulfill({ status: 403, json: { error: { code: "ROLE_FORBIDDEN", message: "this needs the operator role", request_id: "t" } } })
+        : r.fulfill({ json: [] }),
+    );
+    await page.goto("/app/participants");
+    await page.getByRole("button", { name: /Add the first participant/ }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Name").fill("Riya Sharma");
+    await dialog.getByLabel("Current location").selectOption("F3_R304");
+    await dialog.getByRole("button", { name: "Save participant" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("Your account does not have permission for this.");
   });
 });
 

@@ -4,11 +4,10 @@
  * Small typed wrappers over browser storage, with a subscription so React can read them
  * through useSyncExternalStore.
  *
- * These exist because the core has no list endpoints yet: the investigation history and
- * participant roster live in this browser until it does, and the screens say so.
+ * Only display preferences and the preview flag live here. Investigations and the
+ * participant directory come from the core.
  */
 import { useSyncExternalStore } from "react";
-import type { ParticipantSpec } from "@/lib/api/types";
 
 type Area = "local" | "session";
 const listeners = new Set<() => void>();
@@ -67,65 +66,15 @@ function useStored<T>(area: Area, key: string, fallback: T): T {
   );
 }
 
-/* ---------- Investigation history (this browser only) ---------- */
-
-export interface HistoryEntry {
-  id: string;
-  createdAt: string;
-  packId: string;
-  report: string;
-  reporter: string;
-  lastStatus?: string;
-}
-
-const HISTORY = "pramana.history.v1";
-const EMPTY_HISTORY: HistoryEntry[] = [];
-
-export const history = {
-  list: () => read<HistoryEntry[]>("local", HISTORY, EMPTY_HISTORY),
-  add(e: HistoryEntry) {
-    const cur = history.list().filter((x) => x.id !== e.id);
-    write("local", HISTORY, [e, ...cur].slice(0, 200));
-  },
-  updateStatus(id: string, status: string) {
-    const cur = history.list();
-    if (!cur.some((x) => x.id === id && x.lastStatus !== status)) return;
-    write("local", HISTORY, cur.map((x) => (x.id === id ? { ...x, lastStatus: status } : x)));
-  },
-  remove(id: string) {
-    write("local", HISTORY, history.list().filter((x) => x.id !== id));
-  },
-};
-export const useHistory = () => useStored<HistoryEntry[]>("local", HISTORY, EMPTY_HISTORY);
-
-/* ---------- Participant roster (this browser only) ---------- */
-
-const ROSTER = "pramana.roster.v1";
-const EMPTY_ROSTER: ParticipantSpec[] = [];
-
-export const roster = {
-  list: () => read<ParticipantSpec[]>("local", ROSTER, EMPTY_ROSTER),
-  upsert(p: ParticipantSpec) {
-    const cur = roster.list();
-    const i = cur.findIndex((x) => x.id === p.id);
-    write("local", ROSTER, i >= 0 ? cur.map((x) => (x.id === p.id ? p : x)) : [...cur, p]);
-  },
-  remove(id: string) {
-    write("local", ROSTER, roster.list().filter((x) => x.id !== id));
-  },
-};
-export const useRoster = () => useStored<ParticipantSpec[]>("local", ROSTER, EMPTY_ROSTER);
-
 /* ---------- Preferences ---------- */
 
 export interface Prefs {
   reduceMotion: boolean;
   pollMs: number;
-  approverId: string;
   defaultPack: string;
 }
 const PREFS = "pramana.prefs.v1";
-export const DEFAULT_PREFS: Prefs = { reduceMotion: false, pollMs: 1500, approverId: "", defaultPack: "campus_block_c" };
+export const DEFAULT_PREFS: Prefs = { reduceMotion: false, pollMs: 1500, defaultPack: "campus_block_c" };
 export const prefs = {
   get: () => ({ ...DEFAULT_PREFS, ...read<Partial<Prefs>>("local", PREFS, DEFAULT_PREFS) }),
   set(p: Partial<Prefs>) {
@@ -151,7 +100,8 @@ const noop = () => () => {};
 export const useHydrated = () => useSyncExternalStore(noop, () => true, () => false);
 
 export function clearLocalData() {
-  write("local", HISTORY, null);
-  write("local", ROSTER, null);
   write("local", PREFS, null);
+  // Data kept here by earlier versions, before the core had lists and a directory.
+  write("local", "pramana.history.v1", null);
+  write("local", "pramana.roster.v1", null);
 }

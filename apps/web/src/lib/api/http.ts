@@ -56,6 +56,9 @@ async function raw(service: Service, path: string, opts: RequestOptions): Promis
   const { json, form, token, headers, ...init } = opts;
   const h = new Headers(headers);
   h.set("X-Request-ID", newRequestId());
+  // The core requires this on cookie-authenticated writes; a cross-site page cannot add it
+  // without a CORS preflight (docs/adr/0010-authentication.md).
+  if (service === "core") h.set("X-Pramana-CSRF", "1");
   if (json !== undefined) h.set("Content-Type", "application/json");
   if (token) h.set("Authorization", `Bearer ${token}`);
 
@@ -66,6 +69,7 @@ async function raw(service: Service, path: string, opts: RequestOptions): Promis
       headers: h,
       body: json !== undefined ? JSON.stringify(json) : form,
       cache: "no-store",
+      credentials: "same-origin",
     });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
@@ -103,6 +107,17 @@ export function describeError(e: unknown): string {
     case "NETWORK_UNREACHABLE":
     case "UPSTREAM_DOWN":
       return "The Pramana core is not reachable. Start it with `make core` and try again.";
+    case "AUTH_REQUIRED":
+      return "Please sign in to continue.";
+    case "AUTH_INVALID_CREDENTIALS":
+      return "That email and password do not match an account.";
+    case "AUTH_RATE_LIMITED":
+      return "Too many attempts. Wait a few minutes and try again.";
+    case "ROLE_FORBIDDEN":
+      return "Your account does not have permission for this.";
+    case "PARTICIPANT_FORBIDDEN":
+    case "AUTH_INVALID_TOKEN":
+      return "This link is not valid for this investigation. Ask the operator for a new one.";
     case "QUESTION_NOT_PENDING":
       return "Someone has already answered this question.";
     case "VOICE_EMPTY_TRANSCRIPT":

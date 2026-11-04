@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Card,
@@ -17,11 +17,9 @@ import {
 } from "@/components/ui";
 import { IconBuilding } from "@/components/ui/icons";
 import { BuildingMap } from "@/components/app/BuildingMap";
-import { usePack } from "@/lib/data/hooks";
-import { KNOWN_PACKS } from "@/lib/api/core";
+import { useDirectory, usePack, usePacks } from "@/lib/data/hooks";
 import { roleLabel } from "@/components/app/ParticipantForm";
-import { usePreviewMode, useRoster, usePrefs, prefs } from "@/lib/store/local";
-import type { ParticipantSpec } from "@/lib/api/types";
+import { usePreviewMode, usePrefs, prefs } from "@/lib/store/local";
 
 type View = "plan" | "checks" | "decisions";
 
@@ -30,16 +28,13 @@ export default function SitesPage() {
   const { defaultPack } = usePrefs();
   const [packId, setPackId] = useState<string>(defaultPack);
   const pack = usePack(packId);
-  const stored = useRoster();
-  const [fixtures, setFixtures] = useState<ParticipantSpec[]>([]);
+  const packs = usePacks();
+  const directory = useDirectory(packId);
+  const people = useMemo(() => directory.data?.map((d) => d.participant) ?? [], [directory.data]);
   const [sel, setSel] = useState<string | null>(null);
   const [view, setView] = useState<View>("plan");
   const [reload, setReload] = useState(0);
 
-  useEffect(() => {
-    if (preview) import("@/lib/preview/fixtures").then((f) => setFixtures(f.previewParticipants));
-  }, [preview]);
-  const people = preview ? fixtures : stored;
 
   const loc = pack.data?.locations.find((l) => l.id === sel);
   const probesHere = pack.data?.probes.filter((p) => !sel || p.locations.length === 0 || p.locations.includes(sel)) ?? [];
@@ -64,9 +59,9 @@ export default function SitesPage() {
                 setSel(null);
               }}
             >
-              {KNOWN_PACKS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
+              {(packs.data ?? [{ id: packId, title: packId }]).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
                 </option>
               ))}
             </Select>
@@ -117,7 +112,7 @@ export default function SitesPage() {
                       {loc.restricted ? (
                         <KeyValue k="Who may enter" v={loc.access_roles.map(roleLabel).join(", ") || "Nobody listed"} />
                       ) : null}
-                      <KeyValue k="People here" v={people.filter((p) => p.location_id === loc.id).map((p) => p.display_name).join(", ") || "None in roster"} />
+                      <KeyValue k="People here" v={people.filter((p) => p.location_id === loc.id).map((p) => p.display_name).join(", ") || "Nobody in the directory"} />
                     </dl>
                     <h3 className="mt-5 text-[13px] font-medium text-fg-2">What can be checked here</h3>
                     <ul className="mt-2 flex flex-col gap-2">

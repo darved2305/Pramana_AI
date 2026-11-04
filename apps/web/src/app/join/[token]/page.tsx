@@ -77,7 +77,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         setView({ location_label: "the guard desk", items: [{ label: "Hostel Wi-Fi on your phone", value: "connected" }, { label: "Lights", value: "on" }], reachable_locations: [] });
         return;
       }
-      const s = await core.getInvestigation(payload.i);
+      const s = await core.getInvestigation(payload.i, undefined, payload.t);
       setState(s);
       setError(null);
       sim.view(payload.s, payload.t).then(setView).catch(() => setView(null));
@@ -129,7 +129,11 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     }
     setPhase("sending");
     try {
-      const r = await core.answer(state.id, { question_id: q.id, participant_id: payload.p, ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }) });
+      const r = await core.answer(
+        state.id,
+        { question_id: q.id, participant_id: payload.p, ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }) },
+        payload.t,
+      );
       setUnderstood(`I understood: ${outcomeWord(r.extraction.outcome)}`);
       setText("");
       setState(r.state);
@@ -153,7 +157,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         if (preview) {
           setUnderstood("Recorded. (Preview: nothing was sent.)");
         } else {
-          const r = await core.answerByVoice(state.id, q.id, payload.p, wav);
+          const r = await core.answerByVoice(state.id, q.id, payload.p, wav, payload.t);
           setUnderstood(`I heard "${r.stt.transcript}" and understood: ${outcomeWord(r.result.extraction.outcome)}`);
           setState(r.result.state);
         }
@@ -180,7 +184,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       return;
     }
     try {
-      const blob = await core.questionAudio(state.id, q.id);
+      const blob = await core.questionAudio(state.id, q.id, payload.t);
       const url = URL.createObjectURL(blob);
       const a = new Audio(url);
       a.onended = () => URL.revokeObjectURL(url);
@@ -357,7 +361,7 @@ function Repair({
             setBusy(true);
             setErr(null);
             try {
-              setCap(await core.collectCapability(state.id, approval.id, payload.p));
+              setCap(await core.collectCapability(state.id, approval.id, payload.p, payload.t));
             } catch (e) {
               setErr(describeError(e));
             } finally {
@@ -380,7 +384,7 @@ function Repair({
               setErr(null);
               try {
                 await sim.act(payload.s, payload.t, { action: approval.action, target: approval.target, capability: cap.capability });
-                onState(await core.reportIntervention(state.id, { approval_id: approval.id, participant_id: payload.p }));
+                onState(await core.reportIntervention(state.id, { approval_id: approval.id, participant_id: payload.p }, payload.t));
               } catch (e) {
                 setErr(describeError(e));
               } finally {

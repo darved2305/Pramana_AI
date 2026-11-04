@@ -4,12 +4,23 @@
  * Data hooks used by screens. Each returns live data from the core, or, only in preview
  * mode, the fixtures from lib/preview. Screens never decide this themselves.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { core } from "@/lib/api/core";
 import { ApiError } from "@/lib/api/http";
-import type { EventEnvelope, InvestigationState, SitePack, VoiceStatus } from "@/lib/api/types";
+import type { ListQuery } from "@/lib/api/core";
+import type {
+  DirectoryParticipant,
+  EvaluationReport,
+  EvaluationReportSummary,
+  EventEnvelope,
+  InvestigationPage,
+  InvestigationState,
+  PackSummary,
+  SitePack,
+  VoiceStatus,
+} from "@/lib/api/types";
 import { SETTLED } from "@/lib/api/types";
-import { history, useHydrated, usePrefs, usePreviewMode } from "@/lib/store/local";
+import { useHydrated, usePrefs, usePreviewMode } from "@/lib/store/local";
 
 export type Load<T> =
   | { status: "loading"; data?: undefined; error?: undefined }
@@ -89,8 +100,43 @@ export interface InvestigationFeed {
   apply: (s: InvestigationState) => void;
 }
 
+/**
+ * Where new events come from. `subscribe` delivers batches in `seq` order starting after
+ * `afterSeq`, and returns a function that stops it. Polling is the default; a push channel
+ * (server-sent events or a WebSocket) can be dropped in with the same shape.
+ */
+export interface EventSource {
+  subscribe(id: string, afterSeq: () => number, onEvents: (batch: EventEnvelope[]) => void): () => void;
+}
+
+export function pollingSource(pollMs: number, token?: string): EventSource {
+  return {
+    subscribe(id, afterSeq, onEvents) {
+      let alive = true;
+      let timer: ReturnType<typeof setTimeout>;
+      const ctrl = new AbortController();
+      const tick = async () => {
+        try {
+          const batch = await core.events(id, afterSeq(), ctrl.signal, token);
+          if (!alive) return;
+          if (batch.length) onEvents(batch);
+        } catch (e) {
+          if ((e as Error).name === "AbortError") return;
+        }
+        if (alive) timer = setTimeout(tick, pollMs);
+      };
+      tick();
+      return () => {
+        alive = false;
+        ctrl.abort();
+        clearTimeout(timer);
+      };
+    },
+  };
+}
+
 /** Callers should key their component by `id`, so switching investigations starts fresh. */
-export function useInvestigation(id: string): InvestigationFeed {
+export function useInvestigation(id: string, source?: EventSource): InvestigationFeed {
   const preview = usePreviewMode();
   const { pollMs } = usePrefs();
   const [state, setState] = useState<InvestigationState>();
@@ -111,7 +157,6 @@ export function useInvestigation(id: string): InvestigationFeed {
       setState(s);
       setStatus("ready");
       setError(undefined);
-      history.updateStatus(id, s.status);
     } catch (e) {
       if (gen !== genRef.current) return;
       setError(e);
@@ -152,32 +197,23 @@ export function useInvestigation(id: string): InvestigationFeed {
   // Poll the event log while the investigation can still change.
   const settled = state ? SETTLED.includes(state.status) && !state.pending_question : false;
   const live = !isPreview && status === "ready" && !settled;
+  // Callers that pass a push source should memoise it; polling is rebuilt only if pollMs changes.
+  const feedSource = useMemo(() => source ?? pollingSource(pollMs), [source, pollMs]);
   useEffect(() => {
     if (!live) return;
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const ctrl = new AbortController();
-    const tick = async () => {
-      try {
-        const batch = await core.events(id, seqRef.current, ctrl.signal);
-        if (!alive) return;
-        if (batch.length) {
-          seqRef.current = batch[batch.length - 1].seq;
-          setEvents((prev) => [...prev, ...batch]);
-          await refresh();
-        }
-      } catch (e) {
-        if ((e as Error).name === "AbortError") return;
-      }
-      if (alive) timer = setTimeout(tick, pollMs);
-    };
-    tick();
-    return () => {
-      alive = false;
-      ctrl.abort();
-      clearTimeout(timer);
-    };
-  }, [id, live, pollMs, refresh]);
+    return feedSource.subscribe(
+      id,
+      () => seqRef.current,
+      (batch) => {
+        // Drop anything already seen: a reconnecting source may resend from an older seq.
+        const fresh = batch.filter((e) => e.seq > seqRef.current);
+        if (!fresh.length) return;
+        seqRef.current = fresh[fresh.length - 1].seq;
+        setEvents((prev) => [...prev, ...fresh]);
+        void refresh();
+      },
+    );
+  }, [id, live, feedSource, refresh]);
 
   return {
     status,
@@ -245,4 +281,103 @@ export function useVoiceStatus(): Load<VoiceStatus> {
     return () => ctrl.abort();
   }, []);
   return state;
+}
+
+/* ---------- generic loader ---------- */
+
+function useLoad<T>(key: string | null, fn: (signal: AbortSignal) => Promise<T>): Load<T> & { reload: () => void } {
+  const [result, setResult] = useState<{ key: string; load: Load<T> } | null>(null);
+  const [tick, setTick] = useState(0);
+  const fnRef = useRef(fn);
+  useEffect(() => {
+    fnRef.current = fn;
+  });
+  useEffect(() => {
+    if (key === null) return;
+    let alive = true;
+    const ctrl = new AbortController();
+    fnRef
+      .current(ctrl.signal)
+      .then((data) => alive && setResult({ key, load: { status: "ready", data } }))
+      .catch((error) => alive && (error as Error).name !== "AbortError" && setResult({ key, load: { status: "error", error } }));
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
+  }, [key, tick]);
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+  const state: Load<T> = result && result.key === key ? result.load : { status: "loading" };
+  return { ...state, reload };
+}
+
+/* ---------- console lists ---------- */
+
+export function useInvestigationList(q: ListQuery): Load<InvestigationPage> & { reload: () => void; source: Source } {
+  const preview = usePreviewMode();
+  const hydrated = useHydrated();
+  const key = hydrated ? JSON.stringify({ q, preview }) : null;
+  const load = useLoad<InvestigationPage>(key, async (signal) => {
+    if (!preview) return core.listInvestigations(q, signal);
+    const f = await loadFixtures();
+    const s = f.previewInvestigation;
+    return {
+      total: 1,
+      limit: q.limit ?? 25,
+      offset: 0,
+      items: [
+        {
+          id: s.id,
+          pack_id: s.pack_id,
+          status: s.status,
+          created_at: s.created_at,
+          updated_at: s.created_at,
+          report_text: s.report.text,
+          reporter_id: s.report.reporter_id,
+          participant_count: s.participants.length,
+          decision_class: null,
+          decision_probability: null,
+        },
+      ],
+    };
+  });
+  return { ...load, source: preview ? "preview" : "live" };
+}
+
+export function useDirectory(packId?: string): Load<DirectoryParticipant[]> & { reload: () => void; source: Source } {
+  const preview = usePreviewMode();
+  const hydrated = useHydrated();
+  const key = hydrated ? `${packId ?? "*"}|${preview}` : null;
+  const load = useLoad<DirectoryParticipant[]>(key, async (signal) => {
+    if (!preview) return core.directory(packId, signal);
+    const f = await loadFixtures();
+    const now = f.previewInvestigation.created_at;
+    return f.previewParticipants.map((participant) => ({
+      pack_id: f.previewInvestigation.pack_id,
+      participant,
+      created_at: now,
+      updated_at: now,
+    }));
+  });
+  return { ...load, source: preview ? "preview" : "live" };
+}
+
+export function usePacks(): Load<PackSummary[]> & { reload: () => void; source: Source } {
+  const preview = usePreviewMode();
+  const hydrated = useHydrated();
+  const load = useLoad<PackSummary[]>(hydrated ? `packs|${preview}` : null, async (signal) => {
+    if (!preview) return core.packs(signal);
+    const f = await loadFixtures();
+    const p = f.previewPack;
+    return [{ id: p.id, version: p.version, title: p.title, locations: p.locations.length, probes: p.probes.length }];
+  });
+  return { ...load, source: preview ? "preview" : "live" };
+}
+
+export function useEvaluationReports(enabled: boolean): Load<EvaluationReportSummary[]> & { reload: () => void } {
+  const hydrated = useHydrated();
+  return useLoad<EvaluationReportSummary[]>(hydrated && enabled ? "reports" : null, (signal) => core.evaluationReports(signal));
+}
+
+export function useEvaluationReport(runId: string | null): Load<EvaluationReport> & { reload: () => void } {
+  return useLoad<EvaluationReport>(runId, (signal) => core.evaluationReport(runId as string, signal));
 }

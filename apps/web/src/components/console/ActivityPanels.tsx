@@ -12,7 +12,8 @@ import type { Contradiction } from "@/lib/data/derive";
 import { clock, locationLabel, outcomeWord, participantName, probeLabel } from "@/lib/data/derive";
 import type { Approval, InvestigationState, Observation, SitePack } from "@/lib/api/types";
 import { outcomeTone } from "@/components/app/BuildingMap";
-import { prefs, usePrefs } from "@/lib/store/local";
+import { hasRole } from "@/lib/api/auth";
+import { useCurrentUser } from "@/lib/data/session";
 
 /* ---------- Live conversation ---------- */
 
@@ -419,19 +420,18 @@ function ApprovalCard({
   readOnly: boolean;
   onState: (s: InvestigationState) => void;
 }) {
-  const { approverId } = usePrefs();
-  const [who, setWho] = useState(approverId);
+  const me = useCurrentUser();
+  const canApprove = me ? hasRole(me, "approver") : true; // unknown: the core decides
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"approve" | "deny" | null>(null);
 
   const decide = async (decision: "approve" | "deny") => {
-    if (!who.trim()) return setErr("Enter who is approving, so the decision is attributable.");
     setBusy(decision);
     setErr(null);
     try {
-      prefs.set({ approverId: who.trim() });
-      onState(await core.decideApproval(state.id, a.id, { decision, approver_id: who.trim() }));
+      // The core records the signed-in approver; nothing about identity is sent from here.
+      onState(await core.decideApproval(state.id, a.id, { decision }));
       setConfirm(null);
     } catch (e) {
       setErr(describeError(e));
@@ -470,21 +470,30 @@ function ApprovalCard({
       <p className="mt-2 text-[13px] text-fg-2">{a.rationale}</p>
       {a.approver_id ? (
         <p className="mt-1 text-[12px] text-muted">
-          {a.status === "denied" ? "Denied" : "Approved"} by {a.approver_id}
+          {a.status === "denied" ? "Denied" : "Approved"} by {me && a.approver_id === me.userId ? `${me.displayName} (you)` : a.approver_id}
           {a.decided_at ? ` at ${clock(a.decided_at)}` : ""}
         </p>
       ) : null}
       {a.status === "pending" && !readOnly ? (
         <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-line pt-3">
-          <div className="min-w-[180px] flex-1">
-            <Field label="Approver" error={err}>
-              {(p) => <Input {...p} value={who} onChange={(e) => setWho(e.target.value)} placeholder="Your name or ID" className="h-10" />}
-            </Field>
+          <div className="min-w-[180px] flex-1 text-[13px]">
+            <p className="text-muted">
+              {!me
+                ? "Your sign-in will be recorded as the approver."
+                : canApprove
+                  ? `Deciding as ${me.displayName}. Your account is recorded on the approval.`
+                  : "Only an approver can decide. Ask someone with the approver role."}
+            </p>
+            {err ? (
+              <p role="alert" className="mt-1 text-bad">
+                {err}
+              </p>
+            ) : null}
           </div>
-          <Button variant="danger" onClick={() => setConfirm("deny")}>
+          <Button variant="danger" onClick={() => setConfirm("deny")} disabled={!canApprove}>
             Deny
           </Button>
-          <Button variant="primary" onClick={() => setConfirm("approve")}>
+          <Button variant="primary" onClick={() => setConfirm("approve")} disabled={!canApprove}>
             Approve
           </Button>
         </div>

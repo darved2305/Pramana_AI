@@ -4,6 +4,7 @@ import { useState } from "react";
 import { clsx } from "clsx";
 import { Button, Checkbox, Field, Input, Select, Switch } from "@/components/ui";
 import type { ParticipantSpec, Role, SitePack, Skill, SttLanguage, TemplateLanguage } from "@/lib/api/types";
+import { describeError } from "@/lib/api/http";
 
 export const ROLES: { value: Role; label: string }[] = [
   { value: "student", label: "Student or resident" },
@@ -81,7 +82,8 @@ export function ParticipantForm({
   initial?: ParticipantSpec;
   pack?: SitePack;
   existingIds: string[];
-  onSubmit: (p: ParticipantSpec) => void;
+  /** May be async; a rejection is shown on the form and the dialog stays open. */
+  onSubmit: (p: ParticipantSpec) => void | Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
 }) {
@@ -89,6 +91,8 @@ export function ParticipantForm({
   const [p, setP] = useState<ParticipantSpec>(initial ?? emptyParticipant());
   const [touched, setTouched] = useState(false);
   const [idEdited, setIdEdited] = useState(editing);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const errors = {
     name: !p.display_name.trim() ? "Enter a name people will recognise." : null,
@@ -120,10 +124,19 @@ export function ParticipantForm({
   return (
     <form
       noValidate
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
         setTouched(true);
-        if (valid) onSubmit({ ...p, display_name: p.display_name.trim() });
+        if (!valid || saving) return;
+        setSaving(true);
+        setSaveError(null);
+        try {
+          await onSubmit({ ...p, display_name: p.display_name.trim() });
+        } catch (x) {
+          setSaveError(describeError(x));
+        } finally {
+          setSaving(false);
+        }
       }}
       className="flex flex-col gap-5"
     >
@@ -271,9 +284,14 @@ export function ParticipantForm({
         </div>
       </fieldset>
 
+      {saveError ? (
+        <p role="alert" className="text-[13px] text-bad">
+          {saveError}
+        </p>
+      ) : null}
       <div className="flex justify-end gap-2">
         {onCancel ? <Button onClick={onCancel}>Cancel</Button> : null}
-        <Button type="submit" variant="primary">
+        <Button type="submit" variant="primary" disabled={saving}>
           {submitLabel}
         </Button>
       </div>

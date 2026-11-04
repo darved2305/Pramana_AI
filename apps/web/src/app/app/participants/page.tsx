@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
   Card,
   Dialog,
   EmptyState,
-  Notice,
+  ErrorState,
+  Skeleton,
   PageHeader,
   PreviewBadge,
   Tabs,
@@ -15,28 +16,30 @@ import {
 } from "@/components/ui";
 import { IconEdit, IconPlus, IconSearch, IconTrash, IconUsers } from "@/components/ui/icons";
 import { ParticipantForm, ROLES, langLabel, roleLabel } from "@/components/app/ParticipantForm";
-import { roster, usePreviewMode, useRoster } from "@/lib/store/local";
+import { usePreviewMode } from "@/lib/store/local";
 import { Avatar } from "@/components/app/Avatar";
-import { usePack } from "@/lib/data/hooks";
+import { useDirectory, usePack } from "@/lib/data/hooks";
+import { useCurrentUser } from "@/lib/data/session";
+import { hasRole } from "@/lib/api/auth";
+import { core, DEFAULT_PACK } from "@/lib/api/core";
+import { describeError } from "@/lib/api/http";
 import { locationLabel } from "@/lib/data/derive";
 import type { ParticipantSpec, Role } from "@/lib/api/types";
 
 export default function ParticipantsPage() {
   const preview = usePreviewMode();
-  const stored = useRoster();
-  const pack = usePack("campus_block_c");
-  const [fixtures, setFixtures] = useState<ParticipantSpec[]>([]);
+  const pack = usePack(DEFAULT_PACK);
+  const directory = useDirectory(DEFAULT_PACK);
+  const me = useCurrentUser();
+  // Only operators edit the directory; when the session is unknown the core decides.
+  const canEdit = !preview && (me ? hasRole(me, "operator") : true);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [role, setRole] = useState<Role | "all">("all");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<ParticipantSpec | "new" | null>(null);
   const [removing, setRemoving] = useState<ParticipantSpec | null>(null);
 
-  useEffect(() => {
-    if (!preview) return;
-    import("@/lib/preview/fixtures").then((f) => setFixtures(f.previewParticipants));
-  }, [preview]);
-
-  const people = preview ? fixtures : stored;
+  const people = useMemo(() => directory.data?.map((d) => d.participant) ?? [], [directory.data]);
   const shown = useMemo(
     () =>
       people.filter(
@@ -54,18 +57,11 @@ export default function ParticipantsPage() {
         eyebrow={preview ? <PreviewBadge /> : undefined}
         subtitle="The people Pramana can ask. Each has roles that decide what they can check, a place they are now, and the languages they speak."
         actions={
-          <Button variant="primary" size="lg" onClick={() => setEditing("new")} disabled={preview} title={preview ? "Disabled in preview" : undefined}>
+          <Button variant="primary" size="lg" onClick={() => setEditing("new")} disabled={!canEdit} title={preview ? "Disabled in preview" : !canEdit ? "Needs the operator role" : undefined}>
             <IconPlus className="h-4 w-4" /> Add participant
           </Button>
         }
       />
-
-      {!preview ? (
-        <Notice>
-          The core has no participant directory yet. This roster is kept in this browser and is sent with each new
-          investigation.
-        </Notice>
-      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs<Role | "all">
@@ -92,16 +88,27 @@ export default function ParticipantsPage() {
         </div>
       </div>
 
-      {people.length === 0 ? (
+      {directory.status === "loading" ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-[200px]" />
+          <Skeleton className="h-[200px]" />
+        </div>
+      ) : directory.status === "error" ? (
+        <Card>
+          <ErrorState error={directory.error} onRetry={directory.reload} />
+        </Card>
+      ) : people.length === 0 ? (
         <Card>
           <EmptyState
             icon={<IconUsers />}
-            title="Your roster is empty"
+            title="The directory is empty"
             body="Add the people on site who can answer questions: residents, guards, electricians and IT staff."
             action={
-              <Button variant="primary" onClick={() => setEditing("new")}>
-                <IconPlus className="h-4 w-4" /> Add the first participant
-              </Button>
+              canEdit ? (
+                <Button variant="primary" onClick={() => setEditing("new")}>
+                  <IconPlus className="h-4 w-4" /> Add the first participant
+                </Button>
+              ) : undefined
             }
           />
         </Card>
@@ -143,7 +150,7 @@ export default function ParticipantsPage() {
                   </dd>
                 </div>
               </dl>
-              {!preview ? (
+              {canEdit ? (
                 <div className="mt-4 flex gap-2 border-t border-line pt-3">
                   <Button size="sm" onClick={() => setEditing(p)}>
                     <IconEdit className="h-4 w-4" /> Edit
@@ -170,8 +177,14 @@ export default function ParticipantsPage() {
             pack={pack.data}
             existingIds={people.map((p) => p.id)}
             onCancel={() => setEditing(null)}
-            onSubmit={(p) => {
-              roster.upsert(p);
+            onSubmit={async (p) => {
+              if (editing === "new") await core.addParticipant(DEFAULT_PACK, p);
+              else {
+                const { id: _id, ...patch } = p;
+                void _id;
+                await core.updateParticipant(DEFAULT_PACK, editing.id, patch);
+              }
+              directory.reload();
               setEditing(null);
             }}
           />
@@ -180,17 +193,27 @@ export default function ParticipantsPage() {
 
       <Dialog
         open={!!removing}
-        onClose={() => setRemoving(null)}
+        onClose={() => {
+          setRemoving(null);
+          setRemoveError(null);
+        }}
         title={`Remove ${removing?.display_name ?? ""}?`}
-        description="They will no longer be offered for new investigations. Investigations that already include them are not affected."
+        description={removeError ?? "They will no longer be offered for new investigations. Investigations that already include them are not affected."}
         footer={
           <>
             <Button onClick={() => setRemoving(null)}>Cancel</Button>
             <Button
               variant="danger"
-              onClick={() => {
-                if (removing) roster.remove(removing.id);
-                setRemoving(null);
+              onClick={async () => {
+                if (!removing) return;
+                try {
+                  await core.removeParticipant(DEFAULT_PACK, removing.id);
+                  directory.reload();
+                  setRemoving(null);
+                  setRemoveError(null);
+                } catch (e) {
+                  setRemoveError(describeError(e));
+                }
               }}
             >
               Remove
