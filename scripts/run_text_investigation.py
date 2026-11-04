@@ -109,6 +109,65 @@ def check(r: httpx.Response) -> Any:
     return r.json()
 
 
+def repair_and_verify(
+    core: httpx.Client, sim: httpx.Client, inv: dict[str, Any], play: Any, step: int
+) -> tuple[dict[str, Any], int]:
+    """Human approval -> single-use capability -> act in the simulator -> verification."""
+    top = inv["belief"]["hypotheses"][0]["id"]
+    target, _, mode = top.partition(".")
+    if mode != "tripped":
+        print(f"no approval-gated action for {top}; stopping at the decision")
+        return inv, step
+    url = f"/v1/investigations/{inv['id']}/approvals"
+    state = check(
+        core.post(
+            url, json={"action": "reset_breaker", "target": target, "participant_id": "p_imran"}
+        )
+    )
+    approval = state["approvals"][-1]
+    print(
+        f"\napproval requested: {approval['action_label']} {target} "
+        f"(risk {approval['risk']}, reversible {approval['reversible']})"
+    )
+    check(
+        core.post(
+            f"{url}/{approval['id']}/decision",
+            json={"decision": "approve", "approver_id": "u_duty_manager"},
+        )
+    )
+    grant = check(
+        core.post(f"{url}/{approval['id']}/capability", params={"participant_id": "p_imran"})
+    )
+    print(f"approved; capability issued to p_imran until {grant['expires_at']}")
+    print(f"   instruction: {grant['instructions']}")
+    tok = check(core.post(f"/v1/investigations/{inv['id']}/participants/p_imran/token"))
+    h = {"Authorization": f"Bearer {tok['token']}"}
+    sid = tok["scenario_id"]
+    panel = "DB_C2_PANEL" if target.startswith("CB_C2") else "IDF1"
+    check(sim.post(f"/sim/v1/scenarios/{sid}/move", json={"to": panel}, headers=h))
+    done = check(
+        sim.post(
+            f"/sim/v1/scenarios/{sid}/act",
+            headers=h,
+            json={"action": "reset_breaker", "target": target, "capability": grant["capability"]},
+        )
+    )
+    print(f"simulator: {done}")
+    inv = check(
+        core.post(
+            f"/v1/investigations/{inv['id']}/interventions",
+            json={"approval_id": approval["id"], "participant_id": "p_imran"},
+        )
+    )
+    print(
+        f"verification: P(fixed) = {inv['belief']['repair']['fixed_probability']:.3f} "
+        "before any new observation"
+    )
+    inv, step = play(inv, step)
+    print(f"\nverification result: {inv['status']}: {inv['plan']['reason']}")
+    return inv, step
+
+
 def check_audio(r: httpx.Response, what: str) -> None:
     if r.status_code != 200 or r.content[:4] != b"RIFF":
         sys.exit(f"{what}: HTTP {r.status_code} {r.text[:300]}")
@@ -124,6 +183,11 @@ def main() -> None:
     ap.add_argument("--fault", default=None, help="component.mode, default: random (sealed)")
     ap.add_argument("--lie", action="append", default=[], help="probe_id=outcome to misreport")
     ap.add_argument("--voice", action="store_true", help="speak every turn through real Gnani")
+    ap.add_argument(
+        "--repair",
+        action="store_true",
+        help="after a decision: approve, reset in the simulator, then verify",
+    )
     ap.add_argument("--exclude", action="append", default=[], help="participant id to leave out")
     args = ap.parse_args()
     lies = dict(item.split("=", 1) for item in args.lie)
@@ -148,87 +212,97 @@ def main() -> None:
         )
     )
     print(f"investigation {inv['id']}  sealed commitment {inv['sealed_commitment']}")
-    step = 0
-    while inv["pending_question"] is not None:
-        step += 1
-        q, a = inv["pending_question"], inv["pending_question"]["action"]
-        best = next(c for c in inv["plan"]["candidates"] if c["action"] == inv["plan"]["action"])
-        tok = check(
-            core.post(f"/v1/investigations/{inv['id']}/participants/{a['participant_id']}/token")
-        )
-        h = {"Authorization": f"Bearer {tok['token']}"}
-        if a["requires_move"]:
-            check(
+
+    def play(inv: dict[str, Any], step: int) -> tuple[dict[str, Any], int]:
+        while inv["pending_question"] is not None:
+            step += 1
+            q, a = inv["pending_question"], inv["pending_question"]["action"]
+            best = next(
+                c for c in inv["plan"]["candidates"] if c["action"] == inv["plan"]["action"]
+            )
+            tok = check(
+                core.post(
+                    f"/v1/investigations/{inv['id']}/participants/{a['participant_id']}/token"
+                )
+            )
+            h = {"Authorization": f"Bearer {tok['token']}"}
+            if a["requires_move"]:
+                check(
+                    sim.post(
+                        f"/sim/v1/scenarios/{tok['scenario_id']}/move",
+                        json={"to": a["location_id"]},
+                        headers=h,
+                    )
+                )
+            seen = check(
                 sim.post(
-                    f"/sim/v1/scenarios/{tok['scenario_id']}/move",
-                    json={"to": a["location_id"]},
+                    f"/sim/v1/scenarios/{tok['scenario_id']}/observe",
+                    json={"probe_id": a["probe_id"]},
                     headers=h,
                 )
-            )
-        seen = check(
-            sim.post(
-                f"/sim/v1/scenarios/{tok['scenario_id']}/observe",
-                json={"probe_id": a["probe_id"]},
-                headers=h,
-            )
-        )["value"]
-        said = lies.get(a["probe_id"], seen)
-        print(f"\n[{step}] ask {a['participant_id']} ({q['language']}): {q['text']}")
-        print(
-            f"    why: EIG_D {best['eig_decision_bits']:.2f} bits, cost {best['cost_s']:.0f} s,"
-            f" net value {best['net_value_min']:.2f} min"
-        )
-        print(
-            "    previews: "
-            + ", ".join(
-                f"{o['outcome']}->{o['decision']}({o['decision_probability']:.2f})"
-                for o in best["outcomes"]
-            )
-        )
-        lang = q["language"]
-        phrase = NATIVE.get(lang, PHRASES)[said] if args.voice else PHRASES[said]
-        if args.voice:
-            spoken_q = core.get(f"/v1/investigations/{inv['id']}/questions/{q['id']}/audio")
-            check_audio(spoken_q, "question audio")
-            answer_wav = core.post(
-                "/v1/voice/tts", json={"text": phrase, "language": TTS_LANG[lang]}
-            )
-            check_audio(answer_wav, "answer audio")
-            r = core.post(
-                f"/v1/investigations/{inv['id']}/answers/voice",
-                data={"question_id": q["id"], "participant_id": a["participant_id"]},
-                files={"audio": ("answer.wav", answer_wav.content, "audio/wav")},
-            )
-            voiced = check(r)
-            res = voiced["result"]
-            stt = voiced["stt"]
+            )["value"]
+            said = lies.get(a["probe_id"], seen)
+            print(f"\n[{step}] ask {a['participant_id']} ({q['language']}): {q['text']}")
             print(
-                f"    spoke question ({len(spoken_q.content)} B WAV); "
-                f"participant said {phrase!r}; Prisma heard {stt['transcript']!r} "
-                f"[{stt['detected_language']}]"
+                f"    why: EIG_D {best['eig_decision_bits']:.2f} bits, cost {best['cost_s']:.0f} s,"
+                f" net value {best['net_value_min']:.2f} min"
             )
-        else:
-            res = check(
-                core.post(
-                    f"/v1/investigations/{inv['id']}/answers",
-                    json={
-                        "question_id": q["id"],
-                        "participant_id": a["participant_id"],
-                        "text": phrase,
-                    },
+            print(
+                "    previews: "
+                + ", ".join(
+                    f"{o['outcome']}->{o['decision']}({o['decision_probability']:.2f})"
+                    for o in best["outcomes"]
                 )
             )
-        inv = res["state"]
-        b = inv["belief"]
-        lie = "  (MISREPORTED)" if said != seen else ""
-        heard_ok = "" if res["extraction"]["outcome"] == said else "  (NOT UNDERSTOOD AS SAID)"
-        print(f"    answer: {phrase!r} -> {res['extraction']['outcome']}{lie}{heard_ok}")
-        print(
-            f"    belief: {b['map_decision']} P={b['map_decision_probability']:.3f}, "
-            f"top cause {b['hypotheses'][0]['id']} {b['hypotheses'][0]['probability']:.3f}, "
-            f"P(unknown cause)={b['open_world_probability']:.3f}"
-        )
+            lang = q["language"]
+            phrase = NATIVE.get(lang, PHRASES)[said] if args.voice else PHRASES[said]
+            if args.voice:
+                spoken_q = core.get(f"/v1/investigations/{inv['id']}/questions/{q['id']}/audio")
+                check_audio(spoken_q, "question audio")
+                answer_wav = core.post(
+                    "/v1/voice/tts", json={"text": phrase, "language": TTS_LANG[lang]}
+                )
+                check_audio(answer_wav, "answer audio")
+                r = core.post(
+                    f"/v1/investigations/{inv['id']}/answers/voice",
+                    data={"question_id": q["id"], "participant_id": a["participant_id"]},
+                    files={"audio": ("answer.wav", answer_wav.content, "audio/wav")},
+                )
+                voiced = check(r)
+                res = voiced["result"]
+                stt = voiced["stt"]
+                print(
+                    f"    spoke question ({len(spoken_q.content)} B WAV); "
+                    f"participant said {phrase!r}; Prisma heard {stt['transcript']!r} "
+                    f"[{stt['detected_language']}]"
+                )
+            else:
+                res = check(
+                    core.post(
+                        f"/v1/investigations/{inv['id']}/answers",
+                        json={
+                            "question_id": q["id"],
+                            "participant_id": a["participant_id"],
+                            "text": phrase,
+                        },
+                    )
+                )
+            inv = res["state"]
+            b = inv["belief"]
+            lie = "  (MISREPORTED)" if said != seen else ""
+            heard_ok = "" if res["extraction"]["outcome"] == said else "  (NOT UNDERSTOOD AS SAID)"
+            print(f"    answer: {phrase!r} -> {res['extraction']['outcome']}{lie}{heard_ok}")
+            print(
+                f"    belief: {b['map_decision']} P={b['map_decision_probability']:.3f}, "
+                f"top cause {b['hypotheses'][0]['id']} {b['hypotheses'][0]['probability']:.3f}, "
+                f"P(unknown cause)={b['open_world_probability']:.3f}"
+            )
+        return inv, step
+
+    inv, step = play(inv, 0)
     print(f"\nconclusion: {inv['status']}: {inv['plan']['reason']}")
+    if args.repair and inv["status"] == "decided":
+        inv, step = repair_and_verify(core, sim, inv, play, step)
     final = check(core.post(f"/v1/investigations/{inv['id']}/reveal"))
     gt = final["ground_truth"]
     print("revealed fault:", json.dumps(gt["reveal"]["fault_spec"]["faults"]))
