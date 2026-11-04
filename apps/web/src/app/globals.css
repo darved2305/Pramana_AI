@@ -1,0 +1,253 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Values marked (measured) were read from computed styles on the reference;
+ * values marked (sampled) were read from rendered canvas pixels; anything else is a
+ * Pramana decision.
+ */
+:root {
+  /* Marketing surfaces */
+  --ink: #0e0e15; /* measured: hero background and dark text */
+  --cream: #fffcf7; /* measured: light surface and light text */
+  --rule-light: rgba(14, 14, 21, 0.07);
+  --rule-dark: rgba(255, 252, 247, 0.08);
+
+  /* Voice palette (sampled) */
+  --v-lime: #d6f535;
+  --v-blue: #33a8f5;
+  --v-violet: #a62be6;
+  --v-white: #f5f5f5;
+  --v-red: #c80014;
+  --v-magenta: #e535a8;
+
+  /* Application surfaces (measured on the reference app) */
+  --app-bg: #1b1b1e;
+  --app-panel: #0f0f0f;
+  --app-card: #1b1b1e;
+  --app-card-2: #222226;
+  --app-line: rgba(255, 255, 255, 0.1);
+  --app-line-strong: rgba(255, 255, 255, 0.16);
+  --app-text: #fbfbfb;
+  --app-text-2: rgba(255, 255, 255, 0.72);
+  --app-muted: #878787;
+
+  /* Application accent (measured on the reference app: rgb(255, 79, 21)) */
+  --accent: #ff4f15;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(255, 79, 21, 0.1);
+  --accent-line: rgba(255, 79, 21, 0.35);
+
+  /* Status */
+  --ok: #5fd38d;
+  --warn: #f5b335;
+  --bad: #ff5a4e;
+  --info: #33a8f5;
+
+  /* Motion (measured: buttons and links transition 0.5s ease-out) */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur: 0.5s;
+
+  /* Display faces: overridden by licensed reference fonts when present (see layout.tsx) */
+  --display-slab: var(--font-slab), Georgia, serif;
+  --display-pixel: var(--font-geist-pixel-square), ui-monospace, monospace;
+
+  /* Layout: the reference keeps hairline rails ~6.2vw from each edge at 1536px */
+  --rail: clamp(16px, 6.2vw, 96px);
+  --gutter: clamp(20px, 3.3vw, 50px);
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-cream: var(--cream);
+  --color-lime: var(--v-lime);
+  --color-vblue: var(--v-blue);
+  --color-violet: var(--v-violet);
+  --color-app-bg: var(--app-bg);
+  --color-panel: var(--app-panel);
+  --color-card: var(--app-card);
+  --color-card-2: var(--app-card-2);
+  --color-line: var(--app-line);
+  --color-line-strong: var(--app-line-strong);
+  --color-fg: var(--app-text);
+  --color-fg-2: var(--app-text-2);
+  --color-muted: var(--app-muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-info: var(--info);
+
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-inter: var(--font-inter), system-ui, sans-serif;
+  --font-display: var(--display-slab);
+  --font-serif: var(--font-besley), Georgia, serif;
+  --font-pixel: var(--display-pixel);
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --ease-out: var(--ease-out);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--v-lime);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Marketing primitives ---------- */
+
+/* Outlined button: square at rest, pill on hover (measured on the reference header). */
+.btn-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 15px 18px;
+  border: 0.8px solid currentColor;
+  border-radius: 0;
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    border-radius var(--dur) ease-out,
+    background-color var(--dur) ease-out,
+    color var(--dur) ease-out;
+}
+.btn-line:hover {
+  border-radius: 999px;
+}
+.btn-line:focus-visible {
+  border-radius: 999px;
+}
+.btn-line .arrow {
+  transition: transform var(--dur) var(--ease-out);
+}
+.btn-line:hover .arrow {
+  transform: translateX(3px);
+}
+.btn-line.lg {
+  padding: 21px 22px;
+}
+
+.display-slab {
+  font-family: var(--display-slab);
+  font-weight: 300;
+  line-height: 0.92;
+  letter-spacing: -0.01em;
+}
+
+.display-pixel {
+  font-family: var(--display-pixel);
+  font-weight: 400;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.rails-light {
+  background-image:
+    linear-gradient(var(--rule-light), var(--rule-light)),
+    linear-gradient(var(--rule-light), var(--rule-light));
+  background-size: 1px 100%, 1px 100%;
+  background-position: var(--rail) 0, calc(100% - var(--rail)) 0;
+  background-repeat: no-repeat;
+}
+.rails-dark {
+  background-image:
+    linear-gradient(var(--rule-dark), var(--rule-dark)),
+    linear-gradient(var(--rule-dark), var(--rule-dark));
+  background-size: 1px 100%, 1px 100%;
+  background-position: var(--rail) 0, calc(100% - var(--rail)) 0;
+  background-repeat: no-repeat;
+}
+
+/* ---------- Application primitives ---------- */
+
+.app-root {
+  background: var(--app-bg);
+  color: var(--app-text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.card {
+  background: var(--app-card);
+  border: 0.8px solid var(--app-line);
+  border-radius: 16px;
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html[data-motion="reduce"] *,
+html[data-motion="reduce"] *::before,
+html[data-motion="reduce"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}

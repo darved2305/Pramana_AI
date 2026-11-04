@@ -41,3 +41,7 @@ recorder/
 !tests/fixtures/audio/*.wav
 .DS_Store
 .cache/
+
+# Licensed fonts are provided locally, never committed
+apps/web/public/fonts/*
+!apps/web/public/fonts/README.md
