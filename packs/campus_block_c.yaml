@@ -1,0 +1,280 @@
+# Domain pack: Hostel Block C (simulated).
+#
+# This file is the *documented* site model the investigation engine reasons over. The simulator
+# uses the same physics on its own sealed fault state. Everything here is synthetic.
+#
+# Semantics of each field are defined in packages/domain/src/pramana_domain/pack.py and
+# packages/domain/src/pramana_domain/physics.py.
+
+pack: campus_block_c
+version: 0.1.0
+title: Hostel Block C (simulated)
+
+locations:
+  - { id: GUARD_DESK,  floor: 1, kind: desk,     label: { en: "the guard desk", hi: "guard desk", mr: "गार्ड डेस्क" }, wifi_coverage: [AP_1A] }
+  - { id: MAINT_ROOM,  floor: 1, kind: room,     label: { en: "the maintenance room", hi: "maintenance room", mr: "मेंटेनन्स रूम" }, wifi_coverage: [AP_1A] }
+  - { id: F1_LOBBY,    floor: 1, kind: corridor, label: { en: "the ground-floor lobby", hi: "ground floor lobby", mr: "तळमजल्याची लॉबी" }, wifi_coverage: [AP_1A] }
+  - { id: IDF1,        floor: 1, kind: closet,   label: { en: "network closet IDF-1", hi: "network closet IDF-1", mr: "नेटवर्क खोली IDF-1" }, restricted: true, access_roles: [guard, it_tech, electrician], wifi_coverage: [AP_1A] }
+  - { id: F2_CORRIDOR, floor: 2, kind: corridor, label: { en: "the second-floor corridor", hi: "second floor corridor", mr: "दुसऱ्या मजल्याचा कॉरिडॉर" }, wifi_coverage: [AP_2A, AP_2B] }
+  - { id: F2_R205,     floor: 2, kind: room,     label: { en: "room 205", hi: "room 205", mr: "खोली 205" }, wifi_coverage: [AP_2B, AP_2A] }
+  - { id: F2_R210,     floor: 2, kind: room,     label: { en: "room 210", hi: "room 210", mr: "खोली 210" }, wifi_coverage: [AP_2A] }
+  - { id: IDF2,        floor: 2, kind: closet,   label: { en: "network closet IDF-2", hi: "network closet IDF-2", mr: "नेटवर्क खोली IDF-2" }, restricted: true, access_roles: [guard, it_tech, electrician], wifi_coverage: [AP_2A] }
+  - { id: DB_C2_PANEL, floor: 2, kind: panel,    label: { en: "distribution board DB-C2", hi: "distribution board DB-C2", mr: "डिस्ट्रिब्युशन बोर्ड DB-C2" }, restricted: true, access_roles: [electrician, guard], wifi_coverage: [AP_2A] }
+  - { id: F3_CORRIDOR, floor: 3, kind: corridor, label: { en: "the third-floor corridor", hi: "third floor corridor", mr: "तिसऱ्या मजल्याचा कॉरिडॉर" }, wifi_coverage: [AP_3A, AP_3B] }
+  - { id: F3_R304,     floor: 3, kind: room,     label: { en: "room 304", hi: "room 304", mr: "खोली 304" }, wifi_coverage: [AP_3A, AP_3B] }
+  - { id: F3_R310,     floor: 3, kind: room,     label: { en: "room 310", hi: "room 310", mr: "खोली 310" }, wifi_coverage: [AP_3B] }
+
+# Walking times in seconds (undirected). Only staff roles are asked to walk.
+walks:
+  - [GUARD_DESK, F1_LOBBY, 10]
+  - [MAINT_ROOM, F1_LOBBY, 20]
+  - [F1_LOBBY, IDF1, 15]
+  - [F1_LOBBY, F2_CORRIDOR, 40]
+  - [F2_CORRIDOR, IDF2, 15]
+  - [F2_CORRIDOR, DB_C2_PANEL, 20]
+  - [F2_CORRIDOR, F2_R205, 10]
+  - [F2_CORRIDOR, F2_R210, 10]
+  - [F2_CORRIDOR, F3_CORRIDOR, 40]
+  - [F3_CORRIDOR, F3_R304, 10]
+  - [F3_CORRIDOR, F3_R310, 10]
+
+walking_roles: [guard, electrician, it_tech, housekeeping]
+
+# Components. `powered_by` is the electrical parent; `poe_from` means power AND data come from a
+# switch port; `uplink` is the network parent; `hosted_on` places a service on a device.
+# `upstream` is the WAN dependency of the gateway.
+components:
+  # Power
+  - { id: FEED_MAIN, kind: feed,    label: "Main utility feed" }
+  - { id: FEED_C2,   kind: feed,    label: "Sub-feed to panel DB-C2", powered_by: FEED_MAIN, location: DB_C2_PANEL,
+      failure_modes: [{ id: lost, prior: 0.003, label: "Upstream power interruption to DB-C2" }] }
+  - { id: CB_MAIN_1, kind: breaker, label: "Breaker MAIN-1 (IDF-1 rack)", powered_by: FEED_MAIN, location: IDF1,
+      failure_modes: [{ id: tripped, prior: 0.002, label: "Breaker MAIN-1 tripped" }] }
+  - { id: CB_C2_5,   kind: breaker, label: "Breaker C2-5 (lighting F2/F3)", powered_by: FEED_C2, location: DB_C2_PANEL,
+      failure_modes: [{ id: tripped, prior: 0.002, label: "Breaker C2-5 tripped" }] }
+  - { id: CB_C2_7,   kind: breaker, label: "Breaker C2-7 (IDF-2 rack)", powered_by: FEED_C2, location: DB_C2_PANEL,
+      failure_modes: [{ id: tripped, prior: 0.004, label: "Breaker C2-7 tripped" }] }
+  - { id: LIGHTS_F1, kind: light, label: "Ground-floor lights", powered_by: FEED_MAIN }
+  - { id: LIGHTS_F2, kind: light, label: "Second-floor corridor lights", powered_by: CB_C2_5 }
+  - { id: LIGHTS_F3, kind: light, label: "Third-floor corridor lights", powered_by: CB_C2_5 }
+  - { id: LIGHT_IDF2, kind: light, label: "IDF-2 closet light", powered_by: CB_C2_5, location: IDF2 }
+  - { id: NVR_C2,    kind: nvr,   label: "CCTV recorder in IDF-2", powered_by: CB_C2_7, location: IDF2 }
+  # Network
+  - { id: ISP_LINK,  kind: isp,     label: "ISP fibre link",
+      failure_modes: [{ id: down, prior: 0.003, label: "ISP outage" }] }
+  - { id: GATEWAY,   kind: gateway, label: "Gateway router", powered_by: CB_MAIN_1, upstream: ISP_LINK, location: IDF1,
+      failure_modes: [{ id: dead, prior: 0.001, label: "Gateway router failed" }] }
+  - { id: DHCP,      kind: dhcp,    label: "DHCP service", hosted_on: GATEWAY,
+      failure_modes: [{ id: down, prior: 0.002, label: "DHCP service failure" }] }
+  - { id: DNS,       kind: dns,     label: "DNS resolver", hosted_on: GATEWAY,
+      failure_modes: [{ id: down, prior: 0.003, label: "DNS failure" }] }
+  - { id: SW_CORE,   kind: switch,  label: "Core switch (IDF-1)", powered_by: CB_MAIN_1, uplink: GATEWAY, location: IDF1,
+      failure_modes: [{ id: dead, prior: 0.001, label: "Core switch failed" }] }
+  - { id: SW_C2,     kind: switch,  label: "PoE switch SW-C2 (IDF-2)", powered_by: CB_C2_7, uplink: SW_CORE, location: IDF2,
+      failure_modes: [{ id: dead, prior: 0.002, label: "Switch SW-C2 failed" }] }
+  - { id: AP_1A,     kind: ap, label: "Access point 1A", poe_from: SW_CORE, location: F1_LOBBY,
+      failure_modes: [{ id: dead, prior: 0.002, label: "Access point 1A failed" }] }
+  - { id: AP_2A,     kind: ap, label: "Access point 2A", poe_from: SW_C2, location: F2_CORRIDOR,
+      failure_modes: [{ id: dead, prior: 0.002, label: "Access point 2A failed" }] }
+  - { id: AP_2B,     kind: ap, label: "Access point 2B", poe_from: SW_C2, location: F2_R205,
+      failure_modes: [{ id: dead, prior: 0.002, label: "Access point 2B failed" }] }
+  - { id: AP_3A,     kind: ap, label: "Access point 3A", poe_from: SW_C2, location: F3_CORRIDOR,
+      failure_modes: [{ id: dead, prior: 0.002, label: "Access point 3A failed" }] }
+  - { id: AP_3B,     kind: ap, label: "Access point 3B", poe_from: SW_C2, location: F3_R310,
+      failure_modes: [{ id: dead, prior: 0.002, label: "Access point 3B failed" }] }
+
+# Priors for the two non-component hypotheses (relative to the component failure priors above).
+no_fault_prior: 0.002      # nothing broken: the reporter's own device or a false alarm
+open_world_prior: 0.0008   # a cause outside this model
+
+# Probes: safe observations a person can make. Each `observes` entry binds the probe to a place
+# and, for indicator probes, to the component whose state is perceived there.
+# Observable kinds: internet_works, wifi_status, web_by_ip (phone checks at the person's
+# location); powered (on/off); ap_light (on/off); switch_leds (green/amber/off);
+# wan_led (green/red/off); breaker (up/tripped).
+probes:
+  - id: internet_works
+    label: "Internet works on the hostel Wi-Fi"
+    kind: internet_works
+    class: device
+    outcomes: ["yes", "no"]
+    roles: [any]
+    exec_s: 20
+    observes: [{ at: GUARD_DESK }, { at: MAINT_ROOM }, { at: F1_LOBBY }, { at: F2_CORRIDOR }, { at: F2_R205 }, { at: F2_R210 }, { at: F3_CORRIDOR }, { at: F3_R304 }, { at: F3_R310 }]
+    templates:
+      en: "On your phone, using the hostel Wi-Fi, does a normal website open? Please say yes or no."
+      hi-en: "Aapke phone pe hostel WiFi se koi normal website khul rahi hai? Haan ya nahi batayiye."
+      hi: "आपके फ़ोन पर हॉस्टल वाई-फ़ाई से कोई सामान्य वेबसाइट खुल रही है? हाँ या नहीं बताइए।"
+      mr: "तुमच्या फोनवर हॉस्टेलच्या वाय-फायवर एखादी साधी वेबसाइट उघडते का? हो किंवा नाही सांगा."
+
+  - id: wifi_status
+    label: "Wi-Fi status on the phone"
+    kind: wifi_status
+    class: device
+    outcomes: [no_network, stuck_connecting, connected]
+    roles: [any]
+    exec_s: 15
+    observes: [{ at: GUARD_DESK }, { at: MAINT_ROOM }, { at: F1_LOBBY }, { at: F2_CORRIDOR }, { at: F2_R205 }, { at: F2_R210 }, { at: F3_CORRIDOR }, { at: F3_R304 }, { at: F3_R310 }]
+    templates:
+      en: "Please open the Wi-Fi list on your phone. Is NAVA-WiFi missing, stuck on connecting, or connected?"
+      hi-en: "Phone ki WiFi list kholiye. NAVA-WiFi dikh hi nahi raha, connecting pe atka hai, ya connected hai?"
+      hi: "फ़ोन की वाई-फ़ाई सूची खोलिए। NAVA-WiFi दिख ही नहीं रहा, कनेक्ट होने पर अटका है, या कनेक्टेड है?"
+      mr: "फोनमधली वाय-फाय यादी उघडा. NAVA-WiFi दिसतच नाही, कनेक्ट होताना अडकलंय, की कनेक्टेड आहे?"
+
+  - id: web_by_ip
+    label: "IP test page loads"
+    kind: web_by_ip
+    class: device
+    outcomes: ["yes", "no"]
+    roles: [any]
+    exec_s: 25
+    observes: [{ at: GUARD_DESK }, { at: MAINT_ROOM }, { at: F1_LOBBY }, { at: F2_CORRIDOR }, { at: F2_R205 }, { at: F2_R210 }, { at: F3_CORRIDOR }, { at: F3_R304 }, { at: F3_R310 }]
+    templates:
+      en: "Please open the bookmark called 'IP test page' on your phone. Does that page load? Yes or no?"
+      hi-en: "Phone mein 'IP test page' naam ka bookmark kholiye. Kya woh page khulta hai? Haan ya nahi?"
+      hi: "फ़ोन में 'IP test page' नाम का बुकमार्क खोलिए। क्या वह पेज खुलता है? हाँ या नहीं?"
+      mr: "फोनमधला 'IP test page' नावाचा बुकमार्क उघडा. ते पान उघडतं का? हो की नाही?"
+
+  - id: corridor_lights
+    label: "Corridor lights"
+    kind: powered
+    class: visual
+    outcomes: ["on", "off"]
+    roles: [any]
+    exec_s: 10
+    observes:
+      - { at: GUARD_DESK, target: LIGHTS_F1 }
+      - { at: F1_LOBBY, target: LIGHTS_F1 }
+      - { at: F2_CORRIDOR, target: LIGHTS_F2 }
+      - { at: F2_R205, target: LIGHTS_F2 }
+      - { at: F2_R210, target: LIGHTS_F2 }
+      - { at: F3_CORRIDOR, target: LIGHTS_F3 }
+      - { at: F3_R304, target: LIGHTS_F3 }
+      - { at: F3_R310, target: LIGHTS_F3 }
+    templates:
+      en: "Please look at the corridor right outside you. Are the corridor lights on or off?"
+      hi-en: "Bahar corridor mein dekhiye. Corridor ki lights on hain ya off?"
+      hi: "बाहर कॉरिडोर में देखिए। कॉरिडोर की लाइटें जल रही हैं या बंद हैं?"
+      mr: "बाहेर कॉरिडॉरमध्ये बघा. कॉरिडॉरमधले दिवे चालू आहेत की बंद?"
+
+  - id: ap_light
+    label: "Access-point status light"
+    kind: ap_light
+    class: visual
+    outcomes: ["on", "off"]
+    roles: [any]
+    exec_s: 15
+    observes:
+      - { at: F1_LOBBY, target: AP_1A }
+      - { at: F2_CORRIDOR, target: AP_2A }
+      - { at: F2_R205, target: AP_2B }
+      - { at: F3_CORRIDOR, target: AP_3A }
+      - { at: F3_R310, target: AP_3B }
+    templates:
+      en: "In {place}, there is a white Wi-Fi box on the ceiling. Is the small light on it on or off?"
+      hi-en: "{place} mein chhat pe ek white WiFi box hai. Uski chhoti light on hai ya off?"
+      hi: "{place} में छत पर एक सफ़ेद वाई-फ़ाई डिब्बा है। उसकी छोटी लाइट जल रही है या बंद है?"
+      mr: "{place} मध्ये छताला एक पांढरा वाय-फाय डबा आहे. त्यावरचा छोटा दिवा चालू आहे की बंद?"
+
+  - id: switch_leds
+    label: "Network switch lights"
+    kind: switch_leds
+    class: visual
+    outcomes: [green, amber, "off"]
+    roles: [guard, it_tech, electrician]
+    exec_s: 15
+    observes:
+      - { at: IDF2, target: SW_C2 }
+      - { at: IDF1, target: SW_CORE }
+    templates:
+      en: "In {place}, look at the network switch in the rack. Are its port lights green, amber, or completely off?"
+      hi-en: "{place} mein rack wale network switch ko dekhiye. Uski lights green hain, orange hain, ya bilkul band?"
+      hi: "{place} में रैक वाले नेटवर्क स्विच को देखिए। उसकी लाइटें हरी हैं, नारंगी हैं, या बिल्कुल बंद?"
+      mr: "{place} मध्ये रॅकमधला नेटवर्क स्विच बघा. त्याचे दिवे हिरवे आहेत, नारंगी आहेत, की पूर्ण बंद?"
+
+  - id: nvr_screen
+    label: "CCTV recorder screen"
+    kind: powered
+    class: visual
+    outcomes: ["on", "off"]
+    roles: [guard, it_tech, electrician]
+    exec_s: 8
+    observes: [{ at: IDF2, target: NVR_C2 }]
+    templates:
+      en: "In {place}, there is a small CCTV recorder screen. Is that screen on or off?"
+      hi-en: "{place} mein CCTV recorder ki chhoti screen hai. Woh screen on hai ya off?"
+      hi: "{place} में सीसीटीवी रिकॉर्डर की छोटी स्क्रीन है। वह स्क्रीन चालू है या बंद?"
+      mr: "{place} मध्ये CCTV रेकॉर्डरचा छोटा स्क्रीन आहे. तो स्क्रीन चालू आहे की बंद?"
+
+  - id: closet_light
+    label: "Closet ceiling light"
+    kind: powered
+    class: visual
+    outcomes: ["on", "off"]
+    roles: [guard, it_tech, electrician]
+    exec_s: 5
+    observes: [{ at: IDF2, target: LIGHT_IDF2 }]
+    templates:
+      en: "When you switch on the light in {place}, does the ceiling light come on?"
+      hi-en: "{place} ki light ka switch on karne par chhat ki light jalti hai?"
+      hi: "{place} की लाइट का स्विच चालू करने पर छत की लाइट जलती है?"
+      mr: "{place} मधल्या दिव्याचं बटण चालू केल्यावर छताचा दिवा लागतो का?"
+
+  - id: wan_led
+    label: "Gateway internet light"
+    kind: wan_led
+    class: visual
+    outcomes: [green, red, "off"]
+    roles: [guard, it_tech]
+    exec_s: 10
+    observes: [{ at: IDF1, target: GATEWAY }]
+    templates:
+      en: "In {place}, find the router labelled GATEWAY. Is the light marked INTERNET green, red, or off?"
+      hi-en: "{place} mein GATEWAY likha router dhoondhiye. INTERNET wali light green hai, red hai, ya band?"
+      hi: "{place} में GATEWAY लिखा राउटर ढूँढिए। INTERNET वाली लाइट हरी है, लाल है, या बंद?"
+      mr: "{place} मध्ये GATEWAY लिहिलेला राउटर शोधा. INTERNET असं लिहिलेला दिवा हिरवा आहे, लाल आहे, की बंद?"
+
+  - id: breaker_c2_7
+    label: "Breaker C2-7 position"
+    kind: breaker
+    class: panel
+    outcomes: [up, tripped]
+    roles: [electrician]
+    exec_s: 20
+    observes: [{ at: DB_C2_PANEL, target: CB_C2_7 }]
+    templates:
+      en: "At {place}, without touching anything, is breaker number 7 in the up position or tripped down?"
+      hi-en: "{place} pe, bina kuch chhue, breaker number 7 upar hai ya trip hokar neeche hai?"
+      hi: "{place} पर, बिना कुछ छुए, ब्रेकर नंबर 7 ऊपर है या ट्रिप होकर नीचे है?"
+      mr: "{place} वर, कशालाही हात न लावता, ब्रेकर नंबर 7 वर आहे की ट्रिप होऊन खाली आहे?"
+
+# Spoken prefix when the person must first walk somewhere.
+move_templates:
+  en: "Could you please walk to {place}? Once you are there: "
+  hi-en: "Kya aap {place} tak ja sakte hain? Wahan pahunch kar: "
+  hi: "क्या आप {place} तक जा सकते हैं? वहाँ पहुँचकर: "
+  mr: "तुम्ही {place} पर्यंत जाऊ शकाल का? तिथे पोहोचल्यावर: "
+
+# Operational decisions. Each hypothesis maps to exactly one decision class.
+decision_classes:
+  - { id: DISPATCH_ELECTRICIAN_DB_C2, label: "Send the electrician to panel DB-C2", hypotheses: [CB_C2_7.tripped, CB_C2_5.tripped] }
+  - { id: ESCALATE_FACILITIES_POWER,  label: "Escalate the DB-C2 supply loss to facilities", hypotheses: [FEED_C2.lost] }
+  - { id: DISPATCH_ELECTRICIAN_MAIN,  label: "Send the electrician to breaker MAIN-1", hypotheses: [CB_MAIN_1.tripped] }
+  - { id: IT_ONSITE_SW_C2,            label: "IT on site: replace switch SW-C2", hypotheses: [SW_C2.dead] }
+  - { id: IT_ONSITE_CORE,             label: "IT on site: core switch or gateway in IDF-1", hypotheses: [SW_CORE.dead, GATEWAY.dead] }
+  - { id: IT_REPLACE_AP_1A,           label: "IT: replace access point 1A", hypotheses: [AP_1A.dead] }
+  - { id: IT_REPLACE_AP_2A,           label: "IT: replace access point 2A", hypotheses: [AP_2A.dead] }
+  - { id: IT_REPLACE_AP_2B,           label: "IT: replace access point 2B", hypotheses: [AP_2B.dead] }
+  - { id: IT_REPLACE_AP_3A,           label: "IT: replace access point 3A", hypotheses: [AP_3A.dead] }
+  - { id: IT_REPLACE_AP_3B,           label: "IT: replace access point 3B", hypotheses: [AP_3B.dead] }
+  - { id: IT_FIX_DHCP,                label: "IT (remote): restore the DHCP service", hypotheses: [DHCP.down] }
+  - { id: IT_FIX_DNS,                 label: "IT (remote): restore DNS", hypotheses: [DNS.down] }
+  - { id: ESCALATE_ISP,               label: "Raise a ticket with the ISP", hypotheses: [ISP_LINK.down] }
+  - { id: NO_ACTION_USER_SIDE,        label: "No building fault: help the reporter with their device", hypotheses: [NO_FAULT] }
+
+# Loss of acting on decision d when the truth is h, in minutes-equivalent of wasted effort and
+# delay. A correct decision costs 0.
+loss_minutes:
+  wrong_default: 25
+  wrong_by_decision: { ESCALATE_ISP: 60, NO_ACTION_USER_SIDE: 45 }
+  any_under_open_world: 30
