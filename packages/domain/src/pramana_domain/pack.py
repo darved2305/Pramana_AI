@@ -138,6 +138,22 @@ class Probe(PackModel):
         return ANY_ROLE in self.roles or bool(set(self.roles) & set(roles))
 
 
+class Action(PackModel):
+    """A consequential action: role-restricted, approval-gated, executed with a capability."""
+
+    id: StrictStr
+    label: StrictStr
+    target_kind: ComponentKind
+    fixes: StrictStr
+    """The failure mode this action clears on its target."""
+    roles: list[Role] = Field(min_length=1)
+    at_target_location: bool = True
+    risk: Literal["low", "medium", "high"]
+    reversible: bool
+    decision_classes: list[StrictStr] = Field(min_length=1)
+    instructions: dict[TemplateLanguage, StrictStr]
+
+
 class DecisionClass(PackModel):
     id: StrictStr
     label: StrictStr
@@ -161,6 +177,7 @@ class DomainPack(PackModel):
     no_fault_prior: float = Field(gt=0, lt=1)
     open_world_prior: float = Field(gt=0, lt=1)
     probes: list[Probe]
+    actions: list[Action] = Field(default_factory=list)
     move_templates: dict[TemplateLanguage, StrictStr]
     decision_classes: list[DecisionClass]
     loss_minutes: LossMinutes
@@ -301,6 +318,14 @@ class DomainPack(PackModel):
         for h in sorted(hyp_ids - set(mapped)):
             errors.append(f"hypothesis {h} has no decision class")
         decision_ids = {d.id for d in self.decision_classes}
+        _unique("action", [a.id for a in self.actions], errors)
+        for act in self.actions:
+            targets = [c for c in self.components if c.kind == act.target_kind]
+            if not any(act.fixes in {m.id for m in c.failure_modes} for c in targets):
+                errors.append(f"action {act.id}: no {act.target_kind} can fail as {act.fixes!r}")
+            for d in act.decision_classes:
+                if d not in decision_ids:
+                    errors.append(f"action {act.id}: unknown decision class {d!r}")
         for d in self.loss_minutes.wrong_by_decision:
             if d not in decision_ids:
                 errors.append(f"loss_minutes references unknown decision {d!r}")

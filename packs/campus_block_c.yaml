@@ -249,6 +249,24 @@ probes:
       mr: "{place} वर, कशालाही हात न लावता, ब्रेकर नंबर 7 वर आहे की ट्रिप होऊन खाली आहे?"
 
 # Spoken prefix when the person must first walk somewhere.
+# Consequential actions. Each needs a named role, a human approval and a single-use capability
+# token; the simulator refuses them otherwise. ``fixes`` is the failure mode the action clears.
+actions:
+  - id: reset_breaker
+    label: "Reset a tripped breaker"
+    target_kind: breaker
+    fixes: tripped
+    roles: [electrician]
+    at_target_location: true
+    risk: medium
+    reversible: true
+    decision_classes: [DISPATCH_ELECTRICIAN_DB_C2, DISPATCH_ELECTRICIAN_MAIN]
+    instructions:
+      en: "You are cleared to reset {target} at {place}. Please confirm once it is done."
+      hi-en: "Aapko {place} pe {target} reset karne ki permission mil gayi hai. Ho jaye toh bataiye."
+      hi: "आपको {place} पर {target} रीसेट करने की अनुमति मिल गई है। हो जाए तो बताइए।"
+      mr: "तुम्हाला {place} येथे {target} रीसेट करण्याची परवानगी मिळाली आहे. झाल्यावर सांगा."
+
 move_templates:
   en: "Could you please walk to {place}? Once you are there: "
   hi-en: "Kya aap {place} tak ja sakte hain? Wahan pahunch kar: "
