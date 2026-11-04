@@ -10,9 +10,9 @@ from typing import Any
 import httpx
 import pytest
 
+from pramana_core.llm import LlmClient, LlmError, ProviderLimits, _duration_s
 from pramana_domain import DomainPack, load_pack
 from pramana_engine import CompiledModel, compile_pack
-from pramana_eval.llm import LlmClient, LlmError, ProviderLimits, _duration_s
 from pramana_eval.llm_policy import LlmPolicy, render_site
 from pramana_eval.policies import Checklist, Conclusion, Ours, RandomFeasible, greedy_entropy
 from pramana_eval.runner import paired_difference, run_episode, summarize

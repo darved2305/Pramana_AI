@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -102,7 +103,7 @@ class _Budget:
         data[self._day_key()] = int(data.get(self._day_key(), 0)) + 1
         self.day_file.write_text(json.dumps(data), encoding="utf-8")
 
-    def wait_for_slot(self, est_tokens: int) -> None:
+    def wait_for_slot(self, est_tokens: int, max_wait_s: float | None = None) -> None:
         if self.used_today() >= self.limits.requests_per_day:
             raise LlmError(f"daily request budget ({self.limits.requests_per_day}) used")
         while True:
@@ -120,6 +121,8 @@ class _Budget:
             ):
                 waits.append(60 - (now - self._tokens[0][0]))
             wait = max(waits)
+            if max_wait_s is not None and wait > max_wait_s:
+                raise LlmError(f"quota pacing would wait {wait:.0f}s (limit {max_wait_s:.0f}s)")
             if wait <= 0:
                 self._requests.append(now)
                 self._count_today()
@@ -155,6 +158,7 @@ class LlmClient:
         cache_dir: Path,
         api_key: str | None = None,
         timeout_s: float = 40.0,
+        max_wait_s: float | None = None,
         limits: ProviderLimits | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
@@ -176,6 +180,9 @@ class LlmClient:
         )
         self.calls = 0
         self.cache_hits = 0
+        self.max_wait_s = max_wait_s
+        """Interactive callers set this: fail fast (and fall back) instead of waiting on quota."""
+        self._lock = threading.Lock()  # budget state is shared by worker threads
 
     def _cache_path(self, payload: dict[str, Any]) -> Path:
         digest = hashlib.sha256(
@@ -209,7 +216,8 @@ class LlmClient:
         backoff = 2.0
         last = ""
         for _ in range(max_attempts):
-            self._budget.wait_for_slot(est)
+            with self._lock:
+                self._budget.wait_for_slot(est, self.max_wait_s)
             try:
                 r = self._http.post("/chat/completions", json=payload)
             except httpx.TimeoutException:
@@ -219,7 +227,8 @@ class LlmClient:
                 continue
             self.calls += 1
             usage = (r.json().get("usage") or {}) if r.status_code == 200 else {}
-            self._budget.record(int(usage.get("total_tokens", est)), r.headers)
+            with self._lock:
+                self._budget.record(int(usage.get("total_tokens", est)), r.headers)
             if r.status_code == 200:
                 content = r.json()["choices"][0]["message"].get("content") or ""
                 try:

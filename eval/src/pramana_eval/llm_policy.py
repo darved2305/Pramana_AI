@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from pramana_contracts import ProbeAction
+from pramana_core.llm import LlmClient, LlmError
 from pramana_domain import DomainPack, load_pack
 from pramana_engine import Engine, EngineConfig, Evidence
 
-from .llm import LlmClient, LlmError
 from .policies import Conclusion, History, Step
 from .scenarios import Scenario
 

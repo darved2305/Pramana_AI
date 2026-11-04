@@ -41,7 +41,8 @@ def build_policies(names: list[str], provider: str, model: str | None) -> list[P
     chosen: list[Policy] = []
     for n in names:
         if n == "B":
-            from .llm import LlmClient
+            from pramana_core.llm import LlmClient
+
             from .llm_policy import LlmPolicy
 
             client = LlmClient(provider, model, cache_dir=Path(".cache/llm"))
