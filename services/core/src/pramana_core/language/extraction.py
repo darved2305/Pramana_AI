@@ -92,6 +92,10 @@ UNSURE = _phrases(
     "mahit nahi",
     "sure nahi",
     "pakka nahi",
+    "pakka nahi pata",
+    "पक्का नहीं",
+    "पक्का पता नहीं",
+    "नहीं पता",
     "can't tell",
     "cannot tell",
     "dont know",
@@ -99,6 +103,27 @@ UNSURE = _phrases(
     "i don't know",
     "samajh nahi",
 )
+NOT_OBSERVED = _phrases(
+    "yahan se nahi dikh",
+    "nahi dikh rahi",
+    "nahi dikh raha",
+    "nahi dikh rahe",
+    "dikh nahi rahi",
+    "dikh nahi raha",
+    "dikhai nahi",
+    "नहीं दिख रही",
+    "नहीं दिख रहा",
+    "दिख नहीं रही",
+    "दिख नहीं रहा",
+    "दिखाई नहीं",
+    "दिसत नाही",
+    "can't see",
+    "cannot see",
+    "not visible from here",
+)
+""""I can't see it" means no observation was made. It must never become "off". (For the Wi-Fi
+list probe the same words mean the network is missing, so this applies only to other probes.)"""
+
 PROBABLE = _phrases(
     "i think",
     "maybe",
@@ -249,7 +274,6 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "लागतो",
         "lagto",
         "light hai",
-        "dikh rahi",
     ),
     "off": _phrases(
         "off",
@@ -403,7 +427,8 @@ class RuleExtractor:
             + _find(tokens, UNSURE, "unsure")
             + _find(tokens, PROBABLE, "probable")
             + _find(tokens, HEARSAY, "hearsay")
-            + _find(tokens, ASSUMPTION, "assumption"),
+            + _find(tokens, ASSUMPTION, "assumption")
+            + ([] if "no_network" in outcomes else _find(tokens, NOT_OBSERVED, "not_observed")),
             taken,
         )
         labels = {m.label for m in meta}
@@ -429,7 +454,8 @@ class RuleExtractor:
             evidence.append(f"{label}<-" + " ".join(tokens[m.start : m.end]))
 
         injection = "injection" in labels
-        outcome = found.pop() if len(found) == 1 and not injection else UNKNOWN_OUTCOME
+        blocked = injection or "not_observed" in labels
+        outcome = found.pop() if len(found) == 1 and not blocked else UNKNOWN_OUTCOME
         if "unsure" in labels:
             hedge = Hedge.UNSURE
         elif "probable" in labels:

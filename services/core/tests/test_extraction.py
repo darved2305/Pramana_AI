@@ -133,3 +133,55 @@ def test_every_pack_outcome_has_a_lexicon_entry() -> None:
     for probe in pack.probes:
         for outcome in probe.outcomes:
             assert OUTCOME_LEXICON.get(outcome), f"{probe.id}:{outcome} has no phrases"
+
+
+# Sentences from a real Hinglish recording (2026-11-04): Gnani's transcript and the read script.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "router की light वो मुझे यहाँ से नहीं दिख रही।",
+        "Router ki light? Woh mujhe yahan se nahi dikh rahi.",
+        "screen dikh nahi rahi",
+        "मला इथून दिसत नाही",
+        "I can't see it from here",
+    ],
+)
+def test_cannot_see_is_never_read_as_off(text: str) -> None:
+    assert X.extract_sync(text, ON_OFF).outcome == "unknown"
+
+
+def test_cannot_see_on_the_wifi_list_still_means_no_network() -> None:
+    assert X.extract_sync("NAVA-WiFi nahi dikh raha", WIFI).outcome == "no_network"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "शायद switch में कुछ issue है, पक्का नहीं पता।",
+        "Shayad switch mein kuch issue hai, pakka nahi pata.",
+    ],
+)
+def test_not_sure_in_either_script_is_unsure(text: str) -> None:
+    r = X.extract_sync(text, LEDS)
+    assert r.outcome == "unknown"
+    assert r.hedge == Hedge.UNSURE
+
+
+@pytest.mark.parametrize(
+    ("text", "outcomes", "expected"),
+    [
+        (
+            "मैंने phone की wifi list check की और नवा wifi दिख ही नहीं रहा, मतलब network ही गायब है।",
+            WIFI,
+            "no_network",
+        ),
+        ("corridor की lights on हैं। वो ठीक है।", ON_OFF, "on"),
+    ],
+)
+def test_real_transcript_sentences(text: str, outcomes: list[str], expected: str) -> None:
+    assert X.extract_sync(text, outcomes).outcome == expected
+
+
+def test_relayed_report_is_hearsay() -> None:
+    r = X.extract_sync("मेरे roommate ने बोला कि second floor पे भी same problem है", YES_NO)
+    assert r.directness == Directness.HEARSAY
