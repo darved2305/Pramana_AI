@@ -2,13 +2,16 @@
 
 It sees the world only through the simulator, with its own participant token (exactly what a
 human participant's browser gets), and answers in natural text that the core must extract.
+
+The functions take any ``httpx.Client``: a FastAPI ``TestClient`` for in-process tests, or a
+plain client pointed at running services (``tests/e2e``).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi.testclient import TestClient
+import httpx
 
 # How a participant might say each outcome (Hinglish / Marathi / English mix on purpose).
 PHRASES = {
@@ -28,7 +31,10 @@ PHRASES = {
 
 
 def answer_pending(
-    core: TestClient, sim: TestClient, inv: dict[str, Any], override: dict[str, str] | None = None
+    core: httpx.Client,
+    sim: httpx.Client,
+    inv: dict[str, Any],
+    override: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     q = inv["pending_question"]
     a = q["action"]
@@ -62,9 +68,9 @@ def answer_pending(
 
 
 def run_to_conclusion(
-    core: TestClient, sim: TestClient, inv: dict[str, Any], max_steps: int = 15, **kw: Any
+    core: httpx.Client, sim: httpx.Client, inv: dict[str, Any], max_steps: int = 15, **kw: Any
 ) -> tuple[dict[str, Any], list[str]]:
-    path = []
+    path: list[str] = []
     for _ in range(max_steps):
         if inv["pending_question"] is None:
             return inv, path
