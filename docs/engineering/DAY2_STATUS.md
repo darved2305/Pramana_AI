@@ -35,28 +35,52 @@ test or a recorded live run as evidence. Updated as work lands.
 | Decision: parallel calls | **done** | ADR 0011 (go, cap 3 per investigation) |
 | Decision: Evon GPU | **done** | ADR 0012 (no-go: no quote or GPU obtainable without a payment method) |
 
-## Current state (main at d9c3871: 730 pytest passed, all checks clean)
+## Current state (main at 06c9e9e; CI green on both jobs)
+
+Totals: **776 pytest** (incl. 4 live end-to-end tests against real sim + core processes),
+**27 Playwright** (mocked backend) and **8 Playwright against a real core, simulator and
+PostgreSQL** (`npm run test:e2e:real`). ruff, ruff format, mypy strict, import-linter, schema
+and OpenAPI drift, generated-type drift and the bundle secret scan are clean.
 
 | Item | State | Evidence |
 |---|---|---|
-| D05 actor + event store, recovery | **done** | Startup supervisor rebuilds every open investigation and compares canonical JSON with the last `BeliefUpdated`; `GET /v1/investigations/{id}/replay`. `services/core/tests/test_recovery.py` (repair, reopen, pending confirmation, new app on same DB continues, tampered log flagged). Live: `tests/e2e/test_m1.py` kills and restarts the core mid-investigation, byte-identical final belief |
-| D06 push channel | **done (backend)** | SSE `GET /v1/investigations/{id}/stream`, ADR 0009; resume by `after_seq` / `Last-Event-ID`, 15 s heartbeat, non-blocking writers, slow consumers dropped with a resume point. `test_event_stream.py` (15 tests on a real uvicorn server). Polling kept |
-| D15 LLM clients | **done** | Typed errors, schema check, keys redacted from messages and logs: `test_llm_client.py`; reasoning-control retry still covered in `eval/tests/test_benchmark.py` |
-| D04 voice gateway v1 | **done (fake Gnani)** | AudioWorklet capture (`apps/web/public/worklets/`, `scripts/check-pcm-worklet.mjs` at 48/44.1/16 kHz), media WebSocket per question with Prisma v3.0 context, ADR 0013, `test_media_ws.py` (14 tests). Not yet run against live Gnani |
-| D07 call runtime skeleton | **done** | `calls/runtime.py`, every state x event pair tested in `test_call_runtime.py`. Not yet driving the media socket |
+| D05 actor + event store, recovery | **done** | Startup supervisor rebuilds every open investigation and compares canonical JSON with the last `BeliefUpdated`; `GET /v1/investigations/{id}/replay`. `test_recovery.py`; live: `tests/e2e/test_m1.py::test_core_crash_mid_investigation_loses_nothing` (hard kill, restart, byte-identical belief) |
+| D06 push channel | **done** | SSE `GET /v1/investigations/{id}/stream` (ADR 0009): resume by `after_seq` / `Last-Event-ID`, 15 s heartbeat, non-blocking writers. `test_event_stream.py` (15, real uvicorn). Console uses it with polling fallback; the real-backend M1 Playwright test checks the stream was opened |
+| D15 LLM clients | **done** | Typed errors, schema check, keys redacted: `test_llm_client.py`; reasoning-control retry in `eval/tests/test_benchmark.py` |
+| D04 voice gateway v1 | **done (emulated)** | AudioWorklet capture (`npm run check:worklet`), per-question media WebSocket with Prisma v3.0 context (ADR 0013), driven by the call runtime (barge-in, one re-prompt, silence timeout). `test_media_ws.py` (18) against the Prisma emulation. **Not run against live Gnani**; the browser live-socket path through the Next rewrite is not covered by a test |
+| D07 call runtime | **done** | `calls/runtime.py`, every state x event pair in `test_call_runtime.py`; drives each media session |
+| D08 participant app v0 | **done** | `/join/<token>`: view card, text, tap, live voice with WAV fallback, capability and repair report; real-backend M1 Playwright test |
 | D09 simulator shell | **done** | `test_sim_api.py` |
-| N04 belief upgrades | **done** | Reliability integrated out (Gauss-Jacobi), 78 identifiable fault pairs, `MULTIPLE_FAULTS` decision, pair-aware contradictions and `ContradictionDetected`; ADR 0008; Hypothesis order-invariance, normalisation, monotonicity, EIG bounds in `test_belief_model.py`; hand computation still exact |
-| N05 planner v0 | **done** | `test_planner.py`, engine-level S1 test: 4 questions, P = 0.973 |
-| N11 intake | **done** | `language/intake.py`, 60 reports (`eval/data/intake_set.jsonl`), `test_intake.py`. Development figures only (tuned on that set) |
-| N03 simulator core | **done** | Commitment published at creation equals the revealed one; two-fault repairs clear only their own fault (`test_sim_api.py`) |
-| N09 extractor + 80 held-out | **done** | `eval/data/extraction_heldout.jsonl` (20 each en/hi/mr/Hinglish). Blind baseline 62/80 (`eval/reports/extraction-2026-11-05-baseline/`); after fixes 72/80, which is no longer blind (see that report's NOTES.md). A new held-out set is needed for an unbiased figure |
-| `make dev` | **done** | `scripts/dev.py`, `tests/test_dev_script.py`; live run started and stopped cleanly |
-| 12+ probes | **done** | 14 probes; golden physics tests in `packages/domain/tests/test_physics.py` |
-| `docs/spike-gnani.md` | **done** | Pointer file |
-| M1 Python end to end | **done** | `tests/e2e/test_m1.py` against real sim + core processes: S1 decided in 4 questions, deny then approve, capability single use and expiry, act, report, `verified`, reveal, byte-identical replay; misled run reopens |
-| M1 Playwright against real backend | **in progress** | Frontend workstream |
+| N04 belief upgrades | **done** | ADR 0008; `test_belief_model.py` (Hypothesis: order invariance, normalisation, monotonicity, EIG bounds); hand computation exact |
+| N05 planner v0 | **done** | `test_planner.py`; S1 decided in 4 questions (engine test and live e2e) |
+| N11 intake | **done** | `language/intake.py`, `test_intake.py` (development figures) |
+| N03 simulator core | **done** | `test_sim_api.py` (commitment published at creation, verified on reveal) |
+| N09 extractor + 80 held-out | **done** | Blind baseline 62/80; current 74/80 with no wrong outcomes, **not blind** (see the report's NOTES.md) |
+| `make dev`, 14 probes, spike pointer | **done** | `scripts/dev.py`, `test_physics.py`, `docs/spike-gnani.md` |
+| M1 line 1: S1 text mode, live console, participant pages, <= 6 questions | **done** | `apps/web/tests/real/m1.spec.ts` (browser) and `tests/e2e/test_m1.py` (Python bot) |
+| M1 line 2: approval flow to `verified` or reopen | **done** | Same tests: deny then approve, capability once and expiring, act, report, verify; misled run reopens |
+| M1 line 3: byte-identical replay | **done** | `/replay` and `tests/e2e/replay.py` |
+| Decisions | **done** | ADR 0011 parallel calls go (cap 3); ADR 0012 Evon no-go (no quote or GPU without a payment method) |
 
-## Frontend gaps (shown as "not connected" at the start)
+## Frontend wiring
 
-Sign-in, investigation list, participant directory, packs list (hardcoded `KNOWN_PACKS`),
-evaluation results (file upload), event push (polling in `useInvestigation`).
+Sign-in (ADR 0010: server sessions, roles operator / approver, approver identity from the
+session), investigation list, participant directory, packs list, evaluation reports, SSE events,
+top-N causes with "show all", live voice on the participant page. Every "not connected" notice
+was removed. A join link sees only its own part of an investigation; the event log, stream,
+replay and paid voice test routes are staff only.
+
+## Benchmark (logic mode, `eval/reports/benchmark-2026-11-05/`)
+
+Our planner beats the checklist and random selection with intervals excluding zero; it is not
+significantly better than greedy entropy; abstention recall is low (about 46%). See NOTES.md.
+
+## Known gaps
+
+- No live Gnani run of the media socket or the browser voice path (emulation only).
+- Abstention recall is a calibration target for the stopping rule.
+- The held-out extraction set has been seen; a fresh blind set is needed.
+- Per-call sockets with in-call consent, and preemption across parallel calls (D17, Nov 7).
+- Incremental TTS (Timbre streaming chunk format unverified); login throttle is per process.
+- Local setup: a dev core now enforces sign-in. Create a user with
+  `uv run python -m pramana_core.auth.bootstrap`; scripts use `CORE_AUTOMATION_KEY` from `.env`.
