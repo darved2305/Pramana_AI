@@ -25,6 +25,8 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from pramana_contracts import (
+    ActRequest,
+    ActResult,
     CreateScenario,
     FaultSpec,
     MoveRequest,
@@ -35,7 +37,12 @@ from pramana_contracts import (
     RevealResult,
     ScenarioCreated,
 )
-from pramana_contracts.tokens import TokenError, public_key_from_b64, verify
+from pramana_contracts.tokens import (
+    TokenError,
+    public_key_from_b64,
+    verify,
+    verify_capability,
+)
 from pramana_domain import DomainPack, load_pack
 
 from .scenario import Scenario, ScenarioError, draw_fault
@@ -152,6 +159,16 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
         sid: str, req: ObserveRequest, who: Annotated[str, Depends(participant)]
     ) -> ObserveResult:
         return store.get(sid).observe(who, req.probe_id)
+
+    @app.post("/sim/v1/scenarios/{sid}/act")
+    async def act(
+        sid: str, req: ActRequest, who: Annotated[str, Depends(participant)]
+    ) -> ActResult:
+        try:
+            claims = verify_capability(public_key, req.capability)
+        except TokenError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        return store.get(sid).act(who, req.action, req.target, claims)
 
     @app.post("/sim/v1/scenarios/{sid}/close", status_code=204, dependencies=[require_operator])
     async def close(sid: str) -> None:

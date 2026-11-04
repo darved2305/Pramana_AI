@@ -47,6 +47,8 @@ from .reasoning import (
     ProbeAction,
 )
 from .sim import (
+    ActRequest,
+    ActResult,
     CreateScenario,
     Fault,
     FaultSpec,
@@ -66,6 +68,8 @@ __all__ = [
     "CONTRACTS_VERSION",
     "TERMINAL_STATUSES",
     "UNKNOWN_OUTCOME",
+    "ActRequest",
+    "ActResult",
     "AnswerResult",
     "BeliefSnapshot",
     "CallState",

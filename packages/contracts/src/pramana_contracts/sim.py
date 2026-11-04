@@ -79,6 +79,21 @@ class ObserveResult(StrictModel):
     value: str
 
 
+class ActRequest(StrictModel):
+    action: Identifier
+    target: Identifier
+    capability: str = Field(min_length=10, max_length=2000)
+
+
+class ActResult(StrictModel):
+    """Confirms the action was carried out. Deliberately says nothing about whether it fixed
+    anything: that is only visible through what people observe afterwards."""
+
+    action: Identifier
+    target: Identifier
+    performed: bool
+
+
 class RevealResult(StrictModel):
     scenario_id: str
     fault_spec: FaultSpec

@@ -208,3 +208,104 @@ def test_multiple_fault_scenarios_are_supported(client: TestClient) -> None:
     values = {i["probe_id"]: i["value"] for i in view["items"]}
     assert values["wifi_status"] == "connected"
     assert values["web_by_ip"] == "no"
+
+
+PEOPLE_WITH_ELECTRICIAN = [
+    *PEOPLE,
+    {"id": "p_imran", "location_id": "MAINT_ROOM", "roles": ["electrician"]},
+]
+
+
+def electrician_scenario(client: TestClient, fault: Any = CB7) -> str:
+    r = client.post(
+        "/sim/v1/scenarios",
+        headers=OPERATOR,
+        json={
+            "pack_id": "campus_block_c",
+            "seed": 1,
+            "participants": PEOPLE_WITH_ELECTRICIAN,
+            "fault": fault,
+        },
+    )
+    sid: str = r.json()["scenario_id"]
+    return sid
+
+
+def capability(
+    sid: str, who: str = "p_imran", action: str = "reset_breaker", target: str = "CB_C2_7"
+) -> str:
+    from pramana_contracts.tokens import mint_capability
+
+    tok, _ = mint_capability(
+        KEY,
+        scenario_id=sid,
+        investigation_id="inv_1",
+        participant_id=who,
+        action=action,
+        target=target,
+    )
+    return tok
+
+
+def act(client: TestClient, sid: str, who: str, cap: str, target: str = "CB_C2_7") -> Any:
+    return client.post(
+        f"/sim/v1/scenarios/{sid}/act",
+        headers=bearer(who, sid),
+        json={"action": "reset_breaker", "target": target, "capability": cap},
+    )
+
+
+def test_approved_reset_changes_the_world_once(client: TestClient) -> None:
+    sid = electrician_scenario(client)
+    h = bearer("p_imran", sid)
+    assert act(client, sid, "p_imran", capability(sid)).status_code == 409  # not at the panel
+    client.post(f"/sim/v1/scenarios/{sid}/move", json={"to": "DB_C2_PANEL"}, headers=h)
+    cap = capability(sid)
+    r = act(client, sid, "p_imran", cap)
+    assert r.json() == {"action": "reset_breaker", "target": "CB_C2_7", "performed": True}
+    seen = client.post(
+        f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": "breaker_c2_7"}, headers=h
+    ).json()
+    assert seen["value"] == "up"
+    assert act(client, sid, "p_imran", cap).status_code == 409  # single use
+
+
+@pytest.mark.parametrize(
+    ("who", "cap_for", "target", "status"),
+    [
+        ("p_mahesh", "p_mahesh", "CB_C2_7", 403),  # a guard is not an electrician
+        ("p_imran", "p_mahesh", "CB_C2_7", 403),  # someone else's capability
+        ("p_imran", "p_imran", "CB_C2_5", 403),
+    ],  # capability covers another target
+)
+def test_capability_rules(
+    client: TestClient, who: str, cap_for: str, target: str, status: int
+) -> None:
+    sid = electrician_scenario(client)
+    for p in ("p_imran", "p_mahesh"):
+        client.post(
+            f"/sim/v1/scenarios/{sid}/move", json={"to": "DB_C2_PANEL"}, headers=bearer(p, sid)
+        )
+    assert act(client, sid, who, capability(sid, cap_for), target).status_code == status
+
+
+def test_participant_token_is_not_a_capability(client: TestClient) -> None:
+    sid = electrician_scenario(client)
+    forged = bearer("p_imran", sid)["Authorization"].removeprefix("Bearer ")
+    assert act(client, sid, "p_imran", forged).status_code == 403
+
+
+def test_reset_response_does_not_reveal_whether_it_fixed_anything(client: TestClient) -> None:
+    healthy = electrician_scenario(
+        client, fault={"faults": [{"component_id": "SW_C2", "mode": "dead"}]}
+    )
+    tripped = electrician_scenario(client)
+    bodies = []
+    for sid in (healthy, tripped):
+        client.post(
+            f"/sim/v1/scenarios/{sid}/move",
+            json={"to": "DB_C2_PANEL"},
+            headers=bearer("p_imran", sid),
+        )
+        bodies.append(act(client, sid, "p_imran", capability(sid)).json())
+    assert bodies[0] == bodies[1]

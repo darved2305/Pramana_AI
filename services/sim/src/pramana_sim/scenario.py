@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pramana_contracts import (
+    ActResult,
     Fault,
     FaultSpec,
     MoveResult,
@@ -24,6 +25,7 @@ from pramana_contracts import (
     SimParticipant,
     ViewItem,
 )
+from pramana_contracts.tokens import CapabilityClaims
 from pramana_domain import DomainPack, World
 from pramana_domain.pack import DEVICE_KINDS
 
@@ -82,11 +84,13 @@ class Scenario:
     people: dict[str, _Person]
     status: ScenarioStatus = ScenarioStatus.OPEN
     world: World = field(init=False, repr=False)
+    used_capabilities: set[str] = field(default_factory=set)
+    interventions: list[tuple[str, str, str]] = field(default_factory=list)
+    _active_faults: set[tuple[str, str]] = field(default_factory=set)
 
     def __post_init__(self) -> None:
-        self.world = World(
-            self.pack, frozenset((f.component_id, f.mode) for f in self.fault_spec.faults)
-        )
+        self._active_faults = {(f.component_id, f.mode) for f in self.fault_spec.faults}
+        self.world = World(self.pack, frozenset(self._active_faults))
 
     @classmethod
     def create(
@@ -188,6 +192,31 @@ class Scenario:
             location_id=person.location_id,
             value=self.world.observe(probe, person.location_id),
         )
+
+    def act(
+        self, participant_id: str, action_id: str, target: str, claims: CapabilityClaims
+    ) -> ActResult:
+        """Carry out an approved action. Every precondition is checked here, in the world."""
+        person = self._person(participant_id)
+        if claims.scn != self.id or claims.sub != participant_id:
+            raise ScenarioError(403, "CAPABILITY_MISMATCH", "capability is for someone else")
+        if claims.act != action_id or claims.tgt != target:
+            raise ScenarioError(403, "CAPABILITY_SCOPE", "capability does not cover this action")
+        if claims.jti in self.used_capabilities:
+            raise ScenarioError(409, "CAPABILITY_USED", "capability already used")
+        action = next((a for a in self.pack.actions if a.id == action_id), None)
+        comp = self.pack.component_by_id.get(target)
+        if action is None or comp is None or comp.kind != action.target_kind:
+            raise ScenarioError(422, "INVALID_ACTION", f"{action_id} cannot target {target}")
+        if not person.roles & {r.value for r in action.roles}:
+            raise ScenarioError(403, "ROLE_NOT_PERMITTED", f"{action_id} needs another role")
+        if action.at_target_location and comp.location != person.location_id:
+            raise ScenarioError(409, "NOT_AT_TARGET", f"go to {comp.location} first")
+        self.used_capabilities.add(claims.jti)
+        self._active_faults.discard((target, action.fixes))
+        self.world = World(self.pack, frozenset(self._active_faults))
+        self.interventions.append((participant_id, action_id, target))
+        return ActResult(action=action_id, target=target, performed=True)
 
     # -- operator / oracle -----------------------------------------------------------------------
 
