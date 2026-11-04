@@ -261,3 +261,36 @@ def test_model_without_reasoning_control_is_retried_without_it(tmp_path: Path) -
 
 def test_no_paired_data_is_reported_as_none() -> None:
     assert paired_difference([], [], "probes")["mean"] is None
+
+
+def test_abstention_recall_counts_only_unidentifiable_scenarios() -> None:
+    from pramana_eval.runner import Episode
+
+    def ep(kind: str, identifiable: bool | None, decided: bool, correct: bool) -> Episode:
+        return Episode(
+            policy="E",
+            seed=0,
+            kind=kind,
+            identifiable=identifiable,
+            decided=decided,
+            decision="D" if decided else None,
+            confidence=0.9,
+            correct=correct,
+            success=correct or not decided,
+            probes=1,
+            effort_s=1.0,
+            people=1,
+            hit_step_limit=False,
+        )
+
+    s = summarize(
+        [
+            ep("access_limited", False, False, False),  # abstained: right
+            ep("access_limited", False, True, True),  # decided anyway (luckily right)
+            ep("pair", None, True, True),  # a correct pair diagnosis is not a missed abstention
+            ep("pair", None, False, False),
+        ]
+    )
+    assert s["abstention_recall"] == 0.5
+    assert s["accuracy_when_unidentifiable_but_decided"] == 1.0
+    assert s["pair_accuracy"] == 0.5

@@ -93,7 +93,11 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
     episodes = [e for e in all_episodes if not e.failed]
     n = len(episodes)
     decided = [e for e in episodes if e.decided]
-    abstain_ok = [e for e in episodes if e.identifiable is False or e.kind == "pair"]
+    # Abstaining is the only safe answer when the people available cannot tell the causes
+    # apart. Two-fault worlds are modelled since ADR 0008, so a correct pair decision is a
+    # success there, not a missed abstention (abstaining on a pair is still acceptable).
+    must_abstain = [e for e in episodes if e.identifiable is False]
+    pairs = [e for e in episodes if e.kind == "pair"]
     should_decide = [e for e in episodes if e.identifiable is True]
     abstained = [e for e in episodes if not e.decided]
     return {
@@ -108,7 +112,14 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
         "false_confidence_rate": _rate(
             sum(1 for e in episodes if e.decided and e.confidence >= 0.9 and not e.correct), n
         ),
-        "abstention_recall": _rate(sum(1 for e in abstain_ok if not e.decided), len(abstain_ok)),
+        "abstention_recall": _rate(
+            sum(1 for e in must_abstain if not e.decided), len(must_abstain)
+        ),
+        "accuracy_when_unidentifiable_but_decided": _rate(
+            sum(e.correct for e in must_abstain if e.decided),
+            sum(1 for e in must_abstain if e.decided),
+        ),
+        "pair_accuracy": _rate(sum(e.correct for e in pairs), len(pairs)),
         "abstention_precision": _rate(
             sum(1 for e in abstained if e.identifiable is False or e.kind == "pair"), len(abstained)
         ),

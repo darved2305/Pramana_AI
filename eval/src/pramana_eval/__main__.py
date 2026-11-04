@@ -151,14 +151,16 @@ def render(summary: dict[str, Any]) -> str:
         f"scenario mix {summary['scenario_mix']}.",
         "",
         "| Policy | Success | Accuracy (decided) | Accuracy (identifiable) | False confidence "
-        "| Abstention recall | Probes (mean) | Effort s (mean) | People |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Abstention recall (unidentifiable) | Pair accuracy | Probes (mean) | Effort s (mean) "
+        "| People |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, m in summary["policies"].items():
         lines.append(
             f"| {name} | {_fmt(m['success_rate'], True)} | {_fmt(m['decision_accuracy'], True)} "
             f"| {_fmt(m['accuracy_on_identifiable'], True)} "
             f"| {_fmt(m['false_confidence_rate'], True)} | {_fmt(m['abstention_recall'], True)} "
+            f"| {_fmt(m['pair_accuracy'], True)} "
             f"| {_fmt(m['probes_mean'])} | {_fmt(m['effort_s_mean'])} | {_fmt(m['people_mean'])} |"
         )
     lines += ["", "Paired differences, E minus each policy (bootstrap 95% CI):", ""]
