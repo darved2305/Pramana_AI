@@ -22,6 +22,9 @@ class Conclusion:
     decision: str | None
     """``None`` means the policy abstained."""
     confidence: float
+    failed: bool = False
+    """The policy could not run (e.g. the LLM provider failed). Reported separately and
+    excluded from that policy's scores, never counted as an abstention."""
 
 
 Step = ProbeAction | Conclusion

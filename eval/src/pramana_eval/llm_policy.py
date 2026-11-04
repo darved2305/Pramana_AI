@@ -147,7 +147,7 @@ class LlmPolicy:
             ).data
         except LlmError:
             self.errors += 1
-            return Conclusion(None, 0.0)
+            return Conclusion(None, 0.0, failed=True)
         confidence = max(0.0, min(1.0, float(out.get("confidence", 0.0))))
         action = out.get("action")
         if action != "conclude" and action in ids:

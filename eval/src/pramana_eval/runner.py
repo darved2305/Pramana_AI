@@ -34,6 +34,7 @@ class Episode:
     effort_s: float
     people: int
     hit_step_limit: bool
+    failed: bool = False
 
 
 def run_episode(
@@ -84,10 +85,12 @@ def run_episode(
         effort_s=effort,
         people=len({a.participant_id for a, _ in asked}),
         hit_step_limit=hit_limit,
+        failed=conclusion.failed,
     )
 
 
-def summarize(episodes: list[Episode]) -> dict[str, Any]:
+def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
+    episodes = [e for e in all_episodes if not e.failed]
     n = len(episodes)
     decided = [e for e in episodes if e.decided]
     abstain_ok = [e for e in episodes if e.identifiable is False or e.kind == "pair"]
@@ -95,6 +98,7 @@ def summarize(episodes: list[Episode]) -> dict[str, Any]:
     abstained = [e for e in episodes if not e.decided]
     return {
         "n": n,
+        "failed_runs": len(all_episodes) - n,
         "success_rate": _rate(sum(e.success for e in episodes), n),
         "decision_accuracy": _rate(sum(e.correct for e in decided), len(decided)),
         "decided": len(decided),
@@ -124,7 +128,8 @@ def paired_difference(
     a: list[Episode], b: list[Episode], field: str, resamples: int = 10_000, seed: int = 2026
 ) -> dict[str, float]:
     """Mean of (a - b) over the same scenarios, with a bootstrap 95% CI."""
-    by_seed = {e.seed: e for e in b}
+    by_seed = {e.seed: e for e in b if not e.failed}
+    a = [e for e in a if not e.failed]
     diffs = np.array(
         [
             float(getattr(e, field)) - float(getattr(by_seed[e.seed], field))

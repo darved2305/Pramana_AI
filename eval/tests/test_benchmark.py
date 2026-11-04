@@ -200,7 +200,10 @@ def test_llm_failure_counts_as_abstention(
     policy = LlmPolicy(client(tmp_path, lambda _: httpx.Response(401)), pack)
     ep = run_episode(pack, model, generate(pack, model, 3), policy)
     assert ep.decided is False
+    assert ep.failed is True  # a provider failure is not an abstention
     assert policy.errors == 1
+    assert summarize([ep])["failed_runs"] == 1
+    assert summarize([ep])["n"] == 0
 
 
 def test_site_rendering_covers_the_pack(pack: DomainPack) -> None:
