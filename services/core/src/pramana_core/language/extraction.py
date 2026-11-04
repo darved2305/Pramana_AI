@@ -39,9 +39,11 @@ def _phrases(*items: str) -> list[tuple[str, ...]]:
 NEGATIONS = frozenset(
     tokenize(
         "not no nahi nahin nai na nahī नहीं नही ना नाही नाहीत नको dont don't doesn't isn't "
-        "aren't didn't cannot can't never"
+        "aren't didn't cannot can't never nothing nobody none"
     )
 )
+"""English negative subjects ("nothing loads") negate the verb that follows them. A phrase that
+is itself an outcome ("nothing" for "off") is claimed first, so it is never read twice."""
 
 INJECTION = _phrases(
     "ignore",
@@ -191,6 +193,21 @@ STALE = _phrases(
     "abhi ka pata nahi",
 )
 """A report about an earlier time is not an observation of now (the engine has no time model)."""
+
+EARLIER_TODAY = _phrases("subah", "सुबह", "this morning", "in the morning", "sakali", "सकाळी")
+SINCE = frozenset(tokenize("se since से पासून pasun"))
+"""A time of day is stale ("subah green tha") unless it marks a start ("subah se band hai")."""
+
+
+def _stale_time_of_day(tokens: Sequence[str]) -> list[_Match]:
+    out = []
+    for m in _find(tokens, EARLIER_TODAY, "stale"):
+        after = tokens[m.end] if m.end < len(tokens) else ""
+        before = tokens[m.start - 1] if m.start > 0 else ""
+        if after not in SINCE and before not in SINCE:
+            out.append(m)
+    return out
+
 
 PROBABLE = _phrases(
     "i think",
@@ -565,7 +582,8 @@ class RuleExtractor:
             + _find(tokens, HEARSAY, "hearsay")
             + _find(tokens, ASSUMPTION, "assumption")
             + ([] if "no_network" in outcomes else _find(tokens, NOT_OBSERVED, "not_observed"))
-            + _find(tokens, STALE, "stale"),
+            + _find(tokens, STALE, "stale")
+            + _stale_time_of_day(tokens),
             taken,
         )
         labels = {m.label for m in meta}

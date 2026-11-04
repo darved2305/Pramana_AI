@@ -264,3 +264,37 @@ def test_bare_yes_or_no_to_a_polar_question_follows_its_polarity(
 ) -> None:
     """ "Does the light come on?" asks about "on": yes means on, no means off."""
     assert X.extract_sync(text, ON_OFF, question=question).outcome == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "outcome"),
+    [
+        ("nothing loads", "no"),
+        ("my friend says nothing loads", "no"),
+        ("nothing works", "no"),
+        ("everything loads fine", "yes"),
+    ],
+)
+def test_negative_subject_negates_the_verb(text: str, outcome: str) -> None:
+    # "nothing loads" was read as "yes" (held-out item h10): a wrong observation, not a miss.
+    assert X.extract_sync(text, ["yes", "no"]).outcome == outcome
+
+
+def test_nothing_as_an_outcome_is_still_off() -> None:
+    assert X.extract_sync("nothing, the screen is blank", ON_OFF).outcome == "off"
+
+
+@pytest.mark.parametrize(
+    ("text", "outcome"),
+    [
+        ("subah green tha", "unknown"),
+        ("it was green this morning", "unknown"),
+        ("subah se band hai", "off"),
+        ("it has been off since this morning", "off"),
+        ("सकाळपासून बंद आहे", "off"),
+    ],
+)
+def test_earlier_today_is_stale_but_since_this_morning_is_current(text: str, outcome: str) -> None:
+    # "subah green tha" was recorded as a current "green" (held-out item h80).
+    options = ["green", "red", "off"] if "green" in text else ON_OFF
+    assert X.extract_sync(text, options).outcome == outcome
