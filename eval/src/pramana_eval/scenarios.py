@@ -17,7 +17,7 @@ from typing import Literal
 
 from pramana_contracts import Directness, Hedge, ParticipantSpec
 from pramana_domain import NO_FAULT, DomainPack, World
-from pramana_engine import CompiledModel, Engine, Evidence
+from pramana_engine import MULTIPLE_FAULTS, CompiledModel, Engine, Evidence
 
 Kind = Literal["single", "pair", "no_fault", "access_limited"]
 KIND_MIX: list[tuple[Kind, float]] = [
@@ -124,7 +124,10 @@ def generate(pack: DomainPack, model: CompiledModel, seed: int) -> Scenario:
         if rng.random() < 0.4:
             people.append(_person("p_it", "it_tech", "technician", "MAINT_ROOM", "en", rng))
     hyp_ids = [f"{c}.{m}" for c, m in faults] or [NO_FAULT]
-    true_decisions = frozenset(pack.decision_of[h] for h in hyp_ids)
+    needed = {pack.decision_of[h] for h in hyp_ids}
+    if len(needed) > 1:
+        needed.add(MULTIPLE_FAULTS)  # two teams are needed; naming either one is also correct
+    true_decisions = frozenset(needed)
     identifiable = (
         None if kind == "pair" else _identifiable(model, [p.spec for p in people], hyp_ids[0])
     )

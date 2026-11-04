@@ -129,3 +129,49 @@ def test_unknown_fault_is_rejected(pack: DomainPack) -> None:
 def test_probe_at_unbound_location_is_rejected(pack: DomainPack) -> None:
     with pytest.raises(ValueError, match="cannot be made"):
         World(pack, frozenset()).observe(pack.probe_by_id["nvr_screen"], "F3_R304")
+
+
+# -- probes added for the wall sockets, the fibre terminal and two more breakers -------------
+
+
+def test_wall_sockets_separate_the_db_c2_supply_from_its_breakers(pack: DomainPack) -> None:
+    for room in ("F2_R205", "F2_R210", "F3_R304", "F3_R310"):
+        assert obs(pack, [("FEED_C2", "lost")], "room_socket", room) == "off"
+        assert obs(pack, [("CB_C2_5", "tripped")], "room_socket", room) == "on"
+        assert obs(pack, [("CB_C2_7", "tripped")], "room_socket", room) == "on"
+        assert obs(pack, [("CB_MAIN_1", "tripped")], "room_socket", room) == "on"
+    # Corridor lights alone cannot tell the supply loss from breaker C2-5; the sockets can.
+    for f in ([("FEED_C2", "lost")], [("CB_C2_5", "tripped")]):
+        assert obs(pack, f, "corridor_lights", "F3_R304") == "off"
+
+
+def test_fibre_light_reads_the_provider_link_not_the_gateway(pack: DomainPack) -> None:
+    assert obs(pack, [], "fibre_light", "IDF1") == "green"
+    assert obs(pack, [("ISP_LINK", "down")], "fibre_light", "IDF1") == "red"
+    assert obs(pack, [("GATEWAY", "dead")], "fibre_light", "IDF1") == "green"
+    assert obs(pack, [("DNS", "down")], "fibre_light", "IDF1") == "green"
+    # Same rack, same breaker: MAIN-1 tripping darkens the terminal too.
+    assert obs(pack, [("CB_MAIN_1", "tripped")], "fibre_light", "IDF1") == "off"
+    # A dead gateway and an ISP outage look alike on the gateway (WAN light off vs red, both
+    # with no internet), but the ONT tells them apart even when both happen.
+    both = [("GATEWAY", "dead"), ("ISP_LINK", "down")]
+    assert obs(pack, both, "wan_led", "IDF1") == "off"
+    assert obs(pack, both, "fibre_light", "IDF1") == "red"
+
+
+def test_each_breaker_probe_reads_only_its_own_breaker(pack: DomainPack) -> None:
+    probes = {
+        "breaker_c2_7": ("CB_C2_7", "DB_C2_PANEL"),
+        "breaker_c2_5": ("CB_C2_5", "DB_C2_PANEL"),
+        "breaker_main_1": ("CB_MAIN_1", "IDF1"),
+    }
+    for probe, (breaker, loc) in probes.items():
+        for other, _ in probes.values():
+            expected = "tripped" if other == breaker else "up"
+            assert obs(pack, [(other, "tripped")], probe, loc) == expected, (probe, other)
+        # A lost supply upstream leaves every breaker lever up.
+        assert obs(pack, [("FEED_C2", "lost")], probe, loc) == "up"
+
+
+def test_pack_has_at_least_twelve_probes(pack: DomainPack) -> None:
+    assert len(pack.probes) >= 12

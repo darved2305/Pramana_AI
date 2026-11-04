@@ -59,9 +59,16 @@ components:
   - { id: LIGHTS_F3, kind: light, label: "Third-floor corridor lights", powered_by: CB_C2_5 }
   - { id: LIGHT_IDF2, kind: light, label: "IDF-2 closet light", powered_by: CB_C2_5, location: IDF2 }
   - { id: NVR_C2,    kind: nvr,   label: "CCTV recorder in IDF-2", powered_by: CB_C2_7, location: IDF2 }
+  # Room sockets on floors 2 and 3 are on DB-C2's general circuit (its breaker is not modelled),
+  # so they lose power with the DB-C2 supply but not with breakers C2-5 or C2-7.
+  - { id: SOCKETS_F2, kind: socket, label: "Second-floor room sockets", powered_by: FEED_C2 }
+  - { id: SOCKETS_F3, kind: socket, label: "Third-floor room sockets", powered_by: FEED_C2 }
   # Network
   - { id: ISP_LINK,  kind: isp,     label: "ISP fibre link",
       failure_modes: [{ id: down, prior: 0.003, label: "ISP outage" }] }
+  # The fibre terminal sits in the IDF-1 rack on MAIN-1. Its light reads the provider's link
+  # directly, independent of the gateway.
+  - { id: ONT,       kind: ont,     label: "Fibre terminal (ONT)", powered_by: CB_MAIN_1, upstream: ISP_LINK, location: IDF1 }
   - { id: GATEWAY,   kind: gateway, label: "Gateway router", powered_by: CB_MAIN_1, upstream: ISP_LINK, location: IDF1,
       failure_modes: [{ id: dead, prior: 0.001, label: "Gateway router failed" }] }
   - { id: DHCP,      kind: dhcp,    label: "DHCP service", hosted_on: GATEWAY,
@@ -91,7 +98,7 @@ open_world_prior: 0.0008   # a cause outside this model
 # and, for indicator probes, to the component whose state is perceived there.
 # Observable kinds: internet_works, wifi_status, web_by_ip (phone checks at the person's
 # location); powered (on/off); ap_light (on/off); switch_leds (green/amber/off);
-# wan_led (green/red/off); breaker (up/tripped).
+# wan_led (green/red/off); fibre_led (green/red/off); breaker (up/tripped).
 probes:
   - id: internet_works
     label: "Internet works on the hostel Wi-Fi"
@@ -247,6 +254,66 @@ probes:
       hi-en: "{place} pe, bina kuch chhue, breaker number 7 upar hai ya trip hokar neeche hai?"
       hi: "{place} पर, बिना कुछ छुए, ब्रेकर नंबर 7 ऊपर है या ट्रिप होकर नीचे है?"
       mr: "{place} वर, कशालाही हात न लावता, ब्रेकर नंबर 7 वर आहे की ट्रिप होऊन खाली आहे?"
+
+  - id: breaker_c2_5
+    label: "Breaker C2-5 position"
+    kind: breaker
+    class: panel
+    outcomes: [up, tripped]
+    roles: [electrician]
+    exec_s: 20
+    observes: [{ at: DB_C2_PANEL, target: CB_C2_5 }]
+    templates:
+      en: "At {place}, without touching anything, is breaker number 5 in the up position or tripped down?"
+      hi-en: "{place} pe, bina kuch chhue, breaker number 5 upar hai ya trip hokar neeche hai?"
+      hi: "{place} पर, बिना कुछ छुए, ब्रेकर नंबर 5 ऊपर है या ट्रिप होकर नीचे है?"
+      mr: "{place} वर, कशालाही हात न लावता, ब्रेकर नंबर 5 वर आहे की ट्रिप होऊन खाली आहे?"
+
+  - id: breaker_main_1
+    label: "Breaker MAIN-1 position"
+    kind: breaker
+    class: panel
+    outcomes: [up, tripped]
+    roles: [electrician]
+    exec_s: 15
+    observes: [{ at: IDF1, target: CB_MAIN_1 }]
+    templates:
+      en: "In {place}, without touching anything, is the breaker labelled MAIN-1 up or tripped down?"
+      hi-en: "{place} mein, bina kuch chhue, MAIN-1 likha breaker upar hai ya trip hokar neeche hai?"
+      hi: "{place} में, बिना कुछ छुए, MAIN-1 लिखा ब्रेकर ऊपर है या ट्रिप होकर नीचे है?"
+      mr: "{place} मध्ये, कशालाही हात न लावता, MAIN-1 लिहिलेला ब्रेकर वर आहे की ट्रिप होऊन खाली आहे?"
+
+  - id: room_socket
+    label: "Wall socket power"
+    kind: powered
+    class: device
+    outcomes: ["on", "off"]
+    roles: [any]
+    exec_s: 20
+    observes:
+      - { at: F2_R205, target: SOCKETS_F2 }
+      - { at: F2_R210, target: SOCKETS_F2 }
+      - { at: F3_R304, target: SOCKETS_F3 }
+      - { at: F3_R310, target: SOCKETS_F3 }
+    templates:
+      en: "In {place}, please plug a phone charger into the wall socket. Does the phone start charging?"
+      hi-en: "{place} mein deewar ke socket mein phone charger lagaiye. Kya phone charge hone lagta hai?"
+      hi: "{place} में दीवार के सॉकेट में फ़ोन चार्जर लगाइए। क्या फ़ोन चार्ज होने लगता है?"
+      mr: "{place} मध्ये भिंतीतल्या सॉकेटला फोनचा चार्जर लावा. फोन चार्ज व्हायला लागतो का?"
+
+  - id: fibre_light
+    label: "Fibre terminal light"
+    kind: fibre_led
+    class: visual
+    outcomes: [green, red, "off"]
+    roles: [guard, it_tech]
+    exec_s: 10
+    observes: [{ at: IDF1, target: ONT }]
+    templates:
+      en: "In {place}, find the small white fibre box labelled ONT. Is its PON light green, red, or off?"
+      hi-en: "{place} mein ONT likha chhota white fibre box dhoondhiye. Uski PON light green hai, red hai, ya band?"
+      hi: "{place} में ONT लिखा छोटा सफ़ेद फ़ाइबर डिब्बा ढूँढिए। उसकी PON लाइट हरी है, लाल है, या बंद?"
+      mr: "{place} मध्ये ONT लिहिलेला छोटा पांढरा फायबर डबा शोधा. त्याचा PON दिवा हिरवा आहे, लाल आहे, की बंद?"
 
 # Spoken prefix when the person must first walk somewhere.
 # Consequential actions. Each needs a named role, a human approval and a single-use capability

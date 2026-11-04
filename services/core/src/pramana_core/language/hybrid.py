@@ -43,7 +43,7 @@ class HybridExtractor:
     async def extract(
         self, text: str, outcomes: Sequence[str], *, question: str | None = None
     ) -> Extraction:
-        ruled = self.rules.extract_sync(text, outcomes)
+        ruled = self.rules.extract_sync(text, outcomes, question=question)
         if (
             self.llm is None
             or ruled.outcome != UNKNOWN_OUTCOME

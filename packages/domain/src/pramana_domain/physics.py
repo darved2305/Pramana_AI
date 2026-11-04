@@ -146,6 +146,13 @@ class World:
                 return "off"
             upstream = self.pack.component_by_id[target].upstream
             return "green" if upstream is None or self.functioning(upstream) else "red"
+        if kind == "fibre_led":
+            # The fibre terminal's optical light: dark without power, red on loss of signal
+            # from the provider, green when the link is up.
+            if not self.alive(target):
+                return "off"
+            upstream = self.pack.component_by_id[target].upstream
+            return "green" if upstream is None or self.functioning(upstream) else "red"
         if kind == "breaker":
             return "tripped" if (target, "tripped") in self.faults else "up"
         raise AssertionError(f"unhandled observable kind {kind}")

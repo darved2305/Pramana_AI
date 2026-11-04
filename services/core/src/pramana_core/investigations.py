@@ -58,6 +58,7 @@ from pramana_contracts import (
 from pramana_contracts.tokens import mint, mint_capability, private_key_from_b64
 from pramana_domain import NO_FAULT, DomainPack, load_pack
 from pramana_engine import (
+    MULTIPLE_FAULTS,
     CompiledModel,
     Engine,
     EngineConfig,
@@ -77,11 +78,10 @@ from .db import (
 )
 from .errors import ApiError, not_found
 from .language.extraction import Extractor
+from .language.intake import INTAKE_PROBE, parse_report
 from .language.realize import CONFIRM_PREFIX, realize
 from .observability import log
 from .sim_client import SimClient
-
-INTAKE_PROBE = "internet_works"
 
 
 @dataclass(frozen=True)
@@ -276,8 +276,23 @@ class InvestigationService:
                 "surprise_bits": result.surprise_bits,
                 "extraction": extraction.model_dump(mode="json"),
                 "decision_critical": result.decision_critical,
+                "multiple_faults_suspected": result.multiple_faults_suspected,
             },
         )
+        if result.contradiction:
+            self._event(
+                session,
+                inv_id,
+                "ContradictionDetected",
+                {
+                    "observation_id": obs.id,
+                    "participant_id": ev.participant_id,
+                    "probe_id": ev.probe_id,
+                    "location_id": ev.location_id,
+                    "outcome": ev.outcome,
+                    "conflicts_with": result.contradiction,
+                },
+            )
         return obs, result
 
     async def _supersede(self, session: AsyncSession, inv_id: str, obs: Observation) -> None:
@@ -528,10 +543,14 @@ class InvestigationService:
     ) -> None:
         """Map the report to evidence only when it explicitly answers the intake probe."""
         reporter = next(p for p in req.participants if p.id == req.report.reporter_id)
-        probe = self.pack(req.pack_id).probe_by_id.get(INTAKE_PROBE)
-        if probe is None or probe.binding_at(reporter.location_id) is None:
+        parsed = await parse_report(
+            req.report.text, self.pack(req.pack_id), reporter.location_id, self.extractor
+        )
+        # Hints (floors, rooms, symptoms) are shown, never used as evidence.
+        self._event(session, row.id, "IntakeParsed", parsed.hints())
+        extraction = parsed.extraction
+        if extraction is None:
             return
-        extraction = await self.extractor.extract(req.report.text, probe.outcomes)
         if extraction.outcome == UNKNOWN_OUTCOME:
             self._event(session, row.id, "IntakeUnmapped", extraction.model_dump(mode="json"))
             return
@@ -665,9 +684,10 @@ class InvestigationService:
                 reveal = await self.sim.reveal(row.scenario_id)
                 pack = self.pack(row.pack_id)
                 true_hyps = [f"{f.component_id}.{f.mode}" for f in reveal.fault_spec.faults]
-                true_decisions = sorted(
-                    {pack.decision_of.get(h, "UNMODELLED") for h in true_hyps or [NO_FAULT]}
-                )
+                true_set = {pack.decision_of.get(h, "UNMODELLED") for h in true_hyps or [NO_FAULT]}
+                if len(true_set) > 1:
+                    true_set.add(MULTIPLE_FAULTS)  # the engine's name for "several teams"
+                true_decisions = sorted(true_set)
                 outcome = row.outcome or {}
                 concluded = outcome.get("decision_class")
                 abstained = outcome.get("kind") == PlanKind.ABSTAIN.value

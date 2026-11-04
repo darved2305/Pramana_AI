@@ -55,8 +55,8 @@ def draw_fault(pack: DomainPack, seed: int) -> FaultSpec:
     """Sample one fault (or none) in proportion to the pack's priors, reproducibly from ``seed``.
 
     The simulator's catalogue is the pack's catalogue here. Scenarios with several faults can be
-    requested explicitly; they are deliberately outside the engine's single-fault hypothesis
-    space so the benchmark can measure behaviour under model mismatch.
+    requested explicitly. The engine models identifiable pairs (docs/adr/0008); masked pairs,
+    triples and faults outside the pack remain model mismatch for the benchmark to measure.
     """
     rng = random.Random(seed)
     options: list[FaultSpec] = [
