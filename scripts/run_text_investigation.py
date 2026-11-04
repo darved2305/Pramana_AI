@@ -4,8 +4,14 @@ Each simulated participant sees the world only through the simulator with its ow
 answers in natural code-mixed text. At the end the sealed fault is revealed and checked against
 the commitment published at the start.
 
+With ``--voice`` every turn is spoken end to end through real Gnani: the question is
+synthesised by Timbre in the participant's language, the answer phrase is synthesised too
+(standing in for a person speaking), then transcribed by Prisma v3.0 with the question's
+context, extracted, and applied. This spends credits (roughly Rs 0.3 per turn).
+
 Usage: python scripts/run_text_investigation.py [--seed N] [--fault CB_C2_7.tripped]
-       [--lie probe_id=outcome] [--core http://127.0.0.1:8000] [--sim http://127.0.0.1:8100]
+       [--lie probe_id=outcome] [--voice] [--core http://127.0.0.1:8000]
+       [--sim http://127.0.0.1:8100]
 """
 
 from __future__ import annotations
@@ -31,6 +37,39 @@ PHRASES = {
     "stuck_connecting": "connecting pe atka hai",
     "connected": "connected hai",
 }
+
+# What a Marathi or Hindi speaker might say, in their own script (used with --voice).
+NATIVE = {
+    "mr": {
+        "yes": "हो, उघडतं",
+        "no": "नाही, उघडत नाही",
+        "on": "हो, चालू आहे",
+        "off": "बंद आहे",
+        "green": "हिरवे दिवे आहेत",
+        "amber": "नारंगी दिवे आहेत",
+        "red": "लाल आहे",
+        "up": "ब्रेकर वर आहे",
+        "tripped": "ब्रेकर खाली आहे, ट्रिप झालाय",
+        "no_network": "NAVA-WiFi दिसतच नाही",
+        "stuck_connecting": "कनेक्ट होताना अडकलंय",
+        "connected": "कनेक्टेड आहे",
+    },
+    "hi": {
+        "yes": "हाँ, खुल रही है",
+        "no": "नहीं, खुल नहीं रही",
+        "on": "हाँ, चालू है",
+        "off": "बंद है",
+        "green": "हरी लाइट है",
+        "amber": "नारंगी है",
+        "red": "लाल है",
+        "up": "ब्रेकर ऊपर है",
+        "tripped": "ब्रेकर नीचे है, ट्रिप है",
+        "no_network": "NAVA-WiFi दिख ही नहीं रहा",
+        "stuck_connecting": "कनेक्ट होने पर अटका है",
+        "connected": "कनेक्टेड है",
+    },
+}
+TTS_LANG = {"mr": "mr-IN", "hi": "hi-IN", "hi-en": "hi-en", "en": "en-IN"}
 
 PEOPLE = [
     {
@@ -70,6 +109,11 @@ def check(r: httpx.Response) -> Any:
     return r.json()
 
 
+def check_audio(r: httpx.Response, what: str) -> None:
+    if r.status_code != 200 or r.content[:4] != b"RIFF":
+        sys.exit(f"{what}: HTTP {r.status_code} {r.text[:300]}")
+
+
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")  # Devanagari on Windows consoles
@@ -79,6 +123,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=19)
     ap.add_argument("--fault", default=None, help="component.mode, default: random (sealed)")
     ap.add_argument("--lie", action="append", default=[], help="probe_id=outcome to misreport")
+    ap.add_argument("--voice", action="store_true", help="speak every turn through real Gnani")
+    ap.add_argument("--exclude", action="append", default=[], help="participant id to leave out")
     args = ap.parse_args()
     lies = dict(item.split("=", 1) for item in args.lie)
     fault: Any = "random"
@@ -86,13 +132,13 @@ def main() -> None:
         comp, mode = args.fault.split(".")
         fault = {"faults": [{"component_id": comp, "mode": mode}]}
 
-    core, sim = httpx.Client(base_url=args.core, timeout=20), httpx.Client(base_url=args.sim)
+    core, sim = httpx.Client(base_url=args.core, timeout=60), httpx.Client(base_url=args.sim)
     inv = check(
         core.post(
             "/v1/investigations",
             json={
                 "pack_id": "campus_block_c",
-                "participants": PEOPLE,
+                "participants": [p for p in PEOPLE if p["id"] not in args.exclude],
                 "report": {
                     "text": "Floor 3 pe WiFi nahi chal raha, kuch khul nahi raha",
                     "reporter_id": "p_riya",
@@ -139,20 +185,44 @@ def main() -> None:
                 for o in best["outcomes"]
             )
         )
-        res = check(
-            core.post(
-                f"/v1/investigations/{inv['id']}/answers",
-                json={
-                    "question_id": q["id"],
-                    "participant_id": a["participant_id"],
-                    "text": PHRASES[said],
-                },
+        lang = q["language"]
+        phrase = NATIVE.get(lang, PHRASES)[said] if args.voice else PHRASES[said]
+        if args.voice:
+            spoken_q = core.get(f"/v1/investigations/{inv['id']}/questions/{q['id']}/audio")
+            check_audio(spoken_q, "question audio")
+            answer_wav = core.post(
+                "/v1/voice/tts", json={"text": phrase, "language": TTS_LANG[lang]}
             )
-        )
+            check_audio(answer_wav, "answer audio")
+            r = core.post(
+                f"/v1/investigations/{inv['id']}/answers/voice",
+                data={"question_id": q["id"], "participant_id": a["participant_id"]},
+                files={"audio": ("answer.wav", answer_wav.content, "audio/wav")},
+            )
+            voiced = check(r)
+            res = voiced["result"]
+            stt = voiced["stt"]
+            print(
+                f"    spoke question ({len(spoken_q.content)} B WAV); "
+                f"participant said {phrase!r}; Prisma heard {stt['transcript']!r} "
+                f"[{stt['detected_language']}]"
+            )
+        else:
+            res = check(
+                core.post(
+                    f"/v1/investigations/{inv['id']}/answers",
+                    json={
+                        "question_id": q["id"],
+                        "participant_id": a["participant_id"],
+                        "text": phrase,
+                    },
+                )
+            )
         inv = res["state"]
         b = inv["belief"]
         lie = "  (MISREPORTED)" if said != seen else ""
-        print(f"    answer: {PHRASES[said]!r} -> {res['extraction']['outcome']}{lie}")
+        heard_ok = "" if res["extraction"]["outcome"] == said else "  (NOT UNDERSTOOD AS SAID)"
+        print(f"    answer: {phrase!r} -> {res['extraction']['outcome']}{lie}{heard_ok}")
         print(
             f"    belief: {b['map_decision']} P={b['map_decision_probability']:.3f}, "
             f"top cause {b['hypotheses'][0]['id']} {b['hypotheses'][0]['probability']:.3f}, "

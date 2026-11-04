@@ -56,7 +56,7 @@ known-first-party = ["pramana_contracts", "pramana_domain", "pramana_engine", "p
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["N802", "PT011"]
-"scripts/**" = ["ASYNC240"]  # command-line tools; blocking file I/O is fine
+"scripts/**" = ["ASYNC230", "ASYNC240", "ASYNC250"]  # CLI tools: blocking I/O is fine
 
 [tool.mypy]
 python_version = "3.11"
