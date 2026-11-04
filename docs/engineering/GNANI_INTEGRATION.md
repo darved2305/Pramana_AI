@@ -78,6 +78,13 @@ Per the EULA, accuracy and latency results stay out of this repository; they are
   are billed. The meter now charges every STT request at least Rs 0.02, including failed
   attempts, so the budget errs high.
 
+- **The per-question media socket works live (2026-11-05)** (`scripts/live_media_turn.py`):
+  Timbre spoke the question, a synthesised Hinglish answer streamed as 16 kHz PCM went to
+  Prisma v3.0 over the realtime session with the question's context, and the answer was
+  recorded as a voice observation matching what that participant sees. The call runtime ran
+  `ASKING -> LISTENING -> EXTRACTING -> IDLE -> CLOSING -> ENDED`. Two runs of one turn each;
+  synthesised audio, not a human recording.
+
 ## Usage guards (`voice/governor.py`)
 
 | Guard | Setting | Default | Account limit |

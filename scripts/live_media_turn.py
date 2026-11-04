@@ -139,6 +139,7 @@ async def main() -> int:
         )
         frames: list[str] = []
         result: dict[str, object] = {}
+        spoken = asyncio.Event()  # the question finished (or the session failed): answer now
         async with websockets.connect(url, max_size=2**22) as ws:
             await ws.send(
                 json.dumps({"type": "start", "token": tok["token"], "play_question": True})
@@ -154,14 +155,16 @@ async def main() -> int:
                     )
                     if m["type"] == "tts_end":
                         await ws.send(json.dumps({"type": "playback_done"}))
+                        spoken.set()
                     if m["type"] == "answer":
                         result.update(m["result"])
                     if m["type"] == "error":
                         result["error"] = m
+                        spoken.set()
+                spoken.set()
 
             task = asyncio.create_task(reader())
-            while "tts_end" not in frames and "error" not in result and not task.done():
-                await asyncio.sleep(0.1)
+            await asyncio.wait_for(spoken.wait(), 60)
             audio = b"\x00\x00" * 8000 + pcm + b"\x00\x00" * 16000
             for i in range(0, len(audio), 1024):
                 await ws.send(audio[i : i + 1024])

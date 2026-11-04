@@ -47,7 +47,7 @@ and OpenAPI drift, generated-type drift and the bundle secret scan are clean.
 | D05 actor + event store, recovery | **done** | Startup supervisor rebuilds every open investigation and compares canonical JSON with the last `BeliefUpdated`; `GET /v1/investigations/{id}/replay`. `test_recovery.py`; live: `tests/e2e/test_m1.py::test_core_crash_mid_investigation_loses_nothing` (hard kill, restart, byte-identical belief) |
 | D06 push channel | **done** | SSE `GET /v1/investigations/{id}/stream` (ADR 0009): resume by `after_seq` / `Last-Event-ID`, 15 s heartbeat, non-blocking writers. `test_event_stream.py` (15, real uvicorn). Console uses it with polling fallback; the real-backend M1 Playwright test checks the stream was opened |
 | D15 LLM clients | **done** | Typed errors, schema check, keys redacted: `test_llm_client.py`; reasoning-control retry in `eval/tests/test_benchmark.py` |
-| D04 voice gateway v1 | **done (emulated)** | AudioWorklet capture (`npm run check:worklet`), per-question media WebSocket with Prisma v3.0 context (ADR 0013), driven by the call runtime (barge-in, one re-prompt, silence timeout). `test_media_ws.py` (18) against the Prisma emulation. **Not run against live Gnani**. The browser socket through the Next rewrite is proven by `apps/web/tests-real/media-proxy.spec.ts` (core close codes 4401 and 4503 reach the browser) |
+| D04 voice gateway v1 | **done (emulated)** | AudioWorklet capture (`npm run check:worklet`), per-question media WebSocket with Prisma v3.0 context (ADR 0013), driven by the call runtime (barge-in, one re-prompt, silence timeout). `test_media_ws.py` (18) against the Prisma emulation. **Live turn verified** (`scripts/live_media_turn.py`, synthesised Hinglish answer). The browser socket through the Next rewrite is proven by `apps/web/tests-real/media-proxy.spec.ts` (core close codes 4401 and 4503 reach the browser) |
 | D07 call runtime | **done** | `calls/runtime.py`, every state x event pair in `test_call_runtime.py`; drives each media session |
 | D08 participant app v0 | **done** | `/join/<token>`: view card, text, tap, live voice with WAV fallback, capability and repair report; real-backend M1 Playwright test |
 | D09 simulator shell | **done** | `test_sim_api.py` |
@@ -80,7 +80,7 @@ missed abstentions; the metric was fixed. See NOTES.md.
 
 ## Known gaps
 
-- No live Gnani run of the media socket (emulation only); the browser-to-core socket path is tested.
+- Live Gnani: synthesised turns through the media socket only; human recordings (VOICE_SAMPLES.md) still needed.
 - Abstention on unidentifiable scenarios (68%) is a calibration target for the stopping rule.
 - The held-out extraction set has been seen; a fresh blind set is needed.
 - Per-call sockets with in-call consent, and preemption across parallel calls (D17, Nov 7).
