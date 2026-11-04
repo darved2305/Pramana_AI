@@ -1,0 +1,13 @@
+[project]
+name = "pramana-eval"
+version = "0.1.0"
+description = "Benchmark harness: simulated participants, baseline policies, metrics"
+requires-python = ">=3.11"
+dependencies = ["pramana-contracts", "pramana-domain", "pramana-engine", "numpy>=1.26", "httpx>=0.27"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pramana_eval"]

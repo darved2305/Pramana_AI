@@ -9,6 +9,7 @@ dependencies = [
     "pramana-engine",
     "pramana-sim",
     "pramana-core",
+    "pramana-eval",
 ]
 
 [dependency-groups]
@@ -33,6 +34,7 @@ members = [
     "packages/engine",
     "services/sim",
     "services/core",
+    "eval",
 ]
 
 [tool.uv.sources]
@@ -41,6 +43,7 @@ pramana-domain = { workspace = true }
 pramana-engine = { workspace = true }
 pramana-sim = { workspace = true }
 pramana-core = { workspace = true }
+pramana-eval = { workspace = true }
 
 [tool.ruff]
 line-length = 100
@@ -52,7 +55,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "ASYNC", "PT", "N"]
 ignore = ["RUF001", "RUF002", "RUF003"]  # Devanagari and typographic characters are intentional
 
 [tool.ruff.lint.isort]
-known-first-party = ["pramana_contracts", "pramana_domain", "pramana_engine", "pramana_sim", "pramana_core"]
+known-first-party = ["pramana_contracts", "pramana_domain", "pramana_engine", "pramana_sim", "pramana_core", "pramana_eval"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["N802", "PT011"]
@@ -63,7 +66,7 @@ python_version = "3.11"
 strict = true
 warn_unused_ignores = true
 plugins = ["pydantic.mypy"]
-mypy_path = "packages/contracts/src:packages/domain/src:packages/engine/src:services/sim/src:services/core/src"
+mypy_path = "packages/contracts/src:packages/domain/src:packages/engine/src:services/sim/src:services/core/src:eval/src"
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
@@ -85,18 +88,19 @@ testpaths = [
     "packages/engine/tests",
     "services/sim/tests",
     "services/core/tests",
+    "eval/tests",
     "tests",
 ]
 
 [tool.importlinter]
 include_external_packages = true
-root_packages = ["pramana_contracts", "pramana_domain", "pramana_engine", "pramana_sim", "pramana_core"]
+root_packages = ["pramana_contracts", "pramana_domain", "pramana_engine", "pramana_sim", "pramana_core", "pramana_eval"]
 
 [[tool.importlinter.contracts]]
 name = "The engine and the core never import the simulator (hidden truth isolation)"
 type = "forbidden"
 source_modules = ["pramana_engine", "pramana_core", "pramana_domain", "pramana_contracts"]
-forbidden_modules = ["pramana_sim"]
+forbidden_modules = ["pramana_sim", "pramana_eval"]
 
 [[tool.importlinter.contracts]]
 name = "The engine is pure: no web, database, or provider code"

@@ -40,3 +40,4 @@ recorder/
 *.aac
 !tests/fixtures/audio/*.wav
 .DS_Store
+.cache/
