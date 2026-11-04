@@ -1,21 +1,21 @@
 {
   "set": "extraction_heldout.jsonl",
   "items": 80,
-  "git_sha": "bd61649",
-  "generated_at": "2026-11-04 18:07 UTC",
+  "git_sha": "f2c5897",
+  "generated_at": "2026-11-04 18:16 UTC",
   "note": "Held-out set: written and committed before any tuning against it, and never used for tuning.",
   "extractors": {
     "rules": {
       "n": 80,
-      "correct": 71,
-      "all_fields_accuracy": 0.8875,
+      "correct": 72,
+      "all_fields_accuracy": 0.9,
       "invented": 2,
-      "missed": 4,
+      "missed": 3,
       "wrong_outcome": 1,
       "injection_flagged_with_evidence": 0,
       "llm_used": 0,
       "per_field": {
-        "outcome": 0.9125,
+        "outcome": 0.925,
         "hedge": 1.0,
         "directness": 0.9875,
         "injection": 1.0,
@@ -33,8 +33,8 @@
         },
         "hi": {
           "n": 20,
-          "all_fields": 0.85,
-          "outcome": 0.85,
+          "all_fields": 0.9,
+          "outcome": 0.9,
           "hedge": 1.0,
           "directness": 1.0,
           "injection": 1.0,
@@ -686,23 +686,23 @@
           "lang": "hi",
           "text": "नहीं खुल रही",
           "expected": "no",
-          "got": "unknown",
+          "got": "no",
           "fields": {
-            "outcome": false,
+            "outcome": true,
             "hedge": true,
             "directness": true,
             "injection": true,
             "stop": true
           },
           "got_fields": {
-            "outcome": "unknown",
+            "outcome": "no",
             "hedge": "certain",
             "directness": "direct",
             "injection": false,
             "stop": false
           },
           "method": "rules",
-          "ok": false
+          "ok": true
         },
         {
           "id": "h29",

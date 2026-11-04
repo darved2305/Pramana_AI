@@ -31,6 +31,30 @@ def _events(core: TestClient, inv_id: str) -> list[dict[str, Any]]:
     return out
 
 
+def test_intake_hints_are_logged_but_are_not_evidence(core: TestClient) -> None:
+    report = "Floor 3 pe WiFi nahi chal raha, room 304 mein lights bhi band hain"
+    inv = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped", report=report))
+    assert inv.status_code == 201, inv.text
+    data = inv.json()
+    parsed = [e for e in _events(core, data["id"]) if e["type"] == "IntakeParsed"]
+    assert parsed[0]["payload"] == {
+        "floors": [3],
+        "locations": ["F3_R304"],
+        "symptoms": ["wifi", "power"],
+    }
+    # Only the intake probe at the reporter's location is evidence; the lights are a hint.
+    assert [(o["probe_id"], o["outcome"]) for o in data["observations"]] == [
+        ("internet_works", "no")
+    ]
+
+
+def test_a_report_about_the_lights_alone_is_not_internet_evidence(core: TestClient) -> None:
+    inv = core.post(
+        "/v1/investigations", json=body(report="corridor ki bijli chali gayi floor 3 pe")
+    ).json()
+    assert inv["observations"] == []
+
+
 def test_explainable_answers_log_no_contradiction(core: TestClient) -> None:
     inv = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped")).json()
     final, _ = run_to_conclusion(core, TestClient(core.sim_app), inv)  # type: ignore[attr-defined]

@@ -78,11 +78,10 @@ from .db import (
 )
 from .errors import ApiError, not_found
 from .language.extraction import Extractor
+from .language.intake import INTAKE_PROBE, parse_report
 from .language.realize import CONFIRM_PREFIX, realize
 from .observability import log
 from .sim_client import SimClient
-
-INTAKE_PROBE = "internet_works"
 
 
 @dataclass(frozen=True)
@@ -544,10 +543,14 @@ class InvestigationService:
     ) -> None:
         """Map the report to evidence only when it explicitly answers the intake probe."""
         reporter = next(p for p in req.participants if p.id == req.report.reporter_id)
-        probe = self.pack(req.pack_id).probe_by_id.get(INTAKE_PROBE)
-        if probe is None or probe.binding_at(reporter.location_id) is None:
+        parsed = await parse_report(
+            req.report.text, self.pack(req.pack_id), reporter.location_id, self.extractor
+        )
+        # Hints (floors, rooms, symptoms) are shown, never used as evidence.
+        self._event(session, row.id, "IntakeParsed", parsed.hints())
+        extraction = parsed.extraction
+        if extraction is None:
             return
-        extraction = await self.extractor.extract(req.report.text, probe.outcomes)
         if extraction.outcome == UNKNOWN_OUTCOME:
             self._event(session, row.id, "IntakeUnmapped", extraction.model_dump(mode="json"))
             return
