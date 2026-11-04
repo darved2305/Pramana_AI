@@ -92,6 +92,7 @@ testpaths = [
 ]
 
 [tool.importlinter]
+include_external_packages = true
 root_packages = ["pramana_contracts", "pramana_domain", "pramana_engine", "pramana_sim", "pramana_core", "pramana_eval"]
 
 [[tool.importlinter.contracts]]
