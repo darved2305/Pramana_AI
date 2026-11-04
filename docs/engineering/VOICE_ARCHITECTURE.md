@@ -71,10 +71,30 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   (cached, so a replay costs nothing) and `POST /v1/investigations/{id}/answers/voice`
   (question-conditioned STT, then the same extraction and engine path as typed answers). This
   is half-duplex push-to-talk, verified live.
+- **Per-question media WebSocket** (`WS /v1/investigations/{id}/questions/{qid}/media`,
+  `voice/media.py`, docs/adr/0013). The participant token goes in the first message, not the
+  URL. The core checks it, checks that the question is pending and addressed to that person,
+  allows one open session per token, opens a Prisma v3.0 session with that question's context
+  (language candidates, `codemix`, answer keyterms, `x-min-segment-ms` 100), sends the question
+  audio in 16 KiB binary chunks, relays `speech_start`/`processing`/`transcript`, and submits
+  the first non-empty transcript through the normal answer path. Empty transcripts record
+  nothing; a question answered elsewhere ends the session with `409 QUESTION_NOT_PENDING`;
+  governor refusals arrive as typed error frames and close code 4429. Tested against the
+  protocol emulation only (`tests/test_media_ws.py`); not yet run against live Gnani.
+- **Browser capture** (`apps/web/public/worklets/pcm16-capture.js`): an AudioWorklet that
+  low-pass filters (63-tap windowed sinc) and resamples 48/44.1 kHz input to 16 kHz mono PCM16
+  in 1,024-byte frames; `node apps/web/scripts/check-pcm-worklet.mjs` checks frame size, rate,
+  passband gain and 12 kHz rejection. `apps/web/src/lib/audio/media.ts` is the client, with
+  barge-in (playback stops on `speech_start`).
+- **Call runtime skeleton** (`calls/runtime.py`): the PLAN §12 state machine as an explicit
+  transition table, with an injected clock for the 30 s ring, 8 s re-prompt (once) and 20 s
+  unavailable timers, utterance ids for dropping stale audio, and a preemption hook. Every
+  state and event pair is tested (`tests/test_call_runtime.py`).
 
 ## Not yet implemented
 
-- The call runtime state machine (PLAN §12): consent, ASKING/LISTENING, barge-in, re-prompts.
-- Full-duplex calls with barge-in over `/v1/voice/stream` (the relay exists; the call state
-  machine does not).
+- Driving the call runtime from the media socket (consent, re-prompts, preemption across
+  calls). The socket is per question; the state machine is ready but not yet wired to it.
+- Incremental TTS. Question audio is synthesised by Timbre REST and sent in chunks, because the
+  chunk format of the WS/SSE endpoints is undocumented and has not been checked live.
 - Published latency figures. Measurements exist but stay private under the Gnani EULA.
