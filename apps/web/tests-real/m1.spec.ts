@@ -15,7 +15,7 @@ interface State {
   id: string;
   status: string;
   questions_asked: number;
-  pending_question: { id: string; action: { participant_id: string; probe_id: string; requires_move: boolean } } | null;
+  pending_question: { id: string; text: string; action: { participant_id: string; probe_id: string; requires_move: boolean } } | null;
   plan: { decision_class?: string | null };
   belief: { repair?: { fixed_probability: number } | null };
   approvals: { id: string; status: string; approver_id?: string | null }[];
@@ -31,9 +31,10 @@ async function openParticipant(browser: Browser, url: string): Promise<Page> {
 }
 
 /** Answer the pending question on the participant's own page, from their surroundings card. */
-async function answerTruthfully(p: Page, probeLabel: string, typed: boolean) {
+async function answerTruthfully(p: Page, questionText: string, probeLabel: string, typed: boolean) {
   const there = p.getByRole("button", { name: "I am there now" });
-  await expect(p.getByRole("heading", { level: 1 })).toBeVisible();
+  // The page polls; wait until it shows this very question, not the previous screen.
+  await expect(p.getByRole("heading", { level: 1 })).toHaveText(questionText, { timeout: 20_000 });
   if (await there.isVisible()) await there.click();
   const card = p.locator("details", { hasText: "What you can see here (simulation)" });
   await expect(card).toBeVisible();
@@ -84,10 +85,10 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   await next(); // participants
   await next(); // languages
   await next(); // permissions
-  await page.getByLabel("Simulation seed").fill("19");
+  await page.getByRole("textbox", { name: "Simulation seed" }).fill("19");
   await page.getByLabel("Specified").check({ force: true });
-  await page.getByLabel("Component ID").fill("CB_C2_7");
-  await page.getByLabel("Failure mode").fill("tripped");
+  await page.getByRole("textbox", { name: "Component ID" }).fill("CB_C2_7");
+  await page.getByRole("textbox", { name: "Failure mode" }).fill("tripped");
   await next();
   await page.getByRole("checkbox", { name: /agreed to be contacted/ }).check({ force: true });
   await page.getByRole("button", { name: "Start investigation" }).click();
@@ -120,7 +121,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   while (state.pending_question && answered < 8) {
     const { participant_id, probe_id } = state.pending_question.action;
     const before = state.questions_asked;
-    await answerTruthfully(people[participant_id], label(probe_id), answered === 0);
+    await answerTruthfully(people[participant_id], state.pending_question.text, label(probe_id), answered === 0);
     answered++;
     await expect.poll(async () => (state = await api<State>(request, "GET", `/v1/investigations/${invId}`)).questions_asked > before || !state.pending_question).toBe(true);
   }
@@ -133,7 +134,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   await expect.poll(() => page.getByRole("table").first().getByRole("row").count()).toBeGreaterThan(answered);
 
   // 4. The operator proposes the repair.
-  await page.getByRole("button", { name: "Propose a repair" }).click();
+  await page.getByRole("button", { name: "Propose repair", exact: true }).click();
   const propose = page.getByRole("dialog", { name: "Propose a repair" });
   await propose.getByLabel("Breaker").fill("CB_C2_7");
   await propose.getByRole("button", { name: "Send for approval" }).click();
@@ -166,7 +167,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   while (state.pending_question && checks < 8) {
     const { participant_id, probe_id } = state.pending_question.action;
     const before = state.questions_asked;
-    await answerTruthfully(people[participant_id], label(probe_id), false);
+    await answerTruthfully(people[participant_id], state.pending_question.text, label(probe_id), false);
     checks++;
     await expect.poll(async () => (state = await api<State>(request, "GET", `/v1/investigations/${invId}`)).questions_asked > before || !state.pending_question).toBe(true);
   }

@@ -92,7 +92,7 @@ export interface InvestigationFeed {
   events: EventEnvelope[];
   error?: unknown;
   source: Source;
-  /** True while polling for new events. */
+  /** True while following new events (pushed, or polled as a fallback). */
   live: boolean;
   lastEventAt?: string;
   refresh: () => Promise<void>;
@@ -102,14 +102,19 @@ export interface InvestigationFeed {
 
 /**
  * Where new events come from. `subscribe` delivers batches in `seq` order starting after
- * `afterSeq`, and returns a function that stops it. Polling is the default; a push channel
- * (server-sent events or a WebSocket) can be dropped in with the same shape.
+ * `afterSeq`, and returns a function that stops it. `onReset` means the server's log is behind
+ * the client (for example after a database reset): local state must be dropped.
  */
-export interface EventSource {
-  subscribe(id: string, afterSeq: () => number, onEvents: (batch: EventEnvelope[]) => void): () => void;
+export interface EventFeedSource {
+  subscribe(
+    id: string,
+    afterSeq: () => number,
+    onEvents: (batch: EventEnvelope[]) => void,
+    onReset?: () => void,
+  ): () => void;
 }
 
-export function pollingSource(pollMs: number, token?: string): EventSource {
+export function pollingSource(pollMs: number, token?: string): EventFeedSource {
   return {
     subscribe(id, afterSeq, onEvents) {
       let alive = true;
@@ -135,8 +140,79 @@ export function pollingSource(pollMs: number, token?: string): EventSource {
   };
 }
 
+/**
+ * Server-sent events from `GET /v1/investigations/{id}/stream` (docs/adr/0009). Log events
+ * carry `id: <seq>`, so the browser resumes with `Last-Event-ID` after a dropped connection.
+ * Events arriving together are delivered as one batch. If the stream cannot be opened (the
+ * server refused it, or it failed three times without delivering anything), this falls back
+ * to `fallback` for the rest of the subscription.
+ */
+export function streamSource(fallback: EventFeedSource, flushMs = 60): EventFeedSource {
+  return {
+    subscribe(id, afterSeq, onEvents, onReset) {
+      if (typeof window === "undefined" || typeof window.EventSource === "undefined") {
+        return fallback.subscribe(id, afterSeq, onEvents, onReset);
+      }
+      let stopped = false;
+      let es: globalThis.EventSource | null = null;
+      let stopFallback: (() => void) | null = null;
+      let failures = 0;
+      let pending: EventEnvelope[] = [];
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const flush = () => {
+        flushTimer = null;
+        const batch = pending;
+        pending = [];
+        if (batch.length && !stopped) onEvents(batch);
+      };
+      const toPolling = () => {
+        es?.close();
+        es = null;
+        if (!stopped && !stopFallback) stopFallback = fallback.subscribe(id, afterSeq, onEvents, onReset);
+      };
+      const open = () => {
+        es = new window.EventSource(`/api/core/v1/investigations/${encodeURIComponent(id)}/stream?after_seq=${afterSeq()}`);
+        es.onmessage = (m) => {
+          failures = 0;
+          try {
+            pending.push(JSON.parse(m.data) as EventEnvelope);
+          } catch {
+            return; // a malformed frame is ignored; the next event or a refresh catches up
+          }
+          flushTimer ??= setTimeout(flush, flushMs);
+        };
+        es.addEventListener("ready", () => {
+          failures = 0;
+        });
+        es.addEventListener("reset", () => {
+          pending = [];
+          onReset?.();
+        });
+        es.addEventListener("bye", () => {
+          // The server ended the stream on purpose: reopen from where we are.
+          es?.close();
+          if (!stopped) open();
+        });
+        es.onerror = () => {
+          failures++;
+          // CLOSED: the server answered with an error status; the browser will not retry.
+          if (es?.readyState === 2 || failures >= 3) toPolling();
+        };
+      };
+      open();
+      return () => {
+        stopped = true;
+        es?.close();
+        stopFallback?.();
+        if (flushTimer) clearTimeout(flushTimer);
+      };
+    },
+  };
+}
+
 /** Callers should key their component by `id`, so switching investigations starts fresh. */
-export function useInvestigation(id: string, source?: EventSource): InvestigationFeed {
+export function useInvestigation(id: string, source?: EventFeedSource): InvestigationFeed {
   const preview = usePreviewMode();
   const { pollMs } = usePrefs();
   const [state, setState] = useState<InvestigationState>();
@@ -197,8 +273,9 @@ export function useInvestigation(id: string, source?: EventSource): Investigatio
   // Poll the event log while the investigation can still change.
   const settled = state ? SETTLED.includes(state.status) && !state.pending_question : false;
   const live = !isPreview && status === "ready" && !settled;
-  // Callers that pass a push source should memoise it; polling is rebuilt only if pollMs changes.
-  const feedSource = useMemo(() => source ?? pollingSource(pollMs), [source, pollMs]);
+  // Pushed over server-sent events, with polling as the fallback. Callers passing their own
+  // source should memoise it.
+  const feedSource = useMemo(() => source ?? streamSource(pollingSource(pollMs)), [source, pollMs]);
   useEffect(() => {
     if (!live) return;
     return feedSource.subscribe(
@@ -210,6 +287,12 @@ export function useInvestigation(id: string, source?: EventSource): Investigatio
         if (!fresh.length) return;
         seqRef.current = fresh[fresh.length - 1].seq;
         setEvents((prev) => [...prev, ...fresh]);
+        void refresh();
+      },
+      () => {
+        // The log restarted behind us: forget what we had and rebuild from the start.
+        seqRef.current = 0;
+        setEvents([]);
         void refresh();
       },
     );

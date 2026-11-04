@@ -12,7 +12,8 @@ import { sim } from "@/lib/api/sim";
 import { ApiError, describeError } from "@/lib/api/http";
 import { decodeJoin, type JoinPayload } from "@/lib/join";
 import { startRecording, type Recording } from "@/lib/audio/recorder";
-import type { Approval, InvestigationState, ParticipantView } from "@/lib/api/types";
+import { QuestionMediaSession } from "@/lib/audio/media";
+import type { AnswerResult, Approval, InvestigationState, ParticipantView } from "@/lib/api/types";
 import { outcomeWord } from "@/lib/data/derive";
 
 export default function JoinPage() {
@@ -67,6 +68,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const [text, setText] = useState("");
   const [moved, setMoved] = useState<string | null>(null);
   const recRef = useRef<Recording | null>(null);
+  const liveRef = useRef<QuestionMediaSession | null>(null);
   const levelRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -95,7 +97,13 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     return () => clearInterval(id);
   }, [load, preview]);
 
-  useEffect(() => () => recRef.current?.cancel(), []);
+  useEffect(
+    () => () => {
+      recRef.current?.cancel();
+      liveRef.current?.close();
+    },
+    [],
+  );
 
   if (error && !state)
     return (
@@ -144,9 +152,71 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     }
   };
 
+  /**
+   * Live voice over the media socket: the microphone streams to the core while the person
+   * speaks, and the answer is recorded as soon as they stop. Returns false if the socket
+   * cannot be used, so the caller falls back to recording a clip and uploading it.
+   */
+  const startLive = async (question: NonNullable<typeof q>): Promise<boolean> => {
+    let heard = "";
+    const done = (session: QuestionMediaSession) => {
+      session.close();
+      if (liveRef.current === session) liveRef.current = null;
+      levelRef.current = 0;
+      setPhase("idle");
+    };
+    const session: QuestionMediaSession = new QuestionMediaSession(
+      payload.i,
+      question.id,
+      payload.t,
+      {
+        onLevel: (rms) => {
+          levelRef.current = rms;
+        },
+        onTranscript: (t) => {
+          heard = t.text;
+        },
+        onAnswer: (result) => {
+          const r = result as AnswerResult;
+          setUnderstood(`I heard "${heard}" and understood: ${outcomeWord(r.extraction.outcome)}`);
+          setState(r.state);
+          done(session);
+        },
+        onEmptyTranscript: () => {
+          setMsg("Nothing was heard. Please try again a little closer to the microphone.");
+          done(session);
+        },
+        onError: (e) => {
+          if (!e.fatal) return;
+          setMsg(describeError(new ApiError(e.status, e.code, e.message, null)));
+          done(session);
+        },
+      },
+      { playQuestion: false },
+    );
+    try {
+      await Promise.race([
+        session.connect(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("media socket timeout")), 4000)),
+      ]);
+      await session.startMic();
+    } catch {
+      session.close();
+      return false;
+    }
+    liveRef.current = session;
+    setPhase("recording");
+    return true;
+  };
+
   const toggleVoice = async () => {
     if (!q) return;
     setMsg(null);
+    if (phase === "recording" && liveRef.current) {
+      setPhase("sending");
+      liveRef.current.commit();
+      return;
+    }
     if (phase === "recording") {
       const rec = recRef.current;
       recRef.current = null;
@@ -169,6 +239,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       }
       return;
     }
+    if (!preview && (await startLive(q))) return;
     try {
       const rec = await startRecording();
       recRef.current = rec;
@@ -204,7 +275,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         <VoiceField
           modes={["lens"]}
           className="absolute inset-0 h-full w-full"
-          level={phase === "recording" ? () => recRef.current?.level() ?? 0 : undefined}
+          level={phase === "recording" ? () => recRef.current?.level() ?? levelRef.current : undefined}
           ariaLabel={phase === "recording" ? "Microphone level" : "Decorative waveform"}
         />
       </div>
