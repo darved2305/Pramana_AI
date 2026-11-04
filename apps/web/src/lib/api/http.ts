@@ -22,7 +22,7 @@ export class ApiError extends Error {
   }
   /** The service could not be reached at all (not running, or the proxy failed). */
   get unreachable() {
-    return this.code === "NETWORK_UNREACHABLE" || this.status === 502 || this.status === 503 && this.code === "UPSTREAM_DOWN";
+    return this.code === "NETWORK_UNREACHABLE" || this.code === "UPSTREAM_DOWN" || [502, 503, 504].includes(this.status);
   }
 }
 
