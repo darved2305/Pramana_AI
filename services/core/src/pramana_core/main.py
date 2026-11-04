@@ -47,6 +47,7 @@ def _llm_extractor(cfg: Settings) -> LlmClient | None:
         api_key=key.get_secret_value(),
         timeout_s=8.0,
         max_wait_s=2.0,
+        total_timeout_s=10.0,
     )
 
 
