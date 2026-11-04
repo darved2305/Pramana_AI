@@ -1,5 +1,5 @@
 # Pramana developer commands. Requires uv and a native PostgreSQL (scripts/dev_db.py).
-.PHONY: setup db-up db-down migrate sim core lint typecheck test contracts check run-text
+.PHONY: setup db-up db-down migrate sim core lint typecheck test contracts openapi check run-text
 
 setup:            ## install the workspace and create .env with fresh keys
 	uv sync
@@ -29,6 +29,9 @@ typecheck:
 
 contracts:        ## regenerate the JSON Schema bundle from the Pydantic contracts
 	uv run python -m pramana_contracts.export
+
+openapi:          ## regenerate services/core/openapi.json from the app
+	uv run python -m pramana_core.openapi_export
 
 test:
 	uv run pytest
