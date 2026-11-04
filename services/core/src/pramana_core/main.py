@@ -3,6 +3,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
@@ -20,12 +21,33 @@ from .db import Database, make_engine
 from .errors import install_error_handlers
 from .investigations import InvestigationService
 from .language.extraction import RuleExtractor
+from .language.hybrid import HybridExtractor
+from .llm import LlmClient
 from .observability import RequestContextMiddleware, configure_logging, log
 from .settings import Settings, get_settings
 from .sim_client import SimClient
 from .voice.conversation import QuestionAudioCache
 from .voice.gnani import GnaniClient
 from .voice.governor import DbLedger, GovernorLimits, VoiceGovernor
+
+
+def _llm_extractor(cfg: Settings) -> LlmClient | None:
+    """Interactive settings: short timeout and no waiting on quota, so a turn never blocks."""
+    if cfg.llm_extractor_provider == "none":
+        return None
+    key = cfg.gemini_api_key if cfg.llm_extractor_provider == "gemini" else cfg.groq_api_key
+    if key is None:
+        log.warning("llm_extractor_disabled", reason="no API key")
+        return None
+    default = "gemini-3.1-flash-lite" if cfg.llm_extractor_provider == "gemini" else None
+    return LlmClient(
+        cfg.llm_extractor_provider,
+        cfg.llm_extractor_model or default,
+        cache_dir=Path(cfg.llm_cache_dir),
+        api_key=key.get_secret_value(),
+        timeout_s=8.0,
+        max_wait_s=2.0,
+    )
 
 
 def create_app(
@@ -71,7 +93,7 @@ def create_app(
         app.state.investigations = InvestigationService(
             db,
             sim,
-            RuleExtractor(),
+            HybridExtractor(RuleExtractor(), _llm_extractor(cfg)),
             cfg.participant_signing_key.get_secret_value(),
             browser_sim_url=cfg.browser_sim_url,
         )

@@ -185,3 +185,16 @@ def test_real_transcript_sentences(text: str, outcomes: list[str], expected: str
 def test_relayed_report_is_hearsay() -> None:
     r = X.extract_sync("मेरे roommate ने बोला कि second floor पे भी same problem है", YES_NO)
     assert r.directness == Directness.HEARSAY
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "kal raat ko band tha, abhi ka nahi pata",
+        "it was off last night",
+        "पहले बंद था",
+        "काल रात्री बंद होता",
+    ],
+)
+def test_reports_about_earlier_are_not_current_evidence(text: str) -> None:
+    assert X.extract_sync(text, ON_OFF).outcome == "unknown"

@@ -124,6 +124,25 @@ NOT_OBSERVED = _phrases(
 """"I can't see it" means no observation was made. It must never become "off". (For the Wi-Fi
 list probe the same words mean the network is missing, so this applies only to other probes.)"""
 
+STALE = _phrases(
+    "kal raat",
+    "kal subah",
+    "kal",
+    "yesterday",
+    "last night",
+    "earlier today",
+    "pehle tha",
+    "pehle",
+    "कल",
+    "कल रात",
+    "पहले",
+    "काल",
+    "काल रात्री",
+    "abhi ka nahi pata",
+    "abhi ka pata nahi",
+)
+"""A report about an earlier time is not an observation of now (the engine has no time model)."""
+
 PROBABLE = _phrases(
     "i think",
     "maybe",
@@ -409,13 +428,17 @@ def _claim(matches: list[_Match], taken: list[bool]) -> list[_Match]:
 
 
 class Extractor(Protocol):
-    async def extract(self, text: str, outcomes: Sequence[str]) -> Extraction: ...
+    async def extract(
+        self, text: str, outcomes: Sequence[str], *, question: str | None = None
+    ) -> Extraction: ...
 
 
 class RuleExtractor:
     """Deterministic, zero-latency extractor. Conservative: ambiguity yields ``unknown``."""
 
-    async def extract(self, text: str, outcomes: Sequence[str]) -> Extraction:
+    async def extract(
+        self, text: str, outcomes: Sequence[str], *, question: str | None = None
+    ) -> Extraction:
         return self.extract_sync(text, outcomes)
 
     def extract_sync(self, text: str, outcomes: Sequence[str]) -> Extraction:
@@ -428,11 +451,12 @@ class RuleExtractor:
             + _find(tokens, PROBABLE, "probable")
             + _find(tokens, HEARSAY, "hearsay")
             + _find(tokens, ASSUMPTION, "assumption")
-            + ([] if "no_network" in outcomes else _find(tokens, NOT_OBSERVED, "not_observed")),
+            + ([] if "no_network" in outcomes else _find(tokens, NOT_OBSERVED, "not_observed"))
+            + _find(tokens, STALE, "stale"),
             taken,
         )
         labels = {m.label for m in meta}
-        evidence = [" ".join(tokens[m.start : m.end]) for m in meta]
+        evidence = [f"{m.label}:" + " ".join(tokens[m.start : m.end]) for m in meta]
 
         allowed = set(outcomes)
         candidates = [m for o in outcomes for m in _find(tokens, OUTCOME_LEXICON.get(o, []), o)]
@@ -454,7 +478,7 @@ class RuleExtractor:
             evidence.append(f"{label}<-" + " ".join(tokens[m.start : m.end]))
 
         injection = "injection" in labels
-        blocked = injection or "not_observed" in labels
+        blocked = injection or "not_observed" in labels or "stale" in labels
         outcome = found.pop() if len(found) == 1 and not blocked else UNKNOWN_OUTCOME
         if "unsure" in labels:
             hedge = Hedge.UNSURE

@@ -433,7 +433,9 @@ class InvestigationService:
                     engine = await self._engine(session, row)
                     outcomes = list(self.model(row.pack_id).outcomes[q.probe_id])
                     if ans.text is not None:
-                        extraction = await self.extractor.extract(ans.text, outcomes)
+                        extraction = await self.extractor.extract(
+                            ans.text, outcomes, question=q.text
+                        )
                     else:
                         if ans.outcome not in (*outcomes, UNKNOWN_OUTCOME):
                             raise ApiError(

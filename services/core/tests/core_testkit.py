@@ -21,6 +21,7 @@ def core_settings(db_url: str, **overrides: object) -> Settings:
         "SIM_OPERATOR_KEY": OPERATOR_KEY,
         "PARTICIPANT_SIGNING_KEY": SIGNING_KEY,
         "GNANI_API_KEY": "",
+        "LLM_EXTRACTOR_PROVIDER": "none",
         "LOG_JSON": False,
         "LOG_LEVEL": "WARNING",
     }

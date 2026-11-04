@@ -45,9 +45,18 @@ class Settings(BaseSettings):
     voice_max_stream_s: float = Field(default=300.0, gt=0, le=900, alias="VOICE_MAX_STREAM_S")
     voice_max_upload_bytes: int = Field(default=2_000_000, alias="VOICE_MAX_UPLOAD_BYTES")
 
+    llm_extractor_provider: Literal["gemini", "groq", "none"] = Field(
+        default="none", alias="LLM_EXTRACTOR_PROVIDER"
+    )
+    """Second-opinion extractor for answers the rules cannot map. ``none`` = rules only."""
+    llm_extractor_model: str | None = Field(default=None, alias="LLM_EXTRACTOR_MODEL")
+    gemini_api_key: SecretStr | None = Field(default=None, alias="GEMINI_API_KEY")
+    groq_api_key: SecretStr | None = Field(default=None, alias="GROQ_API_KEY")
+    llm_cache_dir: str = Field(default=".cache/llm", alias="LLM_CACHE_DIR")
+
     cors_origins: list[str] = Field(default=["http://localhost:3000"], alias="CORS_ORIGINS")
 
-    @field_validator("gnani_api_key", mode="before")
+    @field_validator("gnani_api_key", "gemini_api_key", "groq_api_key", mode="before")
     @classmethod
     def _empty_is_none(cls, v: object) -> object:
         return None if v in ("", None) else v
