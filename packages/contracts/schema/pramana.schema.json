@@ -1,0 +1,1647 @@
+{
+  "$defs": {
+    "AnswerResult": {
+      "additionalProperties": false,
+      "properties": {
+        "extraction": {
+          "$ref": "#/$defs/Extraction"
+        },
+        "observation": {
+          "$ref": "#/$defs/Observation"
+        },
+        "state": {
+          "$ref": "#/$defs/InvestigationState"
+        }
+      },
+      "required": [
+        "observation",
+        "extraction",
+        "state"
+      ],
+      "title": "AnswerResult",
+      "type": "object"
+    },
+    "BeliefSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_entropy_bits": {
+          "minimum": 0,
+          "title": "Decision Entropy Bits",
+          "type": "number"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/DecisionBelief"
+          },
+          "title": "Decisions",
+          "type": "array"
+        },
+        "expected_loss_now_min": {
+          "minimum": 0,
+          "title": "Expected Loss Now Min",
+          "type": "number"
+        },
+        "hypotheses": {
+          "items": {
+            "$ref": "#/$defs/HypothesisBelief"
+          },
+          "title": "Hypotheses",
+          "type": "array"
+        },
+        "hypothesis_entropy_bits": {
+          "minimum": 0,
+          "title": "Hypothesis Entropy Bits",
+          "type": "number"
+        },
+        "map_decision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Map Decision"
+        },
+        "map_decision_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Map Decision Probability",
+          "type": "number"
+        },
+        "observations_used": {
+          "minimum": 0,
+          "title": "Observations Used",
+          "type": "integer"
+        },
+        "open_world_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Open World Probability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "hypotheses",
+        "decisions",
+        "hypothesis_entropy_bits",
+        "decision_entropy_bits",
+        "open_world_probability",
+        "map_decision",
+        "map_decision_probability",
+        "expected_loss_now_min",
+        "observations_used"
+      ],
+      "title": "BeliefSnapshot",
+      "type": "object"
+    },
+    "CandidateScore": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ProbeAction"
+        },
+        "cost_s": {
+          "exclusiveMinimum": 0,
+          "title": "Cost S",
+          "type": "number"
+        },
+        "eig_decision_bits": {
+          "minimum": 0,
+          "title": "Eig Decision Bits",
+          "type": "number"
+        },
+        "eig_hypothesis_bits": {
+          "minimum": 0,
+          "title": "Eig Hypothesis Bits",
+          "type": "number"
+        },
+        "net_value_min": {
+          "title": "Net Value Min",
+          "type": "number"
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/OutcomePreview"
+          },
+          "title": "Outcomes",
+          "type": "array"
+        },
+        "score": {
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "action",
+        "eig_decision_bits",
+        "eig_hypothesis_bits",
+        "cost_s",
+        "score",
+        "net_value_min",
+        "outcomes"
+      ],
+      "title": "CandidateScore",
+      "type": "object"
+    },
+    "CreateInvestigation": {
+      "additionalProperties": false,
+      "properties": {
+        "pack_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "participants": {
+          "items": {
+            "$ref": "#/$defs/ParticipantSpec"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Participants",
+          "type": "array"
+        },
+        "report": {
+          "$ref": "#/$defs/Report"
+        },
+        "scenario": {
+          "$ref": "#/$defs/ScenarioRequest"
+        }
+      },
+      "required": [
+        "pack_id",
+        "participants",
+        "report",
+        "scenario"
+      ],
+      "title": "CreateInvestigation",
+      "type": "object"
+    },
+    "DecisionBelief": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Probability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "probability"
+      ],
+      "title": "DecisionBelief",
+      "type": "object"
+    },
+    "Directness": {
+      "enum": [
+        "direct",
+        "hearsay",
+        "assumption"
+      ],
+      "title": "Directness",
+      "type": "string"
+    },
+    "EventEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "investigation_id": {
+          "title": "Investigation Id",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "seq": {
+          "title": "Seq",
+          "type": "integer"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "investigation_id",
+        "type",
+        "payload",
+        "ts"
+      ],
+      "title": "EventEnvelope",
+      "type": "object"
+    },
+    "Extraction": {
+      "additionalProperties": false,
+      "description": "Structured meaning of one participant answer. Never contains decisions.",
+      "properties": {
+        "directness": {
+          "$ref": "#/$defs/Directness"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "hedge": {
+          "$ref": "#/$defs/Hedge"
+        },
+        "injection_suspected": {
+          "default": false,
+          "title": "Injection Suspected",
+          "type": "boolean"
+        },
+        "method": {
+          "enum": [
+            "rules",
+            "llm",
+            "structured"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "outcome": {
+          "title": "Outcome",
+          "type": "string"
+        },
+        "wants_to_stop": {
+          "default": false,
+          "title": "Wants To Stop",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "outcome",
+        "hedge",
+        "directness",
+        "method"
+      ],
+      "title": "Extraction",
+      "type": "object"
+    },
+    "Fault": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Component Id",
+          "type": "string"
+        },
+        "mode": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "component_id",
+        "mode"
+      ],
+      "title": "Fault",
+      "type": "object"
+    },
+    "FaultSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "faults": {
+          "items": {
+            "$ref": "#/$defs/Fault"
+          },
+          "maxItems": 3,
+          "title": "Faults",
+          "type": "array"
+        }
+      },
+      "required": [
+        "faults"
+      ],
+      "title": "FaultSpec",
+      "type": "object"
+    },
+    "GroundTruthComparison": {
+      "additionalProperties": false,
+      "properties": {
+        "abstained": {
+          "title": "Abstained",
+          "type": "boolean"
+        },
+        "concluded_decision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Concluded Decision"
+        },
+        "correct": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Correct"
+        },
+        "reveal": {
+          "$ref": "#/$defs/RevealResult"
+        },
+        "true_decision_classes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "True Decision Classes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "reveal",
+        "true_decision_classes",
+        "concluded_decision",
+        "abstained",
+        "correct"
+      ],
+      "title": "GroundTruthComparison",
+      "type": "object"
+    },
+    "Hedge": {
+      "enum": [
+        "certain",
+        "probable",
+        "unsure"
+      ],
+      "title": "Hedge",
+      "type": "string"
+    },
+    "HypothesisBelief": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_class": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decision Class"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Probability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "probability",
+        "decision_class"
+      ],
+      "title": "HypothesisBelief",
+      "type": "object"
+    },
+    "InfeasibleAction": {
+      "additionalProperties": false,
+      "properties": {
+        "location_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "probe_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Probe Id",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "participant_id",
+        "probe_id",
+        "location_id",
+        "reasons"
+      ],
+      "title": "InfeasibleAction",
+      "type": "object"
+    },
+    "InvestigationState": {
+      "additionalProperties": false,
+      "properties": {
+        "belief": {
+          "$ref": "#/$defs/BeliefSnapshot"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "ground_truth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GroundTruthComparison"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/Observation"
+          },
+          "title": "Observations",
+          "type": "array"
+        },
+        "pack_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "participants": {
+          "items": {
+            "$ref": "#/$defs/ParticipantSpec"
+          },
+          "title": "Participants",
+          "type": "array"
+        },
+        "pending_question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Question"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan": {
+          "$ref": "#/$defs/PlanDecision"
+        },
+        "questions_asked": {
+          "title": "Questions Asked",
+          "type": "integer"
+        },
+        "report": {
+          "$ref": "#/$defs/Report"
+        },
+        "sealed_commitment": {
+          "title": "Sealed Commitment",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/InvestigationStatus"
+        }
+      },
+      "required": [
+        "id",
+        "pack_id",
+        "status",
+        "created_at",
+        "report",
+        "participants",
+        "sealed_commitment",
+        "belief",
+        "plan",
+        "pending_question",
+        "observations",
+        "questions_asked"
+      ],
+      "title": "InvestigationState",
+      "type": "object"
+    },
+    "InvestigationStatus": {
+      "enum": [
+        "investigating",
+        "decided",
+        "abstained",
+        "closed"
+      ],
+      "title": "InvestigationStatus",
+      "type": "string"
+    },
+    "LanguageProfile": {
+      "additionalProperties": false,
+      "description": "How we speak to and listen to one participant.\n\n``stt_candidates`` maps to the Prisma v3.0 ``language_code`` list (1-4 codes); one code\nforces the language, several act as a hint (docs.gnani.ai/api/STT/models/prisma-v3).",
+      "properties": {
+        "codemix": {
+          "default": false,
+          "title": "Codemix",
+          "type": "boolean"
+        },
+        "stt_candidates": {
+          "items": {
+            "enum": [
+              "en-IN",
+              "hi-IN",
+              "mr-IN",
+              "bn-IN",
+              "gu-IN",
+              "kn-IN",
+              "ml-IN",
+              "pa-IN",
+              "ta-IN",
+              "te-IN"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Stt Candidates",
+          "type": "array"
+        },
+        "template_language": {
+          "default": "en",
+          "enum": [
+            "en",
+            "hi",
+            "mr",
+            "hi-en"
+          ],
+          "title": "Template Language",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stt_candidates"
+      ],
+      "title": "LanguageProfile",
+      "type": "object"
+    },
+    "MediaClientMessage": {
+      "additionalProperties": false,
+      "description": "JSON control frames from the browser on ``/v1/voice/stream``.",
+      "properties": {
+        "codemix": {
+          "default": false,
+          "title": "Codemix",
+          "type": "boolean"
+        },
+        "keyterms": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Keyterms"
+        },
+        "language_code": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "en-IN",
+                  "hi-IN",
+                  "mr-IN",
+                  "bn-IN",
+                  "gu-IN",
+                  "kn-IN",
+                  "ml-IN",
+                  "pa-IN",
+                  "ta-IN",
+                  "te-IN"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language Code"
+        },
+        "type": {
+          "enum": [
+            "start",
+            "stop",
+            "commit"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "MediaClientMessage",
+      "type": "object"
+    },
+    "MediaServerMessage": {
+      "additionalProperties": false,
+      "description": "JSON frames sent to the browser on ``/v1/voice/stream``.",
+      "properties": {
+        "detected_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detected Language"
+        },
+        "end_of_speech_to_transcript_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Of Speech To Transcript Ms"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "model_confirmed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Confirmed"
+        },
+        "provider_latency_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Latency Ms"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "type": {
+          "enum": [
+            "ready",
+            "speech_start",
+            "processing",
+            "transcript",
+            "error",
+            "closed"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "MediaServerMessage",
+      "type": "object"
+    },
+    "Modality": {
+      "enum": [
+        "text",
+        "voice",
+        "tap",
+        "simulated"
+      ],
+      "title": "Modality",
+      "type": "string"
+    },
+    "Observation": {
+      "additionalProperties": false,
+      "properties": {
+        "committed_at": {
+          "format": "date-time",
+          "title": "Committed At",
+          "type": "string"
+        },
+        "directness": {
+          "$ref": "#/$defs/Directness"
+        },
+        "extraction_method": {
+          "enum": [
+            "rules",
+            "llm",
+            "structured"
+          ],
+          "title": "Extraction Method",
+          "type": "string"
+        },
+        "hedge": {
+          "$ref": "#/$defs/Hedge"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "injection_suspected": {
+          "default": false,
+          "title": "Injection Suspected",
+          "type": "boolean"
+        },
+        "location_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "modality": {
+          "$ref": "#/$defs/Modality"
+        },
+        "outcome": {
+          "title": "Outcome",
+          "type": "string"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "probe_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Probe Id",
+          "type": "string"
+        },
+        "question_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Question Id"
+        },
+        "state": {
+          "$ref": "#/$defs/ObservationState"
+        },
+        "transcript": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transcript"
+        }
+      },
+      "required": [
+        "id",
+        "question_id",
+        "participant_id",
+        "probe_id",
+        "location_id",
+        "outcome",
+        "hedge",
+        "directness",
+        "modality",
+        "extraction_method",
+        "state",
+        "committed_at"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "ObservationState": {
+      "enum": [
+        "committed",
+        "superseded",
+        "discarded"
+      ],
+      "title": "ObservationState",
+      "type": "string"
+    },
+    "OutcomePreview": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decision"
+        },
+        "decision_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Decision Probability",
+          "type": "number"
+        },
+        "outcome": {
+          "title": "Outcome",
+          "type": "string"
+        },
+        "probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Probability",
+          "type": "number"
+        },
+        "top_hypothesis": {
+          "title": "Top Hypothesis",
+          "type": "string"
+        },
+        "top_hypothesis_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Top Hypothesis Probability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "outcome",
+        "probability",
+        "top_hypothesis",
+        "top_hypothesis_probability",
+        "decision",
+        "decision_probability"
+      ],
+      "title": "OutcomePreview",
+      "type": "object"
+    },
+    "ParticipantSpec": {
+      "additionalProperties": false,
+      "description": "A participant registered on an investigation.\n\nDisplay names are synthetic (programme rule: synthetic data only).",
+      "properties": {
+        "available": {
+          "default": true,
+          "title": "Available",
+          "type": "boolean"
+        },
+        "display_name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "languages": {
+          "$ref": "#/$defs/LanguageProfile"
+        },
+        "location_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "question_budget": {
+          "default": 4,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Question Budget",
+          "type": "integer"
+        },
+        "roles": {
+          "items": {
+            "$ref": "#/$defs/Role"
+          },
+          "minItems": 1,
+          "title": "Roles",
+          "type": "array"
+        },
+        "skill": {
+          "$ref": "#/$defs/Skill"
+        }
+      },
+      "required": [
+        "id",
+        "display_name",
+        "roles",
+        "skill",
+        "location_id",
+        "languages"
+      ],
+      "title": "ParticipantSpec",
+      "type": "object"
+    },
+    "ParticipantView": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ViewItem"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "location_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "location_label": {
+          "title": "Location Label",
+          "type": "string"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "reachable_locations": {
+          "items": {
+            "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+            "type": "string"
+          },
+          "title": "Reachable Locations",
+          "type": "array"
+        },
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scenario_id",
+        "participant_id",
+        "location_id",
+        "location_label",
+        "items",
+        "reachable_locations"
+      ],
+      "title": "ParticipantView",
+      "type": "object"
+    },
+    "PlanDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProbeAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/CandidateScore"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "decision_class": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Class"
+        },
+        "decision_probability": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Probability"
+        },
+        "infeasible": {
+          "items": {
+            "$ref": "#/$defs/InfeasibleAction"
+          },
+          "title": "Infeasible",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/PlanKind"
+        },
+        "moderate_confidence": {
+          "default": false,
+          "title": "Moderate Confidence",
+          "type": "boolean"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "rule": {
+          "enum": [
+            "confident",
+            "positive_value",
+            "no_value_confident_enough",
+            "no_value_low_confidence",
+            "open_world",
+            "no_feasible_action"
+          ],
+          "title": "Rule",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "reason",
+        "rule",
+        "candidates",
+        "infeasible"
+      ],
+      "title": "PlanDecision",
+      "type": "object"
+    },
+    "PlanKind": {
+      "enum": [
+        "ask",
+        "decide",
+        "abstain"
+      ],
+      "title": "PlanKind",
+      "type": "string"
+    },
+    "ProbeAction": {
+      "additionalProperties": false,
+      "properties": {
+        "location_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "probe_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Probe Id",
+          "type": "string"
+        },
+        "requires_move": {
+          "title": "Requires Move",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "participant_id",
+        "probe_id",
+        "location_id",
+        "requires_move"
+      ],
+      "title": "ProbeAction",
+      "type": "object"
+    },
+    "Question": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ProbeAction"
+        },
+        "asked_at": {
+          "format": "date-time",
+          "title": "Asked At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "language": {
+          "enum": [
+            "en",
+            "hi",
+            "mr",
+            "hi-en"
+          ],
+          "title": "Language",
+          "type": "string"
+        },
+        "outcomes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Outcomes",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/QuestionStatus"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "action",
+        "language",
+        "text",
+        "outcomes",
+        "status",
+        "asked_at"
+      ],
+      "title": "Question",
+      "type": "object"
+    },
+    "QuestionStatus": {
+      "enum": [
+        "pending",
+        "answered",
+        "cancelled"
+      ],
+      "title": "QuestionStatus",
+      "type": "string"
+    },
+    "Report": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_location_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Affected Location Id"
+        },
+        "reporter_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Reporter Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "reporter_id"
+      ],
+      "title": "Report",
+      "type": "object"
+    },
+    "RevealResult": {
+      "additionalProperties": false,
+      "properties": {
+        "commitment": {
+          "title": "Commitment",
+          "type": "string"
+        },
+        "commitment_verified": {
+          "title": "Commitment Verified",
+          "type": "boolean"
+        },
+        "fault_spec": {
+          "$ref": "#/$defs/FaultSpec"
+        },
+        "salt": {
+          "title": "Salt",
+          "type": "string"
+        },
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scenario_id",
+        "fault_spec",
+        "salt",
+        "commitment",
+        "commitment_verified"
+      ],
+      "title": "RevealResult",
+      "type": "object"
+    },
+    "Role": {
+      "enum": [
+        "student",
+        "guard",
+        "electrician",
+        "it_tech",
+        "housekeeping"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "ScenarioRequest": {
+      "additionalProperties": false,
+      "description": "How the simulator should choose the sealed hidden fault.",
+      "properties": {
+        "fault": {
+          "anyOf": [
+            {
+              "const": "random",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/FaultSpec"
+            }
+          ],
+          "default": "random",
+          "title": "Fault"
+        },
+        "seed": {
+          "maximum": 2147483647,
+          "minimum": 0,
+          "title": "Seed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seed"
+      ],
+      "title": "ScenarioRequest",
+      "type": "object"
+    },
+    "Skill": {
+      "enum": [
+        "lay",
+        "access",
+        "technician"
+      ],
+      "title": "Skill",
+      "type": "string"
+    },
+    "SttResult": {
+      "additionalProperties": false,
+      "properties": {
+        "audio_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Ms"
+        },
+        "detected_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Detected Language"
+        },
+        "empty": {
+          "title": "Empty",
+          "type": "boolean"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Model"
+        },
+        "provider_latency_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Provider Latency Ms"
+        },
+        "provider_request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Provider Request Id"
+        },
+        "transcript": {
+          "title": "Transcript",
+          "type": "string"
+        },
+        "wall_ms": {
+          "title": "Wall Ms",
+          "type": "number"
+        }
+      },
+      "required": [
+        "transcript",
+        "detected_language",
+        "model",
+        "provider_request_id",
+        "provider_latency_ms",
+        "wall_ms",
+        "empty"
+      ],
+      "title": "SttResult",
+      "type": "object"
+    },
+    "SubmitAnswer": {
+      "additionalProperties": false,
+      "description": "A participant's answer to the pending question.\n\nExactly one of ``text`` (free speech or typing, extracted into structured evidence) and\n``outcome`` (a structured tap answer) must be given. ``participant_id`` must match the\nparticipant the question was addressed to; it is never inferred from the text.",
+      "properties": {
+        "directness": {
+          "$ref": "#/$defs/Directness",
+          "default": "direct"
+        },
+        "hedge": {
+          "$ref": "#/$defs/Hedge",
+          "default": "certain"
+        },
+        "modality": {
+          "$ref": "#/$defs/Modality",
+          "default": "text"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "required": [
+        "question_id",
+        "participant_id"
+      ],
+      "title": "SubmitAnswer",
+      "type": "object"
+    },
+    "TtsRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "anyOf": [
+            {
+              "enum": [
+                "en-IN",
+                "hi-IN",
+                "mr-IN",
+                "bn-IN",
+                "gu-IN",
+                "kn-IN",
+                "ml-IN",
+                "pa-IN",
+                "ta-IN",
+                "te-IN"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "hi-en",
+              "type": "string"
+            }
+          ],
+          "default": "en-IN",
+          "title": "Language"
+        },
+        "model": {
+          "default": "timbre-v3.0",
+          "enum": [
+            "timbre-v3.0",
+            "timbre-v2.5"
+          ],
+          "title": "Model",
+          "type": "string"
+        },
+        "speed": {
+          "default": 1.0,
+          "maximum": 1.15,
+          "minimum": 0.85,
+          "title": "Speed",
+          "type": "number"
+        },
+        "text": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "voice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Voice"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "TtsRequest",
+      "type": "object"
+    },
+    "ViewItem": {
+      "additionalProperties": false,
+      "description": "One thing a participant can perceive at their current location.",
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "probe_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Probe Id",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "probe_id",
+        "label",
+        "value"
+      ],
+      "title": "ViewItem",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Pramana contracts v1.0.0. Generated; do not edit.",
+  "properties": {
+    "AnswerResult": {
+      "$ref": "#/$defs/AnswerResult"
+    },
+    "CreateInvestigation": {
+      "$ref": "#/$defs/CreateInvestigation"
+    },
+    "EventEnvelope": {
+      "$ref": "#/$defs/EventEnvelope"
+    },
+    "InvestigationState": {
+      "$ref": "#/$defs/InvestigationState"
+    },
+    "MediaClientMessage": {
+      "$ref": "#/$defs/MediaClientMessage"
+    },
+    "MediaServerMessage": {
+      "$ref": "#/$defs/MediaServerMessage"
+    },
+    "ParticipantView": {
+      "$ref": "#/$defs/ParticipantView"
+    },
+    "RevealResult": {
+      "$ref": "#/$defs/RevealResult"
+    },
+    "SttResult": {
+      "$ref": "#/$defs/SttResult"
+    },
+    "SubmitAnswer": {
+      "$ref": "#/$defs/SubmitAnswer"
+    },
+    "TtsRequest": {
+      "$ref": "#/$defs/TtsRequest"
+    }
+  },
+  "title": "PramanaContracts",
+  "type": "object"
+}
