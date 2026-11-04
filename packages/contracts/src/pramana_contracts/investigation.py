@@ -19,13 +19,81 @@ class InvestigationStatus(StrEnum):
     INVESTIGATING = "investigating"
     DECIDED = "decided"
     ABSTAINED = "abstained"
+    AWAITING_APPROVAL = "awaiting_approval"
+    ACTING = "acting"
+    """Approved; the authorised person is carrying out the action."""
+    VERIFYING = "verifying"
+    VERIFIED = "verified"
+    NOT_VERIFIED = "not_verified"
     CLOSED = "closed"
     """Ground truth has been revealed; no further observations are accepted."""
 
 
 TERMINAL_STATUSES = frozenset(
-    {InvestigationStatus.DECIDED, InvestigationStatus.ABSTAINED, InvestigationStatus.CLOSED}
+    {
+        InvestigationStatus.DECIDED,
+        InvestigationStatus.ABSTAINED,
+        InvestigationStatus.VERIFIED,
+        InvestigationStatus.NOT_VERIFIED,
+        InvestigationStatus.CLOSED,
+    }
 )
+"""States in which the hidden truth may be revealed. A decided investigation can still
+continue into approval and verification instead."""
+ANSWERABLE_STATUSES = frozenset({InvestigationStatus.INVESTIGATING, InvestigationStatus.VERIFYING})
+
+
+class ApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+    EXECUTED = "executed"
+
+
+class RequestApproval(StrictModel):
+    action: Identifier
+    target: Identifier
+    participant_id: Identifier
+    """Who will carry it out. Must hold one of the action's roles."""
+
+
+class ApprovalDecision(StrictModel):
+    decision: Literal["approve", "deny"]
+    approver_id: Identifier
+    note: str | None = Field(default=None, max_length=500)
+
+
+class Approval(StrictModel):
+    id: str
+    action: Identifier
+    action_label: str
+    target: Identifier
+    participant_id: Identifier
+    status: ApprovalStatus
+    risk: Literal["low", "medium", "high"]
+    reversible: bool
+    rationale: str
+    """The decision and its probability at the time of the request."""
+    requested_at: datetime
+    approver_id: str | None = None
+    decided_at: datetime | None = None
+
+
+class CapabilityGrant(StrictModel):
+    """Handed to the authorised participant only: present it to the simulator to act."""
+
+    capability: str
+    expires_at: datetime
+    action: Identifier
+    target: Identifier
+    scenario_id: str
+    sim_url: str
+    instructions: str
+
+
+class ReportIntervention(StrictModel):
+    approval_id: str
+    participant_id: Identifier
 
 
 class Report(StrictModel):
@@ -135,6 +203,7 @@ class InvestigationState(StrictModel):
     observations: list[Observation]
     questions_asked: int
     ground_truth: GroundTruthComparison | None = None
+    approvals: list[Approval] = Field(default_factory=list)
 
 
 class EventEnvelope(StrictModel):

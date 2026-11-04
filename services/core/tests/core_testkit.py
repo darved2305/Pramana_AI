@@ -33,7 +33,7 @@ async def truncate_all(db_url: str) -> None:
     engine = create_async_engine(db_url)
     async with engine.begin() as conn:
         await conn.exec_driver_sql(
-            "truncate events, observations, questions, investigations, voice_usage "
+            "truncate events, observations, questions, approvals, investigations, voice_usage "
             "restart identity cascade"
         )
     await engine.dispose()

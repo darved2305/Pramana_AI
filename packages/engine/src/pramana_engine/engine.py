@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+import numpy.typing as npt
 
 from pramana_contracts import (
     UNKNOWN_OUTCOME,
@@ -26,9 +27,10 @@ from pramana_contracts import (
     PlanKind,
     PlanRule,
     ProbeAction,
+    RepairState,
     Skill,
 )
-from pramana_domain import ANY_ROLE, OPEN_WORLD
+from pramana_domain import ANY_ROLE, OPEN_WORLD, predict
 from pramana_domain.pack import DEVICE_KINDS
 
 from .belief import (
@@ -111,6 +113,7 @@ class Engine:
             )
         self._evidence: dict[SiteKey, Evidence] = {}
         self._log_terms = np.zeros(len(model.hypotheses), dtype=np.float64)
+        self._repair: _Repair | None = None
 
     # -- evidence ----------------------------------------------------------------------------
 
@@ -138,10 +141,16 @@ class Engine:
             raise EvidenceError(f"outcome {ev.outcome!r} not in {list(allowed)}")
         return site
 
-    def _site_log_lik(self, ev: Evidence, site: int) -> FloatArray:
+    def _site_log_lik(
+        self, ev: Evidence, site: int, predictions: npt.NDArray[np.int64] | None = None
+    ) -> FloatArray:
         ps = self.participants[ev.participant_id]
         lik = likelihood_matrix(
-            self.model, site, self.reliability(ps.spec.skill, ev.probe_id), self._weight(ev)
+            self.model,
+            site,
+            self.reliability(ps.spec.skill, ev.probe_id),
+            self._weight(ev),
+            predictions,
         )
         row = self.model.outcomes[ev.probe_id].index(ev.outcome)
         out: FloatArray = np.log(lik[row])
@@ -161,6 +170,8 @@ class Engine:
                 False, "participant conclusion, not an observation", False, [], None
             )
 
+        if self._repair is not None:
+            return self._observe_after_repair(ev, site)
         p_before = self.posterior()
         key: SiteKey = (ev.participant_id, ev.probe_id, ev.location_id)
         previous = self._evidence.get(key)
@@ -189,8 +200,84 @@ class Engine:
                 clashes.append(f"{pid}:{probe_id}@{loc}={old.outcome}")
         return clashes
 
+    def _observe_after_repair(self, ev: Evidence, site: int) -> ObserveResult:
+        rep = self._repair
+        assert rep is not None
+        key: SiteKey = (ev.participant_id, ev.probe_id, ev.location_id)
+        previous = rep.evidence.get(key)
+        if previous is not None:
+            rep.lt_fixed -= self._site_log_lik(previous, site, rep.fixed_predictions)
+            rep.lt_not_fixed -= self._site_log_lik(previous, site)
+        before = self.p_fixed()
+        rep.lt_fixed += self._site_log_lik(ev, site, rep.fixed_predictions)
+        rep.lt_not_fixed += self._site_log_lik(ev, site)
+        rep.evidence[key] = ev
+        reason = f"after repair: P(fixed) {before:.3f} -> {self.p_fixed():.3f}"
+        return ObserveResult(True, reason, previous is not None, [], None)
+
     def evidence(self) -> list[Evidence]:
-        return list(self._evidence.values())
+        after = list(self._repair.evidence.values()) if self._repair else []
+        return [*self._evidence.values(), *after]
+
+    # -- repairs -------------------------------------------------------------------------------
+
+    def apply_intervention(
+        self, action_id: str, target: str, participant_id: str | None = None
+    ) -> None:
+        """A repair was carried out. Split each hypothesis it could fix into fixed / not fixed.
+
+        A repair can fail (the breaker trips again, the reset did not hold), so for every
+        hypothesis whose fault the action clears, mass ``1 - p`` goes to "fixed" (later answers
+        are interpreted in the repaired world) and ``p`` to "not fixed". Other hypotheses are
+        unaffected. Evidence from before the repair counts the same in both branches.
+        """
+        if self._repair is not None:
+            raise EvidenceError("only one repair per investigation is modelled")
+        pack = self.model.pack
+        action = next((a for a in pack.actions if a.id == action_id), None)
+        comp = pack.component_by_id.get(target)
+        if action is None or comp is None or comp.kind != action.target_kind:
+            raise EvidenceError(f"{action_id} cannot target {target}")
+        repaired = (target, action.fixes)
+        if participant_id is not None and comp.location is not None:
+            self.participants[participant_id].location_id = comp.location  # they were there
+        fixed_pred = self.model.predictions.copy()
+        could_fix = np.zeros(len(self.model.hypotheses), dtype=bool)
+        for i, hyp in enumerate(self.model.hypotheses):
+            if hyp.faults is None or repaired not in hyp.faults:
+                continue
+            could_fix[i] = True
+            table = predict(pack, [f for f in hyp.faults if f != repaired])
+            fixed_pred[i] = [
+                self.model.outcomes[pid].index(table[(pid, loc)]) for pid, loc in self.model.sites
+            ]
+        p_fail = self.cfg.repair_failure_prior
+        neg_inf = np.full_like(self._log_terms, -np.inf)
+        self._repair = _Repair(
+            action=action_id,
+            target=target,
+            fixed_predictions=fixed_pred,
+            lt_fixed=np.where(could_fix, self._log_terms + np.log(1 - p_fail), neg_inf),
+            lt_not_fixed=self._log_terms + np.where(could_fix, np.log(p_fail), 0.0),
+            diagnosis_sites={(probe, loc) for _, probe, loc in self._evidence},
+        )
+
+    def p_fixed(self) -> float:
+        """P(symptoms resolved): the repaired component was the cause and the repair held."""
+        if self._repair is None:
+            return 0.0
+        fixed, _ = self._branch_weights()
+        return float(fixed.sum())
+
+    def _branch_weights(self) -> tuple[FloatArray, FloatArray]:
+        rep = self._repair
+        assert rep is not None
+        lp = np.log(self.model.prior)
+        a, b = lp + rep.lt_fixed, lp + rep.lt_not_fixed
+        m = max(float(np.max(a)), float(np.max(b)))
+        wf, wn = np.exp(a - m), np.exp(b - m)
+        z = float(wf.sum() + wn.sum())
+        return wf / z, wn / z
 
     # -- participant state -------------------------------------------------------------------
 
@@ -203,6 +290,9 @@ class Engine:
     # -- belief ------------------------------------------------------------------------------
 
     def posterior(self) -> FloatArray:
+        if self._repair is not None:
+            both = np.logaddexp(self._repair.lt_fixed, self._repair.lt_not_fixed)
+            return log_posterior(self.model, both)
         return log_posterior(self.model, self._log_terms)
 
     def snapshot(self) -> BeliefSnapshot:
@@ -240,6 +330,14 @@ class Engine:
             map_decision_probability=_prob(dm[best_d]),
             expected_loss_now_min=max(0.0, loss_now),
             observations_used=len(self._evidence),
+            repair=None
+            if self._repair is None
+            else RepairState(
+                action=self._repair.action,
+                target=self._repair.target,
+                fixed_probability=_prob(self.p_fixed()),
+                post_repair_observations=len(self._repair.evidence),
+            ),
         )
 
     # -- planning ----------------------------------------------------------------------------
@@ -257,7 +355,8 @@ class Engine:
                 reasons: list[str] = []
                 if not ps.available:
                     reasons.append("participant unavailable")
-                if ps.questions_asked >= ps.spec.question_budget:
+                extra = self.cfg.verification_extra_questions if self._repair else 0
+                if ps.questions_asked >= ps.spec.question_budget + extra:
                     reasons.append("question budget used")
                 if not probe.allows(ps.roles):
                     reasons.append(
@@ -277,7 +376,8 @@ class Engine:
                             walk = w
                 if loc.restricted and not set(ps.roles) & {r.value for r in loc.access_roles}:
                     reasons.append(f"no access to {loc_id}")
-                if (pid, probe_id, loc_id) in self._evidence:
+                answered = self._repair.evidence if self._repair else self._evidence
+                if (pid, probe_id, loc_id) in answered:
                     reasons.append("already answered")
                 if reasons:
                     if "already answered" not in reasons:
@@ -329,6 +429,122 @@ class Engine:
         ]
 
     def plan(self) -> PlanDecision:
+        if self._repair is not None:
+            return self._verification_plan()
+        return self._diagnosis_plan()
+
+    def _verification_plan(self) -> PlanDecision:
+        """Choose the observation that best separates "fixed" from "not fixed" per second.
+
+        Observations not used during diagnosis get a bonus: a consequence the diagnosis did not
+        rely on is a stronger ("risky") test of the repair.
+        """
+        rep = self._repair
+        assert rep is not None
+        cfg, model = self.cfg, self.model
+        pf = self.p_fixed()
+        wf, wn = self._branch_weights()
+        h0 = _h2(pf)
+        actions, blocked = self._enumerate()
+        scored: list[CandidateScore] = []
+        for a in actions:
+            r = self.reliability(a.participant.spec.skill, a.probe_id)
+            jf = likelihood_matrix(model, a.site, r, 1.0, rep.fixed_predictions) @ wf
+            jn = likelihood_matrix(model, a.site, r, 1.0) @ wn
+            po = jf + jn
+            cond = sum(
+                float(p) * _h2(float(f) / float(p)) for f, p in zip(jf, po, strict=True) if p > 0
+            )
+            mi = max(0.0, h0 - cond)
+            unused = (a.probe_id, a.location_id) not in rep.diagnosis_sites
+            previews = [
+                OutcomePreview(
+                    outcome=model.outcomes[a.probe_id][o],
+                    probability=_prob(float(po[o])),
+                    top_hypothesis="fixed" if jf[o] >= jn[o] else "not_fixed",
+                    top_hypothesis_probability=_prob(float(max(jf[o], jn[o]) / po[o])),
+                    decision=None,
+                    decision_probability=_prob(float(jf[o] / po[o])),
+                )
+                for o in range(len(po))
+                if po[o] > 0
+            ]
+            scored.append(
+                CandidateScore(
+                    action=ProbeAction(
+                        participant_id=a.participant.spec.id,
+                        probe_id=a.probe_id,
+                        location_id=a.location_id,
+                        requires_move=a.requires_move,
+                    ),
+                    eig_decision_bits=mi,
+                    eig_hypothesis_bits=mi,
+                    cost_s=a.cost_s,
+                    score=mi / a.cost_s * (cfg.verification_unused_bonus if unused else 1.0),
+                    net_value_min=0.0,
+                    outcomes=previews,
+                )
+            )
+        scored.sort(key=lambda c: -c.score)
+        infeasible = self._rank_blocked(blocked, self.posterior())
+
+        def end(kind: PlanKind, rule: PlanRule, reason: str) -> PlanDecision:
+            return PlanDecision(
+                kind=kind,
+                action=None,
+                decision_class=None,
+                decision_probability=_prob(pf),
+                reason=reason,
+                rule=rule,
+                candidates=scored[: cfg.top_candidates],
+                infeasible=infeasible,
+            )
+
+        what = f"{rep.action} on {rep.target}"
+        if rep.evidence and pf >= cfg.verified_threshold:
+            return end(
+                PlanKind.VERIFIED,
+                "verification_confirmed",
+                f"Verified: after {what}, P(fixed) = {pf:.3f} >= {cfg.verified_threshold:.2f} "
+                f"from {len(rep.evidence)} new observation(s).",
+            )
+        if pf <= cfg.not_fixed_threshold:
+            return end(
+                PlanKind.NOT_VERIFIED,
+                "verification_failed",
+                f"Not fixed: after {what}, P(fixed) = {pf:.3f}. Reopen the investigation.",
+            )
+        useful = [c for c in scored if c.eig_decision_bits >= cfg.verification_min_bits]
+        if not useful:
+            return end(
+                PlanKind.NOT_VERIFIED,
+                "verification_inconclusive",
+                f"Cannot confirm {what}: P(fixed) = {pf:.3f} and no available observation "
+                "would tell fixed from not fixed." + _needs(infeasible),
+            )
+        best = useful[0]
+        act = best.action
+        fresh = (act.probe_id, act.location_id) not in rep.diagnosis_sites
+        name = self.participants[act.participant_id].spec.display_name
+        reason = (
+            f"Verify {what}: ask {name} about {act.probe_id} at {act.location_id}: "
+            f"{best.eig_decision_bits:.2f} bits about fixed vs not fixed (P(fixed) now {pf:.2f})"
+            f"{'; a consequence not used in the diagnosis' if fresh else ''}."
+        )
+        if best not in scored[: cfg.top_candidates]:
+            scored.insert(0, best)
+        return PlanDecision(
+            kind=PlanKind.ASK,
+            action=act,
+            decision_class=None,
+            decision_probability=_prob(pf),
+            reason=reason,
+            rule="positive_value",
+            candidates=scored[: cfg.top_candidates],
+            infeasible=infeasible,
+        )
+
+    def _diagnosis_plan(self) -> PlanDecision:
         model, cfg = self.model, self.cfg
         p = self.posterior()
         dm = decision_marginal(model, p)
@@ -545,6 +761,24 @@ class Engine:
             InfeasibleAction(participant_id="anyone", probe_id=pr, location_id=loc, reasons=rs)
             for _, pr, loc, rs in ranked[: self.cfg.top_infeasible]
         ]
+
+
+@dataclass
+class _Repair:
+    action: str
+    target: str
+    fixed_predictions: npt.NDArray[np.int64]
+    lt_fixed: FloatArray
+    lt_not_fixed: FloatArray
+    diagnosis_sites: set[tuple[str, str]]
+    evidence: dict[SiteKey, Evidence] = field(default_factory=dict)
+
+
+def _h2(p: float) -> float:
+    """Binary entropy in bits."""
+    if p <= 0.0 or p >= 1.0:
+        return 0.0
+    return float(-(p * np.log2(p) + (1 - p) * np.log2(1 - p)))
 
 
 def _needs(infeasible: list[InfeasibleAction]) -> str:

@@ -23,9 +23,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pramana_contracts import (
+    ANSWERABLE_STATUSES,
     TERMINAL_STATUSES,
     UNKNOWN_OUTCOME,
     AnswerResult,
+    Approval,
+    ApprovalDecision,
+    ApprovalStatus,
+    CapabilityGrant,
     CreateInvestigation,
     CreateScenario,
     Directness,
@@ -44,11 +49,13 @@ from pramana_contracts import (
     Question,
     QuestionStatus,
     Report,
+    ReportIntervention,
+    RequestApproval,
     SimParticipant,
     SubmitAnswer,
     TemplateLanguage,
 )
-from pramana_contracts.tokens import mint, private_key_from_b64
+from pramana_contracts.tokens import mint, mint_capability, private_key_from_b64
 from pramana_domain import NO_FAULT, DomainPack, load_pack
 from pramana_engine import (
     CompiledModel,
@@ -59,7 +66,14 @@ from pramana_engine import (
     compile_pack,
 )
 
-from .db import Database, EventRow, InvestigationRow, ObservationRow, QuestionRow
+from .db import (
+    ApprovalRow,
+    Database,
+    EventRow,
+    InvestigationRow,
+    ObservationRow,
+    QuestionRow,
+)
 from .errors import ApiError, not_found
 from .language.extraction import Extractor
 from .language.realize import realize
@@ -188,6 +202,10 @@ class InvestigationService:
                 )
             elif type_ == "ParticipantUnavailable":
                 engine.set_available(payload["participant_id"], False)
+            elif type_ == "InterventionReported":
+                engine.apply_intervention(
+                    payload["action"], payload["target"], payload["participant_id"]
+                )
         self._cache[row.id] = (row.version, engine)
         return engine
 
@@ -305,7 +323,25 @@ class InvestigationService:
                     "text": text,
                 },
             )
-            row.status = InvestigationStatus.INVESTIGATING.value
+            row.status = (
+                InvestigationStatus.VERIFYING
+                if engine.snapshot().repair is not None
+                else InvestigationStatus.INVESTIGATING
+            ).value
+            return
+        if plan.kind in (PlanKind.VERIFIED, PlanKind.NOT_VERIFIED):
+            verified = plan.kind == PlanKind.VERIFIED
+            row.status = (
+                InvestigationStatus.VERIFIED if verified else InvestigationStatus.NOT_VERIFIED
+            ).value
+            verdict = {
+                "kind": plan.kind.value,
+                "rule": plan.rule,
+                "fixed_probability": plan.decision_probability,
+                "reason": plan.reason,
+            }
+            row.outcome = {**(row.outcome or {}), "verification": verdict}
+            self._event(session, row.id, "VerificationResult", verdict)
             return
         decided = plan.kind == PlanKind.DECIDE
         row.status = (
@@ -415,7 +451,7 @@ class InvestigationService:
             try:
                 async with self.db.transaction() as session:
                     row = await self._load_row(session, inv_id, lock=True)
-                    if row.status != InvestigationStatus.INVESTIGATING.value:
+                    if row.status not in {st.value for st in ANSWERABLE_STATUSES}:
                         raise ApiError(
                             409, "INVESTIGATION_NOT_ACTIVE", f"investigation is {row.status}"
                         )
@@ -551,6 +587,17 @@ class InvestigationService:
                 .scalars()
                 .all()
             )
+            approvals = (
+                (
+                    await session.execute(
+                        select(ApprovalRow)
+                        .where(ApprovalRow.investigation_id == inv_id)
+                        .order_by(ApprovalRow.requested_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             observations = (
                 (
                     await session.execute(
@@ -595,6 +642,7 @@ class InvestigationService:
                 for o in observations
             ],
             questions_asked=len(questions),
+            approvals=[self._approval_view(row.pack_id, a) for a in approvals],
             ground_truth=None
             if row.ground_truth is None
             else GroundTruthComparison.model_validate(row.ground_truth),
@@ -626,6 +674,204 @@ class InvestigationService:
             for r in rows
         ]
 
+    # -- approvals, capabilities and repairs ------------------------------------------------------
+
+    def _approval_view(self, pack_id: str, a: ApprovalRow) -> Approval:
+        action = next(x for x in self.pack(pack_id).actions if x.id == a.action)
+        return Approval(
+            id=a.id,
+            action=a.action,
+            action_label=action.label,
+            target=a.target,
+            participant_id=a.participant_id,
+            status=ApprovalStatus(a.status),
+            risk=action.risk,
+            reversible=action.reversible,
+            rationale=a.rationale,
+            requested_at=a.requested_at,
+            approver_id=a.approver_id,
+            decided_at=a.decided_at,
+        )
+
+    async def request_approval(self, inv_id: str, req: RequestApproval) -> InvestigationState:
+        """Ask a human to approve a consequential action that the decision calls for."""
+        async with self._lock(inv_id), self.db.transaction() as session:
+            row = await self._load_row(session, inv_id, lock=True)
+            if row.status != InvestigationStatus.DECIDED.value:
+                raise ApiError(409, "NOT_DECIDED", "approval follows a decision")
+            pack = self.pack(row.pack_id)
+            decision = (row.outcome or {}).get("decision_class")
+            action = next((a for a in pack.actions if a.id == req.action), None)
+            target = pack.component_by_id.get(req.target)
+            if action is None or target is None or target.kind != action.target_kind:
+                raise ApiError(422, "INVALID_ACTION", f"{req.action} cannot target {req.target}")
+            if decision not in action.decision_classes:
+                raise ApiError(
+                    409, "ACTION_NOT_INDICATED", f"{req.action} does not follow from {decision}"
+                )
+            person = next(
+                (p for p in self._request(row).participants if p.id == req.participant_id), None
+            )
+            if person is None:
+                raise not_found("participant")
+            if not {r.value for r in person.roles} & {r.value for r in action.roles}:
+                raise ApiError(403, "ROLE_NOT_PERMITTED", f"{action.id} needs another role")
+            probability = (row.outcome or {}).get("decision_probability") or 0.0
+            why = (row.outcome or {}).get("reason")
+            approval = ApprovalRow(
+                id=_id("apr"),
+                investigation_id=inv_id,
+                action=action.id,
+                target=req.target,
+                participant_id=person.id,
+                status=ApprovalStatus.PENDING.value,
+                rationale=f"{decision} at P = {probability:.3f}: {why}",
+                requested_at=_now(),
+            )
+            session.add(approval)
+            row.status = InvestigationStatus.AWAITING_APPROVAL.value
+            row.version += 1
+            self._event(
+                session,
+                inv_id,
+                "ApprovalRequested",
+                {
+                    "approval_id": approval.id,
+                    "action": action.id,
+                    "target": req.target,
+                    "participant_id": person.id,
+                    "risk": action.risk,
+                    "reversible": action.reversible,
+                },
+            )
+        return await self.get(inv_id)
+
+    async def decide_approval(
+        self, inv_id: str, approval_id: str, decision: ApprovalDecision
+    ) -> InvestigationState:
+        async with self._lock(inv_id), self.db.transaction() as session:
+            row = await self._load_row(session, inv_id, lock=True)
+            approval = await session.get(ApprovalRow, approval_id, with_for_update=True)
+            if approval is None or approval.investigation_id != inv_id:
+                raise not_found("approval")
+            if approval.status != ApprovalStatus.PENDING.value:
+                raise ApiError(409, "APPROVAL_DECIDED", f"approval is {approval.status}")
+            approve = decision.decision == "approve"
+            approval.status = (ApprovalStatus.APPROVED if approve else ApprovalStatus.DENIED).value
+            approval.approver_id, approval.decided_at = decision.approver_id, _now()
+            row.status = (
+                InvestigationStatus.ACTING if approve else InvestigationStatus.DECIDED
+            ).value
+            row.version += 1
+            self._event(
+                session,
+                inv_id,
+                "ApprovalDecided",
+                {
+                    "approval_id": approval_id,
+                    "decision": decision.decision,
+                    "approver_id": decision.approver_id,
+                    "note": decision.note,
+                },
+            )
+        return await self.get(inv_id)
+
+    async def capability_for(
+        self, inv_id: str, approval_id: str, participant_id: str
+    ) -> CapabilityGrant:
+        """Mint the single capability for an approved action, for its named executor only."""
+        async with self._lock(inv_id), self.db.transaction() as session:
+            row = await self._load_row(session, inv_id, lock=True)
+            approval = await session.get(ApprovalRow, approval_id, with_for_update=True)
+            if approval is None or approval.investigation_id != inv_id:
+                raise not_found("approval")
+            if approval.status != ApprovalStatus.APPROVED.value:
+                raise ApiError(409, "NOT_APPROVED", f"approval is {approval.status}")
+            if approval.participant_id != participant_id:
+                raise ApiError(403, "WRONG_PARTICIPANT", "approved for someone else")
+            if approval.capability_jti is not None:
+                raise ApiError(409, "CAPABILITY_ISSUED", "the capability was already issued")
+            token, claims = mint_capability(
+                self._signing_key,
+                scenario_id=row.scenario_id,
+                investigation_id=inv_id,
+                participant_id=participant_id,
+                action=approval.action,
+                target=approval.target,
+            )
+            approval.capability_jti = claims.jti
+            self._event(
+                session,
+                inv_id,
+                "CapabilityIssued",
+                {
+                    "approval_id": approval_id,
+                    "jti": claims.jti,
+                    "expires": claims.exp,
+                },
+            )
+            pack = self.pack(row.pack_id)
+            action = next(a for a in pack.actions if a.id == approval.action)
+            person = next(p for p in self._request(row).participants if p.id == participant_id)
+            lang = person.languages.template_language
+            comp = pack.component_by_id[approval.target]
+            place = pack.location_by_id[comp.location].label.get(lang) if comp.location else ""
+        return CapabilityGrant(
+            capability=token,
+            expires_at=datetime.fromtimestamp(claims.exp, UTC),
+            action=approval.action,
+            target=approval.target,
+            scenario_id=row.scenario_id,
+            sim_url=self.browser_sim_url,
+            instructions=action.instructions[lang]
+            .replace("{target}", approval.target)
+            .replace("{place}", place),
+        )
+
+    async def report_intervention(
+        self, inv_id: str, report: ReportIntervention
+    ) -> InvestigationState:
+        """The executor says the action is done: model the repair and plan its verification."""
+        async with self._lock(inv_id):
+            try:
+                async with self.db.transaction() as session:
+                    row = await self._load_row(session, inv_id, lock=True)
+                    if row.status != InvestigationStatus.ACTING.value:
+                        raise ApiError(409, "NOT_ACTING", f"investigation is {row.status}")
+                    approval = await session.get(
+                        ApprovalRow, report.approval_id, with_for_update=True
+                    )
+                    if approval is None or approval.investigation_id != inv_id:
+                        raise not_found("approval")
+                    if approval.participant_id != report.participant_id:
+                        raise ApiError(403, "WRONG_PARTICIPANT", "approved for someone else")
+                    if approval.capability_jti is None:
+                        raise ApiError(409, "NO_CAPABILITY", "no capability was issued")
+                    engine = await self._engine(session, row)
+                    engine.apply_intervention(
+                        approval.action, approval.target, report.participant_id
+                    )
+                    approval.status = ApprovalStatus.EXECUTED.value
+                    self._event(
+                        session,
+                        inv_id,
+                        "InterventionReported",
+                        {
+                            "approval_id": approval.id,
+                            "action": approval.action,
+                            "target": approval.target,
+                            "participant_id": report.participant_id,
+                        },
+                    )
+                    self._apply_plan(session, row, engine, engine.plan())
+                    row.version += 1
+                    version = row.version
+            except BaseException:
+                self._cache.pop(inv_id, None)
+                raise
+            self._cache[inv_id] = (version, engine)
+        return await self.get(inv_id)
+
     async def participant_token(self, inv_id: str, participant_id: str) -> dict[str, str]:
         async with self.db.read() as session:
             row = await self._load_row(session, inv_id, lock=False)
@@ -648,7 +894,7 @@ class InvestigationService:
             q = await session.get(QuestionRow, question_id)
         if q is None or q.investigation_id != inv_id:
             raise not_found("question")
-        if row.status != InvestigationStatus.INVESTIGATING.value:
+        if row.status not in {st.value for st in ANSWERABLE_STATUSES}:
             raise ApiError(409, "INVESTIGATION_NOT_ACTIVE", f"investigation is {row.status}")
         if q.status != QuestionStatus.PENDING.value:
             raise ApiError(409, "QUESTION_NOT_PENDING", "question already answered")

@@ -7,9 +7,13 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from pramana_contracts import (
     AnswerResult,
+    ApprovalDecision,
+    CapabilityGrant,
     CreateInvestigation,
     EventEnvelope,
     InvestigationState,
+    ReportIntervention,
+    RequestApproval,
     SubmitAnswer,
 )
 
@@ -54,6 +58,35 @@ async def list_events(
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ) -> list[EventEnvelope]:
     return await svc.events(inv_id, after_seq, limit)
+
+
+@router.post("/{inv_id}/approvals", status_code=201)
+async def request_approval(inv_id: str, body: RequestApproval, svc: Svc) -> InvestigationState:
+    """Ask a human approver for a consequential action the decision calls for."""
+    return await svc.request_approval(inv_id, body)
+
+
+@router.post("/{inv_id}/approvals/{approval_id}/decision")
+async def decide_approval(
+    inv_id: str, approval_id: str, body: ApprovalDecision, svc: Svc
+) -> InvestigationState:
+    return await svc.decide_approval(inv_id, approval_id, body)
+
+
+@router.post("/{inv_id}/approvals/{approval_id}/capability")
+async def issue_capability(
+    inv_id: str, approval_id: str, participant_id: str, svc: Svc
+) -> CapabilityGrant:
+    """The approved executor collects the single-use capability (expires in 5 minutes)."""
+    return await svc.capability_for(inv_id, approval_id, participant_id)
+
+
+@router.post("/{inv_id}/interventions")
+async def report_intervention(
+    inv_id: str, body: ReportIntervention, svc: Svc
+) -> InvestigationState:
+    """The executor reports the action as done; verification questions follow."""
+    return await svc.report_intervention(inv_id, body)
 
 
 @router.post("/{inv_id}/participants/{participant_id}/token")

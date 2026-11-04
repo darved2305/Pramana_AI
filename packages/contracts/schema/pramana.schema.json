@@ -21,6 +21,145 @@
       "title": "AnswerResult",
       "type": "object"
     },
+    "Approval": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Action",
+          "type": "string"
+        },
+        "action_label": {
+          "title": "Action Label",
+          "type": "string"
+        },
+        "approver_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approver Id"
+        },
+        "decided_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decided At"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        },
+        "requested_at": {
+          "format": "date-time",
+          "title": "Requested At",
+          "type": "string"
+        },
+        "reversible": {
+          "title": "Reversible",
+          "type": "boolean"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Risk",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ApprovalStatus"
+        },
+        "target": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "action",
+        "action_label",
+        "target",
+        "participant_id",
+        "status",
+        "risk",
+        "reversible",
+        "rationale",
+        "requested_at"
+      ],
+      "title": "Approval",
+      "type": "object"
+    },
+    "ApprovalDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "approver_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Approver Id",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "approve",
+            "deny"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "decision",
+        "approver_id"
+      ],
+      "title": "ApprovalDecision",
+      "type": "object"
+    },
+    "ApprovalStatus": {
+      "enum": [
+        "pending",
+        "approved",
+        "denied",
+        "executed"
+      ],
+      "title": "ApprovalStatus",
+      "type": "string"
+    },
     "BeliefSnapshot": {
       "additionalProperties": false,
       "properties": {
@@ -80,6 +219,17 @@
           "minimum": 0.0,
           "title": "Open World Probability",
           "type": "number"
+        },
+        "repair": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RepairState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -144,6 +294,54 @@
         "outcomes"
       ],
       "title": "CandidateScore",
+      "type": "object"
+    },
+    "CapabilityGrant": {
+      "additionalProperties": false,
+      "description": "Handed to the authorised participant only: present it to the simulator to act.",
+      "properties": {
+        "action": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Action",
+          "type": "string"
+        },
+        "capability": {
+          "title": "Capability",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "instructions": {
+          "title": "Instructions",
+          "type": "string"
+        },
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "sim_url": {
+          "title": "Sim Url",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability",
+        "expires_at",
+        "action",
+        "target",
+        "scenario_id",
+        "sim_url",
+        "instructions"
+      ],
+      "title": "CapabilityGrant",
       "type": "object"
     },
     "CreateInvestigation": {
@@ -474,6 +672,13 @@
     "InvestigationState": {
       "additionalProperties": false,
       "properties": {
+        "approvals": {
+          "items": {
+            "$ref": "#/$defs/Approval"
+          },
+          "title": "Approvals",
+          "type": "array"
+        },
         "belief": {
           "$ref": "#/$defs/BeliefSnapshot"
         },
@@ -566,6 +771,11 @@
         "investigating",
         "decided",
         "abstained",
+        "awaiting_approval",
+        "acting",
+        "verifying",
+        "verified",
+        "not_verified",
         "closed"
       ],
       "title": "InvestigationStatus",
@@ -1129,7 +1339,10 @@
             "no_value_confident_enough",
             "no_value_low_confidence",
             "open_world",
-            "no_feasible_action"
+            "no_feasible_action",
+            "verification_confirmed",
+            "verification_failed",
+            "verification_inconclusive"
           ],
           "title": "Rule",
           "type": "string"
@@ -1149,7 +1362,9 @@
       "enum": [
         "ask",
         "decide",
-        "abstain"
+        "abstain",
+        "verified",
+        "not_verified"
       ],
       "title": "PlanKind",
       "type": "string"
@@ -1247,6 +1462,39 @@
       "title": "QuestionStatus",
       "type": "string"
     },
+    "RepairState": {
+      "additionalProperties": false,
+      "description": "Belief about a repair that has been carried out.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "fixed_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Fixed Probability",
+          "type": "number"
+        },
+        "post_repair_observations": {
+          "minimum": 0,
+          "title": "Post Repair Observations",
+          "type": "integer"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "target",
+        "fixed_probability",
+        "post_repair_observations"
+      ],
+      "title": "RepairState",
+      "type": "object"
+    },
     "Report": {
       "additionalProperties": false,
       "properties": {
@@ -1280,6 +1528,53 @@
         "reporter_id"
       ],
       "title": "Report",
+      "type": "object"
+    },
+    "ReportIntervention": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "title": "Approval Id",
+          "type": "string"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approval_id",
+        "participant_id"
+      ],
+      "title": "ReportIntervention",
+      "type": "object"
+    },
+    "RequestApproval": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Action",
+          "type": "string"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "target",
+        "participant_id"
+      ],
+      "title": "RequestApproval",
       "type": "object"
     },
     "RevealResult": {
@@ -1629,6 +1924,12 @@
     "AnswerResult": {
       "$ref": "#/$defs/AnswerResult"
     },
+    "ApprovalDecision": {
+      "$ref": "#/$defs/ApprovalDecision"
+    },
+    "CapabilityGrant": {
+      "$ref": "#/$defs/CapabilityGrant"
+    },
     "CreateInvestigation": {
       "$ref": "#/$defs/CreateInvestigation"
     },
@@ -1646,6 +1947,12 @@
     },
     "ParticipantView": {
       "$ref": "#/$defs/ParticipantView"
+    },
+    "ReportIntervention": {
+      "$ref": "#/$defs/ReportIntervention"
+    },
+    "RequestApproval": {
+      "$ref": "#/$defs/RequestApproval"
     },
     "RevealResult": {
       "$ref": "#/$defs/RevealResult"

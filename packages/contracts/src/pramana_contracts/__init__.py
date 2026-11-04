@@ -16,8 +16,13 @@ from .common import (
     TemplateLanguage,
 )
 from .investigation import (
+    ANSWERABLE_STATUSES,
     TERMINAL_STATUSES,
     AnswerResult,
+    Approval,
+    ApprovalDecision,
+    ApprovalStatus,
+    CapabilityGrant,
     CreateInvestigation,
     EventEnvelope,
     GroundTruthComparison,
@@ -26,6 +31,8 @@ from .investigation import (
     Question,
     QuestionStatus,
     Report,
+    ReportIntervention,
+    RequestApproval,
     ScenarioRequest,
     SubmitAnswer,
     VoiceAnswerResult,
@@ -45,6 +52,7 @@ from .reasoning import (
     PlanKind,
     PlanRule,
     ProbeAction,
+    RepairState,
 )
 from .sim import (
     ActRequest,
@@ -65,15 +73,20 @@ from .sim import (
 from .voice import CallState, MediaClientMessage, MediaServerMessage, SttResult, TtsRequest
 
 __all__ = [
+    "ANSWERABLE_STATUSES",
     "CONTRACTS_VERSION",
     "TERMINAL_STATUSES",
     "UNKNOWN_OUTCOME",
     "ActRequest",
     "ActResult",
     "AnswerResult",
+    "Approval",
+    "ApprovalDecision",
+    "ApprovalStatus",
     "BeliefSnapshot",
     "CallState",
     "CandidateScore",
+    "CapabilityGrant",
     "CreateInvestigation",
     "CreateScenario",
     "DecisionBelief",
@@ -108,7 +121,10 @@ __all__ = [
     "ProbeAction",
     "Question",
     "QuestionStatus",
+    "RepairState",
     "Report",
+    "ReportIntervention",
+    "RequestApproval",
     "RevealResult",
     "Role",
     "ScenarioCreated",

@@ -27,15 +27,22 @@ FloatArray = npt.NDArray[np.float64]
 
 
 def likelihood_matrix(
-    model: CompiledModel, site: int, reliability: float, weight: float
+    model: CompiledModel,
+    site: int,
+    reliability: float,
+    weight: float,
+    predictions: npt.NDArray[np.int64] | None = None,
 ) -> FloatArray:
-    """``L[o, h] = P(answer o | h)`` for one site. Columns sum to one."""
+    """``L[o, h] = P(answer o | h)`` for one site. Columns sum to one.
+
+    ``predictions`` overrides the compiled table (e.g. the world after a repair).
+    """
     pid = model.sites[site][0]
     m = len(model.outcomes[pid])
     if not 0.0 <= weight <= 1.0:
         raise ValueError("weight must be in [0, 1]")
     off = (1.0 - reliability) / (m - 1)
-    pred = model.predictions[:, site]
+    pred = (model.predictions if predictions is None else predictions)[:, site]
     lik = np.full((m, len(pred)), off, dtype=np.float64)
     known = pred != OPEN_WORLD_PREDICTION
     lik[pred[known], np.nonzero(known)[0]] = reliability

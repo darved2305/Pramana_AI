@@ -47,7 +47,7 @@ class InvestigationRow(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     pack_id: Mapped[str] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(16), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
     scenario_id: Mapped[str] = mapped_column(String(64))
     commitment: Mapped[str] = mapped_column(String(64))
     request: Mapped[dict[str, Any]] = mapped_column(JSONB)
@@ -115,6 +115,25 @@ class ObservationRow(Base):
     injection_suspected: Mapped[bool] = mapped_column(Boolean, default=False)
     state: Mapped[str] = mapped_column(String(16))
     committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ApprovalRow(Base):
+    __tablename__ = "approvals"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    investigation_id: Mapped[str] = mapped_column(
+        ForeignKey("investigations.id", ondelete="CASCADE"), index=True
+    )
+    action: Mapped[str] = mapped_column(String(64))
+    target: Mapped[str] = mapped_column(String(64))
+    participant_id: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))
+    rationale: Mapped[str] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    approver_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    capability_jti: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    """Only one capability is ever minted per approval."""
 
 
 class VoiceUsageRow(Base):

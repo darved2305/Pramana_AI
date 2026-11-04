@@ -56,6 +56,15 @@ class EngineConfig:
     top_infeasible: int = 5
     planning_reliability: float = 0.95
     """Reliability assumed when valuing actions nobody present can perform (abstention report)."""
+    repair_failure_prior: float = 0.1
+    """P(a repair did not take effect even though its target was the cause)."""
+    verified_threshold: float = 0.97
+    not_fixed_threshold: float = 0.10
+    verification_min_bits: float = 0.01
+    verification_unused_bonus: float = 1.25
+    """Score multiplier for observations not used during diagnosis ("risky" predictions)."""
+    verification_extra_questions: int = 2
+    """Extra questions each person may be asked after a repair, beyond their budget."""
     decision_focus: bool = True
     """Rank by information about the *decision* (EIG_D). Off: information about the cause only
     (the "greedy entropy" baseline and the decision-focus ablation)."""

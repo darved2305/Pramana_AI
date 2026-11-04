@@ -48,6 +48,17 @@ class BeliefSnapshot(StrictModel):
     expected_loss_now_min: float = Field(ge=0)
     """Expected loss (minutes-equivalent) of acting on the best decision right now."""
     observations_used: int = Field(ge=0)
+    repair: RepairState | None = None
+
+
+class RepairState(StrictModel):
+    """Belief about a repair that has been carried out."""
+
+    action: str
+    target: str
+    fixed_probability: Probability
+    """P(the symptoms are now resolved): the cause was this target AND the repair worked."""
+    post_repair_observations: int = Field(ge=0)
 
 
 class ProbeAction(StrictModel):
@@ -90,6 +101,10 @@ class PlanKind(StrEnum):
     ASK = "ask"
     DECIDE = "decide"
     ABSTAIN = "abstain"
+    VERIFIED = "verified"
+    """After a repair: the symptoms are resolved with high probability."""
+    NOT_VERIFIED = "not_verified"
+    """After a repair: the evidence says it did not fix the problem, or cannot tell."""
 
 
 PlanRule = Literal[
@@ -99,6 +114,9 @@ PlanRule = Literal[
     "no_value_low_confidence",
     "open_world",
     "no_feasible_action",
+    "verification_confirmed",
+    "verification_failed",
+    "verification_inconclusive",
 ]
 """Which branch of the stopping rule produced a plan."""
 
@@ -154,3 +172,6 @@ class Observation(StrictModel):
     injection_suspected: bool = False
     state: ObservationState
     committed_at: datetime
+
+
+BeliefSnapshot.model_rebuild()
