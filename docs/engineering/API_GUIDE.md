@@ -24,6 +24,31 @@ core for everything else. The Gnani key never reaches the browser.
 
 Every response carries `X-Request-ID`. Send your own to correlate logs.
 
+## 0. Sign-in and roles (docs/adr/0010-authentication.md)
+
+Sign-in is enforced unless `PRAMANA_MODE=test`. Three kinds of caller:
+
+| Caller | How | May |
+|---|---|---|
+| Operator (staff) | session cookie | create investigations, manage the directory, request approvals, mint join links, reveal |
+| Approver (staff) | session cookie | approve or deny; the approval records **their** id (any `approver_id` in the body is ignored) |
+| Participant | `Authorization: Bearer <join token>` | read their investigation; answer, hear and act on **their own** questions and approvals |
+| Script or bot | `X-Automation-Key: <CORE_AUTOMATION_KEY>` | operator and approver |
+
+```http
+POST /v1/auth/login   {"email", "password"}   (header X-Pramana-CSRF: 1)
+-> 200 AuthSession, Set-Cookie: pramana_session=...; HttpOnly; SameSite=Lax
+GET  /v1/auth/session -> AuthSession, or 401 AUTH_REQUIRED
+POST /v1/auth/logout  -> 204 (deletes the session server-side)
+```
+
+Every `POST`, `PATCH` and `DELETE` sent with the cookie must include `X-Pramana-CSRF: 1`
+(`403 CSRF_HEADER_MISSING` otherwise). Error codes: `401 AUTH_REQUIRED`,
+`401 AUTH_INVALID_CREDENTIALS`, `401 AUTH_INVALID_TOKEN`, `401 AUTH_INVALID_KEY`,
+`403 ROLE_FORBIDDEN`, `403 PARTICIPANT_FORBIDDEN`, `429 AUTH_RATE_LIMITED`.
+Create users with `uv run python -m pramana_core.auth.bootstrap --email ... --name ...
+--roles operator,approver` (password from `PRAMANA_NEW_USER_PASSWORD` or a prompt).
+
 ## 1. Console: create and watch an investigation
 
 ```http
@@ -50,6 +75,14 @@ POST /v1/investigations
 
 `fault` is `"random"` (sealed) or `{"faults": [{"component_id": "CB_C2_7", "mode": "tripped"}]}`.
 The core never stores the fault; only the simulator does.
+
+### Listing investigations
+
+`GET /v1/investigations?status=decided&status=verified&q=wifi&limit=25&offset=0` returns
+`InvestigationPage {items, total, limit, offset}`, newest first. `status` may repeat; `q` matches
+the report text or the id (case-insensitive; `%` and `_` are literal). Each item has `status`,
+`report_text`, `reporter_id`, `participant_count` and, once concluded, `decision_class` and
+`decision_probability`.
 
 ### `InvestigationState`: what to render
 
@@ -99,6 +132,8 @@ after a decision, an abstention or a verification result, and it closes the scen
    reachable_locations}`. Show a "SIMULATION" label.
 3. When `pending_question.action.participant_id == pid`, show `pending_question.text`. If
    `requires_move` is true, first `POST {sim_url}/sim/v1/scenarios/{sid}/move {"to": location_id}`.
+Send the same token as `Authorization: Bearer {token}` on the core calls below.
+
 4. Answer by **text**: `POST /v1/investigations/{id}/answers {question_id, participant_id, text}`.
    Or by **tap**: send `outcome` (one of `pending_question.outcomes`) instead of `text`.
 5. Answer by **voice**: `GET /v1/investigations/{id}/questions/{qid}/audio` plays the question
@@ -141,5 +176,29 @@ Limits that can surface as errors:
 
 ## 5. Site layout for drawing the building
 
+`GET /v1/packs` lists every pack (`id`, `version`, `title`, `locations`, `probes`); it is public.
+
 `GET /v1/packs/campus_block_c` returns the locations (floor, kind, label, restricted), probes and
 decision classes. It contains no simulator state.
+
+## 6. Participant directory
+
+People a site can call on, stored per pack. Operators edit it; any staff member can read it.
+An investigation copies the participants it needs, so editing the directory never changes a
+past investigation.
+
+| Call | Result |
+|---|---|
+| `GET /v1/participants?pack_id=` | `DirectoryParticipant[]` (`pack_id`, `participant`, `created_at`, `updated_at`) |
+| `POST /v1/participants?pack_id=campus_block_c` with a `ParticipantSpec` | `201`; `409 PARTICIPANT_EXISTS`; `422 UNKNOWN_LOCATION` / `UNKNOWN_PACK` |
+| `GET /v1/participants/{pid}?pack_id=` | one entry, or `404` |
+| `PATCH /v1/participants/{pid}?pack_id=` with any `ParticipantPatch` fields | the merged entry, re-validated as a whole |
+| `DELETE /v1/participants/{pid}?pack_id=` | `204` |
+
+## 7. Evaluation reports
+
+`GET /v1/evaluation/reports` lists the runs under `eval/reports/*/summary.json`
+(`EVAL_REPORTS_DIR`), newest first: `run_id`, `git_sha`, `seeds`, `policies`. `GET
+/v1/evaluation/reports/{run_id}` returns `{run_id, modified_at, summary}` with the harness's
+file as written, except that `NaN` and infinities become `null` so the response is valid JSON.
+Nothing is computed by the core.
