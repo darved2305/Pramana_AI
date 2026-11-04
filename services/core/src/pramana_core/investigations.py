@@ -58,6 +58,7 @@ from pramana_contracts import (
 from pramana_contracts.tokens import mint, mint_capability, private_key_from_b64
 from pramana_domain import NO_FAULT, DomainPack, load_pack
 from pramana_engine import (
+    MULTIPLE_FAULTS,
     CompiledModel,
     Engine,
     EngineConfig,
@@ -276,8 +277,23 @@ class InvestigationService:
                 "surprise_bits": result.surprise_bits,
                 "extraction": extraction.model_dump(mode="json"),
                 "decision_critical": result.decision_critical,
+                "multiple_faults_suspected": result.multiple_faults_suspected,
             },
         )
+        if result.contradiction:
+            self._event(
+                session,
+                inv_id,
+                "ContradictionDetected",
+                {
+                    "observation_id": obs.id,
+                    "participant_id": ev.participant_id,
+                    "probe_id": ev.probe_id,
+                    "location_id": ev.location_id,
+                    "outcome": ev.outcome,
+                    "conflicts_with": result.contradiction,
+                },
+            )
         return obs, result
 
     async def _supersede(self, session: AsyncSession, inv_id: str, obs: Observation) -> None:
@@ -665,9 +681,10 @@ class InvestigationService:
                 reveal = await self.sim.reveal(row.scenario_id)
                 pack = self.pack(row.pack_id)
                 true_hyps = [f"{f.component_id}.{f.mode}" for f in reveal.fault_spec.faults]
-                true_decisions = sorted(
-                    {pack.decision_of.get(h, "UNMODELLED") for h in true_hyps or [NO_FAULT]}
-                )
+                true_set = {pack.decision_of.get(h, "UNMODELLED") for h in true_hyps or [NO_FAULT]}
+                if len(true_set) > 1:
+                    true_set.add(MULTIPLE_FAULTS)  # the engine's name for "several teams"
+                true_decisions = sorted(true_set)
                 outcome = row.outcome or {}
                 concluded = outcome.get("decision_class")
                 abstained = outcome.get("kind") == PlanKind.ABSTAIN.value
