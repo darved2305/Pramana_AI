@@ -8,9 +8,9 @@ from typing import Literal
 from pramana_contracts import Hedge, Skill
 
 DEFAULT_RELIABILITY: dict[tuple[Skill, str], float] = {
-    # P(answer equals the true observable) for a direct, certain answer, by skill and probe class.
-    # Fixed per participant type: a single incident does not contain enough data to identify an
-    # individual's reliability, so it is not learned online (see docs/adr/0004).
+    # Mean P(answer equals the true observable) for a direct, certain answer, by skill and probe
+    # class. Each person's actual reliability per probe class is unknown and integrated out
+    # (``reliability_model = "beta"``, docs/adr/0008); these are the prior means.
     (Skill.LAY, "device"): 0.92,
     (Skill.LAY, "visual"): 0.85,
     (Skill.LAY, "panel"): 0.60,
@@ -52,6 +52,14 @@ class EngineConfig:
         default_factory=lambda: dict(DEFAULT_RELIABILITY)
     )
     hedge_weight: dict[Hedge, float] = field(default_factory=lambda: dict(DEFAULT_HEDGE_WEIGHT))
+    reliability_model: Literal["beta", "fixed"] = "beta"
+    """``beta``: each person's reliability per probe class is unknown, with a Beta prior around
+    the mean above, integrated out by Gauss-Jacobi quadrature, so one person's answers share it
+    (docs/adr/0008). ``fixed``: the reliability is exactly the mean (the earlier model)."""
+    reliability_concentration: float = 20.0
+    """``a + b`` of the Beta prior on ``(r - 0.5) / 0.5``. Larger means more certain."""
+    quadrature_nodes: int = 8
+    """Exact for up to ``2 * nodes - 1`` answers by one person in one probe class."""
     top_candidates: int = 8
     top_infeasible: int = 5
     planning_reliability: float = 0.95
@@ -83,3 +91,5 @@ class EngineConfig:
         for key, r in self.reliability.items():
             if not 0.5 < r < 1:
                 raise ValueError(f"reliability {key} must be in (0.5, 1)")
+        if self.reliability_concentration <= 0 or self.quadrature_nodes < 1:
+            raise ValueError("require reliability_concentration > 0 and quadrature_nodes >= 1")

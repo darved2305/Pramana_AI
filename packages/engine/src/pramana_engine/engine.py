@@ -2,6 +2,18 @@
 
 Pure and deterministic: no I/O, no clock, no randomness. The same participants and the same
 sequence of evidence always produce the same plan trace, which makes event replay exact.
+
+Belief representation (docs/adr/0008):
+
+* **Paths.** A repair can change the world, so the state is a mixture of *paths*: a path is a
+  sequence of hypothesis indices, one per *era* (era 0 is before any repair; each repair opens
+  a new era). Before any repair there is one path per hypothesis. A repair of a fault ``f``
+  splits every path whose current world contains ``f`` into "not fixed" (same world, weight
+  ``p_fail``) and "fixed" (the world without ``f``, weight ``1 - p_fail``).
+* **Evidence** is stored with its era, and is read against each path's world in that era.
+* **Reliability** is unknown per person and probe class. Each group's answers share it; the
+  group's likelihood is integrated by Gauss-Jacobi quadrature over a Beta prior. The belief is
+  recomputed from the stored evidence, so superseding, confirming and repairs stay exact.
 """
 
 from __future__ import annotations
@@ -30,7 +42,7 @@ from pramana_contracts import (
     RepairState,
     Skill,
 )
-from pramana_domain import ANY_ROLE, OPEN_WORLD, predict
+from pramana_domain import ANY_ROLE, OPEN_WORLD
 from pramana_domain.pack import DEVICE_KINDS
 
 from .belief import (
@@ -39,12 +51,13 @@ from .belief import (
     entropy_bits,
     expected_loss,
     likelihood_matrix,
-    log_posterior,
 )
 from .config import EngineConfig
-from .model import CompiledModel
+from .model import OPEN_WORLD_PREDICTION, CompiledModel
+from .quadrature import beta_reliability_rule
 
 SiteKey = tuple[str, str, str]  # (participant_id, probe_id, location_id)
+Group = tuple[str, str]  # (participant_id, probe class): one shared unknown reliability
 
 
 class EvidenceError(ValueError):
@@ -80,11 +93,23 @@ class ObserveResult:
     reason: str
     superseded: bool
     contradiction: list[str]
-    """Ids of earlier evidence sites that no single modelled cause can reconcile with this one."""
+    """Ids of earlier evidence sites that no modelled cause (single or pair) can reconcile with
+    this one, noise-free."""
     surprise_bits: float | None
     decision_critical: bool = False
     """This answer on its own changed the leading decision, or moved its probability by more
     than ``confirm_delta``. A spoken answer like that is worth confirming before relying on it."""
+    multiple_faults_suspected: bool = False
+    """Taken at face value, the answers so far fit no single fault but do fit a pair."""
+
+
+@dataclass(frozen=True)
+class _Entry:
+    era: int
+    key: SiteKey
+    ev: Evidence
+    site: int
+    group: Group
 
 
 @dataclass
@@ -96,6 +121,22 @@ class _Action:
     requires_move: bool
     cost_s: float
     lik: FloatArray = field(repr=False)
+
+
+@dataclass(frozen=True)
+class _Belief:
+    weights: FloatArray
+    """[P] normalised posterior weight of each path."""
+    mean_reliability: dict[Group, FloatArray]
+    """Per group with evidence: [P] posterior mean reliability under each path."""
+
+
+@dataclass
+class _Repair:
+    action: str
+    target: str
+    era: int
+    diagnosis_sites: set[tuple[str, str]]
 
 
 class Engine:
@@ -114,16 +155,61 @@ class Engine:
             self.participants[spec.id] = ParticipantState(
                 spec, spec.location_id, available=spec.available
             )
-        self._evidence: dict[SiteKey, Evidence] = {}
-        self._log_terms = np.zeros(len(model.hypotheses), dtype=np.float64)
+        n = len(model.hypotheses)
+        self._entries: list[_Entry] = []
+        self._rows: npt.NDArray[np.int64] = np.arange(n, dtype=np.int64)[:, None]
+        self._logw: FloatArray = np.log(model.prior)
+        self._fixed = np.zeros(n, dtype=bool)
         self._repair: _Repair | None = None
-        self._past_repair_evidence: dict[SiteKey, Evidence] = {}
+        self._belief_cache: _Belief | None = None
 
-    # -- evidence ----------------------------------------------------------------------------
+    # -- reliability -------------------------------------------------------------------------
 
     def reliability(self, skill: Skill, probe_id: str) -> float:
+        """Prior mean reliability for a skill and the probe's class."""
         pclass = self.model.pack.probe_by_id[probe_id].probe_class
         return self.cfg.reliability[(skill, pclass)]
+
+    def _group(self, participant_id: str, probe_id: str) -> Group:
+        return (participant_id, self.model.pack.probe_by_id[probe_id].probe_class)
+
+    def _rule(self, group: Group) -> tuple[FloatArray, FloatArray]:
+        """(reliability nodes, log weights) of the group's prior."""
+        pid, pclass = group
+        mean = self.cfg.reliability[(self.participants[pid].spec.skill, pclass)]
+        if self.cfg.reliability_model == "fixed":
+            return np.asarray([mean]), np.zeros(1)
+        nodes, weights = beta_reliability_rule(
+            mean, self.cfg.reliability_concentration, self.cfg.quadrature_nodes
+        )
+        return np.asarray(nodes), np.log(np.asarray(weights))
+
+    def effective_reliability(
+        self, participant_id: str, probe_id: str, mask: npt.NDArray[np.bool_] | None = None
+    ) -> FloatArray:
+        """[H] E[reliability | current hypothesis, answers so far] for this person and probe.
+
+        The answer model is linear in the reliability, so the predictive distribution of their
+        next answer is exactly the likelihood evaluated at this mean.
+        """
+        group = self._group(participant_id, probe_id)
+        nodes, logw = self._rule(group)
+        prior_mean = float(np.exp(logw) @ nodes)
+        n = len(self.model.hypotheses)
+        belief = self._belief()
+        rbar = belief.mean_reliability.get(group)
+        if rbar is None:
+            return np.full(n, prior_mean)
+        w = belief.weights if mask is None else np.where(mask, belief.weights, 0.0)
+        cur = self._rows[:, -1]
+        ph = np.bincount(cur, weights=w, minlength=n)
+        num = np.bincount(cur, weights=w * rbar, minlength=n)
+        out = np.full(n, prior_mean)
+        nz = ph > 0
+        out[nz] = num[nz] / ph[nz]
+        return out
+
+    # -- evidence ----------------------------------------------------------------------------
 
     def _weight(self, ev: Evidence) -> float:
         w = self.cfg.hedge_weight[ev.hedge]
@@ -145,20 +231,63 @@ class Engine:
             raise EvidenceError(f"outcome {ev.outcome!r} not in {list(allowed)}")
         return site
 
-    def _site_log_lik(
-        self, ev: Evidence, site: int, predictions: npt.NDArray[np.int64] | None = None
-    ) -> FloatArray:
-        ps = self.participants[ev.participant_id]
-        lik = likelihood_matrix(
-            self.model,
-            site,
-            self.reliability(ps.spec.skill, ev.probe_id),
-            self._weight(ev),
-            predictions,
-        )
-        row = self.model.outcomes[ev.probe_id].index(ev.outcome)
-        out: FloatArray = np.log(lik[row])
+    @property
+    def _era(self) -> int:
+        return int(self._rows.shape[1]) - 1
+
+    def _entry_log_lik(self, e: _Entry, nodes: FloatArray) -> FloatArray:
+        """[K, P] log P(answer | path's world in the entry's era, reliability node)."""
+        model = self.model
+        pred = model.predictions[self._rows[:, e.era], e.site]
+        m = len(model.outcomes[e.ev.probe_id])
+        o = model.outcomes[e.ev.probe_id].index(e.ev.outcome)
+        w = self._weight(e.ev)
+        hit = (pred == o)[None, :]
+        base = np.where(hit, nodes[:, None], ((1.0 - nodes) / (m - 1))[:, None])
+        lik = w * base + (1.0 - w) / m
+        lik[:, pred == OPEN_WORLD_PREDICTION] = 1.0 / m
+        out: FloatArray = np.log(lik)
         return out
+
+    def _belief(self) -> _Belief:
+        if self._belief_cache is not None:
+            return self._belief_cache
+        total = self._logw.copy()
+        groups: dict[Group, list[_Entry]] = {}
+        for e in self._entries:
+            groups.setdefault(e.group, []).append(e)
+        rbar: dict[Group, FloatArray] = {}
+        for g in sorted(groups):
+            nodes, logq = self._rule(g)
+            s = np.zeros((len(nodes), len(total)))
+            for e in groups[g]:
+                s += self._entry_log_lik(e, nodes)
+            a = logq[:, None] + s
+            mx = a.max(axis=0)
+            lse = mx + np.log(np.exp(a - mx).sum(axis=0))
+            total += lse
+            rbar[g] = nodes @ np.exp(a - lse)
+        w = np.exp(total - float(np.max(total)))
+        self._belief_cache = _Belief(w / w.sum(), rbar)
+        return self._belief_cache
+
+    def _changed(self) -> None:
+        self._belief_cache = None
+
+    def _add(self, ev: Evidence, site: int) -> None:
+        key: SiteKey = (ev.participant_id, ev.probe_id, ev.location_id)
+        group = self._group(ev.participant_id, ev.probe_id)
+        self._entries.append(_Entry(self._era, key, ev, site, group))
+        self._changed()
+
+    def _pop_current(self, key: SiteKey) -> _Entry | None:
+        """Remove and return this person's earlier answer to the same site in this era."""
+        for i, e in enumerate(self._entries):
+            if e.key == key and e.era == self._era:
+                del self._entries[i]
+                self._changed()
+                return e
+        return None
 
     def observe(self, ev: Evidence) -> ObserveResult:
         """Apply one answer. Unknown outcomes and participants' conclusions are not evidence."""
@@ -173,28 +302,40 @@ class Engine:
             return ObserveResult(
                 False, "participant conclusion, not an observation", False, [], None
             )
-
-        if self._repair is not None:
-            return self._observe_after_repair(ev, site)
-        p_before = self.posterior()
         key: SiteKey = (ev.participant_id, ev.probe_id, ev.location_id)
-        previous = self._evidence.get(key)
-        if previous is not None:
-            self._log_terms -= self._site_log_lik(previous, site)
-            p_before = self.posterior()
-        log_lik = self._site_log_lik(ev, site)
-        surprise = float(-np.log2(np.exp(log_lik) @ p_before))
+        if self._repair is not None:
+            previous = self._pop_current(key)
+            before = self.p_fixed()
+            self._add(ev, site)
+            reason = f"after repair: P(fixed) {before:.3f} -> {self.p_fixed():.3f}"
+            return ObserveResult(True, reason, previous is not None, [], None)
+
+        previous = self._pop_current(key)
+        p_before = self.posterior()
+        lik = likelihood_matrix(
+            self.model,
+            site,
+            self.effective_reliability(ev.participant_id, ev.probe_id),
+            self._weight(ev),
+        )
+        row = self.model.outcomes[ev.probe_id].index(ev.outcome)
+        surprise = float(-np.log2(lik[row] @ p_before))
         contradiction = self._contradictions(ev, site)
         dm_before = decision_marginal(self.model, p_before)[:-1]
-        self._log_terms += log_lik
-        self._evidence[key] = ev
+        self._add(ev, site)
         dm_after = decision_marginal(self.model, self.posterior())[:-1]
         d_after = int(np.argmax(dm_after))
         critical = d_after != int(np.argmax(dm_before)) or (
             abs(float(dm_after[d_after] - dm_before[d_after])) > self.cfg.confirm_delta
         )
         return ObserveResult(
-            True, "committed", previous is not None, contradiction, surprise, critical
+            True,
+            "committed",
+            previous is not None,
+            contradiction,
+            surprise,
+            critical,
+            self._only_pairs_fit(),
         )
 
     def confirm(self, participant_id: str, probe_id: str, location_id: str, agreed: bool) -> None:
@@ -205,85 +346,79 @@ class Engine:
         Disagreement means at least one was misheard: the earlier answer is discarded.
         """
         key: SiteKey = (participant_id, probe_id, location_id)
-        store = self._repair.evidence if self._repair is not None else self._evidence
-        ev = store.get(key)
-        if ev is None:
+        matches = [i for i, e in enumerate(self._entries) if e.key == key]
+        if not matches:
             raise EvidenceError("nothing to confirm for that participant, probe and place")
-        site = self.model.site_index[(probe_id, location_id)]
-        preds = self._repair.fixed_predictions if self._repair is not None else None
-        if self._repair is not None:
-            self._repair.lt_fixed -= self._site_log_lik(ev, site, preds)
-            self._repair.lt_not_fixed -= self._site_log_lik(ev, site)
+        i = max(matches, key=lambda j: (self._entries[j].era, j))
+        old = self._entries[i]
+        if agreed:
+            ev = old.ev
+            confirmed = Evidence(
+                ev.participant_id,
+                ev.probe_id,
+                ev.location_id,
+                ev.outcome,
+                ev.hedge,
+                ev.directness,
+                Modality.TEXT,
+            )
+            self._entries[i] = _Entry(old.era, old.key, confirmed, old.site, old.group)
         else:
-            self._log_terms -= self._site_log_lik(ev, site)
-        if not agreed:
-            del store[key]
-            return
-        confirmed = Evidence(
-            ev.participant_id,
-            ev.probe_id,
-            ev.location_id,
-            ev.outcome,
-            ev.hedge,
-            ev.directness,
-            Modality.TEXT,
-        )
-        store[key] = confirmed
-        if self._repair is not None:
-            self._repair.lt_fixed += self._site_log_lik(confirmed, site, preds)
-            self._repair.lt_not_fixed += self._site_log_lik(confirmed, site)
-        else:
-            self._log_terms += self._site_log_lik(confirmed, site)
+            del self._entries[i]
+        self._changed()
+
+    def _current_entries(self) -> list[_Entry]:
+        return [e for e in self._entries if e.era == self._era]
 
     def _contradictions(self, ev: Evidence, site: int) -> list[str]:
-        """Earlier evidence that no modelled single cause can explain together with ``ev``."""
+        """Earlier evidence that no modelled cause (single, pair or none) explains with ``ev``."""
         model = self.model
         row = model.outcomes[ev.probe_id].index(ev.outcome)
-        fits_new = model.predictions[:-1, site] == row
+        cur = self._rows[:, -1]
+        known = np.unique(cur[cur != model.open_world_index])
+        fits_new = model.predictions[known, site] == row
         clashes: list[str] = []
-        for (pid, probe_id, loc), old in self._evidence.items():
-            if (pid, probe_id, loc) == (ev.participant_id, ev.probe_id, ev.location_id):
+        for e in self._current_entries():
+            if e.key == (ev.participant_id, ev.probe_id, ev.location_id):
                 continue
-            s_old = model.site_index[(probe_id, loc)]
-            fits_old = model.predictions[:-1, s_old] == model.outcomes[probe_id].index(old.outcome)
+            o = model.outcomes[e.ev.probe_id].index(e.ev.outcome)
+            fits_old = model.predictions[known, e.site] == o
             if not np.any(fits_new & fits_old):
-                clashes.append(f"{pid}:{probe_id}@{loc}={old.outcome}")
+                pid, probe_id, loc = e.key
+                clashes.append(f"{pid}:{probe_id}@{loc}={e.ev.outcome}")
         return clashes
 
-    def _observe_after_repair(self, ev: Evidence, site: int) -> ObserveResult:
-        rep = self._repair
-        assert rep is not None
-        key: SiteKey = (ev.participant_id, ev.probe_id, ev.location_id)
-        previous = rep.evidence.get(key)
-        if previous is not None:
-            rep.lt_fixed -= self._site_log_lik(previous, site, rep.fixed_predictions)
-            rep.lt_not_fixed -= self._site_log_lik(previous, site)
-        before = self.p_fixed()
-        rep.lt_fixed += self._site_log_lik(ev, site, rep.fixed_predictions)
-        rep.lt_not_fixed += self._site_log_lik(ev, site)
-        rep.evidence[key] = ev
-        reason = f"after repair: P(fixed) {before:.3f} -> {self.p_fixed():.3f}"
-        return ObserveResult(True, reason, previous is not None, [], None)
+    def _only_pairs_fit(self) -> bool:
+        """Taken at face value, do the answers in this era fit a pair but no single fault?"""
+        model = self.model
+        entries = self._current_entries()
+        if not entries:
+            return False
+        ok = np.ones(len(model.hypotheses), dtype=bool)
+        for e in entries:
+            o = model.outcomes[e.ev.probe_id].index(e.ev.outcome)
+            ok &= model.predictions[:, e.site] == o
+        sizes = np.asarray([-1 if h.faults is None else len(h.faults) for h in model.hypotheses])
+        return bool(np.any(ok & (sizes == 2)) and not np.any(ok & (sizes >= 0) & (sizes <= 1)))
 
     def evidence(self) -> list[Evidence]:
-        after = list(self._repair.evidence.values()) if self._repair else []
-        return [*self._evidence.values(), *self._past_repair_evidence.values(), *after]
+        return [e.ev for e in self._entries]
 
     # -- repairs -------------------------------------------------------------------------------
 
     def apply_intervention(
         self, action_id: str, target: str, participant_id: str | None = None
     ) -> None:
-        """A repair was carried out. Split each hypothesis it could fix into fixed / not fixed.
+        """A repair was carried out. Split each world it could change into fixed / not fixed.
 
-        A repair can fail (the breaker trips again, the reset did not hold), so for every
-        hypothesis whose fault the action clears, mass ``1 - p`` goes to "fixed" (later answers
-        are interpreted in the repaired world) and ``p`` to "not fixed". Other hypotheses are
-        unaffected. Evidence from before the repair counts the same in both branches.
+        A repair can fail (the breaker trips again, the reset did not hold), so every path whose
+        current world contains the repaired fault splits into "not fixed" (weight ``p``, same
+        world) and "fixed" (weight ``1 - p``, the world without that fault; for a pair, the
+        other fault remains). Answers from earlier eras count the same in both branches.
         """
         if self._repair is not None:
-            raise EvidenceError("only one repair per investigation is modelled")
-        pack = self.model.pack
+            raise EvidenceError("only one repair per investigation is modelled at a time")
+        model, pack = self.model, self.model.pack
         action = next((a for a in pack.actions if a.id == action_id), None)
         comp = pack.component_by_id.get(target)
         if action is None or comp is None or comp.kind != action.target_kind:
@@ -291,57 +426,58 @@ class Engine:
         repaired = (target, action.fixes)
         if participant_id is not None and comp.location is not None:
             self.participants[participant_id].location_id = comp.location  # they were there
-        fixed_pred = self.model.predictions.copy()
-        could_fix = np.zeros(len(self.model.hypotheses), dtype=bool)
-        for i, hyp in enumerate(self.model.hypotheses):
-            if hyp.faults is None or repaired not in hyp.faults:
-                continue
-            could_fix[i] = True
-            table = predict(pack, [f for f in hyp.faults if f != repaired])
-            fixed_pred[i] = [
-                self.model.outcomes[pid].index(table[(pid, loc)]) for pid, loc in self.model.sites
-            ]
         p_fail = self.cfg.repair_failure_prior
-        neg_inf = np.full_like(self._log_terms, -np.inf)
+        rows: list[npt.NDArray[np.int64]] = []
+        logw: list[float] = []
+        fixed: list[bool] = []
+        for path, cur in enumerate(self._rows[:, -1]):
+            hyp = model.hypotheses[int(cur)]
+            here = self._rows[path]
+            if hyp.faults is None or repaired not in hyp.faults:
+                rows.append(np.append(here, cur))
+                logw.append(float(self._logw[path]))
+                fixed.append(False)
+                continue
+            remaining = frozenset(f for f in hyp.faults if f != repaired)
+            rows.append(np.append(here, cur))
+            logw.append(float(self._logw[path]) + float(np.log(p_fail)))
+            fixed.append(False)
+            rows.append(np.append(here, model.fault_index[remaining]))
+            logw.append(float(self._logw[path]) + float(np.log(1.0 - p_fail)))
+            fixed.append(not remaining)
         self._repair = _Repair(
             action=action_id,
             target=target,
-            fixed_predictions=fixed_pred,
-            lt_fixed=np.where(could_fix, self._log_terms + np.log(1 - p_fail), neg_inf),
-            lt_not_fixed=self._log_terms + np.where(could_fix, np.log(p_fail), 0.0),
-            diagnosis_sites={(probe, loc) for _, probe, loc in self._evidence},
+            era=self._era + 1,
+            diagnosis_sites={(e.ev.probe_id, e.ev.location_id) for e in self._entries},
         )
+        self._rows = np.asarray(rows, dtype=np.int64)
+        self._logw = np.asarray(logw)
+        self._fixed = np.asarray(fixed, dtype=bool)
+        self._changed()
 
     def reopen(self) -> None:
         """Verification showed the repair did not resolve the problem: resume diagnosis.
 
-        Conditioning on "not fixed" keeps only that branch. It already contains every answer
-        given after the repair, read against the unrepaired world, so the alternatives the
-        repair could not explain are promoted. The repair's own failure prior stays in.
+        Conditioning on "not resolved" drops the fully fixed paths and keeps the rest. Every
+        answer given after the repair is already read against each remaining world (the
+        unrepaired one, or for a pair whose one fault was cleared, the other fault alone), so
+        the alternatives the repair could not explain are promoted.
         """
-        rep = self._repair
-        if rep is None:
+        if self._repair is None:
             raise EvidenceError("there is no repair to reopen")
-        self._log_terms = rep.lt_not_fixed.copy()
-        self._past_repair_evidence.update(rep.evidence)
+        keep = ~self._fixed
+        self._rows = self._rows[keep]
+        self._logw = self._logw[keep]
+        self._fixed = np.zeros(len(self._logw), dtype=bool)
         self._repair = None
+        self._changed()
 
     def p_fixed(self) -> float:
-        """P(symptoms resolved): the repaired component was the cause and the repair held."""
+        """P(symptoms resolved): the repaired fault was the whole cause and the repair held."""
         if self._repair is None:
             return 0.0
-        fixed, _ = self._branch_weights()
-        return float(fixed.sum())
-
-    def _branch_weights(self) -> tuple[FloatArray, FloatArray]:
-        rep = self._repair
-        assert rep is not None
-        lp = np.log(self.model.prior)
-        a, b = lp + rep.lt_fixed, lp + rep.lt_not_fixed
-        m = max(float(np.max(a)), float(np.max(b)))
-        wf, wn = np.exp(a - m), np.exp(b - m)
-        z = float(wf.sum() + wn.sum())
-        return wf / z, wn / z
+        return float(self._belief().weights[self._fixed].sum())
 
     # -- participant state -------------------------------------------------------------------
 
@@ -353,11 +489,23 @@ class Engine:
 
     # -- belief ------------------------------------------------------------------------------
 
+    def _current(self, mask: npt.NDArray[np.bool_] | None = None) -> FloatArray:
+        """[H] probability of each hypothesis as the world now is."""
+        w = self._belief().weights
+        if mask is not None:
+            w = np.where(mask, w, 0.0)
+        out = np.bincount(self._rows[:, -1], weights=w, minlength=len(self.model.hypotheses))
+        return out.astype(np.float64, copy=False)
+
     def posterior(self) -> FloatArray:
-        if self._repair is not None:
-            both = np.logaddexp(self._repair.lt_fixed, self._repair.lt_not_fixed)
-            return log_posterior(self.model, both)
-        return log_posterior(self.model, self._log_terms)
+        """[H] posterior. While a repair is being verified: over the cause before the repair."""
+        if self._repair is None:
+            return self._current()
+        before = self._rows[:, self._repair.era - 1]
+        out = np.bincount(
+            before, weights=self._belief().weights, minlength=len(self.model.hypotheses)
+        )
+        return out.astype(np.float64, copy=False)
 
     def snapshot(self) -> BeliefSnapshot:
         model = self.model
@@ -384,6 +532,8 @@ class Engine:
             )
             for i in d_order
         ]
+        in_repair = self._repair is not None
+        post = len(self._current_entries()) if in_repair else 0
         return BeliefSnapshot(
             hypotheses=hyps,
             decisions=decisions,
@@ -393,14 +543,14 @@ class Engine:
             map_decision=model.decisions[best_d],
             map_decision_probability=_prob(dm[best_d]),
             expected_loss_now_min=max(0.0, loss_now),
-            observations_used=len(self._evidence),
+            observations_used=len(self._entries) - post,
             repair=None
             if self._repair is None
             else RepairState(
                 action=self._repair.action,
                 target=self._repair.target,
                 fixed_probability=_prob(self.p_fixed()),
-                post_repair_observations=len(self._repair.evidence),
+                post_repair_observations=post,
             ),
         )
 
@@ -411,6 +561,13 @@ class Engine:
         model, pack = self.model, self.model.pack
         feasible: list[_Action] = []
         blocked: dict[tuple[str, str], set[str]] = {}
+        if self._repair is not None:
+            answered_keys = {e.key for e in self._current_entries()}
+            seen = {(e.ev.probe_id, e.ev.location_id) for e in self._entries if e.era < self._era}
+        else:
+            answered_keys = {e.key for e in self._entries}
+            seen = {(e.ev.probe_id, e.ev.location_id) for e in self._entries}
+        reff: dict[tuple[str, str], FloatArray] = {}
         for pid in sorted(self.participants):
             ps = self.participants[pid]
             for site, (probe_id, loc_id) in enumerate(model.sites):
@@ -440,18 +597,15 @@ class Engine:
                             walk = w
                 if loc.restricted and not set(ps.roles) & {r.value for r in loc.access_roles}:
                     reasons.append(f"no access to {loc_id}")
-                asked = (pid, probe_id, loc_id)
-                if self._repair is not None:
-                    answered = asked in self._repair.evidence
-                else:
-                    answered = asked in self._evidence or asked in self._past_repair_evidence
-                if answered:
+                if (pid, probe_id, loc_id) in answered_keys:
                     reasons.append("already answered")
                 if reasons:
                     if "already answered" not in reasons:
                         blocked.setdefault((probe_id, loc_id), set()).update(reasons)
                     continue
-                rel = self.reliability(ps.spec.skill, probe_id)
+                group = self._group(pid, probe_id)
+                if group not in reff:
+                    reff[group] = self.effective_reliability(pid, probe_id)
                 cost = (
                     (self.cfg.setup_s if ps.questions_asked == 0 else 0.0)
                     + walk
@@ -466,14 +620,13 @@ class Engine:
                         loc_id,
                         walk > 0,
                         cost,
-                        likelihood_matrix(model, site, rel, 1.0),
+                        likelihood_matrix(model, site, reff[group], 1.0),
                     )
                 )
         observable_now = {(a.probe_id, a.location_id) for a in feasible}
-        already_seen = {(probe_id, loc) for _, probe_id, loc in self._evidence}
         for key in list(blocked):
             # "What would help" must not suggest something that was already observed.
-            if key in observable_now or key in already_seen:
+            if key in observable_now or key in seen:
                 del blocked[key]
         return feasible, blocked
 
@@ -511,14 +664,17 @@ class Engine:
         assert rep is not None
         cfg, model = self.cfg, self.model
         pf = self.p_fixed()
-        wf, wn = self._branch_weights()
+        fixed = self._fixed
+        wf, wn = self._current(fixed), self._current(~fixed)
         h0 = _h2(pf)
         actions, blocked = self._enumerate()
         scored: list[CandidateScore] = []
         for a in actions:
-            r = self.reliability(a.participant.spec.skill, a.probe_id)
-            jf = likelihood_matrix(model, a.site, r, 1.0, rep.fixed_predictions) @ wf
-            jn = likelihood_matrix(model, a.site, r, 1.0) @ wn
+            pid = a.participant.spec.id
+            rf = self.effective_reliability(pid, a.probe_id, fixed)
+            rn = self.effective_reliability(pid, a.probe_id, ~fixed)
+            jf = likelihood_matrix(model, a.site, rf, 1.0) @ wf
+            jn = likelihood_matrix(model, a.site, rn, 1.0) @ wn
             po = jf + jn
             cond = sum(
                 float(p) * _h2(float(f) / float(p)) for f, p in zip(jf, po, strict=True) if p > 0
@@ -540,7 +696,7 @@ class Engine:
             scored.append(
                 CandidateScore(
                     action=ProbeAction(
-                        participant_id=a.participant.spec.id,
+                        participant_id=pid,
                         probe_id=a.probe_id,
                         location_id=a.location_id,
                         requires_move=a.requires_move,
@@ -554,7 +710,8 @@ class Engine:
                 )
             )
         scored.sort(key=lambda c: -c.score)
-        infeasible = self._rank_blocked(blocked, self.posterior())
+        infeasible = self._rank_blocked(blocked, self._current())
+        post = len(self._current_entries())
 
         def end(kind: PlanKind, rule: PlanRule, reason: str) -> PlanDecision:
             return PlanDecision(
@@ -569,12 +726,12 @@ class Engine:
             )
 
         what = f"{rep.action} on {rep.target}"
-        if rep.evidence and pf >= cfg.verified_threshold:
+        if post and pf >= cfg.verified_threshold:
             return end(
                 PlanKind.VERIFIED,
                 "verification_confirmed",
                 f"Verified: after {what}, P(fixed) = {pf:.3f} >= {cfg.verified_threshold:.2f} "
-                f"from {len(rep.evidence)} new observation(s).",
+                f"from {post} new observation(s).",
             )
         if pf <= cfg.not_fixed_threshold:
             return end(
@@ -780,7 +937,10 @@ class Engine:
         ``NV(a) = V(p) - lam*c(a) - sum_o min(V_u(J_ao), min_{b != a} [sum_o' V_u(L_b[o'] J_ao)
         + lam*c(b)*P(o)])`` where ``V_u(u) = min_d sum_h u(h) loss(d, h)`` for an unnormalised
         belief ``u``. Looking two steps ahead avoids stopping on plateaus where no single answer
-        can flip the decision but a pair can (single-step EVOI is myopic).
+        can flip the decision but a pair can (single-step EVOI is myopic). The second step uses
+        today's effective reliabilities (it does not re-learn a person's reliability from the
+        first answer), an approximation that only matters when both answers share a person and
+        a probe class.
         """
         n = len(actions)
         if n == 0:
@@ -829,17 +989,6 @@ class Engine:
             InfeasibleAction(participant_id="anyone", probe_id=pr, location_id=loc, reasons=rs)
             for _, pr, loc, rs in ranked[: self.cfg.top_infeasible]
         ]
-
-
-@dataclass
-class _Repair:
-    action: str
-    target: str
-    fixed_predictions: npt.NDArray[np.int64]
-    lt_fixed: FloatArray
-    lt_not_fixed: FloatArray
-    diagnosis_sites: set[tuple[str, str]]
-    evidence: dict[SiteKey, Evidence] = field(default_factory=dict)
 
 
 def _h2(p: float) -> float:

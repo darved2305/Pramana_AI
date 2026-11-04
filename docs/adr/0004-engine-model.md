@@ -1,6 +1,7 @@
 # 0004 — Initial engine model: what it assumes and why
 
-**Status:** accepted for the initial engine; revisit after the benchmark.
+**Status:** accepted for the initial engine. The hypothesis space and the reliability model
+are superseded by ADR 0008 (unknown reliability integrated out; identifiable fault pairs).
 
 - **Hypotheses:** every modelled single fault, `NO_FAULT` and `OPEN_WORLD`. Pairs are not
   enumerated. A two-fault world is explained by the best single cause or by `OPEN_WORLD`, and

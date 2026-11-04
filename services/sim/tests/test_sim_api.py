@@ -309,3 +309,79 @@ def test_reset_response_does_not_reveal_whether_it_fixed_anything(client: TestCl
         )
         bodies.append(act(client, sid, "p_imran", capability(sid)).json())
     assert bodies[0] == bodies[1]
+
+
+# -- sealed commitment, new probes, and repairs in a two-fault world -------------------------
+
+
+def test_commitment_published_at_creation_is_the_one_revealed(client: TestClient) -> None:
+    r = client.post(
+        "/sim/v1/scenarios",
+        headers=OPERATOR,
+        json={"pack_id": "campus_block_c", "seed": 3, "participants": PEOPLE, "fault": CB7},
+    )
+    created = r.json()
+    assert set(created) >= {"scenario_id", "commitment"}
+    assert "salt" not in r.text
+    assert "CB_C2_7" not in r.text
+    sid = created["scenario_id"]
+    client.post(f"/sim/v1/scenarios/{sid}/close", headers=OPERATOR)
+    reveal = client.post(f"/sim/v1/scenarios/{sid}/reveal", headers=OPERATOR).json()
+    assert reveal["commitment"] == created["commitment"]
+    recomputed = commitment_for(sid, FaultSpec.model_validate(reveal["fault_spec"]), reveal["salt"])
+    assert recomputed == created["commitment"]
+    # A different claimed fault, or the right fault with another salt, does not match.
+    other = FaultSpec.model_validate({"faults": [{"component_id": "SW_C2", "mode": "dead"}]})
+    assert commitment_for(sid, other, reveal["salt"]) != created["commitment"]
+    assert commitment_for(sid, FaultSpec.model_validate(CB7), "x") != created["commitment"]
+
+
+def test_commitment_does_not_depend_on_fault_order() -> None:
+    a = {"component_id": "ISP_LINK", "mode": "down"}
+    b = {"component_id": "AP_3B", "mode": "dead"}
+    one = commitment_for("sc", FaultSpec.model_validate({"faults": [a, b]}), "s")
+    two = commitment_for("sc", FaultSpec.model_validate({"faults": [b, a]}), "s")
+    assert one == two
+
+
+def test_views_include_the_socket_breaker_and_fibre_probes(client: TestClient) -> None:
+    feed = {"faults": [{"component_id": "FEED_C2", "mode": "lost"}]}
+    sid = electrician_scenario(client, fault=feed)
+    riya = client.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_riya", sid)).json()
+    assert {i["probe_id"]: i["value"] for i in riya["items"]}["room_socket"] == "off"
+    h = bearer("p_imran", sid)
+    client.post(f"/sim/v1/scenarios/{sid}/move", json={"to": "DB_C2_PANEL"}, headers=h)
+    panel = client.get(f"/sim/v1/scenarios/{sid}/view", headers=h).json()
+    values = {i["probe_id"]: i["value"] for i in panel["items"]}
+    assert values["breaker_c2_7"] == "up"
+    assert values["breaker_c2_5"] == "up"  # lost supply: nothing tripped at the panel
+    g = bearer("p_mahesh", sid)
+    assert (
+        client.post(f"/sim/v1/scenarios/{sid}/move", json={"to": "IDF1"}, headers=g).status_code
+        == 200
+    )
+    rack = client.get(f"/sim/v1/scenarios/{sid}/view", headers=g).json()
+    rack_values = {i["probe_id"]: i["value"] for i in rack["items"]}
+    assert rack_values["fibre_light"] == "green"
+    assert "breaker_main_1" not in rack_values  # a guard does not read electrical panels
+
+
+def test_repair_in_a_two_fault_world_clears_only_its_own_fault(client: TestClient) -> None:
+    two = {
+        "faults": [
+            {"component_id": "CB_C2_7", "mode": "tripped"},
+            {"component_id": "ISP_LINK", "mode": "down"},
+        ]
+    }
+    sid = electrician_scenario(client, fault=two)
+    h = bearer("p_imran", sid)
+    client.post(f"/sim/v1/scenarios/{sid}/move", json={"to": "DB_C2_PANEL"}, headers=h)
+    assert act(client, sid, "p_imran", capability(sid)).status_code == 200
+    riya = client.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_riya", sid)).json()
+    values = {i["probe_id"]: i["value"] for i in riya["items"]}
+    assert values["wifi_status"] == "connected"  # power is back on floor 3's switch
+    assert values["web_by_ip"] == "no"  # but the provider link is still down
+    client.post(f"/sim/v1/scenarios/{sid}/close", headers=OPERATOR)
+    reveal = client.post(f"/sim/v1/scenarios/{sid}/reveal", headers=OPERATOR).json()
+    assert reveal["commitment_verified"] is True  # the seal is of the original faults
+    assert len(reveal["fault_spec"]["faults"]) == 2

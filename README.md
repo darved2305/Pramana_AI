@@ -54,13 +54,24 @@ not needed).
 
 ```bash
 make setup        # uv sync + .env with fresh keys (add GNANI_API_KEY to .env for voice)
-make db-up        # local PostgreSQL on :5433, data kept outside the repo
-make migrate
-make sim          # terminal 1: simulator on :8100
-make core         # terminal 2: core API on :8000
-make run-text     # terminal 3: one full sealed investigation, played by simulated participants
+make dev          # PostgreSQL :5433 + migrations + simulator :8100 + core :8000; Ctrl+C stops all
+make dev-web      # the same, plus the console on :3002
+make run-text     # in another terminal: one full sealed investigation, simulated participants
 make check        # lint, types, import isolation, all tests
+make e2e          # M1 acceptance against real sim + core processes (ports 8030/8130)
 ```
+
+Without `make` (for example on Windows): `uv run python scripts/dev.py [--web] [--core-port N]
+[--sim-port N]` does the same as `make dev`. The services can also be started one at a time:
+`make db-up`, `make migrate`, `make sim`, `make core`.
+
+`make e2e` (`uv run pytest tests/e2e`) starts the simulator and the core as separate processes on
+a dedicated `pramana_e2e` database (created if missing, re-migrated on every run) with fresh
+keys, then plays scenario S1 over HTTP: participants answer through their own simulator tokens,
+the engine must dispatch the electrician in at most 6 questions, the repair goes through
+deny/approve, a single-use capability and verification, the event log must replay to the same
+belief byte for byte, and a hard crash of the core mid-investigation must lose nothing. The
+tests also run as part of `make test`; set `PRAMANA_SKIP_E2E=1` to skip them.
 
 Main endpoints: `POST /v1/investigations`, `GET /v1/investigations/{id}`,
 `POST /v1/investigations/{id}/answers`, `POST /v1/investigations/{id}/reveal`,

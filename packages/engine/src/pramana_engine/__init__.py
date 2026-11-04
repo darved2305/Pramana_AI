@@ -2,9 +2,10 @@
 
 from .config import EngineConfig
 from .engine import Engine, Evidence, EvidenceError, ObserveResult
-from .model import CompiledModel, Hypothesis, compile_pack
+from .model import MULTIPLE_FAULTS, CompiledModel, Hypothesis, compile_pack
 
 __all__ = [
+    "MULTIPLE_FAULTS",
     "CompiledModel",
     "Engine",
     "EngineConfig",

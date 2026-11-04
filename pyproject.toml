@@ -81,6 +81,7 @@ pythonpath = ["packages/engine/tests", "services/core/tests", "tests"]
 markers = [
     "db: requires the PostgreSQL test database (make db-up)",
     "live_gnani: calls the real Gnani API and spends credits (needs GNANI_API_KEY)",
+    "e2e: starts real simulator and core processes on their own ports and database (tests/e2e)",
 ]
 testpaths = [
     "packages/contracts/tests",

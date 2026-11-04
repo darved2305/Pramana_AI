@@ -12,7 +12,7 @@ from engine_testkit import person
 
 from pramana_contracts import ParticipantSpec, PlanKind
 from pramana_domain import DomainPack, World
-from pramana_engine import CompiledModel, Engine, Evidence
+from pramana_engine import CompiledModel, Engine, EngineConfig, Evidence
 from pramana_engine.belief import likelihood_matrix
 
 
@@ -21,9 +21,13 @@ def _entropy(xs: list[float]) -> float:
 
 
 def brute_force_eig(
-    model: CompiledModel, p: np.ndarray, site: int, r: float
+    model: CompiledModel, p: np.ndarray, site: int, r_any: float | np.ndarray
 ) -> tuple[float, float]:
-    """Mutual information I(H;O) and I(D;O) from their definitions, with plain Python loops."""
+    """Mutual information I(H;O) and I(D;O) from their definitions, with plain Python loops.
+
+    ``r_any`` is one reliability, or one per hypothesis (the person's posterior mean).
+    """
+    rs = [float(x) for x in np.broadcast_to(np.asarray(r_any, dtype=float), (len(p),))]
     probe = model.sites[site][0]
     outs = model.outcomes[probe]
     m = len(outs)
@@ -36,6 +40,7 @@ def brute_force_eig(
         joint = []
         for hi, ph in enumerate(p):
             y = model.predictions[hi, site]
+            r = rs[hi]
             lik = 1.0 / m if y < 0 else (r if o == y else (1 - r) / (m - 1))
             joint.append(ph * lik)
         po = sum(joint)
@@ -51,16 +56,19 @@ def brute_force_eig(
     return eig_h, eig_d
 
 
-def s1_engine(model: CompiledModel, people: list[ParticipantSpec]) -> Engine:
-    eng = Engine(model, people)
+def s1_engine(
+    model: CompiledModel, people: list[ParticipantSpec], config: EngineConfig | None = None
+) -> Engine:
+    eng = Engine(model, people, config)
     eng.observe(Evidence("p_riya", "internet_works", "F3_R304", "no"))
     return eng
 
 
+@pytest.mark.parametrize("reliability_model", ["fixed", "beta"])
 def test_eig_matches_brute_force(
-    campus_model: CompiledModel, s1_people: list[ParticipantSpec]
+    campus_model: CompiledModel, s1_people: list[ParticipantSpec], reliability_model: str
 ) -> None:
-    eng = s1_engine(campus_model, s1_people)
+    eng = s1_engine(campus_model, s1_people, EngineConfig(reliability_model=reliability_model))  # type: ignore[arg-type]
     plan = eng.plan()
     p = eng.posterior()
     assert plan.candidates
@@ -68,7 +76,12 @@ def test_eig_matches_brute_force(
         a = cand.action
         site = campus_model.site_index[(a.probe_id, a.location_id)]
         skill = eng.participants[a.participant_id].spec.skill
-        eig_h, eig_d = brute_force_eig(campus_model, p, site, eng.reliability(skill, a.probe_id))
+        r: float | np.ndarray = (
+            eng.reliability(skill, a.probe_id)
+            if reliability_model == "fixed"
+            else eng.effective_reliability(a.participant_id, a.probe_id)
+        )
+        eig_h, eig_d = brute_force_eig(campus_model, p, site, r)
         assert cand.eig_hypothesis_bits == pytest.approx(eig_h, abs=1e-9)
         assert cand.eig_decision_bits == pytest.approx(eig_d, abs=1e-9)
         # Data-processing inequality: the decision is a function of the hypothesis.

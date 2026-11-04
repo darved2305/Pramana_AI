@@ -4,16 +4,19 @@ Observation model for an answer ``o`` to a probe with outcome set ``O`` (size ``
 where hypothesis ``h`` predicts the true observable ``y_h``:
 
 * Perception noise: ``M(o | y; r) = r`` if ``o == y`` else ``(1 - r) / (m - 1)``, where ``r`` is
-  the reliability for the participant's skill and the probe class.
+  the participant's reliability for the probe class. ``r`` is unknown and integrated out per
+  person and probe class (docs/adr/0008). ``M`` is linear in ``r``, so the predictive
+  distribution of a new answer under ``h`` is exactly ``M(o | y_h; E[r | h, answers so far])``.
 * Hedging and hearsay mix toward uniform: ``M'(o | y) = w * M(o | y; r) + (1 - w) / m`` with
   ``w`` = hedge weight (times the hearsay factor for relayed answers).
 * ``OPEN_WORLD`` has no physics, so its predictive distribution is uniform: ``P(o | OW) = 1/m``.
   This is a proper likelihood (it sums to one over outcomes), so OPEN_WORLD gains mass exactly
   when the evidence is better explained by "anything could happen" than by every modelled cause.
 
-Given ``h``, answers from different participants (and from one participant about different
-sites) are treated as conditionally independent. Repeated answers to the same site by the same
-participant are *not* independent evidence, so the engine keeps only the latest one.
+Given ``h`` and the reliabilities, answers are conditionally independent; with reliability
+integrated out, one person's answers within a probe class are correlated through it. Repeated
+answers to the same site by the same participant are *not* independent evidence, so the engine
+keeps only the latest one.
 """
 
 from __future__ import annotations
@@ -29,23 +32,25 @@ FloatArray = npt.NDArray[np.float64]
 def likelihood_matrix(
     model: CompiledModel,
     site: int,
-    reliability: float,
+    reliability: float | FloatArray,
     weight: float,
     predictions: npt.NDArray[np.int64] | None = None,
 ) -> FloatArray:
     """``L[o, h] = P(answer o | h)`` for one site. Columns sum to one.
 
-    ``predictions`` overrides the compiled table (e.g. the world after a repair).
+    ``reliability`` is a scalar or one value per hypothesis (the person's posterior mean
+    reliability under that hypothesis). ``predictions`` overrides the compiled table.
     """
     pid = model.sites[site][0]
     m = len(model.outcomes[pid])
     if not 0.0 <= weight <= 1.0:
         raise ValueError("weight must be in [0, 1]")
-    off = (1.0 - reliability) / (m - 1)
     pred = (model.predictions if predictions is None else predictions)[:, site]
-    lik = np.full((m, len(pred)), off, dtype=np.float64)
+    r = np.broadcast_to(np.asarray(reliability, dtype=np.float64), pred.shape)
+    lik = np.repeat(((1.0 - r) / (m - 1))[None, :], m, axis=0)
     known = pred != OPEN_WORLD_PREDICTION
-    lik[pred[known], np.nonzero(known)[0]] = reliability
+    idx = np.nonzero(known)[0]
+    lik[pred[known], idx] = r[idx]
     lik = weight * lik + (1.0 - weight) / m
     lik[:, ~known] = 1.0 / m
     return lik

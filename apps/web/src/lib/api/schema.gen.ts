@@ -349,6 +349,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/investigations/{inv_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Replay Check
+         * @description Rebuild the investigation from its event log and compare with the recorded belief.
+         */
+        get: operations["replay_check_v1_investigations__inv_id__replay_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/investigations/{inv_id}/reveal": {
         parameters: {
             query?: never;
@@ -360,6 +380,27 @@ export interface paths {
         put?: never;
         /** Reveal Ground Truth */
         post: operations["reveal_ground_truth_v1_investigations__inv_id__reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/investigations/{inv_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Events
+         * @description Push the investigation's events: backfill after ``after_seq`` (or the browser's
+         *     ``Last-Event-ID``, whichever is later), then follow new events live.
+         */
+        get: operations["stream_events_v1_investigations__inv_id__stream_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1170,6 +1211,29 @@ export interface components {
             /** Target */
             target: string;
         };
+        /** ReplayResult */
+        ReplayResult: {
+            /** Events Replayed */
+            events_replayed: number;
+            /** Final Belief */
+            final_belief: {
+                [key: string]: unknown;
+            };
+            /** Identical */
+            identical: boolean;
+            /** Investigation Id */
+            investigation_id: string;
+            /** Recorded Belief */
+            recorded_belief: {
+                [key: string]: unknown;
+            } | null;
+            /** Recorded Sha256 */
+            recorded_sha256: string | null;
+            /** Replayed Sha256 */
+            replayed_sha256: string;
+            /** Status */
+            status: string;
+        };
         /** Report */
         Report: {
             /** Affected Location Id */
@@ -1904,6 +1968,37 @@ export interface operations {
             };
         };
     };
+    replay_check_v1_investigations__inv_id__replay_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplayResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reveal_ground_truth_v1_investigations__inv_id__reveal_post: {
         parameters: {
             query?: never;
@@ -1922,6 +2017,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvestigationState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_events_v1_investigations__inv_id__stream_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+            };
+            header?: {
+                "last-event-id"?: string | null;
+            };
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-Sent Events. Each log event has `id: <seq>` and `data: <EventEnvelope>`. Control events: `ready`, `reset`, `bye`. Comments `: ping` are heartbeats. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description Validation Error */

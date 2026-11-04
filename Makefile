@@ -1,9 +1,15 @@
 # Pramana developer commands. Requires uv and a native PostgreSQL (scripts/dev_db.py).
-.PHONY: setup db-up db-down migrate sim core lint typecheck test contracts openapi check run-text
+.PHONY: setup dev dev-web db-up db-down migrate sim core lint typecheck test e2e contracts openapi check run-text
 
 setup:            ## install the workspace and create .env with fresh keys
 	uv sync
 	uv run python scripts/dev_env.py
+
+dev:              ## database + migrations + simulator + core in one command (Ctrl+C stops all)
+	uv run python scripts/dev.py
+
+dev-web:          ## same as dev, plus the Next.js console on :3002
+	uv run python scripts/dev.py --web
 
 db-up:            ## start the local PostgreSQL cluster (port 5433)
 	uv run python scripts/dev_db.py start
@@ -35,6 +41,9 @@ openapi:          ## regenerate services/core/openapi.json from the app
 
 test:
 	uv run pytest
+
+e2e:              ## M1 acceptance against real sim + core processes (ports 8030/8130)
+	uv run pytest tests/e2e -m e2e
 
 check: lint typecheck test
 

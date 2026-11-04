@@ -11,4 +11,6 @@ if __name__ == "__main__":
         host=os.environ.get("CORE_HOST", "127.0.0.1"),
         port=int(os.environ.get("CORE_PORT", "8000")),
         ws_max_size=1 << 20,
+        # Event streams stay open indefinitely; do not let them hold a restart hostage.
+        timeout_graceful_shutdown=5,
     )
