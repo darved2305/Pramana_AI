@@ -313,4 +313,5 @@ def test_a_question_withdrawn_while_its_answer_is_submitted_ends_the_turn_not_th
         assert not [m for m in msgs if m["type"] == "error" and m.get("fatal")]
         rest, _, code = drain(ws, calls=True)
     assert code == 1000
-    assert rest[-1]["type"] == "call_end" and rest[-1]["reason"] != "error"
+    assert rest[-1]["type"] == "call_end"
+    assert rest[-1]["reason"] != "error"

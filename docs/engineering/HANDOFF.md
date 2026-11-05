@@ -9,39 +9,48 @@ You are taking over Pramana (gnani ai hackathon repo, branch `main`). Read these
 is verified), `docs/engineering/VOICE_ARCHITECTURE.md`, `docs/engineering/API_GUIDE.md`,
 `docs/engineering/STAGING.md`, and the ADRs in `docs/adr/` (0003, 0008 to 0013 matter most).
 
-## Where things stand
+## Where things stand (updated 2026-11-05 evening)
 
-- M1 (text loop) is met and automated: S1 decides in 4 questions, approval flow to `verified` or
-  reopen, byte-identical replay. Python e2e `tests/e2e/test_m1.py` and real-backend Playwright
-  `apps/web/tests-real/` cover it. CI runs both stacks.
-- Voice works end to end on live Gnani (Prisma v3.0 stream + REST second decode, Timbre TTS):
-  participant call socket (ring, consent, turns, idle heartbeat, barge-in, silence timeout) in
-  `services/core/src/pramana_core/voice/call.py` and `voice/media.py`, driven by the state
-  machine in `calls/runtime.py`. Three open-source voice bots (`scripts/voice_bot_run.py`, clips
-  from `scripts/make_bot_clips.py`, Meta MMS) reach a verified, correct repair. One real person
-  on a phone over a Cloudflare quick tunnel also reached a verified repair.
-- Extractor (`language/extraction.py`) is rules-first with property tests
-  (`services/core/tests/test_extraction_properties.py`, about 400 cases).
-- Benchmark (`eval/reports/benchmark-2026-11-05/`): beats checklist and random significantly,
-  ties greedy entropy, abstention 68% on unidentifiable scenarios.
+- M1 text loop, voice calls, phone over tunnel, extractor, benchmark: as before (DAY2_STATUS.md).
+- **Parallel calls (D17) are done.** `CreateInvestigation.max_parallel_calls` (1 to 3).
+  `pramana_engine/scheduler.py` picks extra questions by conditional gain and withdraws
+  questions that stopped mattering (`QuestionWithdrawn`). See ADR 0011 for the rule, tests and
+  the simulated-clock benchmark (3 at once: time to conclusion 189 s -> 119 s, success not
+  significantly different, about 2 more questions). Console shows every question in flight;
+  the create form has "People asked at once". Browser test: `apps/web/tests-real/parallel.spec.ts`.
+  **Live check:** `scripts/voice_bot_run.py --parallel 3` on real Gnani: 3 in flight, decided,
+  repaired, verified, correct, replay identical, Rs 0.24. That run found a bug (a question
+  withdrawn during answer submission ended the call with an error); fixed in 81ad665 with a test.
+  Re-run the live bot check once to confirm the fix live.
+- **Abstention calibration: done, negative result.** `eval/reports/calibration-2026-11-05/NOTES.md`.
+  Abstention cannot be raised without losing accuracy; do NOT claim it. `E-ask_more`
+  (lambda 1/120) gives +2.7 points success (significant) for +0.37 questions: team decision
+  whether to make it the default (it changes the S1 path; re-run M1 + voice checks if so).
+- **Fresh blind extraction set: done.** `eval/data/extraction_blind_2026-11-05.jsonl`, blind
+  score in `eval/reports/extraction-blind-2026-11-05/` (rules: 60/80, 0 wrong, 2 invented).
+  The 2 invented readings are fixed (now 62/80, 0 invented, not blind). 13 missed answers remain
+  (listed in the report): next extractor round, failing tests first.
+- **LLM comparison: running across days.** Command (replays cached calls free, continues):
+  `uv run python -m pramana_eval --n 100 --seed-start 10000 --policies E,D,B --llm-n 100 --out eval/reports/llm-comparison`
+  Run it once a day (Groq free tier stops it at the daily quota, about 13 episodes/day).
+  After day 1, 13 LLM episodes: LLM success 30.8% vs ours 87% (paired +38 pts, CI [+8, +69]),
+  too few to publish. When n >= 50, commit the report (`git add -f`) with a NOTES.md, honestly.
+  The session-only cron for Nov 6 10:07 dies with the old session; run it by hand.
 
 ## What is left, in priority order
 
-1. **LLM comparison** (the headline claim): run `eval` with an LLM picking questions vs our
-   planner. Free tier only (Groq gpt-oss-120b: 200k tokens/day, 1000 req/day; the client in
-   `pramana_core/llm.py` fails fast on per-day 429s). Budget runs across days if needed. Report
-   honestly, including if it does not win. A one-shot cron for this may exist in the old session.
-2. **Parallel calls with preemption** (D17, ADR 0011: go, cap 3). Per-call sockets and
-   `(LISTENING, PREEMPT) -> PREEMPTING` exist; build the scheduler that asks up to 3 participants
-   at once and withdraws a question (`question_withdrawn`) when another answer makes it moot.
-   Test with the three voice bots, then in the browser.
-3. **Abstention calibration**: tune the stopping rule so unidentifiable scenarios abstain more
-   without hurting accuracy. Re-run the benchmark, keep the old report for comparison.
-4. **Fresh blind extraction set**: the held-out set has been seen. Write a new one before
-   looking at results.
-5. **Demo** (Nov 8): script and record one investigation with parallel calls, approval, and
-   replay. Docs and submission Nov 9 to 10.
-6. More human phone testers via the tunnel (see STAGING.md).
+1. Daily LLM benchmark runs (above) until about 50 to 100 episodes; write NOTES.md; update
+   DEMO.md benchmark line only from summary.json.
+2. Re-run `voice_bot_run.py --parallel 3` live once (fix 81ad665), then with a human on a phone
+   (`--human p_riya`, tunnel per STAGING.md).
+3. Demo (Nov 8): DEMO.md storyboard; use parallel calls (create form "Up to 3"), approval,
+   reveal and replay in one take. Docs and submission Nov 9 to 10.
+4. Extractor: the 13 missed blind-set phrasings.
+5. Decide on `E-ask_more` as default (see calibration NOTES).
+6. More human phone testers via the tunnel.
+
+Note: port 8000 on this laptop is used by another project's app (`app.main`); run
+`scripts/dev.py --core-port 8010 --sim-port 8110` (and point the web app with PRAMANA_CORE_URL).
 
 ## How to run
 
