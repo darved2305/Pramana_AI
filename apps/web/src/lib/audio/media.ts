@@ -60,6 +60,12 @@ export interface MediaHandlers {
   onReprompt?: (text: string) => void;
   /** The server's call runtime changed state (ASKING, LISTENING, EXTRACTING, ENDED...). */
   onCallState?: (state: string) => void;
+  /** Call mode: the consent line to show (and play) before any question. */
+  onConsentRequest?: (text: string, language: string) => void;
+  /** Call mode: the question being asked was answered elsewhere or withdrawn. */
+  onQuestionWithdrawn?: (questionId: string) => void;
+  /** Call mode: the call is over (declined, nothing more to ask, silent...). */
+  onCallEnd?: (reason: string) => void;
 }
 
 export interface MediaOptions {
@@ -67,6 +73,16 @@ export interface MediaOptions {
   basePath?: string;
   playQuestion?: boolean;
   workletUrl?: string;
+  /** Call mode: one socket for this participant's whole call (ring, consent, every question),
+   * `WS /v1/investigations/{id}/participants/{pid}/call` (services/core/.../voice/call.py). */
+  callParticipantId?: string;
+}
+
+/** ws(s)://<this origin><basePath>/v1/investigations/{id}/participants/{pid}/call */
+export function callUrl(investigationId: string, participantId: string, basePath = "/api/core"): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const path = `${basePath}/v1/investigations/${encodeURIComponent(investigationId)}/participants/${encodeURIComponent(participantId)}/call`;
+  return `${proto}//${window.location.host}${path}`;
 }
 
 /** ws(s)://<this origin><basePath>/v1/investigations/{id}/questions/{qid}/media */
@@ -97,15 +113,22 @@ export class QuestionMediaSession {
     return this.state;
   }
 
-  /** Open the socket and authenticate. Resolves when the server sends `ready`. */
+  /** Open the socket and authenticate. Resolves when the server sends `ready` (call mode:
+   * when the call starts `ringing`; questions then arrive through `onReady`). */
   connect(): Promise<MediaReady> {
+    const callPid = this.options.callParticipantId;
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(mediaUrl(this.investigationId, this.questionId, this.options.basePath));
+      const ws = new WebSocket(
+        callPid
+          ? callUrl(this.investigationId, callPid, this.options.basePath)
+          : mediaUrl(this.investigationId, this.questionId, this.options.basePath),
+      );
       ws.binaryType = "arraybuffer";
       this.ws = ws;
       let settled = false;
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "start", token: this.token, play_question: this.options.playQuestion ?? true }));
+        const play = this.options.playQuestion ?? true;
+        ws.send(JSON.stringify(callPid ? { type: "start", token: this.token, play } : { type: "start", token: this.token, play_question: play }));
       };
       ws.onmessage = (ev) => {
         if (typeof ev.data !== "string") {
@@ -113,7 +136,7 @@ export class QuestionMediaSession {
           return;
         }
         const msg = JSON.parse(ev.data) as { type: string } & Record<string, unknown>;
-        if (msg.type === "ready" && !settled) {
+        if ((callPid ? msg.type === "ringing" : msg.type === "ready") && !settled) {
           settled = true;
           resolve(msg as unknown as MediaReady);
         }
@@ -175,6 +198,27 @@ export class QuestionMediaSession {
   /** Answer by tapping one of the question's outcomes (no speech). */
   tapAnswer(outcome: string): void {
     this.sendControl({ type: "tap_answer", outcome });
+  }
+
+  /** Call mode: answer the ring. */
+  accept(): void {
+    this.sendControl({ type: "accept" });
+  }
+
+  /** Call mode: reject the ring. */
+  decline(): void {
+    this.sendControl({ type: "decline" });
+  }
+
+  /** Call mode: the participant's consent. Anything but "yes" ends the call. */
+  consent(answer: "yes" | "no" | "later"): void {
+    this.sendControl({ type: "consent", answer });
+  }
+
+  /** Call mode: stop the microphone after an answer; the call stays open for the next question. */
+  endTurn(): void {
+    this.stopMic();
+    this.levelReset();
   }
 
   /** Hang up without answering. */
@@ -252,6 +296,16 @@ export class QuestionMediaSession {
       case "call_state":
         this.handlers.onCallState?.(String(msg.state));
         break;
+      case "consent_request":
+        this.handlers.onConsentRequest?.(String(msg.text ?? ""), String(msg.language ?? ""));
+        break;
+      case "question_withdrawn":
+        this.stopMic();
+        this.handlers.onQuestionWithdrawn?.(String(msg.question_id ?? ""));
+        break;
+      case "call_end":
+        this.handlers.onCallEnd?.(String(msg.reason ?? ""));
+        break;
     }
   }
 
@@ -299,6 +353,10 @@ export class QuestionMediaSession {
         /* already stopped */
       }
     }
+  }
+
+  private levelReset(): void {
+    this.handlers.onLevel?.(0);
   }
 
   private stopMic(): void {

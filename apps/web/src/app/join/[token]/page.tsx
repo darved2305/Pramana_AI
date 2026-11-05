@@ -57,6 +57,8 @@ function Invalid() {
 }
 
 type Phase = "idle" | "recording" | "sending";
+/** The call over one socket (services/core/.../voice/call.py): ring, consent, then questions. */
+type CallPhase = "none" | "connecting" | "consent" | "active" | "ended";
 
 function Participant({ payload, preview }: { payload: JoinPayload; preview: boolean }) {
   const [state, setState] = useState<InvestigationState | null>(null);
@@ -70,6 +72,9 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const [moved, setMoved] = useState<string | null>(null);
   const recRef = useRef<Recording | null>(null);
   const liveRef = useRef<QuestionMediaSession | null>(null);
+  const callRef = useRef<QuestionMediaSession | null>(null);
+  const [callPhase, setCallPhase] = useState<CallPhase>("none");
+  const [consentText, setConsentText] = useState<string | null>(null);
   const levelRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -102,6 +107,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     () => () => {
       recRef.current?.cancel();
       liveRef.current?.close();
+      callRef.current?.close();
     },
     [],
   );
@@ -151,6 +157,87 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     } finally {
       setPhase("idle");
     }
+  };
+
+  /** Accept the incoming call: open the call socket, answer the ring, wait for the consent line. */
+  const acceptCall = async () => {
+    if (preview) return;
+    setMsg(null);
+    setCallPhase("connecting");
+    let heard = "";
+    const session: QuestionMediaSession = new QuestionMediaSession(
+      payload.i,
+      "",
+      payload.t,
+      {
+        onConsentRequest: (text) => {
+          setConsentText(text);
+          setCallPhase("consent");
+        },
+        onLevel: (rms) => {
+          levelRef.current = rms;
+        },
+        onTranscript: (t) => {
+          heard = t.text;
+        },
+        onAnswer: (result) => {
+          const r = result as AnswerResult;
+          setUnderstood(`I heard "${heard}" and understood: ${outcomeWord(r.extraction.outcome)}`);
+          setState(r.state);
+          session.endTurn();
+          setPhase("idle");
+        },
+        onEmptyTranscript: () => {
+          setMsg("Nothing was heard. Please try again a little closer to the microphone.");
+          session.endTurn();
+          setPhase("idle");
+        },
+        onQuestionWithdrawn: () => {
+          setPhase("idle");
+          load();
+        },
+        onReprompt: (text) => setHint(text || "Are you still there? Please answer when you are ready."),
+        onError: (e) => {
+          if (e.fatal) setMsg(describeError(new ApiError(e.status, e.code, e.message, null)));
+        },
+        onCallEnd: (reason) => {
+          setCallPhase("ended");
+          setPhase("idle");
+          setHint(null);
+          if (reason === "silent") setMsg("We could not hear you, so the call ended. Others will be asked instead.");
+          load();
+        },
+        onClose: () => {
+          if (callRef.current === session) callRef.current = null;
+          setCallPhase((c) => (c === "none" ? c : "ended"));
+          setPhase("idle");
+        },
+      },
+      { callParticipantId: payload.p, playQuestion: false },
+    );
+    try {
+      await Promise.race([
+        session.connect(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("call socket timeout")), 5000)),
+      ]);
+    } catch {
+      session.close();
+      setCallPhase("none");
+      setMsg("The call could not connect. You can still answer below.");
+      return;
+    }
+    callRef.current = session;
+    session.accept();
+  };
+
+  // "Not now" only dismisses the call: the question below can still be answered by tapping or
+  // typing. Saying No or Later at the consent step is what takes the person out.
+  const declineCall = () => setCallPhase("ended");
+
+  const giveConsent = (answer: "yes" | "no" | "later") => {
+    callRef.current?.consent(answer);
+    setConsentText(null);
+    setCallPhase(answer === "yes" ? "active" : "ended");
   };
 
   /**
@@ -231,6 +318,21 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const toggleVoice = async () => {
     if (!q) return;
     setMsg(null);
+    const call = callPhase === "active" ? callRef.current : null;
+    if (call) {
+      if (phase === "recording") {
+        setPhase("sending");
+        call.commit();
+        return;
+      }
+      try {
+        await call.startMic();
+        setPhase("recording");
+      } catch {
+        setMsg("The microphone is not available. Allow microphone access, or answer by tapping or typing.");
+      }
+      return;
+    }
     if (phase === "recording" && liveRef.current) {
       setPhase("sending");
       liveRef.current.commit();
@@ -299,7 +401,46 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         />
       </div>
 
-      {q ? (
+      {q && !preview && callPhase === "none" ? (
+        <section aria-live="polite" className="mt-2 rounded-[18px] border-[0.8px] border-cream/20 p-5 text-center">
+          <p className="text-[13px] uppercase tracking-[0.12em] text-cream/60">Incoming call</p>
+          <h2 className="display-slab mt-2 text-[34px]">Pramana is calling</h2>
+          <p className="mx-auto mt-2 max-w-[32ch] text-[15px] text-cream/70">It needs a minute of your help with a problem in the building.</p>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button type="button" onClick={declineCall} className="btn-line lg w-full">
+              Not now
+            </button>
+            <button type="button" onClick={acceptCall} className="btn-line lg w-full bg-cream !text-ink">
+              Accept
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {callPhase === "connecting" ? (
+        <p aria-live="polite" className="mt-4 text-center text-[14px] text-cream/60">
+          Connecting the call...
+        </p>
+      ) : null}
+      {callPhase === "consent" && consentText ? (
+        <section aria-live="polite" className="mt-2 rounded-[18px] border-[0.8px] border-cream/20 p-5">
+          <h2 lang={me?.languages.template_language === "hi-en" ? "hi-Latn" : me?.languages.template_language} className="text-[20px] leading-snug">
+            {consentText}
+          </h2>
+          <div className="mt-5 grid grid-cols-3 gap-2" role="group" aria-label="Consent">
+            <button type="button" onClick={() => giveConsent("no")} className="btn-line w-full">
+              No
+            </button>
+            <button type="button" onClick={() => giveConsent("later")} className="btn-line w-full">
+              Later
+            </button>
+            <button type="button" onClick={() => giveConsent("yes")} className="btn-line w-full bg-cream !text-ink">
+              Yes
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {q && callPhase !== "consent" && callPhase !== "connecting" ? (
         <section aria-live="polite" className="mt-2 flex flex-col">
           {q.kind === "confirm" ? <span className="mb-2 w-fit rounded-full bg-warn/15 px-2.5 py-1 text-[12px] text-warn">Just checking</span> : null}
           <h1 lang={q.language === "hi-en" ? "hi-Latn" : q.language} className="text-[24px] font-medium leading-snug">
