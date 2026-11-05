@@ -425,3 +425,58 @@ def test_no_time_now_is_a_stop_request_not_a_no(text: str) -> None:
     r = X.extract_sync(text, YES_NO)
     assert r.outcome == "unknown", r.evidence
     assert r.wants_to_stop
+
+
+UP_TRIPPED = ["up", "tripped"]
+
+
+@pytest.mark.parametrize(
+    ("text", "outcomes", "expected"),
+    [
+        # Missed on the blind set (2026-11-05), plus close variants.
+        ("the IP test page opened fine", YES_NO, "yes"),
+        ("it opened", YES_NO, "yes"),
+        ("the recorder screen is black, nothing on it", ON_OFF, "off"),
+        ("no, the phone isn't charging from that socket", ON_OFF, "off"),
+        ("not charging", ON_OFF, "off"),
+        ("yes it's charging", ON_OFF, "on"),
+        ("फ़ोन चार्ज होने लगा", ON_OFF, "on"),
+        ("फोन चार्ज होत नाहीये", ON_OFF, "off"),
+        ("charging shuru ho gayi", ON_OFF, "on"),
+        ("बटन दबाया, बल्ब नहीं जला", ON_OFF, "off"),
+        ("switch dabaya, light aa gayi", ON_OFF, "on"),
+        ("the network isn't even showing", WIFI, "no_network"),
+        ("network list mein aa hi nahi raha", WIFI, "no_network"),
+        ("वायफाय कनेक्ट झालंय", WIFI, "connected"),
+        ("मेन वन वरच आहे", UP_TRIPPED, "up"),
+    ],
+)
+def test_plain_phrasings_missed_on_the_blind_set(
+    text: str, outcomes: list[str], expected: str
+) -> None:
+    assert X.extract_sync(text, outcomes).outcome == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "outcomes", "hedge"),
+    [
+        ("maybe it's on? hard to tell", ON_OFF, Hedge.UNSURE),
+        ("बहुतेक कनेक्टिंगवर अडकलंय", WIFI, Hedge.PROBABLE),
+        ("कदाचित खाली आहे, नक्की नाही", UP_TRIPPED, Hedge.UNSURE),
+    ],
+)
+def test_hedges_missed_on_the_blind_set(text: str, outcomes: list[str], hedge: Hedge) -> None:
+    assert X.extract_sync(text, outcomes).hedge == hedge
+
+
+def test_kah_raha_hai_is_hearsay() -> None:
+    r = X.extract_sync("रूममेट कह रहा है बत्तियाँ बंद हैं", ON_OFF)
+    assert r.directness == Directness.HEARSAY
+    assert r.outcome == "off"
+
+
+@pytest.mark.parametrize("text", ["मुझे और फ़ोन मत करो", "phone mat karo ab", "call mat karo"])
+def test_do_not_phone_me_is_a_stop_request(text: str) -> None:
+    r = X.extract_sync(text, LEDS)
+    assert r.wants_to_stop
+    assert r.outcome == "unknown"

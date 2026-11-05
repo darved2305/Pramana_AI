@@ -24,3 +24,12 @@ missed, 0 wrong; the development set (47/48) and the old held-out set (74/80) ar
 The 13 missed answers (plain phrasings such as "the IP test page opened fine", "the recorder
 screen is black", "फ़ोन चार्ज होने लगा") are left for the next round; each costs one more question,
 never a wrong conclusion. These later figures are not blind.
+
+## After the second fix (tuned on this set)
+
+The 13 missed answers were added to the lexicons as general forms (charging / not charging,
+"opened", "isn't showing", Marathi "कनेक्ट झालंय", "वरच", "बहुतेक", "नक्की नाही", Hindi "कह रहा",
+"फ़ोन मत करो"), each with a failing test first. Rules only: this set 80/80, development 47/48,
+old held-out 74/80 (both unchanged). **80/80 is tuned on this set and says nothing about new
+answers**; the honest blind figure remains 60/80 with 0 wrong and 2 invented. A new blind set
+is needed before quoting any extraction accuracy.
