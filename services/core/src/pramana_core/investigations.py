@@ -66,6 +66,7 @@ from pramana_contracts.tokens import (
 from pramana_contracts.tokens import verify as verify_token
 from pramana_domain import NO_FAULT, DomainPack, load_pack
 from pramana_engine import (
+    MODEL_VERSION,
     MULTIPLE_FAULTS,
     CompiledModel,
     Engine,
@@ -543,6 +544,7 @@ class InvestigationService:
                     "scenario_id": scenario.scenario_id,
                     "commitment": scenario.commitment,
                     "participants": stored["participants"],
+                    "engine_model_version": MODEL_VERSION,
                 },
             )
             self._event(session, inv_id, "ReportReceived", req.report.model_dump(mode="json"))
@@ -1199,6 +1201,16 @@ class InvestigationService:
         async with self._lock(inv_id), self.db.read() as session:
             row = await self._load_row(session, inv_id, lock=False)
             engine, n = await self._rebuild(session, row)
+            created = (
+                await session.execute(
+                    select(EventRow.payload)
+                    .where(
+                        EventRow.investigation_id == inv_id,
+                        EventRow.type == "InvestigationCreated",
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
             recorded = (
                 await session.execute(
                     select(EventRow.payload)
@@ -1216,6 +1228,8 @@ class InvestigationService:
             events_replayed=n,
             replayed=replayed,
             recorded=recorded,
+            # Logs written before the version was recorded came from model "1".
+            recorded_model_version=str((created or {}).get("engine_model_version", "1")),
         )
 
     async def open_investigations(self, limit: int = 1000) -> list[str]:
@@ -1246,6 +1260,13 @@ class ReplayCheck:
     events_replayed: int
     replayed: dict[str, Any]
     recorded: dict[str, Any] | None
+    recorded_model_version: str = MODEL_VERSION
+    current_model_version: str = MODEL_VERSION
+
+    @property
+    def engine_changed(self) -> bool:
+        """The log was written by a different probability model than the one replaying it."""
+        return self.recorded_model_version != self.current_model_version
 
     @property
     def replayed_sha256(self) -> str:

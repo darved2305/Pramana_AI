@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from test_closing_loop import approve, decided, reset_in_simulator, verify
 
 from pramana_core.main import create_app
+from pramana_engine import MODEL_VERSION
 
 pytestmark = pytest.mark.db
 
@@ -192,3 +193,43 @@ def test_recovery_flags_a_log_that_does_not_replay(
 
 def test_replay_of_unknown_investigation_is_404(core: TestClient) -> None:
     assert core.get("/v1/investigations/inv_nope/replay").status_code == 404
+
+
+def test_a_log_from_an_older_engine_is_an_upgrade_not_corruption(
+    core: TestClient, migrated_db: str, sim_app: FastAPI
+) -> None:
+    state = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped")).json()
+    inv_id = state["id"]
+    created = core.get(f"/v1/investigations/{inv_id}/events").json()[0]
+    assert created["type"] == "InvestigationCreated"
+    assert created["payload"]["engine_model_version"] == MODEL_VERSION
+
+    async def as_if_written_by_model_1() -> None:
+        # An old log: no version stamp, and a belief the current model would not produce.
+        engine = create_async_engine(migrated_db)
+        async with engine.begin() as conn:
+            await conn.exec_driver_sql(
+                "update events set payload = payload - 'engine_model_version' "
+                "where investigation_id = $1 and type = 'InvestigationCreated'",
+                (inv_id,),
+            )
+            await conn.exec_driver_sql(
+                "update events set payload = jsonb_set(payload, '{hypothesis_entropy_bits}', "
+                "'0.5') where seq = (select max(seq) from events where investigation_id = $1 "
+                "and type = 'BeliefUpdated')",
+                (inv_id,),
+            )
+        await engine.dispose()
+
+    asyncio.run(as_if_written_by_model_1())
+    with restart(migrated_db, sim_app) as core2:
+        report = core2.app.state.recovery  # type: ignore[attr-defined]
+        assert inv_id in report["engine_changed"]
+        assert inv_id not in report["mismatched"]
+        check = replay(core2, inv_id)
+        assert check["identical"] is False
+        assert check["engine_changed"] is True
+        assert check["recorded_model_version"] == "1"
+        assert check["current_model_version"] == MODEL_VERSION
+        events = core2.get(f"/v1/investigations/{inv_id}/events").json()
+        assert not [e for e in events if e["type"] == "EngineError"]

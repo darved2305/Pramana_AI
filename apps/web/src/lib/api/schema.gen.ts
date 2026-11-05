@@ -1213,6 +1213,10 @@ export interface components {
         };
         /** ReplayResult */
         ReplayResult: {
+            /** Current Model Version */
+            current_model_version: string;
+            /** Engine Changed */
+            engine_changed: boolean;
             /** Events Replayed */
             events_replayed: number;
             /** Final Belief */
@@ -1227,6 +1231,8 @@ export interface components {
             recorded_belief: {
                 [key: string]: unknown;
             } | null;
+            /** Recorded Model Version */
+            recorded_model_version: string;
             /** Recorded Sha256 */
             recorded_sha256: string | null;
             /** Replayed Sha256 */

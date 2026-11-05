@@ -28,6 +28,11 @@ class ReplayResult(BaseModel):
     """Rebuilt from the event log alone."""
     recorded_belief: dict[str, Any] | None
     """The last ``BeliefUpdated`` payload."""
+    recorded_model_version: str
+    """Probability model that wrote the log (``InvestigationCreated``)."""
+    current_model_version: str
+    engine_changed: bool
+    """True when the two differ: a mismatch is then an engine upgrade, not corruption."""
 
 
 @router.get(
@@ -96,4 +101,7 @@ async def replay_check(inv_id: str, request: Request) -> ReplayResult:
         recorded_sha256=check.recorded_sha256,
         final_belief=check.replayed,
         recorded_belief=check.recorded,
+        recorded_model_version=check.recorded_model_version,
+        current_model_version=check.current_model_version,
+        engine_changed=check.engine_changed,
     )

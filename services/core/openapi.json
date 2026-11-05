@@ -1779,6 +1779,14 @@
    },
    "ReplayResult": {
     "properties": {
+     "current_model_version": {
+      "title": "Current Model Version",
+      "type": "string"
+     },
+     "engine_changed": {
+      "title": "Engine Changed",
+      "type": "boolean"
+     },
      "events_replayed": {
       "title": "Events Replayed",
       "type": "integer"
@@ -1808,6 +1816,10 @@
       ],
       "title": "Recorded Belief"
      },
+     "recorded_model_version": {
+      "title": "Recorded Model Version",
+      "type": "string"
+     },
      "recorded_sha256": {
       "anyOf": [
        {
@@ -1836,7 +1848,10 @@
      "replayed_sha256",
      "recorded_sha256",
      "final_belief",
-     "recorded_belief"
+     "recorded_belief",
+     "recorded_model_version",
+     "current_model_version",
+     "engine_changed"
     ],
     "title": "ReplayResult",
     "type": "object"

@@ -21,6 +21,8 @@ class RecoveryReport:
     checked: int = 0
     identical: int = 0
     mismatched: list[str] = field(default_factory=list)
+    engine_changed: list[str] = field(default_factory=list)
+    """Logs written by an older probability model: they replay differently by design."""
     failed: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
@@ -28,6 +30,7 @@ class RecoveryReport:
             "checked": self.checked,
             "identical": self.identical,
             "mismatched": self.mismatched,
+            "engine_changed": self.engine_changed,
             "failed": self.failed,
         }
 
@@ -49,6 +52,17 @@ async def recover(svc: InvestigationService, limit: int = 1000) -> RecoveryRepor
             continue
         if check.identical:
             report.identical += 1
+            continue
+        if check.engine_changed:
+            # Not corruption: the engine was upgraded since this log was written. The
+            # investigation continues under the current model (ADR 0008).
+            report.engine_changed.append(inv_id)
+            log.warning(
+                "recovery_engine_changed",
+                investigation_id=inv_id,
+                recorded_model=check.recorded_model_version,
+                current_model=check.current_model_version,
+            )
             continue
         report.mismatched.append(inv_id)
         svc.evict(inv_id)

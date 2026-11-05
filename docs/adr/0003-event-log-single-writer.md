@@ -15,3 +15,10 @@ question changes that participant's effort cost (a bug found in a live run).
 
 **Tests.** Rollback after a crash mid-command, a concurrent-answer race (exactly one succeeds),
 replay equivalence, ordered and resumable events (`services/core/tests/test_investigation_api.py`).
+
+**Engine upgrades.** `InvestigationCreated` records the probability model version
+(`pramana_engine.MODEL_VERSION`; "1" when absent). A log written by another model replays
+differently by design, so startup recovery and `GET /v1/investigations/{id}/replay` report it as
+`engine_changed`, not as a corrupted log, and append no `EngineError`. Bump `MODEL_VERSION`
+whenever the same evidence would produce a different belief
+(`test_recovery.py::test_a_log_from_an_older_engine_is_an_upgrade_not_corruption`).
