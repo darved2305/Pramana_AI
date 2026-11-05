@@ -67,7 +67,9 @@ and OpenAPI drift, generated-type drift and the bundle secret scan are clean.
 `scripts/voice_bot_run.py` ran S1 end to end by voice on live Gnani (2026-11-05): three
 simulated participants on participant calls with MMS voices, decision, approval, repair,
 verification by voice, `verified`, correct on reveal, identical replay, about Rs 2.5 of
-credits. Not yet done for M2: real human voices, phones over the tunnel in a live run, and the
+credits. With decision-critical answers confirmed by a second decode instead of a re-ask, the
+same run decided after 6 spoken questions instead of 8 (Rs 1.8), and idle calls send heartbeats
+so a proxy does not drop them. Not yet done for M2: real human voices, phones over the tunnel in a live run, and the
 latency target.
 
 ## Frontend wiring

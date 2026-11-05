@@ -22,6 +22,7 @@ Server -> client
     {"type": "ringing", "participant_id", "language"}
     {"type": "consent_request", "text", "language"}       (and the consent audio if ``play``)
     per question: ready, tts_*, speech_start, transcript, answer, call_state...
+    {"type": "idle", "waiting_s"}   every 15 s while waiting for the next question
     {"type": "call_end", "reason"}   then the socket closes (1000, or 4408 when silent)
 """
 
@@ -69,6 +70,9 @@ CONSENT_TEXT: dict[str, str] = {
 
 IDLE_WAIT_S = 120.0
 """How long the call waits in IDLE for the engine to ask this person something else."""
+HEARTBEAT_S = 15.0
+"""While waiting, send ``{"type": "idle"}`` this often. Proxies close silent sockets (Cloudflare
+after about 100 s), and a failed send is how the call notices a participant who hung up."""
 
 
 class ParticipantCall:
@@ -222,9 +226,18 @@ class ParticipantCall:
 
     async def _next_question(self) -> Any:
         """The pending question addressed to this person, waiting up to ``IDLE_WAIT_S``."""
-        deadline = time.monotonic() + IDLE_WAIT_S
+        started = time.monotonic()
+        deadline = started + IDLE_WAIT_S
+        beat = started
         with self.broadcaster.subscribe(self.inv_id) as sub:
             while True:
+                now = time.monotonic()
+                if now - beat >= HEARTBEAT_S:
+                    beat = now
+                    try:
+                        await self.send({"type": "idle", "waiting_s": round(now - started)})
+                    except Exception as exc:  # the participant is gone
+                        raise WebSocketDisconnect(1006) from exc
                 state = await self.svc.get(self.inv_id)
                 if state.status not in ANSWERABLE_STATUSES:
                     return None
@@ -234,7 +247,7 @@ class ParticipantCall:
                 left = deadline - time.monotonic()
                 if left <= 0 or self.call.state == CallState.PREEMPTING:
                     return None
-                await sub.wait(min(left, 5.0))
+                await sub.wait(min(left, 5.0, HEARTBEAT_S))
 
     # -- helpers ----------------------------------------------------------------------------
 

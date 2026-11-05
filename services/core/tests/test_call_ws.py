@@ -194,3 +194,25 @@ def test_call_tokens_are_checked(env: Env, who: str, code: int) -> None:
         _msgs, _, closed = drain(ws, calls=True)
     assert closed == code
     assert not env.fake.seen_headers  # nothing reached Gnani
+
+
+def test_a_waiting_call_sends_heartbeats(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Proxies close silent sockets (Cloudflare after about 100 s): an idle call keeps talking.
+    monkeypatch.setattr(call_mod, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(call_mod, "IDLE_WAIT_S", 1.0)
+    inv = create(env)
+    asked = inv["pending_question"]["action"]["participant_id"]
+    pid = next(p["id"] for p in inv["participants"] if p["id"] != asked)  # nothing to ask them
+    with env.client.websocket_connect(url(inv["id"], pid)) as ws:
+        ws.send_text(
+            json.dumps({"type": "start", "token": token(env, inv["id"], pid), "play": False})
+        )
+        until(ws, "ringing")
+        ws.send_text(json.dumps({"type": "accept"}))
+        until(ws, "consent_request")
+        ws.send_text(json.dumps({"type": "consent", "answer": "yes"}))
+        msgs, _, code = drain(ws, calls=True)
+    assert len([m for m in msgs if m["type"] == "idle"]) >= 3
+    assert msgs[-1] == {"type": "call_end", "reason": "nothing more to ask"}
+    assert code == 1000
+    assert not env.fake.seen_headers  # waiting costs nothing
