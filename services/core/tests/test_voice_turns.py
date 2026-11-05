@@ -130,6 +130,20 @@ def test_direct_tts_route_sends_spoken_text_to_timbre(
     assert tts_body["text"] == "डी बी सी टू वाई-फ़ाई"
 
 
+@pytest.mark.parametrize(
+    "language", ["bn-IN", "gu-IN", "kn-IN", "ml-IN", "pa-IN", "ta-IN", "te-IN"]
+)
+def test_direct_tts_preserves_other_supported_languages(
+    voice: tuple[TestClient, FakeGnaniHttp], language: str
+) -> None:
+    client, fake = voice
+    response = client.post("/v1/voice/tts", json={"text": "hello", "language": language})
+    assert response.status_code == 200, response.text
+    tts_body = json.loads(fake.calls[-1][1].content)
+    assert tts_body["text"] == "hello"
+    assert tts_body["language"] == language
+
+
 def test_voice_answer_uses_question_context_and_updates_the_belief(
     voice: tuple[TestClient, FakeGnaniHttp],
 ) -> None:

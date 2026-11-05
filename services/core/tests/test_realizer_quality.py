@@ -61,7 +61,13 @@ def _change(pack: DomainPack, change: Any) -> DomainPack:
         ("'IP test page'…", "en", "I P test page,"),
         ('"IP test page"...?', "en", "I P test page?"),
         ("Wait... what?!  Really?", "en", "Wait, what? Really?"),
-        ("The IP 192.168.1.2 is listed.", "en", "The I P address is listed."),
+        (
+            "The IP 192.168.1.2 is listed.",
+            "en",
+            "The I P one nine two dot one six eight dot one dot two is listed.",
+        ),
+        ("192.168.1.2", "hi", "वन नाइन टू डॉट वन सिक्स एट डॉट वन डॉट टू"),
+        ("Use 192.168.1.2.", "en", "Use one nine two dot one six eight dot one dot two."),
         ("room 205", "en", "room 205"),
     ],
 )
@@ -77,6 +83,7 @@ def test_speakable_table(text: str, language: TemplateLanguage, expected: str) -
         ("NAVA-WiFi", "mr"),
         ("'IP test page'…", "hi-en"),
         ("Wait... what?!  Really?", "en"),
+        ("IP 192.168.1.2", "hi"),
     ],
 )
 def test_speakable_is_idempotent(text: str, language: TemplateLanguage) -> None:

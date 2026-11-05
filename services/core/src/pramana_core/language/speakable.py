@@ -124,7 +124,7 @@ _WIFI_PATTERN = re.compile(r"(?<!\w)Wi-?Fi(?!\w)", re.IGNORECASE)
 _IDENTIFIER_PATTERN = re.compile(
     r"(?<!\w)(?P<identifier>(?:[A-Z][A-Z0-9]*(?:[_-][A-Z0-9]+)+|[A-Z]{2,}\d+))(?!\w)"
 )
-_IPV4_PATTERN = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+_IPV4_PATTERN = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?!\w|\.\d)")
 _QUOTED_NAME_PATTERN = re.compile(r"(?<!\w)['‘](?P<name>[^'’]+)['’](?!\w)")
 _DOUBLE_QUOTED_NAME_PATTERN = re.compile(r'(?<!\w)"(?P<name>[^"]+)"(?!\w)')
 _GATEWAY_PATTERN = re.compile(r"(?<!\w)GATEWAY(?!\w)", re.IGNORECASE)
@@ -143,15 +143,6 @@ def _identifier_words(identifier: str, language: TemplateLanguage) -> str:
     return " ".join(words)
 
 
-def _ip_address_replacement(language: TemplateLanguage) -> str:
-    return {
-        "en": "I P address",
-        "hi-en": "I P address",
-        "hi": "आई पी पता",
-        "mr": "आय पी पत्ता",
-    }[language]
-
-
 def speakable(text: str, language: TemplateLanguage) -> str:
     """Return text for Timbre, with deterministic pronunciation for site labels and acronyms.
 
@@ -164,10 +155,11 @@ def speakable(text: str, language: TemplateLanguage) -> str:
     result = result.replace("“", "").replace("”", "")
 
     def replace_ip_address(match: re.Match[str]) -> str:
-        before = result[: match.start()]
-        if re.search(r"\bIP\s*$", before, re.IGNORECASE):
-            return {"en": "address", "hi-en": "address", "hi": "पता", "mr": "पत्ता"}[language]
-        return _ip_address_replacement(language)
+        dot = "डॉट" if language in ("hi", "mr") else "dot"
+        return f" {dot} ".join(
+            " ".join(_DIGIT_NAMES[language][int(digit)] for digit in octet)
+            for octet in match.group().split(".")
+        )
 
     result = _IPV4_PATTERN.sub(replace_ip_address, result)
     result = _NAVA_WIFI_PATTERN.sub(_NAVA_WIFI[language], result)

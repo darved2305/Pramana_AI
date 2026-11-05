@@ -105,7 +105,8 @@ async def transcribe(
 
 @router.post("/tts", dependencies=[Operator])
 async def synthesize(request: Request, body: TtsRequest) -> Response:
-    spoken_text = speakable(body.text, TEMPLATE_LANGUAGE_BY_TTS[body.language])
+    template_language = TEMPLATE_LANGUAGE_BY_TTS.get(body.language)
+    spoken_text = speakable(body.text, template_language) if template_language else body.text
     audio, wall_ms = await _gnani(request).synthesize(
         spoken_text,
         language=body.language,

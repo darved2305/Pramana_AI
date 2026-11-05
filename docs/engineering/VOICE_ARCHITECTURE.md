@@ -151,7 +151,7 @@ participant page keeps the reviewed display string. Known site IDs such as `DB-C
 `MAIN-1` are expanded letter by letter, and their digits are spoken as language-appropriate words.
 Wi-Fi spellings, the `NAVA-WiFi` network name, and technical initialisms such as `IP`, `ONT`, `PON`,
 and `CCTV` have deterministic language-specific forms. Quotes around names are removed, ellipses
-become a short pause, and a literal IPv4 address is replaced with an IP-address label. Room numbers
+become a short pause, and a literal IPv4 address is spoken digit by digit. Room numbers
 such as `room 205` remain numeric so Timbre can read them as quantities. Gnani documents language
 aware handling for ordinary numbers, dates, IDs, and common abbreviations in its
 [Text Normalization Guide](https://docs.gnani.ai/api/TTS/tts-input-formating).
