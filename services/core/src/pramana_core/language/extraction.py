@@ -32,6 +32,28 @@ def tokenize(text: str) -> list[str]:
     return _PUNCT.sub(" ", text.casefold()).split()
 
 
+ANSWER_NO = frozenset(tokenize("nahi nahin nai na नहीं नही ना नाही"))
+"""Hindi and Marathi negate after the predicate ("band nahi hai" = "is not off"). The same word
+opening an answer ("nahi band hai") is the reply "no", not a negation of the next word."""
+
+_CLAUSE = re.compile(r"[.,!?;:।॥…]+")
+
+
+def clause_breaks(text: str) -> set[int]:
+    """Token indices that start a new clause (after a comma, full stop, danda...).
+
+    "नहीं, बंद है" is "No. It is off": the negation answers the question and must not negate
+    the next word. Tokens are the same as ``tokenize(text)``; only the breaks are added.
+    """
+    breaks: set[int] = set()
+    n = 0
+    for part in _CLAUSE.split(text):
+        if n:
+            breaks.add(n)
+        n += len(tokenize(part))
+    return breaks
+
+
 def _phrases(*items: str) -> list[tuple[str, ...]]:
     return [tuple(tokenize(i)) for i in items]
 
@@ -465,6 +487,8 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "orange",
         "narangi",
         "नारंगी",
+        "नारिंगी",
+        "naringi",
         "yellow",
         "peela",
         "peeli",
@@ -520,6 +544,8 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "is not in the list",
     ),
     "stuck_connecting": _phrases(
+        "कनेक्ट होतंय",
+        "connect hotay",
         "connecting",
         "stuck",
         "atka",
@@ -648,9 +674,31 @@ class RuleExtractor:
         matches = _claim(candidates, taken)
 
         found: set[str] = set()
+        breaks = clause_breaks(text)
         for m in matches:
-            after = tokens[m.end] if m.end < len(tokens) and not taken[m.end] else ""
-            before = tokens[m.start - 1] if m.start > 0 and not taken[m.start - 1] else ""
+            if (
+                m.end in breaks
+                and m.end < len(tokens)
+                and tokens[m.end] in NEGATIONS
+                and any(o.start > m.end for o in matches)
+            ):
+                # A self-correction: "red, no wait, it's green". The later answer stands.
+                evidence.append("corrected:" + " ".join(tokens[m.start : m.end]))
+                continue
+            # A negation applies within its clause only ("nahi, band hai" is "no: it is off").
+            after = (
+                tokens[m.end]
+                if m.end < len(tokens) and not taken[m.end] and m.end not in breaks
+                else ""
+            )
+            before = (
+                tokens[m.start - 1]
+                if m.start > 0
+                and not taken[m.start - 1]
+                and m.start not in breaks
+                and not (m.start == 1 and tokens[0] in ANSWER_NO)
+                else ""
+            )
             negated = after in NEGATIONS or before in NEGATIONS
             label = m.label
             if negated and label not in ("no",):

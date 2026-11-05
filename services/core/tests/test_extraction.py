@@ -363,3 +363,37 @@ def test_working_light_is_on(text: str, outcome: str) -> None:
 def test_misheard_dikh_as_dekh_still_means_no_network() -> None:
     wifi = ["no_network", "stuck_connecting", "connected"]
     assert X.extract_sync("wifi देख ही नहीं रहा", wifi).outcome == "no_network"
+
+
+# -- "No, it's off" must not become "on" (found by the voice-bot phrase check, 2026-11-05) ----
+
+
+@pytest.mark.parametrize(
+    ("text", "outcome"),
+    [
+        ("नहीं, बंद है", "off"),
+        ("नाही, बंद आहे", "off"),
+        ("nahi, band hai", "off"),
+        ("nahi band hai", "off"),  # answer-initial "nahi" is the reply, not a negation
+        ("नहीं, चालू है", "on"),
+        ("band nahi hai", "on"),  # negation after the predicate still negates
+        ("चालू नहीं है", "off"),
+        ("not on", "off"),  # English negates the word after it
+    ],
+)
+def test_an_answer_initial_no_does_not_flip_the_outcome(text: str, outcome: str) -> None:
+    assert X.extract_sync(text, ON_OFF).outcome == outcome
+
+
+def test_marathi_amber_and_connecting() -> None:
+    assert X.extract_sync("नारिंगी दिवा आहे", ["green", "amber", "off"]).outcome == "amber"
+    wifi = ["no_network", "stuck_connecting", "connected"]
+    assert X.extract_sync("कनेक्ट होतंय पण होत नाही", wifi).outcome == "stuck_connecting"
+
+
+@pytest.mark.parametrize(
+    ("text", "outcome"),
+    [("red, no wait, it's green", "green"), ("laal, nahi, hara hai", "green")],
+)
+def test_a_self_correction_keeps_the_later_answer(text: str, outcome: str) -> None:
+    assert X.extract_sync(text, ["green", "red", "off"]).outcome == outcome
