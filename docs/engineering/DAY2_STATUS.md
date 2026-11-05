@@ -93,12 +93,15 @@ missed abstentions; the metric was fixed. See NOTES.md.
 
 ## Known gaps
 
-- Live Gnani: synthesised turns through the media socket only; human recordings (VOICE_SAMPLES.md) still needed.
+Next steps for a new session: `HANDOFF.md`.
+
+
+- Live Gnani: open-source voice bots and one real person on a phone have completed calls; more human testers needed.
 - Abstention on unidentifiable scenarios (68%) is a calibration target for the stopping rule.
 - The held-out extraction set has been seen; a fresh blind set is needed.
 - Preemption across parallel calls (D17, Nov 7); the per-call socket and consent exist.
-- Phones need HTTPS: the free Cloudflare quick tunnel needs `cloudflared` installed (blocked on
-  the user's permission); quick tunnels carry no SSE, so the console falls back to polling.
+- Phones need HTTPS: the free Cloudflare quick tunnel works (`cloudflared` installed); quick
+  tunnels carry no SSE, so the console falls back to polling.
 - Incremental TTS (Timbre streaming chunk format unverified); login throttle is per process.
 - Local setup: a dev core now enforces sign-in. Create a user with
   `uv run python -m pramana_core.auth.bootstrap`; scripts use `CORE_AUTOMATION_KEY` from `.env`.
