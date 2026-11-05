@@ -339,6 +339,10 @@ export interface paths {
         /**
          * Question Audio
          * @description The pending question, spoken in the participant's language (WAV).
+         *
+         *     Cached audio is one WAV. Otherwise the WAV is streamed while Timbre synthesises it
+         *     (``X-Audio-Streamed: true``; its header has an open-ended data length, as Timbre's own
+         *     WAVs do), so the browser can start playing before synthesis finishes.
          */
         get: operations["question_audio_v1_investigations__inv_id__questions__question_id__audio_get"];
         put?: never;

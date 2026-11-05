@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import json
 import wave
@@ -36,6 +37,9 @@ def wav(seconds: float = 0.5, rate: int = 24000) -> bytes:
     return buf.getvalue()
 
 
+STREAM_PCM = bytes([1, 0]) * 12_000  # 0.5 s of 24 kHz PCM16
+
+
 class Tts:
     def __init__(self) -> None:
         self.status = 200
@@ -43,6 +47,10 @@ class Tts:
         self.stt_text = ""
         """What the REST second decode hears ("" = nothing)."""
         self.stt_requests: list[httpx.Request] = []
+        self.sse = False
+        """Serve ``/api/v1/tts/sse`` as Timbre does (raw PCM chunks). Off: that path answers
+        with a WAV body, which the core treats as "no stream" and falls back to REST."""
+        self.sse_calls = 0
 
     def __call__(self, req: httpx.Request) -> httpx.Response:
         if req.url.path == "/stt/v3":
@@ -55,6 +63,21 @@ class Tts:
         self.calls += 1
         if self.status != 200:
             return httpx.Response(self.status, json={"detail": "no"})
+        if req.url.path == "/api/v1/tts/sse" and self.sse:
+            self.sse_calls += 1
+            pcm = STREAM_PCM
+            step = len(pcm) // 4
+            frames = [("start", {"status": "streaming_started"})]
+            for i in range(4):
+                part = base64.b64encode(pcm[i * step : (i + 1) * step]).decode()
+                frames.append(("chunk", {"chunk_index": i + 1, "audio": part, "is_final": False}))
+            frames.append(("complete", {"chunk_index": 5, "audio": "", "is_final": True}))
+            body = "".join(
+                f"event: {e}" + chr(10) + f"data: {json.dumps(d)}" + chr(10) * 2 for e, d in frames
+            )
+            return httpx.Response(
+                200, content=body.encode(), headers={"content-type": "text/event-stream"}
+            )
         return httpx.Response(200, content=wav())
 
 
@@ -527,3 +550,85 @@ def test_live_answer_confirmed_by_a_second_decode_is_not_asked_again(env: Env) -
     after = env.client.get(f"/v1/investigations/{state['id']}").json()
     assert (after["pending_question"] or {}).get("kind") != "confirm"
     assert env.client.get(f"/v1/investigations/{state['id']}/replay").json()["identical"]
+
+
+def _question_audio(ws: Any) -> tuple[dict[str, Any], bytes]:
+    """Read one question's audio: its ``tts_start`` frame and the bytes up to ``tts_end``."""
+    start_msg = text_frame(ws)
+    assert start_msg["type"] == "tts_start"
+    audio = b""
+    while True:
+        msg = ws.receive()
+        if msg.get("bytes") is not None:
+            audio += msg["bytes"]
+            continue
+        frame = json.loads(msg["text"])
+        if frame["type"] == "tts_end":
+            assert frame["utt_id"] == start_msg["utt_id"]
+            return start_msg, audio
+
+
+def test_uncached_question_audio_is_streamed_then_cached(env: Env) -> None:
+    """Timbre SSE: PCM pieces are forwarded as they arrive; the joined WAV is cached, so the
+    same question next time is one WAV served from the cache at no cost."""
+    env.tts.sse = True
+    state, q, _ = start(env)
+    pid = q["action"]["participant_id"]
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": token(env, state["id"], pid)}))
+        assert text_frame(ws)["type"] == "ready"
+        first, audio = _question_audio(ws)
+        ws.send_text(json.dumps({"type": "stop"}))
+    assert first["format"] == "pcm_s16le"
+    assert (first["sample_rate"], first["channels"], first["streaming"]) == (24000, 1, True)
+    assert audio == STREAM_PCM  # every sample, in order, no header
+    assert env.tts.sse_calls == 1
+    cache = env.client.app.state.question_audio  # type: ignore[attr-defined]
+    assert len(cache) == 1
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": token(env, state["id"], pid)}))
+        assert text_frame(ws)["type"] == "ready"
+        again, wav_bytes = _question_audio(ws)
+        ws.send_text(json.dumps({"type": "stop"}))
+    assert (again["format"], again["cached"]) == ("wav", True)
+    assert wav_bytes[:4] == b"RIFF"
+    assert wav_bytes.endswith(STREAM_PCM)
+    assert env.tts.sse_calls == 1  # nothing paid the second time
+
+
+def test_a_failed_stream_falls_back_to_one_wav(env: Env) -> None:
+    """No stream (here the TTS host answers the SSE path with a WAV body): one REST WAV."""
+    env.tts.sse = False
+    state, q, _ = start(env)
+    pid = q["action"]["participant_id"]
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(json.dumps({"type": "start", "token": token(env, state["id"], pid)}))
+        assert text_frame(ws)["type"] == "ready"
+        first, audio = _question_audio(ws)
+        ws.send_text(json.dumps({"type": "stop"}))
+    assert first["format"] == "wav"
+    assert audio[:4] == b"RIFF"
+
+
+def test_listen_streams_an_uncached_question_then_serves_it_from_the_cache(env: Env) -> None:
+    """GET .../audio on a miss: a WAV header with an open-ended length, then Timbre's PCM as
+    it arrives (the browser plays it while downloading). The next request is the cached WAV."""
+    env.tts.sse = True
+    state, q, _ = start(env)
+    url_audio = f"/v1/investigations/{state['id']}/questions/{q['id']}/audio"
+    first = env.client.get(url_audio)
+    assert first.status_code == 200
+    assert first.headers["x-audio-streamed"] == "true"
+    assert first.headers["content-type"].startswith("audio/wav")
+    head, pcm = first.content[:44], first.content[44:]
+    assert head[:4] == b"RIFF"
+    assert head[8:16] == b"WAVEfmt "
+    assert head[36:40] == b"data"
+    assert int.from_bytes(head[24:28], "little") == 24000
+    assert pcm == STREAM_PCM
+    again = env.client.get(url_audio)
+    assert again.headers["x-audio-cached"] == "true"
+    assert "x-audio-streamed" not in again.headers
+    with wave.open(io.BytesIO(again.content)) as w:  # the cached copy is a valid, sized WAV
+        assert (w.getframerate(), w.getnframes()) == (24000, len(STREAM_PCM) // 2)
+    assert env.tts.sse_calls == 1

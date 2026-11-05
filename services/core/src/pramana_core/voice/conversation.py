@@ -6,15 +6,20 @@ through the same extractor as typed answers, and the engine updates exactly as i
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
+import io
 import os
+import struct
+import wave
 from collections import OrderedDict
 from pathlib import Path
 
 from pramana_contracts import ParticipantSpec, TemplateLanguage
 from pramana_domain import DomainPack
 
+from ..errors import ApiError
 from ..language.extraction import OUTCOME_LEXICON
 from .gnani import GnaniClient
 
@@ -137,6 +142,99 @@ async def speak_question(
     audio, _ = await gnani.synthesize(text, language=tts_lang, model=model)
     cache.put(key, audio)
     return audio, False
+
+
+STREAM_SAMPLE_RATE = 24_000
+"""Sample rate of streamed question audio (PCM16 mono, the same rate as the REST WAV)."""
+
+
+def pcm_to_wav(pcm: bytes, rate: int = STREAM_SAMPLE_RATE) -> bytes:
+    """A correct WAV header (real data length) around PCM16 mono."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
+def streaming_wav_header(rate: int = STREAM_SAMPLE_RATE) -> bytes:
+    """A PCM16 mono WAV header whose sizes say "until the end of the stream" (0xFFFFFFFF),
+    for audio whose length is not known when the header is sent."""
+    open_ended = 0xFFFFFFFF
+    return (
+        b"RIFF"
+        + struct.pack("<I", open_ended)
+        + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+        + b"data"
+        + struct.pack("<I", open_ended)
+    )
+
+
+class QuestionAudio:
+    """A question's audio, fetched in the background while the recognizer connects.
+
+    Cached audio is ready at once as a WAV (``wav``, ``cached``). Otherwise Timbre streams it
+    (``synthesize_stream``) and each PCM chunk is put on ``chunks`` as it arrives, so playback
+    can start before synthesis finishes; the joined audio is then cached as a WAV. If the
+    stream fails before its first chunk, one REST WAV is fetched instead. ``None`` on
+    ``chunks`` marks the end; ``error`` holds a failure that left no playable audio.
+    """
+
+    def __init__(
+        self, gnani: GnaniClient, cache: QuestionAudioCache, text: str, language: TemplateLanguage
+    ) -> None:
+        self.chunks: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self.wav: bytes | None = None
+        self.cached = False
+        self.streamed = False
+        self.error: ApiError | None = None
+        self.task = asyncio.create_task(self._run(gnani, cache, text, language))
+
+    async def _run(
+        self, gnani: GnaniClient, cache: QuestionAudioCache, text: str, language: TemplateLanguage
+    ) -> None:
+        tts_lang = TTS_LANGUAGE[language]
+        model = "timbre-v2.5" if tts_lang == "hi-en" else "timbre-v3.0"
+        key = cache.key(text, tts_lang, model, None)
+        try:
+            hit = cache.get(key)
+            if hit is not None:
+                self.wav, self.cached = hit, True
+                return
+            pcm = bytearray()
+            try:
+                async with contextlib.aclosing(
+                    gnani.synthesize_stream(
+                        text, language=tts_lang, model=model, sample_rate=STREAM_SAMPLE_RATE
+                    )
+                ) as stream:
+                    async for chunk in stream:
+                        pcm += chunk
+                        self.streamed = True
+                        await self.chunks.put(chunk)
+            except ApiError as exc:
+                if self.streamed:
+                    self.error = exc  # part was played; do not cache a cut-off question
+                    return
+                try:  # nothing was played: fall back to one WAV over REST
+                    audio, _ = await gnani.synthesize(text, language=tts_lang, model=model)
+                except ApiError as exc2:
+                    self.error = exc2
+                    return
+                cache.put(key, audio)
+                self.wav = audio
+                return
+            self.wav = pcm_to_wav(bytes(pcm))
+            cache.put(key, self.wav)
+        finally:
+            await self.chunks.put(None)
+
+    def cancel(self) -> None:
+        if not self.task.done():
+            self.task.cancel()
 
 
 def stt_options(participant: ParticipantSpec) -> tuple[list[str], bool]:

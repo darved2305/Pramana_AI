@@ -75,4 +75,6 @@ def test_participant_answers_by_voice_with_their_join_token(
     obs = r.json()["result"]["observation"]
     assert (obs["outcome"], obs["modality"]) == ("no_network", "voice")
     # Question audio, the answer, and the independent check of a decision-critical answer.
-    assert fake.paths() == ["/api/v1/tts/inference", "/stt/v3", "/stt/v3"]
+    # Uncached audio is streamed first (Timbre SSE); this double answers that path with a plain
+    # WAV, so the core falls back to one REST WAV, as it would if streaming were unavailable.
+    assert fake.paths() == ["/api/v1/tts/sse", "/api/v1/tts/inference", "/stt/v3", "/stt/v3"]

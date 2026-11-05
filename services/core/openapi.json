@@ -3144,7 +3144,7 @@
   },
   "/v1/investigations/{inv_id}/questions/{question_id}/audio": {
    "get": {
-    "description": "The pending question, spoken in the participant's language (WAV).",
+    "description": "The pending question, spoken in the participant's language (WAV).\n\nCached audio is one WAV. Otherwise the WAV is streamed while Timbre synthesises it\n(``X-Audio-Streamed: true``; its header has an open-ended data length, as Timbre's own\nWAVs do), so the browser can start playing before synthesis finishes.",
     "operationId": "question_audio_v1_investigations__inv_id__questions__question_id__audio_get",
     "parameters": [
      {

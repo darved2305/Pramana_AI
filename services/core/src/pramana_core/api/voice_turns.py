@@ -6,10 +6,11 @@ with the question's context, and the transcript is extracted exactly like a type
 Validation happens before any paid call, so wrong or stale requests cost nothing.
 """
 
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from pramana_contracts import Modality, SubmitAnswer, VoiceAnswerResult
 
@@ -19,7 +20,14 @@ from ..investigations import InvestigationService
 from ..observability import log
 from ..visibility import visible_voice_answer
 from ..voice.call import ParticipantCall
-from ..voice.conversation import QuestionAudioCache, answer_keyterms, speak_question, stt_options
+from ..voice.conversation import (
+    STREAM_SAMPLE_RATE,
+    QuestionAudio,
+    QuestionAudioCache,
+    answer_keyterms,
+    streaming_wav_header,
+    stt_options,
+)
 from ..voice.gnani import GnaniClient
 from ..voice.media import MediaSession
 
@@ -33,15 +41,40 @@ def _deps(request: Request) -> tuple[InvestigationService, GnaniClient, Question
 
 @router.get("/{inv_id}/questions/{question_id}/audio")
 async def question_audio(inv_id: str, question_id: str, request: Request) -> Response:
-    """The pending question, spoken in the participant's language (WAV)."""
+    """The pending question, spoken in the participant's language (WAV).
+
+    Cached audio is one WAV. Otherwise the WAV is streamed while Timbre synthesises it
+    (``X-Audio-Streamed: true``; its header has an open-ended data length, as Timbre's own
+    WAVs do), so the browser can start playing before synthesis finishes."""
     svc, gnani, cache = _deps(request)
     q = await svc.pending_question(inv_id, question_id)
     await authorize_participant(request, inv_id, q.participant.id)  # before any paid call
-    audio, cached = await speak_question(gnani, cache, q.text, q.language)
-    return Response(
-        audio,
+    audio = QuestionAudio(gnani, cache, q.text, q.language)
+    first = await audio.chunks.get()
+    if first is None:  # cached, or one REST WAV after a failed stream
+        if audio.wav is None:
+            raise audio.error or ApiError(502, "VOICE_EMPTY_AUDIO", "no question audio")
+        return Response(
+            audio.wav,
+            media_type="audio/wav",
+            headers={"X-Audio-Cached": str(audio.cached).lower(), "Cache-Control": "no-store"},
+        )
+
+    async def body() -> AsyncIterator[bytes]:
+        # Streamed WAV: a header with an open-ended length, then PCM as Timbre makes it.
+        yield streaming_wav_header(STREAM_SAMPLE_RATE)
+        yield first
+        while (chunk := await audio.chunks.get()) is not None:
+            yield chunk
+
+    return StreamingResponse(
+        body(),
         media_type="audio/wav",
-        headers={"X-Audio-Cached": str(cached).lower(), "Cache-Control": "no-store"},
+        headers={
+            "X-Audio-Cached": "false",
+            "X-Audio-Streamed": "true",
+            "Cache-Control": "no-store",
+        },
     )
 
 

@@ -67,11 +67,20 @@ from ..investigations import InvestigationService, PendingQuestion
 from ..observability import log
 from ..runtime.broadcast import EventBroadcaster
 from ..visibility import for_participant
-from .conversation import QuestionAudioCache, answer_keyterms, speak_question, stt_options
+from .conversation import (
+    STREAM_SAMPLE_RATE,
+    QuestionAudio,
+    QuestionAudioCache,
+    answer_keyterms,
+    stt_options,
+)
 from .gnani import GnaniClient, GnaniSttStream
 
 START_TIMEOUT_S = 10.0
 TTS_CHUNK = 16 * 1024
+PCM_FLUSH = 9_600
+"""Streamed question audio is forwarded in pieces of at least 0.2 s (24 kHz PCM16), so the
+browser schedules a few buffers rather than hundreds of tiny ones."""
 MAX_CLIENT_FRAME = 64 * 1024
 COMMIT_WAIT_S = 6.0
 CALL_TIMERS = CallTimers()
@@ -253,10 +262,8 @@ class MediaSession:
         langs, codemix = stt_options(q.participant)
         t0 = time.perf_counter()
         # Synthesise (or fetch) the question audio while the recognizer connects.
-        audio: asyncio.Task[tuple[bytes, bool]] | None = (
-            asyncio.create_task(speak_question(self.gnani, self.cache, q.text, q.language))
-            if play
-            else None
+        audio: QuestionAudio | None = (
+            QuestionAudio(self.gnani, self.cache, q.text, q.language) if play else None
         )
         try:
             async with self.gnani.stream(
@@ -297,17 +304,55 @@ class MediaSession:
         except ApiError as exc:  # no stream slot, over budget, not configured, Gnani refused
             await self.fail(exc)
         finally:
-            if audio is not None and not audio.done():
+            if audio is not None:
                 audio.cancel()
 
-    async def _speak(self, pending: asyncio.Task[tuple[bytes, bool]]) -> None:
-        """Send the question audio. A TTS failure is not fatal: the text is on screen."""
-        try:
-            audio, cached = await pending
-        except ApiError as exc:
-            await self.fail(exc, fatal=False)
+    async def _speak(self, audio: QuestionAudio) -> None:
+        """Send the question audio. A TTS failure is not fatal: the text is on screen.
+
+        Cached (or REST) audio goes as one WAV. Streamed audio goes as PCM16 pieces as soon as
+        Timbre produces them (``format: pcm_s16le``), so playback starts before synthesis ends.
+        """
+        first = await audio.chunks.get()
+        if first is None:
+            if audio.wav is not None:
+                await self._send_audio(audio.wav, audio.cached)
+            elif audio.error is not None:
+                await self.fail(audio.error, fatal=False)
             return
-        await self._send_audio(audio, cached)
+        utt = self.call.utterance
+        await self.send(
+            {
+                "type": "tts_start",
+                "utt_id": utt,
+                "format": "pcm_s16le",
+                "sample_rate": STREAM_SAMPLE_RATE,
+                "channels": 1,
+                "streaming": True,
+                "cached": False,
+            }
+        )
+        started = time.monotonic()
+        sent = 0
+        pending = bytearray(first)
+        chunk: bytes | None = first
+        while chunk is not None:
+            if len(pending) >= PCM_FLUSH:
+                await self.send_bytes(bytes(pending))
+                sent += len(pending)
+                pending.clear()
+                self.played_until = started + sent / (2 * STREAM_SAMPLE_RATE) + PLAYBACK_GRACE_S
+            chunk = await audio.chunks.get()
+            if chunk is not None:
+                pending += chunk
+        if pending:
+            await self.send_bytes(bytes(pending))
+            sent += len(pending)
+        self.played_until = started + sent / (2 * STREAM_SAMPLE_RATE) + PLAYBACK_GRACE_S
+        self.spoken = audio.wav  # the joined WAV, replayed for free on a re-prompt
+        await self.send({"type": "tts_end", "utt_id": utt})
+        if audio.error is not None:
+            await self.fail(audio.error, fatal=False)
 
     async def _send_audio(self, audio: bytes, cached: bool) -> None:
         self.spoken = audio
