@@ -410,6 +410,13 @@
     "CreateInvestigation": {
       "additionalProperties": false,
       "properties": {
+        "max_parallel_calls": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Max Parallel Calls",
+          "type": "integer"
+        },
         "pack_id": {
           "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
           "title": "Pack Id",
@@ -910,6 +917,11 @@
           "title": "Id",
           "type": "string"
         },
+        "max_parallel_calls": {
+          "default": 1,
+          "title": "Max Parallel Calls",
+          "type": "integer"
+        },
         "observations": {
           "items": {
             "$ref": "#/$defs/Observation"
@@ -938,6 +950,13 @@
               "type": "null"
             }
           ]
+        },
+        "pending_questions": {
+          "items": {
+            "$ref": "#/$defs/Question"
+          },
+          "title": "Pending Questions",
+          "type": "array"
         },
         "plan": {
           "$ref": "#/$defs/PlanDecision"
@@ -1904,7 +1923,8 @@
       "enum": [
         "pending",
         "answered",
-        "cancelled"
+        "cancelled",
+        "withdrawn"
       ],
       "title": "QuestionStatus",
       "type": "string"

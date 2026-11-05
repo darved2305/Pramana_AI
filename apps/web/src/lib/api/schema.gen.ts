@@ -732,6 +732,11 @@ export interface components {
         };
         /** CreateInvestigation */
         CreateInvestigation: {
+            /**
+             * Max Parallel Calls
+             * @default 1
+             */
+            max_parallel_calls?: number;
             /** Pack Id */
             pack_id: string;
             /** Participants */
@@ -927,6 +932,11 @@ export interface components {
             ground_truth?: components["schemas"]["GroundTruthComparison"] | null;
             /** Id */
             id: string;
+            /**
+             * Max Parallel Calls
+             * @default 1
+             */
+            max_parallel_calls?: number;
             /** Observations */
             observations: components["schemas"]["Observation"][];
             /** Pack Id */
@@ -934,6 +944,8 @@ export interface components {
             /** Participants */
             participants: components["schemas"]["ParticipantSpec"][];
             pending_question: components["schemas"]["Question"] | null;
+            /** Pending Questions */
+            pending_questions?: components["schemas"]["Question"][];
             plan: components["schemas"]["PlanDecision"];
             /** Questions Asked */
             questions_asked: number;
@@ -1196,7 +1208,7 @@ export interface components {
          * QuestionStatus
          * @enum {string}
          */
-        QuestionStatus: "pending" | "answered" | "cancelled";
+        QuestionStatus: "pending" | "answered" | "cancelled" | "withdrawn";
         /**
          * RepairState
          * @description Belief about a repair that has been carried out.

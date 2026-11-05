@@ -33,6 +33,7 @@ from pramana_contracts import (
     Approval,
     ApprovalDecision,
     ApprovalStatus,
+    CandidateScore,
     CapabilityGrant,
     CreateInvestigation,
     CreateScenario,
@@ -49,6 +50,7 @@ from pramana_contracts import (
     ParticipantSpec,
     PlanDecision,
     PlanKind,
+    ProbeAction,
     Question,
     QuestionStatus,
     Report,
@@ -76,6 +78,7 @@ from pramana_engine import (
     EvidenceError,
     ObserveResult,
     compile_pack,
+    schedule,
 )
 
 from .db import (
@@ -119,6 +122,13 @@ def _now() -> datetime:
 
 def _id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(6)}"
+
+
+def _not_pending(status: str) -> str:
+    return {
+        QuestionStatus.WITHDRAWN.value: "question was withdrawn: another answer made it pointless",
+        QuestionStatus.CANCELLED.value: "question was cancelled",
+    }.get(status, "question already answered")
 
 
 class InvestigationService:
@@ -327,6 +337,102 @@ class InvestigationService:
         for old in rows.scalars():
             old.state = ObservationState.SUPERSEDED.value
 
+    def _ask(
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        action: ProbeAction,
+        parallel: CandidateScore | None = None,
+    ) -> None:
+        """Address one question to one person and log it."""
+        req = self._request(row)
+        person = next(p for p in req.participants if p.id == action.participant_id)
+        lang = person.languages.template_language
+        text = realize(self.pack(row.pack_id), action, lang)
+        qid = _id("q")
+        session.add(
+            QuestionRow(
+                id=qid,
+                investigation_id=row.id,
+                participant_id=action.participant_id,
+                probe_id=action.probe_id,
+                location_id=action.location_id,
+                requires_move=action.requires_move,
+                language=lang,
+                text=text,
+                status=QuestionStatus.PENDING.value,
+                asked_at=_now(),
+            )
+        )
+        engine.record_question(action.participant_id)
+        payload: dict[str, Any] = {
+            "question_id": qid,
+            "action": action.model_dump(mode="json"),
+            "language": lang,
+            "text": text,
+        }
+        if parallel is not None:
+            payload["parallel"] = {
+                "conditional_decision_bits": parallel.eig_decision_bits,
+                "conditional_hypothesis_bits": parallel.eig_hypothesis_bits,
+                "cost_s": parallel.cost_s,
+                "net_value_min": parallel.net_value_min,
+            }
+        self._event(session, row.id, "QuestionAsked", payload)
+
+    async def _schedule(self, session: AsyncSession, row: InvestigationRow, engine: Engine) -> None:
+        """After any change of belief: withdraw questions that stopped mattering, then ask or
+        conclude (``pramana_engine.schedule``, docs/adr/0011). With one call at a time this is
+        exactly the sequential planner."""
+        limit = int(row.request.get("max_parallel_calls", 1))
+        pending = list(
+            (
+                await session.execute(
+                    select(QuestionRow)
+                    .where(
+                        QuestionRow.investigation_id == row.id,
+                        QuestionRow.status == QuestionStatus.PENDING.value,
+                    )
+                    .order_by(QuestionRow.asked_at, QuestionRow.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        actions = [
+            ProbeAction(
+                participant_id=q.participant_id,
+                probe_id=q.probe_id,
+                location_id=q.location_id,
+                requires_move=q.requires_move,
+            )
+            for q in pending
+        ]
+        step = schedule(engine, actions, limit)
+        conclusive = step.plan is not None and step.plan.kind != PlanKind.ASK
+        for i in step.withdraw:
+            q = pending[i]
+            q.status = QuestionStatus.WITHDRAWN.value
+            self._event(
+                session,
+                row.id,
+                "QuestionWithdrawn",
+                {
+                    "question_id": q.id,
+                    "participant_id": q.participant_id,
+                    "reason": "the investigation reached a conclusion"
+                    if conclusive
+                    else "another answer made this question pointless",
+                },
+            )
+        if step.plan is not None:
+            self._apply_plan(session, row, engine, step.plan)
+        else:
+            self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
+        for extra in step.ask:
+            self._ask(session, row, engine, extra.action, parallel=extra)
+
     def _apply_plan(
         self, session: AsyncSession, row: InvestigationRow, engine: Engine, plan: PlanDecision
     ) -> None:
@@ -335,37 +441,7 @@ class InvestigationService:
         self._event(session, row.id, "PlanComputed", plan.model_dump(mode="json"))
         if plan.kind == PlanKind.ASK:
             assert plan.action is not None
-            req = self._request(row)
-            person = next(p for p in req.participants if p.id == plan.action.participant_id)
-            lang = person.languages.template_language
-            text = realize(self.pack(row.pack_id), plan.action, lang)
-            qid = _id("q")
-            session.add(
-                QuestionRow(
-                    id=qid,
-                    investigation_id=row.id,
-                    participant_id=plan.action.participant_id,
-                    probe_id=plan.action.probe_id,
-                    location_id=plan.action.location_id,
-                    requires_move=plan.action.requires_move,
-                    language=lang,
-                    text=text,
-                    status=QuestionStatus.PENDING.value,
-                    asked_at=_now(),
-                )
-            )
-            engine.record_question(plan.action.participant_id)
-            self._event(
-                session,
-                row.id,
-                "QuestionAsked",
-                {
-                    "question_id": qid,
-                    "action": plan.action.model_dump(mode="json"),
-                    "language": lang,
-                    "text": text,
-                },
-            )
+            self._ask(session, row, engine, plan.action)
             row.status = (
                 InvestigationStatus.VERIFYING
                 if engine.snapshot().repair is not None
@@ -600,7 +676,7 @@ class InvestigationService:
             )
             self._event(session, inv_id, "ReportReceived", req.report.model_dump(mode="json"))
             await self._intake(session, row, engine, req)
-            self._apply_plan(session, row, engine, engine.plan())
+            await self._schedule(session, row, engine)
             row.version = 1
         self._cache[inv_id] = (row.version, engine)
         log.info("investigation_created", investigation_id=inv_id, status=row.status)
@@ -663,7 +739,7 @@ class InvestigationService:
                     if q is None or q.investigation_id != inv_id:
                         raise not_found("question")
                     if q.status != QuestionStatus.PENDING.value:
-                        raise ApiError(409, "QUESTION_NOT_PENDING", "question already answered")
+                        raise ApiError(409, "QUESTION_NOT_PENDING", _not_pending(q.status))
                     if q.participant_id != ans.participant_id:
                         raise ApiError(
                             403,
@@ -699,7 +775,7 @@ class InvestigationService:
                     q.status, q.answered_at = QuestionStatus.ANSWERED.value, _now()
                     if q.kind == "confirm":
                         obs = await self._apply_confirmation(session, inv_id, engine, q, extraction)
-                        self._apply_plan(session, row, engine, engine.plan())
+                        await self._schedule(session, row, engine)
                         row.version += 1
                         version = row.version
                         continue_planning = False
@@ -749,7 +825,7 @@ class InvestigationService:
                             {"participant_id": q.participant_id, "reason": "asked to stop"},
                         )
                     if continue_planning:
-                        self._apply_plan(session, row, engine, engine.plan())
+                        await self._schedule(session, row, engine)
                         row.version += 1
                         version = row.version
             except BaseException:
@@ -847,8 +923,12 @@ class InvestigationService:
                 .scalars()
                 .all()
             )
-        pending = next((q for q in questions if q.status == QuestionStatus.PENDING.value), None)
         model = self.model(row.pack_id)
+        waiting = [
+            self._question_view(model, q)
+            for q in questions
+            if q.status == QuestionStatus.PENDING.value
+        ]
         return InvestigationState(
             id=row.id,
             pack_id=row.pack_id,
@@ -859,23 +939,9 @@ class InvestigationService:
             sealed_commitment=row.commitment,
             belief=snapshot,
             plan=plan,
-            pending_question=None
-            if pending is None
-            else Question(
-                id=pending.id,
-                action={
-                    "participant_id": pending.participant_id,
-                    "probe_id": pending.probe_id,
-                    "location_id": pending.location_id,
-                    "requires_move": pending.requires_move,
-                },
-                language=pending.language,
-                text=pending.text,
-                outcomes=list(model.outcomes[pending.probe_id]),
-                status=QuestionStatus(pending.status),
-                asked_at=pending.asked_at,
-                kind="confirm" if pending.kind == "confirm" else "probe",
-            ),
+            pending_question=waiting[0] if waiting else None,
+            pending_questions=waiting,
+            max_parallel_calls=int(row.request.get("max_parallel_calls", 1)),
             observations=[
                 Observation.model_validate({c: getattr(o, c) for c in Observation.model_fields})
                 for o in observations
@@ -885,6 +951,24 @@ class InvestigationService:
             ground_truth=None
             if row.ground_truth is None
             else GroundTruthComparison.model_validate(row.ground_truth),
+        )
+
+    @staticmethod
+    def _question_view(model: CompiledModel, q: QuestionRow) -> Question:
+        return Question(
+            id=q.id,
+            action=ProbeAction(
+                participant_id=q.participant_id,
+                probe_id=q.probe_id,
+                location_id=q.location_id,
+                requires_move=q.requires_move,
+            ),
+            language=cast(TemplateLanguage, q.language),
+            text=q.text,
+            outcomes=list(model.outcomes[q.probe_id]),
+            status=QuestionStatus(q.status),
+            asked_at=q.asked_at,
+            kind="confirm" if q.kind == "confirm" else "probe",
         )
 
     async def events(self, inv_id: str, after_seq: int, limit: int) -> list[EventEnvelope]:
@@ -1145,7 +1229,7 @@ class InvestigationService:
         if row.status not in {st.value for st in ANSWERABLE_STATUSES}:
             raise ApiError(409, "INVESTIGATION_NOT_ACTIVE", f"investigation is {row.status}")
         if q.status != QuestionStatus.PENDING.value:
-            raise ApiError(409, "QUESTION_NOT_PENDING", "question already answered")
+            raise ApiError(409, "QUESTION_NOT_PENDING", _not_pending(q.status))
         if participant_id is not None and q.participant_id != participant_id:
             raise ApiError(
                 403, "WRONG_PARTICIPANT", "question was addressed to another participant"
@@ -1221,7 +1305,7 @@ class InvestigationService:
                                 {"question_id": q.id, "reason": reason},
                             )
                         if pending:
-                            self._apply_plan(session, row, engine, engine.plan())
+                            await self._schedule(session, row, engine)
             except BaseException:
                 self._cache.pop(inv_id, None)
                 raise

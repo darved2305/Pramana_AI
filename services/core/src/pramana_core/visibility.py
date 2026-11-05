@@ -33,8 +33,10 @@ _HIDDEN_BELIEF = BeliefSnapshot(
 
 
 def for_participant(state: InvestigationState, participant_id: str) -> InvestigationState:
-    q = state.pending_question
-    mine = q is not None and q.action.participant_id == participant_id
+    waiting = state.pending_questions or (
+        [state.pending_question] if state.pending_question is not None else []
+    )
+    mine = [q for q in waiting if q.action.participant_id == participant_id]
     plan = state.plan
     hidden_plan = PlanDecision(
         kind=plan.kind,
@@ -51,7 +53,8 @@ def for_participant(state: InvestigationState, participant_id: str) -> Investiga
             "participants": [p for p in state.participants if p.id == participant_id],
             "belief": _HIDDEN_BELIEF,
             "plan": hidden_plan,
-            "pending_question": q if mine else None,
+            "pending_question": mine[0] if mine else None,
+            "pending_questions": mine,
             "observations": [o for o in state.observations if o.participant_id == participant_id],
             "approvals": [a for a in state.approvals if a.participant_id == participant_id],
             "ground_truth": None,

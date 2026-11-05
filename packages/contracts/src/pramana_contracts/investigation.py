@@ -119,6 +119,9 @@ class CreateInvestigation(StrictModel):
     participants: list[ParticipantSpec] = Field(min_length=1, max_length=12)
     report: Report
     scenario: ScenarioRequest
+    max_parallel_calls: int = Field(default=1, ge=1, le=3)
+    """How many people may have a question at the same time (docs/adr/0011: at most 3). With
+    more than one, a question in flight is withdrawn when another answer makes it pointless."""
 
     @model_validator(mode="after")
     def _consistent(self) -> CreateInvestigation:
@@ -134,6 +137,8 @@ class QuestionStatus(StrEnum):
     PENDING = "pending"
     ANSWERED = "answered"
     CANCELLED = "cancelled"
+    WITHDRAWN = "withdrawn"
+    """Asked in parallel, then dropped: another answer made it pointless (docs/adr/0011)."""
 
 
 class Question(StrictModel):
@@ -205,10 +210,15 @@ class InvestigationState(StrictModel):
     belief: BeliefSnapshot
     plan: PlanDecision
     pending_question: Question | None
+    """The earliest question still waiting for an answer (the only one when calls are
+    sequential)."""
     observations: list[Observation]
     questions_asked: int
     ground_truth: GroundTruthComparison | None = None
     approvals: list[Approval] = Field(default_factory=list)
+    pending_questions: list[Question] = Field(default_factory=list)
+    """Every question waiting for an answer, oldest first (several with parallel calls)."""
+    max_parallel_calls: int = 1
 
 
 class EventEnvelope(StrictModel):

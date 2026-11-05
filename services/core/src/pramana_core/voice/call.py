@@ -241,8 +241,15 @@ class ParticipantCall:
                 state = await self.svc.get(self.inv_id)
                 if state.status not in ANSWERABLE_STATUSES:
                     return None
-                pq = state.pending_question
-                if pq is not None and pq.action.participant_id == self.participant_id:
+                pq = next(
+                    (
+                        q
+                        for q in state.pending_questions
+                        if q.action.participant_id == self.participant_id
+                    ),
+                    None,
+                )
+                if pq is not None:
                     return await self.svc.pending_question(self.inv_id, pq.id, self.participant_id)
                 left = deadline - time.monotonic()
                 if left <= 0 or self.call.state == CallState.PREEMPTING:

@@ -216,3 +216,58 @@ def test_a_waiting_call_sends_heartbeats(env: Env, monkeypatch: pytest.MonkeyPat
     assert msgs[-1] == {"type": "call_end", "reason": "nothing more to ask"}
     assert code == 1000
     assert not env.fake.seen_headers  # waiting costs nothing
+
+
+def test_two_people_on_calls_at_once_in_one_investigation(env: Env) -> None:
+    """Parallel calls (docs/adr/0011): two participants are asked at the same time, each over
+    their own call socket and recognizer session, and both answers go through the one writer."""
+    r = env.client.post(
+        "/v1/investigations", json={**body(fault="CB_C2_7.tripped"), "max_parallel_calls": 3}
+    )
+    assert r.status_code == 201, r.text
+    inv = r.json()
+    first, second = inv["pending_questions"][:2]
+    pa, pb = first["action"]["participant_id"], second["action"]["participant_id"]
+    assert pa != pb
+    with (
+        env.client.websocket_connect(url(inv["id"], pa)) as wa,
+        env.client.websocket_connect(url(inv["id"], pb)) as wb,
+    ):
+        for ws, pid in ((wa, pa), (wb, pb)):
+            ws.send_text(
+                json.dumps({"type": "start", "token": token(env, inv["id"], pid), "play": False})
+            )
+            until(ws, "ringing")
+            ws.send_text(json.dumps({"type": "accept"}))
+            until(ws, "consent_request")
+            ws.send_text(json.dumps({"type": "consent", "answer": "yes"}))
+        ready_a = until(wa, "ready")[-1]
+        ready_b = until(wb, "ready")[-1]
+        assert {ready_a["question_id"], ready_b["question_id"]} == {first["id"], second["id"]}
+        # Both recognizer sessions are open at once; the first answer arrives on call A.
+        env.fake.transcript = truthful(env, inv["id"], first)
+        wa.send_bytes(PCM)
+        wa.send_text(json.dumps({"type": "commit"}))
+        got_a = until(wa, "answer")[-1]
+        assert got_a["result"]["observation"]["participant_id"] == pa
+        # Call B's question is still wanted (or was withdrawn because A settled it).
+        state = env.client.get(f"/v1/investigations/{inv['id']}").json()
+        still = second["id"] in {q["id"] for q in state["pending_questions"]}
+        if still:
+            env.fake.transcript = truthful(env, inv["id"], second)
+            wb.send_bytes(PCM)
+            wb.send_text(json.dumps({"type": "commit"}))
+            got_b = until(wb, "answer")[-1]
+            assert got_b["result"]["observation"]["participant_id"] == pb
+        else:
+            until(wb, "question_withdrawn")
+        for ws in (wa, wb):
+            ws.send_text(json.dumps({"type": "stop"}))
+    log = events(env, inv["id"])
+    voiced = [
+        e["payload"]["evidence"]["participant_id"]
+        for e in log
+        if e["type"] == "ObservationRecorded" and e["payload"]["evidence"]["modality"] == "voice"
+    ]
+    assert voiced[:2] == ([pa, pb] if still else [pa])
+    assert env.client.get(f"/v1/investigations/{inv['id']}/replay").json()["identical"]
