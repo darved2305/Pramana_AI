@@ -3,7 +3,7 @@
  * invented. Staff calls ride on the session cookie; participant calls pass the join-link
  * token (`token`), which the core accepts only for that participant's own actions.
  */
-import { request, requestBlob } from "./http";
+import { request, requestBlob, requestStream } from "./http";
 import type {
   AnswerResult,
   AuthSession,
@@ -85,6 +85,9 @@ export const core = {
 
   questionAudio: (id: string, questionId: string, token?: string) =>
     requestBlob("core", `/v1/investigations/${enc(id)}/questions/${enc(questionId)}/audio`, { token }),
+  /** The same audio as a stream: uncached questions start playing before synthesis ends. */
+  questionAudioStream: (id: string, questionId: string, token?: string) =>
+    requestStream("core", `/v1/investigations/${enc(id)}/questions/${enc(questionId)}/audio`, { token }),
 
   requestApproval: (id: string, body: { action: string; target: string; participant_id: string }) =>
     request<InvestigationState>("core", `/v1/investigations/${enc(id)}/approvals`, { method: "POST", json: body }),

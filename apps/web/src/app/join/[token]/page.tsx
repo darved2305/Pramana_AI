@@ -1,5 +1,6 @@
 "use client";
 
+import { playWavStream, type WavStreamPlayback } from "@/lib/audio/wav-stream";
 import { PREVIEW_ENABLED } from "@/lib/store/local";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
@@ -77,6 +78,8 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const [callPhase, setCallPhase] = useState<CallPhase>("none");
   const [consentText, setConsentText] = useState<string | null>(null);
   const levelRef = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const listenRef = useRef<WavStreamPlayback | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -109,6 +112,8 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       recRef.current?.cancel();
       liveRef.current?.close();
       callRef.current?.close();
+      listenRef.current?.stop();
+      void audioCtxRef.current?.close();
     },
     [],
   );
@@ -379,11 +384,15 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       return;
     }
     try {
-      const blob = await core.questionAudio(state.id, q.id, payload.t);
-      const url = URL.createObjectURL(blob);
-      const a = new Audio(url);
-      a.onended = () => URL.revokeObjectURL(url);
-      await a.play();
+      // Played while it downloads: an uncached question starts before synthesis finishes.
+      const ctx = (audioCtxRef.current ??= new AudioContext());
+      // Never wait on resume(): it stays pending until the browser sees a user gesture.
+      if (ctx.state === "suspended") void ctx.resume();
+      listenRef.current?.stop();
+      const res = await core.questionAudioStream(state.id, q.id, payload.t);
+      const playback = playWavStream(res, ctx);
+      listenRef.current = playback;
+      await playback.done;
     } catch (e) {
       setMsg(describeError(e));
     }

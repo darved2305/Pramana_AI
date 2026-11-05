@@ -99,6 +99,8 @@ export class QuestionMediaSession {
   private node: AudioWorkletNode | null = null;
   private tts: { utt: number; bytes: number; chunks: ArrayBuffer[] } | null = null;
   private playing: AudioBufferSourceNode | null = null;
+  /** Streamed question audio (`format: pcm_s16le`): pieces are scheduled back to back as they arrive. */
+  private stream: { utt: number; rate: number; cursor: number; sources: AudioBufferSourceNode[]; ended: boolean; carry: Uint8Array | null } | null = null;
   private state: MediaState = "connecting";
 
   constructor(
@@ -259,10 +261,22 @@ export class QuestionMediaSession {
         this.handlers.onReady?.(msg as unknown as MediaReady);
         break;
       case "tts_start":
-        this.tts = { utt: Number(msg.utt_id), bytes: Number(msg.bytes), chunks: [] };
+        if (msg.format === "pcm_s16le") {
+          this.stopPlayback();
+          this.tts = null;
+          this.stream = { utt: Number(msg.utt_id), rate: Number(msg.sample_rate) || 24000, cursor: 0, sources: [], ended: false, carry: null };
+          this.setState("speaking");
+        } else {
+          this.tts = { utt: Number(msg.utt_id), bytes: Number(msg.bytes), chunks: [] };
+        }
         break;
       case "tts_end":
-        if (this.tts && this.tts.utt === Number(msg.utt_id)) void this.play(this.tts.chunks);
+        if (this.stream && this.stream.utt === Number(msg.utt_id)) {
+          this.stream.ended = true;
+          if (!this.stream.sources.length) this.finishStream();
+        } else if (this.tts && this.tts.utt === Number(msg.utt_id)) {
+          void this.play(this.tts.chunks);
+        }
         this.tts = null;
         break;
       case "speech_start":
@@ -310,7 +324,50 @@ export class QuestionMediaSession {
   }
 
   private onAudio(chunk: ArrayBuffer): void {
-    this.tts?.chunks.push(chunk);
+    if (this.stream) this.schedule(chunk);
+    else this.tts?.chunks.push(chunk);
+  }
+
+  /** Play one streamed PCM16 piece right after the previous one (gapless). */
+  private schedule(chunk: ArrayBuffer): void {
+    const st = this.stream;
+    if (!st) return;
+    let bytes = new Uint8Array(chunk);
+    if (st.carry) {
+      const joined = new Uint8Array(st.carry.length + bytes.length);
+      joined.set(st.carry);
+      joined.set(bytes, st.carry.length);
+      bytes = joined;
+      st.carry = null;
+    }
+    if (bytes.length % 2) {
+      st.carry = bytes.slice(bytes.length - 1);
+      bytes = bytes.slice(0, bytes.length - 1);
+    }
+    if (!bytes.length) return;
+    const ctx = this.audioContext();
+    const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.length / 2);
+    const buf = ctx.createBuffer(1, samples.length, st.rate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) ch[i] = samples[i] / 32768;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    const at = Math.max(ctx.currentTime + 0.05, st.cursor);
+    st.cursor = at + buf.duration;
+    st.sources.push(src);
+    src.onended = () => {
+      if (this.stream !== st) return;
+      st.sources = st.sources.filter((x) => x !== src);
+      if (st.ended && !st.sources.length) this.finishStream();
+    };
+    src.start(at);
+  }
+
+  private finishStream(): void {
+    this.stream = null;
+    this.sendControl({ type: "playback_done" });
+    if (this.state === "speaking") this.setState(this.node ? "listening" : "ready");
   }
 
   private async play(chunks: ArrayBuffer[]): Promise<void> {
@@ -344,6 +401,15 @@ export class QuestionMediaSession {
   }
 
   private stopPlayback(): void {
+    const st = this.stream;
+    this.stream = null;
+    for (const src of st?.sources ?? []) {
+      try {
+        src.stop();
+      } catch {
+        /* already stopped */
+      }
+    }
     const p = this.playing;
     this.playing = null;
     if (p) {

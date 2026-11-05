@@ -47,6 +47,11 @@ export async function request<T>(service: Service, path: string, opts: RequestOp
   return (await res.json()) as T;
 }
 
+/** The raw response (status already checked), for bodies read as a stream. */
+export async function requestStream(service: Service, path: string, opts: RequestOptions = {}): Promise<Response> {
+  return raw(service, path, opts);
+}
+
 export async function requestBlob(service: Service, path: string, opts: RequestOptions = {}): Promise<Blob> {
   const res = await raw(service, path, opts);
   return res.blob();
