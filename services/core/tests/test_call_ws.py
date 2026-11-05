@@ -271,3 +271,46 @@ def test_two_people_on_calls_at_once_in_one_investigation(env: Env) -> None:
     ]
     assert voiced[:2] == ([pa, pb] if still else [pa])
     assert env.client.get(f"/v1/investigations/{inv['id']}/replay").json()["identical"]
+
+
+def test_a_question_withdrawn_while_its_answer_is_submitted_ends_the_turn_not_the_call(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live parallel run, 2026-11-05: another person's answer withdrew this question while this
+    person's spoken answer was being submitted. That is a withdrawal, not a fatal error."""
+    from pramana_core.db import QuestionRow
+    from pramana_core.errors import ApiError
+
+    r = env.client.post(
+        "/v1/investigations", json={**body(fault="CB_C2_7.tripped"), "max_parallel_calls": 3}
+    )
+    inv = r.json()
+    q = inv["pending_questions"][0]
+    pid = q["action"]["participant_id"]
+    svc = env.client.app.state.investigations  # type: ignore[attr-defined]
+
+    async def withdrawn(*_: Any, **__: Any) -> Any:
+        # Another answer withdrew it just now (as the scheduler does), then this one arrives.
+        async with svc.db.transaction() as session:
+            row = await session.get(QuestionRow, q["id"])
+            row.status = "withdrawn"
+        raise ApiError(409, "QUESTION_NOT_PENDING", "question was withdrawn")
+
+    monkeypatch.setattr(svc, "answer", withdrawn)
+    with env.client.websocket_connect(url(inv["id"], pid)) as ws:
+        ws.send_text(
+            json.dumps({"type": "start", "token": token(env, inv["id"], pid), "play": False})
+        )
+        until(ws, "ringing")
+        ws.send_text(json.dumps({"type": "accept"}))
+        until(ws, "consent_request")
+        ws.send_text(json.dumps({"type": "consent", "answer": "yes"}))
+        until(ws, "ready")
+        env.fake.transcript = truthful(env, inv["id"], q)
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs = until(ws, "question_withdrawn")
+        assert not [m for m in msgs if m["type"] == "error" and m.get("fatal")]
+        rest, _, code = drain(ws, calls=True)
+    assert code == 1000
+    assert rest[-1]["type"] == "call_end" and rest[-1]["reason"] != "error"

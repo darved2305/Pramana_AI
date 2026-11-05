@@ -502,6 +502,15 @@ class MediaSession:
                 second_decode=unbiased_decode if text is not None else None,
             )
         except ApiError as exc:
+            if exc.code == "QUESTION_NOT_PENDING" and self.in_call:
+                # Withdrawn (or answered elsewhere) while this answer was on its way: in a
+                # call that ends this turn, exactly as when ``_watch`` notices it first. The
+                # answer was not used, so the turn is incomplete before it is preempted.
+                await self.fire(CallEvent.INCOMPLETE)
+                if self.call.can(CallEvent.PREEMPT):
+                    await self.fire(CallEvent.PREEMPT)
+                    await self.send({"type": "question_withdrawn", "question_id": q.id})
+                    return
             await self.fail(exc)
             return
         except ValueError as exc:  # SubmitAnswer validation

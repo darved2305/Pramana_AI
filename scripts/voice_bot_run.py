@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import contextlib
 import json
 import statistics
 import sys
@@ -237,7 +238,9 @@ class Run:
         )
         self.last_clip[pid] = clip
         await asyncio.sleep(0.3)
-        await self.speak(ws, pid, clip)
+        # The call can end while this bot is talking (e.g. its question was withdrawn).
+        with contextlib.suppress(websockets.ConnectionClosed):
+            await self.speak(ws, pid, clip)
 
     async def speak(self, ws: Any, pid: str, clip: Path) -> None:
         voice = b"\x00\x00" * 4800 + pcm(clip)  # lead-in, then the answer
