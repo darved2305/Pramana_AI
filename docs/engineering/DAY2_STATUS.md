@@ -97,9 +97,9 @@ Next steps for a new session: `HANDOFF.md`.
 
 
 - Live Gnani: open-source voice bots and one real person on a phone have completed calls; more human testers needed.
-- Abstention on unidentifiable scenarios (68%) is a calibration target for the stopping rule.
-- The held-out extraction set has been seen; a fresh blind set is needed.
-- Preemption across parallel calls (D17, Nov 7); the per-call socket and consent exist.
+- Abstention: calibration found no way to abstain more without losing accuracy (`eval/reports/calibration-2026-11-05`); do not claim it.
+- Extraction: a fresh blind set scored 60/80 rules-only with 0 wrong and 2 invented (`eval/reports/extraction-blind-2026-11-05`); it has since been tuned on, so a new blind set from someone else is needed before quoting accuracy.
+- Parallel calls with preemption (D17) are done: up to 3 people at once, questions withdrawn when another answer settles them (ADR 0011). Verified with tests, live voice bots on Gnani, and a run in the browser. Sustained load (3 calls for 10 minutes) is not yet measured.
 - Phones need HTTPS: the free Cloudflare quick tunnel works (`cloudflared` installed); quick
   tunnels carry no SSE, so the console falls back to polling.
 - Incremental TTS (Timbre streaming chunk format unverified); login throttle is per process.
