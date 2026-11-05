@@ -304,6 +304,20 @@ HEARSAY = _phrases(
     "according to",
     "roommate ne",
     "dost ne",
+    # Marathi: "mitra mhanala ..." (my friend said ...), "aikla" (I heard).
+    "म्हणाला",
+    "म्हणाली",
+    "म्हणाले",
+    "म्हणतो",
+    "म्हणते",
+    "म्हणत होता",
+    "सांगत होता",
+    "ऐकलं",
+    "ऐकले",
+    "mhanala",
+    "mhanali",
+    "mhanto",
+    "aikla",
 )
 ASSUMPTION = _phrases(
     "must be",
@@ -664,12 +678,15 @@ class RuleExtractor:
 
         allowed = set(outcomes)
         candidates = [m for o in outcomes for m in _find(tokens, OUTCOME_LEXICON.get(o, []), o)]
-        first = next((i for i, t in enumerate(tokens) if t not in FILLER), 0)
+        # "Opens the answer": the first word not already read as a hedge, a report or a
+        # filler ("kadachit ho, chalu aahe"), or the start of a new clause.
+        first = next((i for i, t in enumerate(tokens) if not taken[i] and t not in FILLER), 0)
+        starts = clause_breaks(text) | {first}
         candidates = [
             m
             for m in candidates
             if not (m.end - m.start == 1 and tokens[m.start] in SENTENCE_INITIAL_ONLY)
-            or m.start == first
+            or m.start in starts
         ]
         matches = _claim(candidates, taken)
 
