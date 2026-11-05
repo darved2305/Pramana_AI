@@ -31,7 +31,7 @@ export default function SettingsPage() {
                 </Badge>
               }
             />
-            <KeyValue k="Core address" v={<span className="font-mono text-[12px]">PRAMANA_CORE_URL (default 127.0.0.1:8000)</span>} />
+            <KeyValue k="Core address" v={<span className="font-mono text-[12px]">{process.env.NEXT_PUBLIC_CORE_ADDRESS ?? "not set"} (PRAMANA_CORE_URL)</span>} />
             <KeyValue k="Simulator address" v={<span className="font-mono text-[12px]">PRAMANA_SIM_URL (default 127.0.0.1:8100)</span>} />
             <KeyValue
               k="Voice"

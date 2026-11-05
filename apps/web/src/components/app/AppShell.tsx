@@ -26,6 +26,9 @@ import { useCoreHealth } from "@/lib/data/hooks";
 import { previewMode, usePrefs, usePreviewMode } from "@/lib/store/local";
 import { useSession } from "@/lib/data/session";
 
+/** The core the web app's proxy forwards to (from PRAMANA_CORE_URL at build or dev start). */
+const CORE_ADDRESS = process.env.NEXT_PUBLIC_CORE_ADDRESS ?? "the core";
+
 const NAV = [
   { href: "/app", label: "Overview", icon: IconGrid, exact: true },
   { href: "/app/investigations", label: "Investigations", icon: IconHistory },
@@ -246,7 +249,11 @@ function ConnectionCard({ collapsed }: { collapsed: boolean }) {
         {label}
       </div>
       <p className="mt-0.5 text-[12px] text-muted">
-        {preview ? "Preview mode shows sample data" : health === "offline" ? "Run make core to connect" : "127.0.0.1:8000 via proxy"}
+        {preview
+          ? "Preview mode shows sample data"
+          : health === "offline"
+            ? `No core at ${CORE_ADDRESS}. Start it with scripts/dev.py`
+            : `${CORE_ADDRESS} via proxy`}
       </p>
     </div>
   );

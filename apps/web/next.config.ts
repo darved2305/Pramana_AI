@@ -10,6 +10,8 @@ const SIM_URL = process.env.PRAMANA_SIM_URL ?? "http://127.0.0.1:8100";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Shown in the console so the operator can see which core the proxy really forwards to.
+  env: { NEXT_PUBLIC_CORE_ADDRESS: new URL(CORE_URL).host },
   poweredByHeader: false,
   async rewrites() {
     return [
