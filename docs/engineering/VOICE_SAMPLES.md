@@ -55,3 +55,20 @@ uv run python scripts/voice_eval.py --clips C:/Users/<you>/pramana-voice-samples
 
 The script prints the estimated cost first (about Rs 0.02 per clip) and asks before spending. The
 results are private (Gnani EULA §16): keep the CSV out of the repository and out of public posts.
+
+## Without volunteers: open-source voices
+
+When no one is available to record, two free sources stand in (results stay private either way):
+
+- **Real human speech:** Google FLEURS (CC BY 4.0), native speakers reading sentences in Marathi
+  (`mr_in`) and Hindi (`hi_in`). `scripts/fleurs_voice_check.py --lang mr_in --n 10` streams the
+  archive and stops after N clips (a few MB, deleted afterwards) and reports the character error
+  rate. It tests recognition of real voices, not our short answers.
+- **Our answers in another voice:** Meta MMS-TTS (`facebook/mms-tts-mar`, `facebook/mms-tts-hin`,
+  CC-BY-NC 4.0, internal testing only) synthesises the table above offline, independently of
+  Gnani's own voices. Each phrase is rendered clean, phone-band (8 kHz) and with background
+  noise, named in the scheme above, and scored with `voice_eval.py`. Install it in a throwaway
+  environment (PyTorch CPU + Transformers, about 0.8 GB) and delete it after use.
+
+Synthetic voices do not replace people: accents, hesitation and real rooms still need human
+recordings.

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import re
 import sys
 from pathlib import Path
 
@@ -85,15 +86,24 @@ async def main() -> None:
     ) as client:
         for f, lang, probe, expected in jobs:
             name = f.name if f.suffix.lower() != ".opus" else f.with_suffix(".ogg").name
-            r = await client.post(
-                "/v1/voice/stt",
-                files={"audio": (name, f.read_bytes())},
-                data={
-                    "language_codes": CANDIDATES[lang],
-                    "codemix": str(lang == "hi-en").lower(),
-                    "keyterms": ",".join(t for t in answer_keyterms(pack, probe) if "," not in t),
-                },
-            )
+            for _ in range(3):
+                r = await client.post(
+                    "/v1/voice/stt",
+                    files={"audio": (name, f.read_bytes())},
+                    data={
+                        "language_codes": CANDIDATES[lang],
+                        "codemix": str(lang == "hi-en").lower(),
+                        "keyterms": ",".join(
+                            t for t in answer_keyterms(pack, probe) if "," not in t
+                        ),
+                    },
+                )
+                code = r.json().get("error", {}).get("code") if r.status_code != 200 else None
+                if code != "VOICE_RATE_LIMITED_LOCAL":
+                    break
+                # The core's own per-minute cap (below Gnani's): wait for a free slot, then retry.
+                wait = re.search(r"retry in (\d+) s", r.text)
+                await asyncio.sleep(int(wait.group(1)) + 1 if wait else 30)
             if r.status_code != 200:
                 err = r.json().get("error", {})
                 rows.append(
