@@ -69,8 +69,11 @@ simulated participants on participant calls with MMS voices, decision, approval,
 verification by voice, `verified`, correct on reveal, identical replay, about Rs 2.5 of
 credits. With decision-critical answers confirmed by a second decode instead of a re-ask, the
 same run decided after 6 spoken questions instead of 8 (Rs 1.8), and idle calls send heartbeats
-so a proxy does not drop them. Not yet done for M2: real human voices, phones over the tunnel in a live run, and the
-latency target.
+so a proxy does not drop them. A real person then answered from a phone over the free tunnel with two simulated
+participants alongside: decided, repaired, `verified`, correct on reveal, identical replay.
+Turn latency is measured privately and meets the plan's targets after caching question audio
+on disk and closing recognizer sessions in the background. Not yet done for M2: more than one
+human at a time.
 
 ## Frontend wiring
 

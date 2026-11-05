@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import statistics
 import sys
@@ -66,6 +67,12 @@ PEOPLE = [
 CLIP_LANG = {"hi-en": "hi", "hi": "hi", "mr": "mr", "en": "hi"}
 DONE = {"decided", "abstained", "verified", "not_verified", "closed"}
 FRAME = 1024  # bytes: 32 ms of 16 kHz PCM16
+
+
+def join_segment(payload: dict[str, str]) -> str:
+    """The participant page's link segment (apps/web/src/lib/join.ts ``encodeJoin``)."""
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
 def pcm(path: Path) -> bytes:
@@ -140,7 +147,9 @@ class Run:
             self.args.core.replace("http", "ws", 1)
             + f"/v1/investigations/{self.inv['id']}/participants/{pid}/call"
         )
-        async with websockets.connect(url, max_size=2**23) as ws:
+        # No client pings: the core does not answer them while a call waits between questions
+        # (browsers never send any); the call's own heartbeat frames keep the line alive.
+        async with websockets.connect(url, max_size=2**23, ping_interval=None) as ws:
             await ws.send(
                 json.dumps(
                     {"type": "start", "token": self.tokens[pid]["token"], "play": self.args.play}
@@ -219,7 +228,20 @@ class Run:
         await ws.send(json.dumps({"type": "commit"}))
 
     async def phase(self) -> None:
-        await asyncio.gather(*(self.bot(p) for p in PEOPLE))
+        """Bots play everyone except a human participant, who answers from their own phone."""
+        bots = [p for p in PEOPLE if p["id"] != self.args.human]
+        await asyncio.gather(*(self.bot(p) for p in bots), self.wait_for_human())
+
+    async def wait_for_human(self) -> None:
+        """Return once nothing is pending for the human (the bots return on their own)."""
+        if not self.args.human:
+            return
+        while True:
+            s = await self.state()
+            q = s["pending_question"]
+            if s["status"] in DONE or (q is None and s["status"] != "acting"):
+                return
+            await asyncio.sleep(1)
 
     async def repair(self) -> None:
         inv = self.inv["id"]
@@ -266,18 +288,21 @@ class Run:
 
     async def main(self) -> int:
         before = (await self.core.get("/v1/voice/usage")).json().get("spent_today_inr", 0.0)
-        r = await self.core.post(
-            "/v1/investigations",
-            json={
-                "pack_id": "campus_block_c",
-                "participants": PEOPLE,
-                "report": {"text": "Floor 3 pe WiFi nahi chal raha", "reporter_id": "p_riya"},
-                "scenario": {
-                    "seed": 19,
-                    "fault": {"faults": [{"component_id": "CB_C2_7", "mode": "tripped"}]},
+        if self.args.attach:  # continue an investigation already under way
+            r = await self.core.get(f"/v1/investigations/{self.args.attach}")
+        else:
+            r = await self.core.post(
+                "/v1/investigations",
+                json={
+                    "pack_id": "campus_block_c",
+                    "participants": PEOPLE,
+                    "report": {"text": "Floor 3 pe WiFi nahi chal raha", "reporter_id": "p_riya"},
+                    "scenario": {
+                        "seed": 19,
+                        "fault": {"faults": [{"component_id": "CB_C2_7", "mode": "tripped"}]},
+                    },
                 },
-            },
-        )
+            )
         r.raise_for_status()
         self.inv = r.json()
         for p in PEOPLE:
@@ -286,6 +311,17 @@ class Run:
             )
             t.raise_for_status()
             self.tokens[p["id"]] = t.json()
+        if self.args.human:
+            tok = self.tokens[self.args.human]
+            link = f"{self.args.public_url.rstrip('/')}/join/" + join_segment(
+                {
+                    "i": self.inv["id"],
+                    "p": self.args.human,
+                    "s": tok["scenario_id"],
+                    "t": tok["token"],
+                }
+            )
+            print(f"JOIN LINK for {self.args.human}: {link}", flush=True)
         await asyncio.wait_for(self.phase(), self.args.timeout)
         s = await self.state()
         if s["status"] == "decided" and s["belief"]["map_decision"] == "DISPATCH_ELECTRICIAN_DB_C2":
@@ -328,6 +364,9 @@ def main() -> None:
     ap.add_argument("--clips", required=True)
     ap.add_argument("--play", action="store_true", help="have Timbre speak each question")
     ap.add_argument("--timeout", type=float, default=900.0)
+    ap.add_argument("--human", help="participant id answered by a person on their phone")
+    ap.add_argument("--attach", help="continue this investigation instead of creating one")
+    ap.add_argument("--public-url", default="http://localhost:3002", help="web app address")
     sys.exit(asyncio.run(Run(ap.parse_args()).main()))
 
 

@@ -15,6 +15,7 @@ killed.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shutil
 import signal
@@ -136,10 +137,16 @@ class Child:
     def _relay(self, out: IO[str]) -> None:
         assert self.proc is not None
         assert self.proc.stdout is not None
+        # Keep draining the child's output whatever happens: if this thread died, the pipe
+        # would fill and the child would freeze (Next.js prints a "▲" a Windows console
+        # cannot encode, which once left the web server hanging).
+        encoding = getattr(out, "encoding", None) or "utf-8"
         for raw in self.proc.stdout:
             line = raw.decode("utf-8", "replace").rstrip()
-            out.write(f"[{self.name}] {line}\n")
-            out.flush()
+            text = f"[{self.name}] {line}\n".encode(encoding, "replace").decode(encoding)
+            with contextlib.suppress(Exception):
+                out.write(text)
+                out.flush()
 
     def alive(self) -> bool:
         return self.proc is not None and self.proc.poll() is None

@@ -101,6 +101,15 @@ Per the EULA, accuracy and latency results stay out of this repository; they are
   (`GnaniSttStream.aclose`, `test_gnani_adapter.py`). Billing is by audio sent, so this
   changes no cost.
 
+- **A real person on a real phone (2026-11-05).** One team member answered as Riya from an
+  Android phone over a Cloudflare quick tunnel (`docs/engineering/STAGING.md`), speaking
+  Hinglish into the participant page, with two simulated participants on calls alongside
+  (`voice_bot_run.py --human p_riya`). The microphone path, the media socket through the
+  tunnel, Prisma v3.0 on a human voice and the second-decode confirmation all worked; an
+  unclear fragment was recorded as nothing. Two of the person's answers did not match their
+  simulated view, and the engine still reached the right decision and verified the repair,
+  with more questions. One run.
+
 ## Usage guards (`voice/governor.py`)
 
 | Guard | Setting | Default | Account limit |

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
 import sys
 import threading
 import time
@@ -166,3 +167,20 @@ def test_child_output_is_prefixed_and_stop_ends_the_process() -> None:
     assert not child.alive()
     assert time.monotonic() - started < 15
     child.stop()  # stopping twice is harmless
+
+
+def test_output_the_console_cannot_encode_never_freezes_a_child() -> None:
+    # Next.js prints "▲"; a cp1252 console cannot encode it. The relay used to die on it, the
+    # child's pipe then filled, and the web server froze. Far more than a pipe's worth here.
+    code = "import sys\nfor _ in range(4000): print('\u25b2 Next.js ready ' + 'x' * 40)\n"
+    out = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    child = dev.Child("web", [sys.executable, "-c", code], env=dict(os.environ))
+    child.start(out)
+    assert child.proc is not None
+    assert child.proc.wait(timeout=20) == 0  # it finished: the pipe was drained
+    assert child._pump is not None
+    child._pump.join(timeout=5)
+    out.flush()
+    written = out.buffer.getvalue()  # type: ignore[attr-defined]
+    assert written.count(b"Next.js ready") == 4000
+    assert b"? Next.js" in written  # the unencodable character was replaced, not fatal
