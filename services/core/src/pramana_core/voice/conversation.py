@@ -21,6 +21,7 @@ from pramana_domain import DomainPack
 
 from ..errors import ApiError
 from ..language.extraction import OUTCOME_LEXICON
+from ..language.speakable import speakable
 from .gnani import GnaniClient
 
 TTS_LANGUAGE: dict[TemplateLanguage, str] = {
@@ -77,8 +78,8 @@ class QuestionAudioCache:
             disk_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def key(text: str, language: str, model: str, voice: str | None) -> str:
-        return hashlib.sha256(f"{model}|{voice}|{language}|{text}".encode()).hexdigest()
+    def key(spoken_text: str, language: str, model: str, voice: str | None) -> str:
+        return hashlib.sha256(f"{model}|{voice}|{language}|{spoken_text}".encode()).hexdigest()
 
     def get(self, key: str) -> bytes | None:
         audio = self._items.get(key)
@@ -135,11 +136,12 @@ async def speak_question(
     """Return (WAV, served_from_cache). Cached audio costs no credits."""
     tts_lang = TTS_LANGUAGE[language]
     model = "timbre-v2.5" if tts_lang == "hi-en" else "timbre-v3.0"
-    key = cache.key(text, tts_lang, model, None)
+    spoken_text = speakable(text, language)
+    key = cache.key(spoken_text, tts_lang, model, None)
     cached = cache.get(key)
     if cached is not None:
         return cached, True
-    audio, _ = await gnani.synthesize(text, language=tts_lang, model=model)
+    audio, _ = await gnani.synthesize(spoken_text, language=tts_lang, model=model)
     cache.put(key, audio)
     return audio, False
 
@@ -198,7 +200,8 @@ class QuestionAudio:
     ) -> None:
         tts_lang = TTS_LANGUAGE[language]
         model = "timbre-v2.5" if tts_lang == "hi-en" else "timbre-v3.0"
-        key = cache.key(text, tts_lang, model, None)
+        spoken_text = speakable(text, language)
+        key = cache.key(spoken_text, tts_lang, model, None)
         try:
             hit = cache.get(key)
             if hit is not None:
@@ -208,7 +211,7 @@ class QuestionAudio:
             try:
                 async with contextlib.aclosing(
                     gnani.synthesize_stream(
-                        text, language=tts_lang, model=model, sample_rate=STREAM_SAMPLE_RATE
+                        spoken_text, language=tts_lang, model=model, sample_rate=STREAM_SAMPLE_RATE
                     )
                 ) as stream:
                     async for chunk in stream:
@@ -220,7 +223,7 @@ class QuestionAudio:
                     self.error = exc  # part was played; do not cache a cut-off question
                     return
                 try:  # nothing was played: fall back to one WAV over REST
-                    audio, _ = await gnani.synthesize(text, language=tts_lang, model=model)
+                    audio, _ = await gnani.synthesize(spoken_text, language=tts_lang, model=model)
                 except ApiError as exc2:
                     self.error = exc2
                     return

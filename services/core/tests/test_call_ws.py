@@ -14,6 +14,7 @@ from participant_bot import PHRASES
 from test_media_ws import PCM, Env, drain, env, fake, make_env, token, until
 
 from pramana_core.calls.runtime import CallTimers
+from pramana_core.language.speakable import speakable
 from pramana_core.voice import call as call_mod
 from pramana_core.voice import media
 
@@ -70,13 +71,15 @@ def test_a_call_rings_asks_consent_and_asks_question_after_question(env: Env) ->
     pid = inv["pending_question"]["action"]["participant_id"]
     with env.client.websocket_connect(url(inv["id"], pid)) as ws:
         ws.send_text(
-            json.dumps({"type": "start", "token": token(env, inv["id"], pid), "play": False})
+            json.dumps({"type": "start", "token": token(env, inv["id"], pid), "play": True})
         )
         ringing = until(ws, "ringing")[-1]
         assert ringing["participant_id"] == pid
         ws.send_text(json.dumps({"type": "accept"}))
         consent = until(ws, "consent_request")[-1]
         assert "?" in consent["text"]
+        until(ws, "tts_end")
+        assert env.tts.tts_requests[0]["text"] == speakable(consent["text"], ringing["language"])
         ws.send_text(json.dumps({"type": "consent", "answer": "yes"}))
         answered = [answer_and_get(env, ws, inv["id"])]
         # Keep answering while the engine addresses this same person.

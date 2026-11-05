@@ -20,7 +20,9 @@ from fastapi.testclient import TestClient
 from participant_bot import PHRASES
 from starlette.websockets import WebSocketDisconnect
 
+from pramana_core.language.speakable import speakable
 from pramana_core.main import create_app
+from pramana_core.voice.conversation import TTS_LANGUAGE, QuestionAudioCache
 
 pytestmark = pytest.mark.db
 
@@ -51,6 +53,7 @@ class Tts:
         """Serve ``/api/v1/tts/sse`` as Timbre does (raw PCM chunks). Off: that path answers
         with a WAV body, which the core treats as "no stream" and falls back to REST."""
         self.sse_calls = 0
+        self.tts_requests: list[dict[str, Any]] = []
 
     def __call__(self, req: httpx.Request) -> httpx.Response:
         if req.url.path == "/stt/v3":
@@ -60,6 +63,8 @@ class Tts:
             return httpx.Response(
                 200, json={"success": True, "transcript": self.stt_text, "model": "prisma-v3.0"}
             )
+        if req.url.path in ("/api/v1/tts/sse", "/api/v1/tts/inference"):
+            self.tts_requests.append(json.loads(req.content))
         self.calls += 1
         if self.status != 200:
             return httpx.Response(self.status, json={"detail": "no"})
@@ -576,15 +581,23 @@ def test_uncached_question_audio_is_streamed_then_cached(env: Env) -> None:
     pid = q["action"]["participant_id"]
     with env.client.websocket_connect(url(state, q)) as ws:
         ws.send_text(json.dumps({"type": "start", "token": token(env, state["id"], pid)}))
-        assert text_frame(ws)["type"] == "ready"
+        ready = text_frame(ws)
+        assert ready["type"] == "ready"
+        assert ready["text"] == q["text"]  # display text stays in its reviewed form
         first, audio = _question_audio(ws)
         ws.send_text(json.dumps({"type": "stop"}))
     assert first["format"] == "pcm_s16le"
     assert (first["sample_rate"], first["channels"], first["streaming"]) == (24000, 1, True)
     assert audio == STREAM_PCM  # every sample, in order, no header
     assert env.tts.sse_calls == 1
+    spoken_text = speakable(q["text"], q["language"])
+    assert env.tts.tts_requests[0]["text"] == spoken_text
     cache = env.client.app.state.question_audio  # type: ignore[attr-defined]
     assert len(cache) == 1
+    language = TTS_LANGUAGE[q["language"]]
+    model = "timbre-v2.5" if language == "hi-en" else "timbre-v3.0"
+    assert cache.get(QuestionAudioCache.key(spoken_text, language, model, None)) is not None
+    assert cache.get(QuestionAudioCache.key(q["text"], language, model, None)) is None
     with env.client.websocket_connect(url(state, q)) as ws:
         ws.send_text(json.dumps({"type": "start", "token": token(env, state["id"], pid)}))
         assert text_frame(ws)["type"] == "ready"
@@ -608,6 +621,8 @@ def test_a_failed_stream_falls_back_to_one_wav(env: Env) -> None:
         ws.send_text(json.dumps({"type": "stop"}))
     assert first["format"] == "wav"
     assert audio[:4] == b"RIFF"
+    spoken_text = speakable(q["text"], q["language"])
+    assert [request["text"] for request in env.tts.tts_requests] == [spoken_text, spoken_text]
 
 
 def test_listen_streams_an_uncached_question_then_serves_it_from_the_cache(env: Env) -> None:
@@ -626,6 +641,7 @@ def test_listen_streams_an_uncached_question_then_serves_it_from_the_cache(env: 
     assert head[36:40] == b"data"
     assert int.from_bytes(head[24:28], "little") == 24000
     assert pcm == STREAM_PCM
+    assert env.tts.tts_requests[0]["text"] == speakable(q["text"], q["language"])
     again = env.client.get(url_audio)
     assert again.headers["x-audio-cached"] == "true"
     assert "x-audio-streamed" not in again.headers

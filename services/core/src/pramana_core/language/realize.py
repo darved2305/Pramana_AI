@@ -10,10 +10,10 @@ from pramana_contracts import ProbeAction, TemplateLanguage
 from pramana_domain import DomainPack
 
 CONFIRM_PREFIX: dict[TemplateLanguage, str] = {
-    "en": "Sorry, just to be sure, once more: ",
-    "hi-en": "Ek baar pakka kar lete hain: ",
-    "hi": "एक बार पक्का कर लेते हैं: ",
-    "mr": "एकदा खात्री करून घेऊया: ",
+    "en": "Sorry, just to be sure, once more:",
+    "hi-en": "Ek baar pakka kar lete hain:",
+    "hi": "एक बार पक्का कर लेते हैं:",
+    "mr": "एकदा खात्री करून घेऊया:",
 }
 """Asked when a spoken answer alone would change the decision. The question is repeated in its
 original, item-specific form (not "did you say off?"), so the confirmation is not leading."""
@@ -24,5 +24,6 @@ def realize(pack: DomainPack, action: ProbeAction, language: TemplateLanguage) -
     place = pack.location_by_id[action.location_id].label.get(language)
     text = probe.templates[language].replace("{place}", place)
     if action.requires_move:
-        text = pack.move_templates[language].replace("{place}", place) + text
-    return text
+        move = pack.move_templates[language].replace("{place}", place)
+        text = move.rstrip() + " " + text
+    return text.strip()
