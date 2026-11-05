@@ -21,6 +21,8 @@ import { Avatar } from "@/components/app/Avatar";
 import { DecisionBar, DiagnosisPanel, HypothesisPanel, ReasoningPanel } from "@/components/console/BeliefPanels";
 import { ApprovalPanel, ContradictionPanel, ConversationPanel, EvidenceLedger } from "@/components/console/ActivityPanels";
 import { useInvestigation, usePack } from "@/lib/data/hooks";
+import { useCurrentUser } from "@/lib/data/session";
+import { hasRole } from "@/lib/api/auth";
 import { STATUS_LABEL, STATUS_TONE, findContradictions, locationLabel, outcomeWord, participantName, probeLabel, relative } from "@/lib/data/derive";
 import { core } from "@/lib/api/core";
 import { ApiError, describeError } from "@/lib/api/http";
@@ -94,7 +96,10 @@ function CommandCenter({
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const contradictions = useMemo(() => findContradictions(s.observations), [s.observations]);
-  const canReveal = !s.ground_truth && ["decided", "abstained", "verified", "not_verified"].includes(s.status);
+  // Only an operator may reveal (the core enforces it); approvers do not see the button.
+  const me = useCurrentUser();
+  const isOperator = me ? hasRole(me, "operator") : true;
+  const canReveal = isOperator && !s.ground_truth && ["decided", "abstained", "verified", "not_verified"].includes(s.status);
   const [copied, setCopied] = useState(false);
 
   return (

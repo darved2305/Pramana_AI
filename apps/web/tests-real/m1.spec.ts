@@ -107,6 +107,9 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   const approverCtx = await browser.newContext();
   const approver = await approverCtx.newPage();
   await signIn(approver, "approver", `/app/investigations/${invId}`);
+  // Revealing is for operators only: an approver is not offered the button.
+  await expect(approver.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+  await expect(approver.getByRole("button", { name: "Reveal ground truth" })).toHaveCount(0);
   await approver.getByRole("button", { name: "Approve", exact: true }).click();
   await approver.getByRole("dialog").getByRole("button", { name: "Approve", exact: true }).click();
   await expect(approver.getByText(/Approved by Asha Approver \(you\)/)).toBeVisible();
