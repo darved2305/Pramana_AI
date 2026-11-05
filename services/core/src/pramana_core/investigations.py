@@ -537,7 +537,7 @@ class InvestigationService:
         """Re-ask the same item-specific question (not "did you say X?"), same person."""
         lang = cast(TemplateLanguage, asked.language)
         qid = _id("q")
-        text = CONFIRM_PREFIX[lang] + asked.text
+        text = CONFIRM_PREFIX[lang] + " " + asked.text
         session.add(
             QuestionRow(
                 id=qid,

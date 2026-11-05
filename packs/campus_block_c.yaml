@@ -335,10 +335,10 @@ actions:
       mr: "तुम्हाला {place} येथे {target} रीसेट करण्याची परवानगी मिळाली आहे. झाल्यावर सांगा."
 
 move_templates:
-  en: "Could you please walk to {place}? Once you are there: "
-  hi-en: "Kya aap {place} tak ja sakte hain? Wahan pahunch kar: "
-  hi: "क्या आप {place} तक जा सकते हैं? वहाँ पहुँचकर: "
-  mr: "तुम्ही {place} पर्यंत जाऊ शकाल का? तिथे पोहोचल्यावर: "
+  en: "Could you please walk to {place}? Once there:"
+  hi-en: "Kya aap {place} tak ja sakte hain? Wahan pahunch kar:"
+  hi: "क्या आप {place} तक जा सकते हैं? वहाँ पहुँचकर:"
+  mr: "तुम्ही {place} पर्यंत जाऊ शकाल का? तिथे पोहोचल्यावर:"
 
 # Operational decisions. Each hypothesis maps to exactly one decision class.
 decision_classes:

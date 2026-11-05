@@ -17,6 +17,7 @@ from core_testkit import body, core_settings, truncate_all
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from pramana_core.language.speakable import speakable
 from pramana_core.main import create_app
 from pramana_core.voice.conversation import QuestionAudioCache, answer_keyterms
 from pramana_domain import load_pack
@@ -111,11 +112,36 @@ def test_question_audio_is_spoken_in_the_participants_language_and_cached(
     assert first.content[:4] == b"RIFF"
     assert first.headers["X-Audio-Cached"] == "false"
     tts_body = json.loads(fake.calls[-1][1].content)
-    assert tts_body["text"] == q["text"]
+    assert tts_body["text"] == speakable(q["text"], "hi-en")
+    assert q["text"] != tts_body["text"]  # the participant display remains unchanged
     assert (tts_body["language"], tts_body["model"]) == ("hi-en", "timbre-v2.5")  # Riya: Hinglish
     second = client.get(url)
     assert second.headers["X-Audio-Cached"] == "true"
     assert fake.paths().count("/api/v1/tts/inference") == 1  # replay costs nothing
+
+
+def test_direct_tts_route_sends_spoken_text_to_timbre(
+    voice: tuple[TestClient, FakeGnaniHttp],
+) -> None:
+    client, fake = voice
+    response = client.post("/v1/voice/tts", json={"text": "DB-C2 WiFi", "language": "hi-IN"})
+    assert response.status_code == 200, response.text
+    tts_body = json.loads(fake.calls[-1][1].content)
+    assert tts_body["text"] == "डी बी सी टू वाई-फ़ाई"
+
+
+@pytest.mark.parametrize(
+    "language", ["bn-IN", "gu-IN", "kn-IN", "ml-IN", "pa-IN", "ta-IN", "te-IN"]
+)
+def test_direct_tts_preserves_other_supported_languages(
+    voice: tuple[TestClient, FakeGnaniHttp], language: str
+) -> None:
+    client, fake = voice
+    response = client.post("/v1/voice/tts", json={"text": "hello", "language": language})
+    assert response.status_code == 200, response.text
+    tts_body = json.loads(fake.calls[-1][1].content)
+    assert tts_body["text"] == "hello"
+    assert tts_body["language"] == language
 
 
 def test_voice_answer_uses_question_context_and_updates_the_belief(
@@ -261,6 +287,7 @@ def test_decision_critical_spoken_answer_is_confirmed(
     assert confirm["kind"] == "confirm"
     assert confirm["action"]["probe_id"] == "wifi_status"
     assert confirm["text"].startswith("Ek baar pakka kar lete hain")  # Riya: Hinglish
+    assert "Ek baar pakka kar lete hain: Phone" in confirm["text"]
     p_before = state["belief"]["map_decision_probability"]
     agreed = _voice(client, {**inv, "pending_question": confirm})  # same reading heard again
     after = agreed["result"]["state"]

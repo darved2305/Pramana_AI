@@ -128,6 +128,43 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   (streamed then cached, fallback, streamed Listen endpoint), `apps/web/tests/streamed-audio.spec.ts`
   (decoded and scheduled gaplessly in Chrome).
 
+## Template quality and spoken text
+
+`pramana_core.language.realizer_lint` checks every YAML pack under `packs/`. CI runs the pack
+coverage test as part of `uv run pytest`; the standalone command is:
+
+```powershell
+uv run python -m pramana_core.language.realizer_lint
+```
+
+The linter checks all four template languages, stripped text, known placeholders at every valid
+probe location, move-prefix rendering, confirmation prefixes, and the consent greeting. It checks
+the probe outcome wording against the short answer vocabulary, script balance, unresolved machine
+IDs, em dashes, terminal question punctuation, and spoken length. A phone question, including its
+move and confirmation wording, is capped at 260 characters and 50 words after normalization. The
+longest current combined form is 222 characters and 48 words. The caps leave a small margin for
+template changes while catching accidental long questions. The call re-prompt repeats the same
+question, so it uses the same checks. There is no separate spoken goodbye line.
+
+`pramana_core.language.speakable.speakable(text, language)` creates text only for Timbre. The
+participant page keeps the reviewed display string. Known site IDs such as `DB-C2`, `IDF-1`, and
+`MAIN-1` are expanded letter by letter, and their digits are spoken as language-appropriate words.
+Wi-Fi spellings, the `NAVA-WiFi` network name, and technical initialisms such as `IP`, `ONT`, `PON`,
+and `CCTV` have deterministic language-specific forms. Quotes around names are removed, ellipses
+become a short pause, and a literal IPv4 address is spoken digit by digit. Room numbers
+such as `room 205` remain numeric so Timbre can read them as quantities. Gnani documents language
+aware handling for ordinary numbers, dates, IDs, and common abbreviations in its
+[Text Normalization Guide](https://docs.gnani.ai/api/TTS/tts-input-formating).
+
+The normalizer is used for the staff TTS route, the call greeting, cached REST audio, streamed
+question audio, and stream fallback. Cache keys use the normalized spoken text, so a changed
+pronunciation gets a fresh synthesis. The table-driven behavior and idempotence are tested across
+every rendered probe, language, location, move prefix, and confirmation prefix.
+
+The generated [Hindi and Marathi language review sheet](LANGUAGE_REVIEW.md) lists each displayed
+question and the normalized spoken text for direct, move, confirmation, and move-confirmation
+forms. Native-speaker review of Hindi and Marathi wording and pronunciation is pending.
+
 ## Not yet implemented
 
 - Preemption across parallel calls (ADR 0011): several people on calls at once, with a

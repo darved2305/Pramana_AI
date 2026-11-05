@@ -30,12 +30,15 @@ from pramana_contracts import (
     MediaServerMessage,
     StaffRole,
     SttResult,
+    TemplateLanguage,
     TtsRequest,
 )
 
 from ..auth.deps import require_staff, staff_on_socket
 from ..errors import ApiError
+from ..language.speakable import speakable
 from ..observability import log
+from ..voice.conversation import TTS_LANGUAGE
 from ..voice.gnani import GnaniClient, GnaniSttStream
 
 # Test and tooling routes. They spend Gnani credits, so they are for staff only: STT, TTS and
@@ -45,6 +48,9 @@ Staff = Depends(require_staff())
 Operator = Depends(require_staff(StaffRole.OPERATOR))
 
 MAX_FRAME_BYTES = 64 * 1024
+TEMPLATE_LANGUAGE_BY_TTS: dict[str, TemplateLanguage] = {
+    tts_language: template_language for template_language, tts_language in TTS_LANGUAGE.items()
+}
 
 
 def _gnani(request: Request) -> GnaniClient:
@@ -99,8 +105,14 @@ async def transcribe(
 
 @router.post("/tts", dependencies=[Operator])
 async def synthesize(request: Request, body: TtsRequest) -> Response:
+    template_language = TEMPLATE_LANGUAGE_BY_TTS.get(body.language)
+    spoken_text = speakable(body.text, template_language) if template_language else body.text
     audio, wall_ms = await _gnani(request).synthesize(
-        body.text, language=body.language, model=body.model, voice=body.voice, speed=body.speed
+        spoken_text,
+        language=body.language,
+        model=body.model,
+        voice=body.voice,
+        speed=body.speed,
     )
     return Response(
         audio,
