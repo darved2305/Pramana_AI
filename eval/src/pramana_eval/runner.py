@@ -8,10 +8,11 @@ from typing import Any
 
 import numpy as np
 
+from pramana_contracts import PlanKind, ProbeAction
 from pramana_domain import DomainPack
-from pramana_engine import CompiledModel, Engine, Evidence
+from pramana_engine import CompiledModel, Engine, Evidence, schedule
 
-from .policies import Conclusion, History, Policy
+from .policies import Conclusion, History, ParallelOurs, Policy
 from .scenarios import Answers, Scenario
 
 MAX_STEPS = 30
@@ -35,11 +36,18 @@ class Episode:
     people: int
     hit_step_limit: bool
     failed: bool = False
+    wall_s: float = 0.0
+    """Simulated time from the report to the conclusion. Sequential questions take their
+    effort one after another; parallel ones overlap."""
+    withdrawn: int = 0
+    """Questions withdrawn in flight because another answer made them pointless."""
 
 
 def run_episode(
     pack: DomainPack, model: CompiledModel, scenario: Scenario, policy: Policy
 ) -> Episode:
+    if isinstance(policy, ParallelOurs):
+        return run_parallel_episode(pack, model, scenario, policy)
     engine = Engine(model, scenario.specs, policy.config)
     answers = Answers(pack, scenario)
     report = answers.report()
@@ -86,6 +94,83 @@ def run_episode(
         people=len({a.participant_id for a, _ in asked}),
         hit_step_limit=hit_limit,
         failed=conclusion.failed,
+        wall_s=effort,
+    )
+
+
+def run_parallel_episode(
+    pack: DomainPack, model: CompiledModel, scenario: Scenario, policy: ParallelOurs
+) -> Episode:
+    """Our planner with up to ``policy.max_parallel`` questions in flight (the service's rule,
+    ``pramana_engine.schedule``). Each answer arrives ``cost_s`` after its question was asked;
+    a withdrawn question costs the person the time they had already spent on it."""
+    engine = Engine(model, scenario.specs, policy.config)
+    answers = Answers(pack, scenario)
+    engine.observe(answers.report())
+    now = effort = 0.0
+    inflight: list[tuple[float, int, ProbeAction, float]] = []  # (done at, order, action, asked)
+    asked: list[ProbeAction] = []
+    withdrawn = 0
+    order = 0
+    conclusion: Conclusion | None = None
+
+    def launch(action: ProbeAction) -> None:
+        nonlocal order
+        costs = {(a.participant_id, a.probe_id, a.location_id): c for a, c in engine.menu()}
+        cost = costs[(action.participant_id, action.probe_id, action.location_id)]
+        engine.record_question(action.participant_id)
+        inflight.append((now + cost, order, action, now))
+        order += 1
+
+    for _ in range(MAX_STEPS):
+        sched = schedule(engine, [a for _, _, a, _ in inflight], policy.max_parallel)
+        for i in sorted(sched.withdraw, reverse=True):
+            _, _, _, t_ask = inflight.pop(i)
+            effort += now - t_ask
+            withdrawn += 1
+        if sched.plan is not None:
+            plan = sched.plan
+            if plan.kind == PlanKind.ASK and plan.action is not None:
+                launch(plan.action)
+            else:
+                decided = plan.kind == PlanKind.DECIDE
+                conclusion = Conclusion(
+                    plan.decision_class if decided else None,
+                    float(plan.decision_probability or 0.0),
+                )
+                break
+        for c in sched.ask:
+            launch(c.action)
+        if not inflight:
+            break
+        inflight.sort(key=lambda x: (x[0], x[1]))
+        done_at, _, action, t_ask = inflight.pop(0)
+        now = done_at
+        effort += done_at - t_ask
+        engine.observe(answers.ask(action.participant_id, action.probe_id, action.location_id))
+        asked.append(action)
+    hit_limit = conclusion is None
+    if conclusion is None:
+        conclusion = Conclusion(None, engine.snapshot().map_decision_probability)
+    decided = conclusion.decision is not None
+    correct = decided and conclusion.decision in scenario.true_decisions
+    abstain_ok = scenario.identifiable is False or scenario.kind == "pair"
+    return Episode(
+        policy=policy.name,
+        seed=scenario.seed,
+        kind=scenario.kind,
+        identifiable=scenario.identifiable,
+        decided=decided,
+        decision=conclusion.decision,
+        confidence=conclusion.confidence,
+        correct=correct,
+        success=correct or (not decided and abstain_ok),
+        probes=len(asked),
+        effort_s=effort,
+        people=len({a.participant_id for a in asked}),
+        hit_step_limit=hit_limit,
+        wall_s=now,
+        withdrawn=withdrawn,
     )
 
 
@@ -128,6 +213,8 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
         "effort_s_mean": statistics.fmean(e.effort_s for e in episodes) if n else None,
         "people_mean": statistics.fmean(e.people for e in episodes) if n else None,
         "hit_step_limit": sum(e.hit_step_limit for e in episodes),
+        "wall_s_mean": statistics.fmean(e.wall_s for e in episodes) if n else None,
+        "withdrawn_mean": statistics.fmean(e.withdrawn for e in episodes) if n else None,
     }
 
 

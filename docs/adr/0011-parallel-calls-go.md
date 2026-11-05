@@ -33,7 +33,51 @@ not accuracy or latency, which stay private under the Gnani EULA.
 4. If a live run shows fewer usable concurrent sessions than the dashboard states, fall back
    to sequential calls; the multiplexer (D18) is not needed unless the cap drops to 1.
 
+## How it works (implemented)
+
+- `CreateInvestigation.max_parallel_calls` (1 to 3, default 1). With 1, behaviour is exactly
+  the sequential planner.
+- After every change of belief the service runs `pramana_engine.schedule` (pure, so replay and
+  the benchmark use the same rule):
+  1. nothing in flight: plan as before; if the plan asks, add questions for *other* people
+     chosen greedily by **conditional** decision gain `I(D; O_new | O_in_flight)`, averaged over
+     the answers still on their way (different people's answers are independent given the
+     world). Each extra must also pass the planner's own two-step net-value test and add at
+     least `parallel_min_bits` (0.05).
+  2. something in flight and the belief is already conclusive (confident decision, unmodelled
+     cause, verification verdict): withdraw everything in flight and conclude.
+  3. otherwise withdraw questions whose answer would now tell us less than `withdraw_bits`
+     (0.01) about the decision, judged one by one, and fill free slots by conditional gain.
+     The investigation never concludes while a question that still matters is unanswered.
+- A withdrawal is a `QuestionWithdrawn` event and question status `withdrawn`; answering it
+  returns 409 `QUESTION_NOT_PENDING` ("withdrawn"). The media session already watches its
+  question, so the call gets `question_withdrawn` and `PREEMPT`. The engine is unaffected by a
+  withdrawal, so replay is unchanged. Repairs are verified one question at a time.
+- Tests: `packages/engine/tests/test_parallel.py` (conditional gain against a brute-force
+  definition, cap, determinism, S1 run in parallel), `services/core/tests/test_parallel_calls.py`
+  (several pending, withdrawal mid-run and at conclusion, visibility per participant, decline,
+  replay), `test_call_ws.py::test_two_people_on_calls_at_once_in_one_investigation` (two call
+  sockets and recognizer sessions open at once), `apps/web/tests-real/parallel.spec.ts`.
+
+## Benchmark (logic mode, simulated time)
+
+`eval` runs the same rule with a simulated clock: an answer arrives `cost_s` after its question;
+a withdrawn question costs the time already spent. 300 scenarios, seeds 10000 to 10299
+(`python -m pramana_eval --policies E,P2,P3`):
+
+| | Success | Questions | Participant effort s | Time to conclusion s | Withdrawn |
+|---|---|---|---|---|---|
+| Sequential (E) | 84.7% | 5.50 | 189 | 189 | 0 |
+| Up to 2 at once | 83.0% | 6.70 | 242 | 134 | 0.32 |
+| Up to 3 at once | 83.3% | 7.53 | 278 | 119 | 0.58 |
+
+Paired against sequential: success is not significantly different (E minus 3-at-once +1.3
+points, 95% CI [-1.7, +4.3]); time to conclusion falls by 70 s [61, 79]; the price is about two
+more questions and 89 s more total participant effort. Parallel calls buy speed with people's
+time; the console default stays one at a time.
+
 ## What is not yet proven
 
 - Sustained load (3 calls for 10 minutes) has not been run; it is the Nov 7 load test (D21).
-- Barge-in and preemption latency (target 1 s) are measured only after D17 exists.
+- Preemption latency on live Gnani (target 1 s) has not been measured.
+- Live parallel calls with the voice bots and humans: see `docs/engineering/HANDOFF.md`.

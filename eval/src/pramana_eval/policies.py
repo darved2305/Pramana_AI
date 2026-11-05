@@ -63,6 +63,15 @@ class Ours:
         return _engine_conclusion(engine)
 
 
+class ParallelOurs(Ours):
+    """E with up to ``max_parallel`` people asked at once (docs/adr/0011). Run by
+    ``runner.run_parallel_episode``, not step by step."""
+
+    def __init__(self, max_parallel: int = 3, config: EngineConfig | None = None) -> None:
+        super().__init__(f"E_parallel{max_parallel}", config)
+        self.max_parallel = max_parallel
+
+
 def greedy_entropy() -> Ours:
     """D: information about the cause only, effort ignored, same stopping rule."""
     return Ours("D_greedy_entropy", EngineConfig(decision_focus=False, cost_aware=False))
@@ -145,4 +154,6 @@ def ablations() -> list[Policy]:
     return [
         Ours("E-no_decision_focus", EngineConfig(decision_focus=False)),
         Ours("E-no_cost", EngineConfig(cost_aware=False)),
+        ParallelOurs(2),
+        ParallelOurs(3),
     ]

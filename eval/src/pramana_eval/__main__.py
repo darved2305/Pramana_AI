@@ -41,7 +41,14 @@ def _git_sha() -> str:
     return sha + ("-dirty" if dirty else "")
 
 
-SHORT = {"E": "E_ours", "A": "A_checklist", "C": "C_random", "D": "D_greedy_entropy"}
+SHORT = {
+    "E": "E_ours",
+    "A": "A_checklist",
+    "C": "C_random",
+    "D": "D_greedy_entropy",
+    "P2": "E_parallel2",
+    "P3": "E_parallel3",
+}
 
 
 def build_policies(
@@ -123,7 +130,8 @@ def main() -> None:
             if name == "E_ours":
                 continue
             summary["paired_vs_E"][name] = {
-                f: paired_difference(ours, eps, f) for f in ("success", "probes", "effort_s")
+                f: paired_difference(ours, eps, f)
+                for f in ("success", "probes", "effort_s", "wall_s")
             }
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -152,8 +160,8 @@ def render(summary: dict[str, Any]) -> str:
         "",
         "| Policy | Success | Accuracy (decided) | Accuracy (identifiable) | False confidence "
         "| Abstention recall (unidentifiable) | Pair accuracy | Probes (mean) | Effort s (mean) "
-        "| People |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| People | Time to conclusion s (mean) | Withdrawn (mean) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, m in summary["policies"].items():
         lines.append(
@@ -161,7 +169,8 @@ def render(summary: dict[str, Any]) -> str:
             f"| {_fmt(m['accuracy_on_identifiable'], True)} "
             f"| {_fmt(m['false_confidence_rate'], True)} | {_fmt(m['abstention_recall'], True)} "
             f"| {_fmt(m['pair_accuracy'], True)} "
-            f"| {_fmt(m['probes_mean'])} | {_fmt(m['effort_s_mean'])} | {_fmt(m['people_mean'])} |"
+            f"| {_fmt(m['probes_mean'])} | {_fmt(m['effort_s_mean'])} | {_fmt(m['people_mean'])} "
+            f"| {_fmt(m.get('wall_s_mean'))} | {_fmt(m.get('withdrawn_mean'))} |"
         )
     lines += ["", "Paired differences, E minus each policy (bootstrap 95% CI):", ""]
     for name, diffs in summary["paired_vs_E"].items():

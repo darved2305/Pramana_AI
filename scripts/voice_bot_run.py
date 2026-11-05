@@ -14,7 +14,12 @@ stuck_connecting, connected). See docs/engineering/VOICE_SAMPLES.md for open-sou
 It prints integration facts only. Under the Gnani EULA measured accuracy and latency stay out
 of the repository.
 
+With ``--parallel N`` (2 or 3) the engine asks up to N people at once (docs/adr/0011): the bots
+then talk at the same time on their own calls, and a question another answer made pointless is
+withdrawn (``question_withdrawn``) while its bot is waiting or speaking.
+
 Usage: python scripts/voice_bot_run.py --clips <dir> [--core URL] [--sim URL] [--play]
+       [--parallel N]
 """
 
 from __future__ import annotations
@@ -82,6 +87,18 @@ def pcm(path: Path) -> bytes:
         return w.readframes(w.getnframes())
 
 
+def waiting(s: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every question in flight (one unless the investigation asks in parallel)."""
+    qs = s.get("pending_questions")
+    if qs:
+        return list(qs)
+    return [s["pending_question"]] if s.get("pending_question") else []
+
+
+def mine(s: dict[str, Any], pid: str) -> dict[str, Any] | None:
+    return next((q for q in waiting(s) if q["action"]["participant_id"] == pid), None)
+
+
 class Run:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
@@ -93,20 +110,24 @@ class Run:
         self.log: list[str] = []
         self.voice_answers = 0
         # Latency as the caller experiences it (private: printed, never committed).
-        self.t_eos: float | None = None
-        """When the answer's voice ended (end of the clip, before the trailing silence)."""
-        self.t_answer: float | None = None
+        self.t_eos: dict[str, float] = {}
+        """Per call: when the answer's voice ended (end of the clip, before the silence)."""
+        self.t_answer: dict[str, float] = {}
         self.stt_ms: list[float] = []
         self.answer_ms: list[float] = []
         self.next_ms: list[float] = []
         self.tasks: set[asyncio.Task[None]] = set()
         self.lock = asyncio.Lock()
-        self.last_clip: Path | None = None
+        self.last_clip: dict[str, Path] = {}
+        self.withdrawn = 0
+        self.most_at_once = 0
 
     async def state(self) -> dict[str, Any]:
         r = await self.core.get(f"/v1/investigations/{self.inv['id']}")
         r.raise_for_status()
-        return dict(r.json())
+        s = dict(r.json())
+        self.most_at_once = max(self.most_at_once, len(waiting(s)))
+        return s
 
     async def observe(self, pid: str, action: dict[str, Any]) -> str:
         tok = self.tokens[pid]
@@ -136,8 +157,7 @@ class Run:
                 if s["status"] == "decided":
                     return
                 continue
-            q = s["pending_question"]
-            if q is None or q["action"]["participant_id"] != pid:
+            if mine(s, pid) is None:
                 await asyncio.sleep(1)
                 continue
             await self.call(pid, lang)
@@ -170,20 +190,21 @@ class Run:
                     self.tasks.add(task)
                     task.add_done_callback(self.tasks.discard)
                 elif kind == "tts_end":
-                    if self.t_answer is not None:
-                        self.next_ms.append((time.monotonic() - self.t_answer) * 1000)
-                        self.t_answer = None
+                    if pid in self.t_answer:
+                        self.next_ms.append((time.monotonic() - self.t_answer.pop(pid)) * 1000)
                     await ws.send(json.dumps({"type": "playback_done"}))
                 elif kind == "transcript":
-                    if self.t_eos is not None:
-                        self.stt_ms.append((time.monotonic() - self.t_eos) * 1000)
+                    if pid in self.t_eos:
+                        self.stt_ms.append((time.monotonic() - self.t_eos[pid]) * 1000)
                     self.log.append(f"  {pid} said, Prisma heard: {m['text']}")
+                elif kind == "question_withdrawn":
+                    self.withdrawn += 1
+                    self.log.append(f"  {pid}: question withdrawn, another answer settled it")
                 elif kind == "answer":
                     now = time.monotonic()
-                    if self.t_eos is not None:
-                        self.answer_ms.append((now - self.t_eos) * 1000)
-                        self.t_eos = None
-                    self.t_answer = now
+                    if pid in self.t_eos:
+                        self.answer_ms.append((now - self.t_eos.pop(pid)) * 1000)
+                    self.t_answer[pid] = now
                     self.voice_answers += 1
                     obs = m["result"]["observation"]
                     self.log.append(
@@ -191,8 +212,8 @@ class Run:
                     )
                 elif kind == "empty_transcript":
                     self.log.append(f"  {pid}: nothing recognised, speaking again")
-                    if self.last_clip is not None:
-                        await self.speak(ws, self.last_clip)
+                    if pid in self.last_clip:
+                        await self.speak(ws, pid, self.last_clip[pid])
                 elif kind == "error" and m.get("fatal"):
                     self.log.append(f"  {pid}: error {m['code']}: {m['message']}")
                 elif kind == "call_end":
@@ -201,8 +222,8 @@ class Run:
 
     async def turn(self, ws: Any, pid: str, lang: str, ready: dict[str, Any]) -> None:
         s = await self.state()
-        q = s["pending_question"]
-        if q is None or q["id"] != ready["question_id"]:
+        q = next((w for w in waiting(s) if w["id"] == ready["question_id"]), None)
+        if q is None:
             return
         value = await self.observe(pid, q["action"])
         clip = self.clips / f"{lang}__{value}.wav"
@@ -211,19 +232,20 @@ class Run:
         a = q["action"]
         self.log.append(
             f"Q{s['questions_asked']} to {pid} [{a['probe_id']}@{a['location_id']}]"
+            f"{f' ({len(waiting(s))} in flight)' if len(waiting(s)) > 1 else ''}"
             f" {ready['text']!r}  (sim shows: {value})"
         )
-        self.last_clip = clip
+        self.last_clip[pid] = clip
         await asyncio.sleep(0.3)
-        await self.speak(ws, clip)
+        await self.speak(ws, pid, clip)
 
-    async def speak(self, ws: Any, clip: Path) -> None:
+    async def speak(self, ws: Any, pid: str, clip: Path) -> None:
         voice = b"\x00\x00" * 4800 + pcm(clip)  # lead-in, then the answer
         audio = voice + b"\x00\x00" * 16000  # then a second of silence
         for i in range(0, len(audio), FRAME):
             await ws.send(audio[i : i + FRAME])
             if i < len(voice) <= i + FRAME:
-                self.t_eos = time.monotonic() + 0.032  # this frame ends the voice
+                self.t_eos[pid] = time.monotonic() + 0.032  # this frame ends the voice
             await asyncio.sleep(0.032)  # real-time cadence
         await ws.send(json.dumps({"type": "commit"}))
 
@@ -238,8 +260,7 @@ class Run:
             return
         while True:
             s = await self.state()
-            q = s["pending_question"]
-            if s["status"] in DONE or (q is None and s["status"] != "acting"):
+            if s["status"] in DONE or (not waiting(s) and s["status"] != "acting"):
                 return
             await asyncio.sleep(1)
 
@@ -301,6 +322,7 @@ class Run:
                         "seed": 19,
                         "fault": {"faults": [{"component_id": "CB_C2_7", "mode": "tripped"}]},
                     },
+                    "max_parallel_calls": self.args.parallel,
                 },
             )
         r.raise_for_status()
@@ -346,7 +368,8 @@ class Run:
         )
         print(
             f"\nFINAL status before reveal: {s['status']} | questions: {s['questions_asked']} | "
-            f"voice answers: {self.voice_answers}\n"
+            f"voice answers: {self.voice_answers} | most questions in flight at once: "
+            f"{self.most_at_once} | withdrawn: {self.withdrawn}\n"
             f"reveal: decision correct = {gt.get('correct')}, commitment verified = "
             f"{sealed}\n"
             f"replay identical: {replay.get('identical')}\n"
@@ -367,6 +390,9 @@ def main() -> None:
     ap.add_argument("--human", help="participant id answered by a person on their phone")
     ap.add_argument("--attach", help="continue this investigation instead of creating one")
     ap.add_argument("--public-url", default="http://localhost:3002", help="web app address")
+    ap.add_argument(
+        "--parallel", type=int, default=1, choices=[1, 2, 3], help="people asked at once"
+    )
     sys.exit(asyncio.run(Run(ap.parse_args()).main()))
 
 
