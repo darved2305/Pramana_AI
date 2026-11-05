@@ -340,3 +340,68 @@ async def test_closing_a_session_does_not_wait_for_gnanis_handshake() -> None:
     assert not SlowClose.closed
     await asyncio.sleep(1.2)
     assert SlowClose.closed  # it still completes, in the background
+
+
+def sse(*events: tuple[str, dict[str, Any]]) -> bytes:
+    return "".join(f"event: {e}\ndata: {json.dumps(d)}\n\n" for e, d in events).encode()
+
+
+def b64(raw: bytes) -> str:
+    import base64
+
+    return base64.b64encode(raw).decode()
+
+
+async def test_tts_stream_yields_headerless_pcm_in_order() -> None:
+    """Timbre SSE with ``container: raw`` (format checked live on 2026-11-05)."""
+    bodies: list[dict[str, Any]] = []
+    pcm = bytes(range(256)) * 8  # 2,048 bytes
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/api/v1/tts/sse"
+        bodies.append(json.loads(req.content))
+        payload = sse(
+            ("start", {"status": "streaming_started"}),
+            ("chunk", {"chunk_index": 1, "audio": b64(pcm[:513]), "is_final": False}),  # odd
+            ("chunk", {"chunk_index": 2, "audio": b64(pcm[513:]), "is_final": False}),
+            ("complete", {"chunk_index": 3, "audio": "", "is_final": True}),
+        )
+        return httpx.Response(200, content=payload, headers={"content-type": "text/event-stream"})
+
+    g = client(handler)
+    got = [c async for c in g.synthesize_stream("WiFi dikh raha hai?", language="hi-en")]
+    assert b"".join(got) == pcm
+    assert all(len(c) % 2 == 0 for c in got)  # whole samples only
+    assert bodies[0]["audio_config"]["container"] == "raw"
+    assert (bodies[0]["model"], bodies[0]["voice"]) == ("timbre-v2.5", "Poorvi")
+    await g.aclose()
+
+
+@pytest.mark.parametrize(
+    ("status", "ctype", "payload", "code"),
+    [
+        (402, "application/json", b'{"detail": "no credit"}', None),
+        (200, "audio/wav", b"RIFF....", "VOICE_UNEXPECTED_AUDIO"),
+        (
+            200,
+            "text/event-stream",
+            sse(("error", {"type": "error", "message": "bad text"})),
+            "VOICE_TTS_STREAM_ERROR",
+        ),
+        (
+            200,
+            "text/event-stream",
+            sse(("start", {"status": "streaming_started"})),
+            "VOICE_BAD_STREAM",
+        ),
+    ],
+)
+async def test_tts_stream_failures_are_typed(
+    status: int, ctype: str, payload: bytes, code: str | None
+) -> None:
+    g = client(lambda _: httpx.Response(status, content=payload, headers={"content-type": ctype}))
+    with pytest.raises(VoiceError) as err:
+        _ = [c async for c in g.synthesize_stream("hello", language="en-IN")]
+    if code is not None:
+        assert err.value.code == code
+    await g.aclose()

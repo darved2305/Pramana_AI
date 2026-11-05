@@ -21,12 +21,13 @@ limits, TTS pages) and against the source of ``gnani-vachana`` 0.9.0, ``livekit-
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import struct
 import time
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -346,6 +347,101 @@ class GnaniClient:
                 f"expected WAV, got {resp.headers.get('content-type')}",
             )
         return audio, wall_ms
+
+    async def synthesize_stream(
+        self,
+        text: str,
+        *,
+        language: str,
+        model: str = "timbre-v3.0",
+        voice: str | None = None,
+        speed: float = 1.0,
+        sample_rate: int = 24_000,
+    ) -> AsyncGenerator[bytes, None]:
+        """Timbre SSE (``POST /api/v1/tts/sse``): yield raw PCM16 mono chunks as they arrive.
+
+        ``container: raw`` returns headerless PCM, so chunks can be played (and joined) as they
+        come; a live check on 2026-11-05 found every chunk headerless. Events are ``start``,
+        ``chunk`` (``audio`` is base64), ``complete`` and ``error``. Chunks are yielded with an
+        even byte count. Errors before or during the stream are typed ``VoiceError``s; the
+        caller decides whether to fall back to ``synthesize``.
+        """
+        if language == "hi-en":
+            model = "timbre-v2.5"
+        if voice is None:
+            voice = (
+                V25_LANGUAGE_VOICES.get(language) if model == "timbre-v2.5" else None
+            ) or DEFAULT_VOICES[model]
+        body = {
+            "text": text,
+            "model": model,
+            "voice": voice,
+            "language": language,
+            "speed": speed,
+            "audio_config": {
+                "sample_rate": sample_rate,
+                "num_channels": 1,
+                "sample_width": 2,
+                "encoding": "linear_pcm",
+                "container": "raw",
+            },
+        }
+        key = self._require_key()
+        chars = len(text)
+        headers = {
+            "X-API-Key-ID": key,
+            "X-API-Request-ID": uuid.uuid4().hex,
+            "Accept": "text/event-stream",
+        }
+        async with self.governor.rest_call("tts", chars, tts_cost(chars)):
+            await self.governor.pace("tts")
+            carry = b""
+            try:
+                async with self._http.stream(
+                    "POST", "/api/v1/tts/sse", json=body, headers=headers
+                ) as resp:
+                    if resp.status_code >= 400:
+                        raise _error_for(
+                            resp.status_code, (await resp.aread()).decode(errors="replace")
+                        )
+                    ctype = resp.headers.get("content-type", "")
+                    if not ctype.startswith("text/event-stream"):
+                        raise VoiceError(
+                            502, "VOICE_UNEXPECTED_AUDIO", f"expected an event stream, got {ctype}"
+                        )
+                    event = ""
+                    async for line in resp.aiter_lines():
+                        if line.startswith("event:"):
+                            event = line[6:].strip()
+                            continue
+                        if not line.startswith("data:"):
+                            continue
+                        try:
+                            data = json.loads(line[5:].strip() or "{}")
+                        except json.JSONDecodeError as exc:
+                            raise VoiceError(
+                                502, "VOICE_BAD_STREAM", "malformed TTS stream event"
+                            ) from exc
+                        if event == "error" or data.get("type") == "error":
+                            raise VoiceError(
+                                502, "VOICE_TTS_STREAM_ERROR", str(data.get("message", "TTS error"))
+                            )
+                        audio = data.get("audio") or ""
+                        if audio:
+                            pcm = carry + base64.b64decode(audio)
+                            cut = len(pcm) - (len(pcm) % 2)
+                            carry = pcm[cut:]
+                            if cut:
+                                yield pcm[:cut]
+                        if event == "complete" or data.get("is_final"):
+                            return
+            except httpx.TimeoutException as exc:
+                raise VoiceError(504, "VOICE_TIMEOUT", "Gnani TTS stream timed out") from exc
+            except httpx.HTTPError as exc:
+                raise VoiceError(
+                    502, "VOICE_UNREACHABLE", f"Gnani unreachable: {type(exc).__name__}"
+                ) from exc
+            raise VoiceError(502, "VOICE_BAD_STREAM", "TTS stream ended without completing")
 
     @asynccontextmanager
     async def stream(
