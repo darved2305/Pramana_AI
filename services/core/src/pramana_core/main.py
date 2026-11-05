@@ -100,7 +100,9 @@ def create_app(
         app.state.db = db
         app.state.sim = sim
         app.state.gnani = gnani
-        app.state.question_audio = QuestionAudioCache()
+        app.state.question_audio = QuestionAudioCache(
+            disk_dir=Path(cfg.tts_cache_dir) if cfg.tts_cache_dir else None
+        )
         app.state.investigations = InvestigationService(
             db,
             sim,

@@ -107,6 +107,14 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   or the check fails (budget, rate limit), the person is asked again as before
   (`investigations.py::_second_decode_agrees`; `test_voice_turns.py`, `test_media_ws.py`).
 
+- **Question audio is synthesised once.** It is cached by (text, language, voice) in memory
+  and on disk (`TTS_CACHE_DIR`, default `.cache/tts`, at most 500 files, least recently used
+  evicted), so it survives restarts; question texts come from fixed templates, so they repeat.
+  Synthesis of an uncached question runs while the recognizer session connects. Each turn logs
+  `turn_setup` (stream open and question audio times) for private tuning, and
+  `scripts/voice_bot_run.py` prints the caller-side turn latency. Under the Gnani EULA these
+  measurements stay out of the repository.
+
 ## Not yet implemented
 
 - Preemption across parallel calls (ADR 0011): several people on calls at once, with a

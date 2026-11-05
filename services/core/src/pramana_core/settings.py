@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = Field(default=None, alias="GEMINI_API_KEY")
     groq_api_key: SecretStr | None = Field(default=None, alias="GROQ_API_KEY")
     llm_cache_dir: str = Field(default=".cache/llm", alias="LLM_CACHE_DIR")
+    tts_cache_dir: str = Field(default=".cache/tts", alias="TTS_CACHE_DIR")
+    """Question audio kept across restarts (empty: memory only)."""
 
     event_stream_heartbeat_s: float = Field(
         default=15.0, gt=0, le=25, alias="EVENT_STREAM_HEARTBEAT_S"

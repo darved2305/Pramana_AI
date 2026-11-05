@@ -6,8 +6,11 @@ through the same extractor as typed answers, and the engine updates exactly as i
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import os
 from collections import OrderedDict
+from pathlib import Path
 
 from pramana_contracts import ParticipantSpec, TemplateLanguage
 from pramana_domain import DomainPack
@@ -47,11 +50,26 @@ def answer_keyterms(pack: DomainPack, probe_id: str) -> list[str]:
 
 
 class QuestionAudioCache:
-    """Bounded in-memory cache of synthesised questions keyed by text, language and voice."""
+    """Synthesised questions keyed by text, language and voice: a bounded memory cache, backed
+    by an optional bounded directory so audio survives restarts.
 
-    def __init__(self, max_entries: int = 64, max_bytes: int = 32 * 1024 * 1024) -> None:
+    Question texts come from fixed templates, so the same question for the same person repeats
+    across investigations: synthesis is paid once, and replaying it is free and instant.
+    """
+
+    def __init__(
+        self,
+        max_entries: int = 64,
+        max_bytes: int = 32 * 1024 * 1024,
+        *,
+        disk_dir: Path | None = None,
+        max_disk_files: int = 500,
+    ) -> None:
         self._items: OrderedDict[str, bytes] = OrderedDict()
         self._max_entries, self._max_bytes, self._bytes = max_entries, max_bytes, 0
+        self._dir, self._max_disk_files = disk_dir, max_disk_files
+        if disk_dir is not None:
+            disk_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def key(text: str, language: str, model: str, voice: str | None) -> str:
@@ -61,11 +79,41 @@ class QuestionAudioCache:
         audio = self._items.get(key)
         if audio is not None:
             self._items.move_to_end(key)
+            return audio
+        path = self._path(key)
+        if path is None or not path.exists():
+            return None
+        try:
+            audio = path.read_bytes()
+            os.utime(path)  # recently used: evicted last
+        except OSError:
+            return None
+        self._remember(key, audio)
         return audio
 
     def put(self, key: str, audio: bytes) -> None:
         if key in self._items or len(audio) > self._max_bytes:
             return
+        self._remember(key, audio)
+        path = self._path(key)
+        if path is not None:
+            with contextlib.suppress(OSError):  # a disk problem only loses the cache
+                tmp = path.with_suffix(".tmp")
+                tmp.write_bytes(audio)
+                tmp.replace(path)
+                self._evict_disk()
+
+    def _path(self, key: str) -> Path | None:
+        return None if self._dir is None else self._dir / f"{key}.wav"
+
+    def _evict_disk(self) -> None:
+        assert self._dir is not None
+        files = sorted(self._dir.glob("*.wav"), key=lambda f: f.stat().st_mtime)
+        for old in files[: max(0, len(files) - self._max_disk_files)]:
+            with contextlib.suppress(OSError):
+                old.unlink()
+
+    def _remember(self, key: str, audio: bytes) -> None:
         self._items[key] = audio
         self._bytes += len(audio)
         while len(self._items) > self._max_entries or self._bytes > self._max_bytes:

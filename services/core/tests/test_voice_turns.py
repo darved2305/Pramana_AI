@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import wave
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -338,3 +340,43 @@ def test_a_failed_second_decode_falls_back_to_asking_again(
     assert out["result"]["state"]["pending_question"]["kind"] == "confirm"
     events = client.get(f"/v1/investigations/{inv['id']}/events").json()
     assert not [e for e in events if e["type"] == "ObservationConfirmed"]
+
+
+def test_question_audio_survives_a_restart_on_disk(tmp_path: Path) -> None:
+    first = QuestionAudioCache(disk_dir=tmp_path)
+    first.put("k1", b"RIFF-audio")
+    restarted = QuestionAudioCache(disk_dir=tmp_path)  # a new process: memory is empty
+    assert restarted.get("k1") == b"RIFF-audio"
+    assert QuestionAudioCache().get("k1") is None  # memory-only caches do not share
+
+
+def test_disk_cache_keeps_the_most_recently_used(tmp_path: Path) -> None:
+    cache = QuestionAudioCache(max_entries=1, disk_dir=tmp_path, max_disk_files=2)
+    cache.put("a", b"1")
+    cache.put("b", b"2")
+    os.utime(tmp_path / "a.wav", (1, 1))  # "a" is the oldest
+    os.utime(tmp_path / "b.wav", (2, 2))
+    cache.put("c", b"3")
+    assert sorted(f.stem for f in tmp_path.glob("*.wav")) == ["b", "c"]
+
+
+def test_restarted_core_replays_question_audio_without_paying(
+    migrated_db: str, sim_app: FastAPI, tmp_path: Path
+) -> None:
+    asyncio.run(truncate_all(migrated_db))
+    fake = FakeGnaniHttp()
+
+    def app() -> FastAPI:
+        return create_app(
+            core_settings(migrated_db, GNANI_API_KEY="k", TTS_CACHE_DIR=str(tmp_path)),
+            sim_transport=httpx.ASGITransport(app=sim_app),
+            gnani_transport=httpx.MockTransport(fake),
+        )
+
+    with TestClient(app()) as client:
+        inv = create(client)
+        url = f"/v1/investigations/{inv['id']}/questions/{inv['pending_question']['id']}/audio"
+        assert client.get(url).headers["X-Audio-Cached"] == "false"
+    with TestClient(app()) as again:  # a new process on the same disk cache
+        assert again.get(url).headers["X-Audio-Cached"] == "true"
+    assert fake.paths().count("/api/v1/tts/inference") == 1

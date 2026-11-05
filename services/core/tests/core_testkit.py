@@ -22,6 +22,7 @@ def core_settings(db_url: str, **overrides: object) -> Settings:
         "PARTICIPANT_SIGNING_KEY": SIGNING_KEY,
         "GNANI_API_KEY": "",
         "LLM_EXTRACTOR_PROVIDER": "none",
+        "TTS_CACHE_DIR": "",  # each test counts its own synthesis
         "LOG_JSON": False,
         "LOG_LEVEL": "WARNING",
     }

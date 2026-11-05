@@ -251,6 +251,13 @@ class MediaSession:
 
     async def _converse(self, q: PendingQuestion, play: bool) -> None:
         langs, codemix = stt_options(q.participant)
+        t0 = time.perf_counter()
+        # Synthesise (or fetch) the question audio while the recognizer connects.
+        audio: asyncio.Task[tuple[bytes, bool]] | None = (
+            asyncio.create_task(speak_question(self.gnani, self.cache, q.text, q.language))
+            if play
+            else None
+        )
         try:
             async with self.gnani.stream(
                 langs,
@@ -258,6 +265,7 @@ class MediaSession:
                 keyterms=answer_keyterms(q.pack, q.probe_id),
                 min_segment_ms=100,
             ) as upstream:
+                stream_ms = round((time.perf_counter() - t0) * 1000)
                 await self.send(
                     {
                         "type": "ready",
@@ -273,18 +281,29 @@ class MediaSession:
                 if not self.in_call:
                     await self.fire(CallEvent.ACCEPTED)
                     await self.fire(CallEvent.CONSENT_YES)  # -> ASKING
-                if play:
-                    await self._speak(q)
+                t1 = time.perf_counter()
+                if audio is not None:
+                    await self._speak(audio)
+                log.info(
+                    "turn_setup",
+                    investigation_id=self.inv_id,
+                    question_id=q.id,
+                    stream_open_ms=stream_ms,
+                    question_audio_ms=round((time.perf_counter() - t1) * 1000),
+                )
                 if self.played_until is None:
                     await self.fire(CallEvent.TTS_DONE)  # nothing to play: listen now
                 await self._pump(q, upstream)
         except ApiError as exc:  # no stream slot, over budget, not configured, Gnani refused
             await self.fail(exc)
+        finally:
+            if audio is not None and not audio.done():
+                audio.cancel()
 
-    async def _speak(self, q: PendingQuestion) -> None:
+    async def _speak(self, pending: asyncio.Task[tuple[bytes, bool]]) -> None:
         """Send the question audio. A TTS failure is not fatal: the text is on screen."""
         try:
-            audio, cached = await speak_question(self.gnani, self.cache, q.text, q.language)
+            audio, cached = await pending
         except ApiError as exc:
             await self.fail(exc, fatal=False)
             return

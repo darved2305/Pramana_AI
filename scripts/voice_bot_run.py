@@ -22,7 +22,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import statistics
 import sys
+import time
 import wave
 from pathlib import Path
 from typing import Any
@@ -83,6 +85,14 @@ class Run:
         self.inv: dict[str, Any] = {}
         self.log: list[str] = []
         self.voice_answers = 0
+        # Latency as the caller experiences it (private: printed, never committed).
+        self.t_eos: float | None = None
+        """When the answer's voice ended (end of the clip, before the trailing silence)."""
+        self.t_answer: float | None = None
+        self.stt_ms: list[float] = []
+        self.answer_ms: list[float] = []
+        self.next_ms: list[float] = []
+        self.tasks: set[asyncio.Task[None]] = set()
         self.lock = asyncio.Lock()
         self.last_clip: Path | None = None
 
@@ -146,12 +156,25 @@ class Run:
                 elif kind == "consent_request":
                     await ws.send(json.dumps({"type": "consent", "answer": "yes"}))
                 elif kind == "ready":
-                    await self.turn(ws, pid, lang, m)
+                    # Speak in a task, so frames are read (and timed) while the bot talks.
+                    task = asyncio.create_task(self.turn(ws, pid, lang, m))
+                    self.tasks.add(task)
+                    task.add_done_callback(self.tasks.discard)
                 elif kind == "tts_end":
+                    if self.t_answer is not None:
+                        self.next_ms.append((time.monotonic() - self.t_answer) * 1000)
+                        self.t_answer = None
                     await ws.send(json.dumps({"type": "playback_done"}))
                 elif kind == "transcript":
+                    if self.t_eos is not None:
+                        self.stt_ms.append((time.monotonic() - self.t_eos) * 1000)
                     self.log.append(f"  {pid} said, Prisma heard: {m['text']}")
                 elif kind == "answer":
+                    now = time.monotonic()
+                    if self.t_eos is not None:
+                        self.answer_ms.append((now - self.t_eos) * 1000)
+                        self.t_eos = None
+                    self.t_answer = now
                     self.voice_answers += 1
                     obs = m["result"]["observation"]
                     self.log.append(
@@ -186,9 +209,12 @@ class Run:
         await self.speak(ws, clip)
 
     async def speak(self, ws: Any, clip: Path) -> None:
-        audio = b"\x00\x00" * 4800 + pcm(clip) + b"\x00\x00" * 16000  # lead-in, then silence
+        voice = b"\x00\x00" * 4800 + pcm(clip)  # lead-in, then the answer
+        audio = voice + b"\x00\x00" * 16000  # then a second of silence
         for i in range(0, len(audio), FRAME):
             await ws.send(audio[i : i + FRAME])
+            if i < len(voice) <= i + FRAME:
+                self.t_eos = time.monotonic() + 0.032  # this frame ends the voice
             await asyncio.sleep(0.032)  # real-time cadence
         await ws.send(json.dumps({"type": "commit"}))
 
@@ -272,6 +298,16 @@ class Run:
         print("\n".join(self.log))
         gt = reveal.get("ground_truth") or {}
         sealed = (gt.get("reveal") or {}).get("commitment_verified", gt.get("commitment_verified"))
+
+        def med(xs: list[float]) -> str:
+            return f"{statistics.median(xs):.0f} ms (n={len(xs)})" if xs else "-"
+
+        print(
+            "\nLATENCY (private, Gnani EULA: do not publish)\n"
+            f"  end of speech -> transcript:            {med(self.stt_ms)}\n"
+            f"  end of speech -> answer recorded:       {med(self.answer_ms)}\n"
+            f"  answer recorded -> next question audio: {med(self.next_ms)}"
+        )
         print(
             f"\nFINAL status before reveal: {s['status']} | questions: {s['questions_asked']} | "
             f"voice answers: {self.voice_answers}\n"
