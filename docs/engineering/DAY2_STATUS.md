@@ -62,6 +62,14 @@ and OpenAPI drift, generated-type drift and the bundle secret scan are clean.
 | M1 line 3: byte-identical replay | **done** | `/replay` and `tests/e2e/replay.py` |
 | Decisions | **done** | ADR 0011 parallel calls go (cap 3); ADR 0012 Evon no-go (no quote or GPU without a payment method) |
 
+## Ahead of plan: the voice loop (M2 shape)
+
+`scripts/voice_bot_run.py` ran S1 end to end by voice on live Gnani (2026-11-05): three
+simulated participants on participant calls with MMS voices, decision, approval, repair,
+verification by voice, `verified`, correct on reveal, identical replay, about Rs 2.5 of
+credits. Not yet done for M2: real human voices, phones over the tunnel in a live run, and the
+latency target.
+
 ## Frontend wiring
 
 Sign-in (ADR 0010: server sessions, roles operator / approver, approver identity from the

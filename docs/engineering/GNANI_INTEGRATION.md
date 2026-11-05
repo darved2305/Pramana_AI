@@ -85,6 +85,16 @@ Per the EULA, accuracy and latency results stay out of this repository; they are
   `ASKING -> LISTENING -> EXTRACTING -> IDLE -> CLOSING -> ENDED`. Two runs of one turn each;
   synthesised audio, not a human recording.
 
+- **A whole investigation by voice works live (2026-11-05)** (`scripts/voice_bot_run.py`):
+  three simulated participants on participant calls (ring, consent, question after question),
+  answering from their own simulator views with Meta MMS-TTS voices in Hindi and Marathi
+  (`scripts/make_bot_clips.py`). Timbre spoke every question and Prisma v3.0 transcribed every
+  answer. The engine decided `DISPATCH_ELECTRICIAN_DB_C2`, the repair was approved and done
+  with the capability, verification by voice ended `verified`, the reveal confirmed the decision
+  and the commitment, and the replay was identical. Every voice answer was recorded as the
+  value the bot meant. Spoken answers the decision hinged on were re-asked once each, so the
+  spoken run took more questions than a typed one. Synthetic voices, one run.
+
 ## Usage guards (`voice/governor.py`)
 
 | Guard | Setting | Default | Account limit |
