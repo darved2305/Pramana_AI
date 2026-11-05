@@ -236,6 +236,9 @@ def main(argv: list[str] | None = None) -> None:
                 "Held-out set: written and committed before any tuning against it, and never "
                 "used for tuning."
                 if heldout
+                else "Blind set: written and committed before this scorer was first run on it; "
+                "see NOTES.md for whether any fix has been made since."
+                if "blind" in args.set.name
                 else "Development set: the rules were tuned on it, so these figures are optimistic."
             ),
             "extractors": results,
