@@ -154,6 +154,9 @@ def ablations() -> list[Policy]:
     return [
         Ours("E-no_decision_focus", EngineConfig(decision_focus=False)),
         Ours("E-no_cost", EngineConfig(cost_aware=False)),
+        # Stopping-rule calibration candidates (eval/reports/calibration-2026-11-05).
+        Ours("E-stricter", EngineConfig(tau_lo=0.85)),
+        Ours("E-ask_more", EngineConfig(lambda_min_per_s=1.0 / 120.0)),
         ParallelOurs(2),
         ParallelOurs(3),
     ]
