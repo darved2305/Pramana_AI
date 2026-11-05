@@ -397,3 +397,31 @@ def test_marathi_amber_and_connecting() -> None:
 )
 def test_a_self_correction_keeps_the_later_answer(text: str, outcome: str) -> None:
     assert X.extract_sync(text, ["green", "red", "off"]).outcome == outcome
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["मुझे नहीं मालूम", "मालूम नहीं", "mujhe nahi maloom", "nahi malum yaar"],
+)
+def test_i_do_not_know_with_the_negation_first_is_not_no(text: str) -> None:
+    """Blind set b36: "मुझे नहीं मालूम" was read as "no" (invented evidence)."""
+    r = X.extract_sync(text, YES_NO)
+    assert r.outcome == "unknown"
+    assert r.hedge == Hedge.UNSURE
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "आता वेळ नाही, नंतर विचारा",
+        "vel nahi aata",
+        "abhi time nahi hai",
+        "अभी समय नहीं है",
+        "waqt nahi hai abhi",
+    ],
+)
+def test_no_time_now_is_a_stop_request_not_a_no(text: str) -> None:
+    """Blind set b59: "आता वेळ नाही" (no time now) was read as "no" (invented evidence)."""
+    r = X.extract_sync(text, YES_NO)
+    assert r.outcome == "unknown", r.evidence
+    assert r.wants_to_stop

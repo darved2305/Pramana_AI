@@ -146,6 +146,17 @@ STOP = _phrases(
     "mat puchho",
     "मत पूछो",
     "मत पूछिए",
+    # "No time now": the negation is about the person's time, not the observation.
+    "वेळ नाही",
+    "vel nahi",
+    "time nahi",
+    "time nahin",
+    "samay nahi",
+    "समय नहीं",
+    "waqt nahi",
+    "वक़्त नहीं",
+    "वक्त नहीं",
+    "no time",
 )
 # Bare agreement and refusal words, used only by the polarity rule (see ``_polar``).
 AFFIRM = frozenset(tokenize("yes yeah yep yup haan haa han haanji हाँ हां हा ho hoy होय हो ji"))
@@ -160,6 +171,11 @@ UNSURE = _phrases(
     "pata nahin",
     "maloom nahi",
     "malum nahi",
+    "nahi maloom",
+    "nahi malum",
+    "मालूम नहीं",
+    "नहीं मालूम",
+    "मुझे नहीं मालूम",
     "पता नहीं",
     "माहीत नाही",
     "माहित नाही",
