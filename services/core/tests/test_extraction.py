@@ -298,3 +298,44 @@ def test_earlier_today_is_stale_but_since_this_morning_is_current(text: str, out
     # "subah green tha" was recorded as a current "green" (held-out item h80).
     options = ["green", "red", "off"] if "green" in text else ON_OFF
     assert X.extract_sync(text, options).outcome == outcome
+
+
+# -- regressions found in a real spoken incident report (2026-11-05) ---------------------------
+
+WEB_Q = "Kya aapke phone pe koi bhi website khul rahi hai?"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "but maine khud check nahi kiya",
+        "मैंने अभी check नहीं किया",
+        "मी स्वतः बघितलं नाही",
+        "I didn't check it myself",
+    ],
+)
+def test_not_having_checked_is_not_a_no(text: str) -> None:
+    # "मैंने खुद check नहीं किया" was recorded as internet "no".
+    for outcomes in (YES_NO, ["no_network", "stuck_connecting", "connected"]):
+        assert X.extract_sync(text, outcomes, question=WEB_Q).outcome == "unknown"
+
+
+@pytest.mark.parametrize(
+    "text", ["kuch karna ho to batana", "agar zarurat ho to bolo", "कुछ देखना हो तो बताना"]
+)
+def test_the_hindi_verb_ho_is_not_a_marathi_yes(text: str) -> None:
+    # "check करना हो तो बता देना" was recorded as "yes".
+    assert X.extract_sync(text, YES_NO, question=WEB_Q).outcome == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("text", "outcome"), [("ho", "yes"), ("हो, उघडतं", "yes"), ("ho re", "yes")]
+)
+def test_answer_initial_ho_is_still_yes(text: str, outcome: str) -> None:
+    assert X.extract_sync(text, YES_NO, question=WEB_Q).outcome == outcome
+
+
+def test_a_vanished_network_means_no_network() -> None:
+    assert X.extract_sync("matlab network hi gayab hai", YES_NO).outcome == "no"
+    wifi = ["no_network", "stuck_connecting", "connected"]
+    assert X.extract_sync("network गायब है", wifi).outcome == "no_network"

@@ -175,6 +175,32 @@ NOT_OBSERVED = _phrases(
 """"I can't see it" means no observation was made. It must never become "off". (For the Wi-Fi
 list probe the same words mean the network is missing, so this applies only to other probes.)"""
 
+DID_NOT_CHECK = _phrases(
+    "check nahi kiya",
+    "check nahin kiya",
+    "check नहीं किया",
+    "nahi dekha",
+    "dekha nahi",
+    "नहीं देखा",
+    "देखा नहीं",
+    "बघितलं नाही",
+    "बघितले नाही",
+    "baghitla nahi",
+    "पाहिलं नाही",
+    "पाहिले नाही",
+    "didn't check",
+    "did not check",
+    "haven't checked",
+    "have not checked",
+    "not checked",
+)
+""""I didn't check (myself)" is a statement that no observation was made, for every probe,
+including the Wi-Fi list. Its negation must not become "no" (a live recording, 2026-11-05)."""
+
+SENTENCE_INITIAL_ONLY = frozenset(tokenize("ho हो"))
+"""Marathi "ho" (yes) is also the Hindi verb "to be" ("karna ho to batana"). As yes it opens
+the answer ("हो, चालू आहे"); anywhere else it is read as the verb, never as an answer."""
+
 STALE = _phrases(
     "kal raat",
     "kal subah",
@@ -315,6 +341,10 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "chalta hai",
     ),
     "no": _phrases(
+        "network gayab",
+        "network गायब",
+        "network ही गायब",
+        "network hi gayab",
         "no",
         "nope",
         "nahi",
@@ -467,6 +497,10 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "disat nahi",
         "list mein nahi",
         "network nahi",
+        "network gayab",
+        "network गायब",
+        "network ही गायब",
+        "network hi gayab",
         "wifi nahi dikh",
         "isn't there",
         "not in the list",
@@ -582,6 +616,7 @@ class RuleExtractor:
             + _find(tokens, HEARSAY, "hearsay")
             + _find(tokens, ASSUMPTION, "assumption")
             + ([] if "no_network" in outcomes else _find(tokens, NOT_OBSERVED, "not_observed"))
+            + _find(tokens, DID_NOT_CHECK, "not_observed")
             + _find(tokens, STALE, "stale")
             + _stale_time_of_day(tokens),
             taken,
@@ -591,6 +626,13 @@ class RuleExtractor:
 
         allowed = set(outcomes)
         candidates = [m for o in outcomes for m in _find(tokens, OUTCOME_LEXICON.get(o, []), o)]
+        first = next((i for i, t in enumerate(tokens) if t not in FILLER), 0)
+        candidates = [
+            m
+            for m in candidates
+            if not (m.end - m.start == 1 and tokens[m.start] in SENTENCE_INITIAL_ONLY)
+            or m.start == first
+        ]
         matches = _claim(candidates, taken)
 
         found: set[str] = set()
