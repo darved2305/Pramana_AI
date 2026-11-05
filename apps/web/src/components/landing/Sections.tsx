@@ -47,7 +47,7 @@ export function Platform() {
           </p>
         </Reveal>
         <Reveal delay={0.1} className="mt-[52px] grid gap-[40px] sm:grid-cols-2">
-          <Link href="/preview/app" className="btn-line lg w-full">
+          <Link href="/app" className="btn-line lg w-full">
             Explore the console <Arrow />
           </Link>
           <a href="#workflow" className="btn-line lg w-full">
@@ -190,8 +190,8 @@ export function Workflow() {
             site confirm it worked. If it did not, the investigation reopens on its own.
           </p>
           <div className="mt-[34px] flex flex-wrap justify-center gap-[20px]">
-            <Link href="/preview/app" className="btn-line lg">
-              Try the preview <Arrow />
+            <Link href="/app" className="btn-line lg">
+              Open the console <Arrow />
             </Link>
             <a href="#console" className="btn-line lg">
               See the console <Arrow />
@@ -297,7 +297,7 @@ export function ConsolePreview() {
               Hinglish. In the console, every step is laid out next to the reasoning behind it: nothing hides behind a
               single confidence score.
             </p>
-            <Link href="/preview/app" className="btn-line lg mt-[40px]">
+            <Link href="/app" className="btn-line lg mt-[40px]">
               Explore the console <Arrow />
             </Link>
           </Reveal>
@@ -396,7 +396,7 @@ export function Notes() {
         <div className="grid sm:grid-cols-2">
           {NOTES.map((n, i) => (
             <Reveal key={n.title} delay={i * 0.08} className={clsx("px-[var(--gutter)] py-[60px]", i === 0 && "sm:border-r sm:border-[var(--rule-light)]")}>
-              <Link href="/preview/app" className="group block">
+              <Link href="/app" className="group block">
                 <div className="relative aspect-[573/320] overflow-hidden rounded-[10px] bg-ink">
                   <VoiceField modes={[n.mode]} className="absolute inset-0 h-full w-full transition-transform duration-700 ease-out group-hover:scale-[1.03]" />
                 </div>
@@ -408,7 +408,7 @@ export function Notes() {
           ))}
         </div>
         <div className="flex justify-center pb-[30px]">
-          <Link href="/preview/app" className="btn-line">
+          <Link href="/app" className="btn-line">
             View all <Arrow />
           </Link>
         </div>
@@ -432,15 +432,15 @@ export function ClosingCta() {
         />
         <Reveal>
           <p className="mx-auto mt-[36px] max-w-[54ch] text-[clamp(16px,1.3vw,20px)] leading-[1.5]">
-            Start an investigation against the local core, or open the preview to explore every screen with clearly
-            marked sample data.
+            Start an investigation against the live core: real people, real voices, a sealed simulated fault,
+            and a replay of every decision.
           </p>
           <div className="mt-[30px] flex flex-wrap justify-center gap-[13px]">
             <Link href="/app/investigations/new" className="btn-line lg">
               Start an investigation <Arrow />
             </Link>
-            <Link href="/preview/app" className="btn-line lg">
-              Open the preview <Arrow />
+            <Link href="/app" className="btn-line lg">
+              Open the console <Arrow />
             </Link>
           </div>
         </Reveal>
@@ -499,8 +499,8 @@ export function SiteFooter() {
               the physical world
             </p>
             <div className="mt-[52px] grid gap-[20px] sm:grid-cols-2 sm:gap-[50px] lg:max-w-[684px]">
-              <Link href="/preview/app" className="btn-line lg">
-                Preview <Arrow />
+              <Link href="/app" className="btn-line lg">
+                Console <Arrow />
               </Link>
               <Link href="/login" className="btn-line lg">
                 Log in <Arrow />
@@ -538,7 +538,7 @@ export function FloatingPreview() {
   }, []);
   return (
     <Link
-      href="/preview/app"
+      href="/app"
       tabIndex={shown ? 0 : -1}
       aria-hidden={!shown}
       className={clsx(
@@ -546,7 +546,7 @@ export function FloatingPreview() {
         shown ? "opacity-100" : "pointer-events-none translate-y-3 opacity-0",
       )}
     >
-      Preview
+      Console
     </Link>
   );
 }

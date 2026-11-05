@@ -7,6 +7,8 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,
+  // Local laptops time out the first pages with one worker per core against a cold server.
+  workers: process.env.CI ? undefined : 2,
   retries: 0,
   reporter: [["list"]],
   use: {
@@ -25,6 +27,10 @@ export default defineConfig({
     reuseExistingServer: true,
     // The tests mock the core where they need deterministic data; point the proxy at a
     // closed port so nothing ever reaches a real backend by accident.
-    env: { PRAMANA_CORE_URL: "http://127.0.0.1:9", PRAMANA_SIM_URL: "http://127.0.0.1:9" },
+    env: {
+      PRAMANA_CORE_URL: "http://127.0.0.1:9",
+      PRAMANA_SIM_URL: "http://127.0.0.1:9",
+      NEXT_PUBLIC_ENABLE_PREVIEW: "1",
+    },
   },
 });

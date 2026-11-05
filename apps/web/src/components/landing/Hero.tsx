@@ -47,8 +47,8 @@ export function Hero() {
           questions, and turns what they observe into evidence.
         </p>
         <div style={fade(0.75)} className="mt-[30px] flex flex-wrap items-center justify-center gap-[13px]">
-          <Link href="/preview/app" className="btn-line lg">
-            Open the preview <Arrow />
+          <Link href="/app" className="btn-line lg">
+            Open the console <Arrow />
           </Link>
         </div>
       </div>

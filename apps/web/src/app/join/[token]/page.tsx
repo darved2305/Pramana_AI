@@ -1,5 +1,6 @@
 "use client";
 
+import { PREVIEW_ENABLED } from "@/lib/store/local";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -27,7 +28,7 @@ export default function JoinPage() {
 function JoinInner() {
   const { token } = useParams<{ token: string }>();
   const search = useSearchParams();
-  const isPreview = token === "preview";
+  const isPreview = PREVIEW_ENABLED && token === "preview";
   const payload: JoinPayload | null = isPreview ? { i: "preview-0001", p: search.get("p") ?? "p_mahesh", s: "preview", t: "preview" } : decodeJoin(token);
 
   return (

@@ -82,7 +82,12 @@ export default defineConfig({
       url: `http://localhost:${WEB_PORT}`,
       timeout: 300_000,
       reuseExistingServer: false,
-      env: { PRAMANA_CORE_URL: `http://127.0.0.1:${CORE_PORT}`, PRAMANA_SIM_URL: `http://127.0.0.1:${SIM_PORT}` },
+      env: {
+        PRAMANA_CORE_URL: `http://127.0.0.1:${CORE_PORT}`,
+        PRAMANA_SIM_URL: `http://127.0.0.1:${SIM_PORT}`,
+        // The product build: no sample-data mode, everything comes from the live core.
+        NEXT_PUBLIC_ENABLE_PREVIEW: "0",
+      },
     },
   ],
 });

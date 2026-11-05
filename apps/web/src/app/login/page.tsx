@@ -1,5 +1,6 @@
 "use client";
 
+import { PREVIEW_ENABLED } from "@/lib/store/local";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -171,10 +172,15 @@ export default function LoginPage() {
 
             {formError ? (
               <div id="form-error" role="alert" className="border-[0.8px] border-[#f5b335]/50 bg-[#f5b335]/[.07] px-4 py-3 text-[14px] leading-relaxed text-[#f7c96b]">
-                {formError}{" "}
-                <Link href="/preview/app" className="font-medium underline underline-offset-4">
-                  Open the preview
-                </Link>
+                {formError}
+                {PREVIEW_ENABLED ? (
+                  <>
+                    {" "}
+                    <Link href="/preview/app" className="font-medium underline underline-offset-4">
+                      Open the preview
+                    </Link>
+                  </>
+                ) : null}
               </div>
             ) : null}
 
@@ -184,13 +190,15 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-8 text-[14px] text-cream/60">
-            Just exploring?{" "}
-            <Link href="/preview/app" className="text-cream underline underline-offset-4 hover:no-underline">
-              Open the development preview
-            </Link>{" "}
-            with sample data. It is not a sign-in.
-          </p>
+          {PREVIEW_ENABLED ? (
+            <p className="mt-8 text-[14px] text-cream/60">
+              Just exploring?{" "}
+              <Link href="/preview/app" className="text-cream underline underline-offset-4 hover:no-underline">
+                Open the development preview
+              </Link>{" "}
+              with sample data. It is not a sign-in.
+            </p>
+          ) : null}
         </div>
 
         <p className="text-[12px] text-cream/40">Pramana. Accounts are created by your site operator.</p>

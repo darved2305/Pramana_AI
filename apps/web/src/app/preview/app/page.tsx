@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { previewMode } from "@/lib/store/local";
+import { PREVIEW_ENABLED, previewMode } from "@/lib/store/local";
 
 /**
  * Turns on preview mode for this browser tab and opens the console. Preview mode only
@@ -11,12 +11,17 @@ import { previewMode } from "@/lib/store/local";
 export default function PreviewEntry() {
   const router = useRouter();
   useEffect(() => {
+    if (!PREVIEW_ENABLED) {
+      // The product has no sample-data mode: send people to the live console.
+      router.replace("/login");
+      return;
+    }
     previewMode.enable();
     router.replace("/app");
   }, [router]);
   return (
     <div className="app-root grid min-h-dvh place-items-center text-[14px] text-muted" aria-live="polite">
-      Opening the development preview...
+      {PREVIEW_ENABLED ? "Opening the development preview..." : "Opening the console..."}
     </div>
   );
 }

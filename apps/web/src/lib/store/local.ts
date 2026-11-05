@@ -89,11 +89,19 @@ export function usePrefs(): Prefs {
 /* ---------- Preview mode (this tab only) ---------- */
 
 const PREVIEW = "pramana.preview";
+/** Sample-data mode is compiled in only for the UI test build (`NEXT_PUBLIC_ENABLE_PREVIEW=1`).
+ * The product always talks to the live core. */
+export const PREVIEW_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PREVIEW === "1";
 export const previewMode = {
-  enable: () => write("session", PREVIEW, true),
+  enable: () => {
+    if (PREVIEW_ENABLED) write("session", PREVIEW, true);
+  },
   disable: () => write("session", PREVIEW, null),
 };
-export const usePreviewMode = () => useStored<boolean>("session", PREVIEW, false);
+export const usePreviewMode = () => {
+  const stored = useStored<boolean>("session", PREVIEW, false);
+  return PREVIEW_ENABLED && stored;
+};
 
 const noop = () => () => {};
 /** False during server render and hydration, true once browser storage can be read. */

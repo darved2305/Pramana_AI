@@ -52,8 +52,8 @@ export function SiteNav() {
         </Link>
 
         <div className="ml-auto hidden lg:flex items-center gap-[13px]">
-          <Link href="/preview/app" className="btn-line">
-            Preview
+          <Link href="/app" className="btn-line">
+            Console
           </Link>
           <Link href="/login" className="btn-line">
             Log in
@@ -117,8 +117,8 @@ export function SiteNav() {
           ))}
         </nav>
         <div className="mt-auto grid grid-cols-2 gap-3">
-          <Link href="/preview/app" className="btn-line" onClick={() => setOpen(false)}>
-            Preview
+          <Link href="/app" className="btn-line" onClick={() => setOpen(false)}>
+            Console
           </Link>
           <Link href="/login" className="btn-line" onClick={() => setOpen(false)}>
             Log in
