@@ -18,6 +18,7 @@ Belief representation (docs/adr/0008):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -966,6 +967,145 @@ class Engine:
         cont = inner.min(axis=2) if n > 1 else np.full_like(v_stop, np.inf)
         value_after = np.minimum(v_stop, cont).sum(axis=1)
         out: FloatArray = v_now - lam * cost - value_after
+        return out
+
+    # -- parallel questions (docs/adr/0011) ------------------------------------------------------
+
+    def _pending_lik(self, a: ProbeAction) -> FloatArray:
+        site = self.model.site_index.get((a.probe_id, a.location_id))
+        if site is None or a.participant_id not in self.participants:
+            raise EvidenceError(f"unknown question {a.participant_id}:{a.probe_id}@{a.location_id}")
+        reff = self.effective_reliability(a.participant_id, a.probe_id)
+        return likelihood_matrix(self.model, site, reff, 1.0)
+
+    def _expected_entropies(self, branches: FloatArray) -> tuple[float, float]:
+        """(E[H(decision)], E[H(cause)]) in bits over answer combinations.
+
+        ``branches`` is [B, H]: the unnormalised belief after each combination of answers, so a
+        row's sum is that combination's predictive probability.
+        """
+        mass = branches.sum(axis=1)
+        keep = mass > 0
+        rows, mass = branches[keep], mass[keep]
+        post = rows / mass[:, None]
+        n_d = len(self.model.decisions) + 1
+        onehot = np.zeros((post.shape[1], n_d))
+        onehot[np.arange(post.shape[1]), self.model.decision_of] = 1.0
+        dm = post @ onehot
+
+        def ent(x: FloatArray) -> FloatArray:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                terms = np.where(x > 0, x * np.log2(np.where(x > 0, x, 1.0)), 0.0)
+            out: FloatArray = -terms.sum(axis=1)
+            return out
+
+        return float(mass @ ent(dm)), float(mass @ ent(post))
+
+    def _branches(self, liks: list[FloatArray], p: FloatArray) -> FloatArray:
+        """[B, H] unnormalised beliefs for every combination of answers to ``liks``, starting
+        from one belief ``p`` [H] or from several branches already [B0, H].
+
+        Different people's answers are independent given the world (their reliabilities are
+        separate unknowns), so the joint likelihood is the product.
+        """
+        b = p[None, :] if p.ndim == 1 else p
+        for lik in liks:
+            b = (b[:, None, :] * lik[None, :, :]).reshape(-1, b.shape[1])
+        return b
+
+    def conditional_gain(
+        self, pending: Sequence[ProbeAction], candidate: ProbeAction
+    ) -> tuple[float, float]:
+        """Bits about the (decision, cause) that ``candidate`` adds once ``pending`` are answered.
+
+        ``I(D; O_c | O_pending)`` and ``I(H; O_c | O_pending)``, with the pending answers still
+        unknown: averaged over every combination of them. With nothing pending this is the
+        ordinary expected information gain.
+        """
+        p = self._current()
+        base = self._branches([self._pending_lik(a) for a in pending], p)
+        hd0, hh0 = self._expected_entropies(base)
+        hd1, hh1 = self._expected_entropies(self._branches([self._pending_lik(candidate)], base))
+        return max(0.0, hd0 - hd1), max(0.0, hh0 - hh1)
+
+    def parallel_questions(
+        self, pending: Sequence[ProbeAction], max_parallel: int
+    ) -> list[CandidateScore]:
+        """Questions to ask *now*, alongside ``pending``, to people without a question.
+
+        Greedy batch selection by conditional gain: each extra question must be worth asking on
+        its own (the same two-step net value test as ``plan``) and add at least
+        ``parallel_min_bits`` about the decision given the answers already on their way. Only
+        during diagnosis: a repair is verified one observation at a time.
+        """
+        if self._repair is not None or len(pending) >= max_parallel:
+            return []
+        cfg = self.cfg
+        p = self._current()
+        actions, _ = self._enumerate()
+        if not actions:
+            return []
+        net = self._two_step_net_value(actions, p)
+        busy = {a.participant_id for a in pending}
+        chosen: list[ProbeAction] = list(pending)
+        picks: list[CandidateScore] = []
+        branches = self._branches([self._pending_lik(a) for a in chosen], p)
+        while len(chosen) < max_parallel:
+            hd0, hh0 = self._expected_entropies(branches)
+            best: tuple[float, int, float, float, FloatArray] | None = None
+            for i, a in enumerate(actions):
+                pid = a.participant.spec.id
+                if pid in busy or net[i] <= 0:
+                    continue
+                nxt = self._branches([a.lik], branches)
+                hd1, hh1 = self._expected_entropies(nxt)
+                gd, gh = max(0.0, hd0 - hd1), max(0.0, hh0 - hh1)
+                gain = gd if cfg.decision_focus else gh
+                if gain < cfg.parallel_min_bits:
+                    continue
+                value = (gd + cfg.eta * gh if cfg.decision_focus else gh) / (
+                    a.cost_s if cfg.cost_aware else 1.0
+                )
+                if best is None or value > best[0]:
+                    best = (value, i, gd, gh, nxt)
+            if best is None:
+                break
+            value, i, gd, gh, branches = best
+            a = actions[i]
+            act = ProbeAction(
+                participant_id=a.participant.spec.id,
+                probe_id=a.probe_id,
+                location_id=a.location_id,
+                requires_move=a.requires_move,
+            )
+            picks.append(
+                CandidateScore(
+                    action=act,
+                    eig_decision_bits=gd,
+                    eig_hypothesis_bits=gh,
+                    cost_s=a.cost_s,
+                    score=value,
+                    net_value_min=float(net[i]),
+                    outcomes=[],
+                )
+            )
+            chosen.append(act)
+            busy.add(act.participant_id)
+        return picks
+
+    def moot(self, pending: Sequence[ProbeAction]) -> list[bool]:
+        """For each question in flight: has its answer stopped mattering to the decision?
+
+        A question is moot when, on today's belief, its answer would tell us less than
+        ``withdraw_bits`` about the decision. Each one is judged on its own, not given the
+        others, so two questions that overlap are not both withdrawn for that reason.
+        """
+        if self._repair is not None:
+            return [False] * len(pending)
+        out: list[bool] = []
+        for a in pending:
+            gd, _ = self.conditional_gain([], a)
+            out.append(gd < self.cfg.withdraw_bits)
         return out
 
     def _rank_blocked(

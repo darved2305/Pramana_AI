@@ -3,6 +3,7 @@
 from .config import EngineConfig
 from .engine import Engine, Evidence, EvidenceError, ObserveResult
 from .model import MULTIPLE_FAULTS, CompiledModel, Hypothesis, compile_pack
+from .scheduler import Schedule, schedule
 
 MODEL_VERSION = "2"
 """Version of the probability model (hypotheses, likelihoods, reliability). Bump it whenever
@@ -20,5 +21,7 @@ __all__ = [
     "EvidenceError",
     "Hypothesis",
     "ObserveResult",
+    "Schedule",
     "compile_pack",
+    "schedule",
 ]

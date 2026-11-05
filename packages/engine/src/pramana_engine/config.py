@@ -84,6 +84,13 @@ class EngineConfig:
     net decision value (expected loss avoided minus effort)."""
     cost_aware: bool = True
     """Divide information by the participant's effort. Off: ignore cost (ablation/baseline)."""
+    parallel_min_bits: float = 0.05
+    """A question asked alongside others in flight must add at least this many bits about the
+    decision *given* their answers (conditional gain), so a second person is not asked
+    something the first answer will already settle."""
+    withdraw_bits: float = 0.01
+    """A question still in flight is withdrawn when its answer could tell us less than this
+    about the decision (after another person's answer made it pointless)."""
 
     def __post_init__(self) -> None:
         if not 0 < self.tau_lo <= self.tau_hi < 1:
@@ -91,5 +98,7 @@ class EngineConfig:
         for key, r in self.reliability.items():
             if not 0.5 < r < 1:
                 raise ValueError(f"reliability {key} must be in (0.5, 1)")
+        if self.parallel_min_bits < 0 or self.withdraw_bits < 0:
+            raise ValueError("require parallel_min_bits >= 0 and withdraw_bits >= 0")
         if self.reliability_concentration <= 0 or self.quadrature_nodes < 1:
             raise ValueError("require reliability_concentration > 0 and quadrature_nodes >= 1")
