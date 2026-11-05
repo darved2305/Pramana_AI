@@ -100,9 +100,10 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
 
 ## Not yet implemented
 
-- A per-call socket spanning several questions, consent inside the call, and preemption
-  across parallel calls (ADR 0011). Today the socket is per question and consent is given on
-  the participant page.
+- Preemption across parallel calls (ADR 0011): several people on calls at once, with a
+  question dropped when another answer makes it pointless. The per-call socket
+  (`voice/call.py`: ring, logged consent, question after question, release on decline or
+  silence) exists; the console does not yet start calls for several people at once.
 - Incremental TTS. Question audio is synthesised by Timbre REST and sent in chunks, because the
   chunk format of the WS/SSE endpoints is undocumented and has not been checked live.
 - Published latency figures. Measurements exist but stay private under the Gnani EULA.

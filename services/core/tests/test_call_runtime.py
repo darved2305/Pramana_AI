@@ -36,6 +36,9 @@ EXPECTED = {
     (S.LISTENING, E.SILENCE_REPROMPT): S.ASKING,
     (S.LISTENING, E.SILENCE_TIMEOUT): S.UNAVAILABLE,
     (S.LISTENING, E.LATER): S.CLOSING,
+    # Not in PLAN section 12: the question was answered elsewhere or withdrawn while we were
+    # listening. The call drops it and moves to the next question or closes.
+    (S.LISTENING, E.PREEMPT): S.PREEMPTING,
     (S.EXTRACTING, E.INCOMPLETE): S.LISTENING,
     (S.EXTRACTING, E.NEEDS_CONFIRM): S.CONFIRMING,
     (S.EXTRACTING, E.OBSERVATION_PROPOSED): S.IDLE,
@@ -217,7 +220,15 @@ def test_preemption_hook_and_stale_utterances() -> None:
     assert s.is_current_utterance(s.utterance)
     s.fire(E.BARGE_IN)
     assert s.state == S.LISTENING
-    assert s.preempt() is False  # once listening, the question stands
+    s.fire(E.FINAL_TRANSCRIPT)
+    assert s.preempt() is False  # once the answer is being read, the question stands
+    # While listening, a question answered elsewhere can still be dropped.
+    s2 = CallSession("c2", "p", clock=clock)
+    s2.fire(E.ACCEPTED)
+    s2.fire(E.CONSENT_YES)
+    s2.fire(E.TTS_DONE)
+    assert s2.preempt() is True
+    assert s2.state == S.PREEMPTING
 
 
 def test_confirmation_loop() -> None:

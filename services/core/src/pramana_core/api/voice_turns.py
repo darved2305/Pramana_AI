@@ -18,6 +18,7 @@ from ..errors import ApiError
 from ..investigations import InvestigationService
 from ..observability import log
 from ..visibility import visible_voice_answer
+from ..voice.call import ParticipantCall
 from ..voice.conversation import QuestionAudioCache, answer_keyterms, speak_question, stt_options
 from ..voice.gnani import GnaniClient
 from ..voice.media import MediaSession
@@ -108,3 +109,22 @@ async def voice_answer(
         ),
     )
     return visible_voice_answer(VoiceAnswerResult(stt=stt, result=result), who)
+
+
+@router.websocket("/{inv_id}/participants/{participant_id}/call")
+async def participant_call(ws: WebSocket, inv_id: str, participant_id: str) -> None:
+    """A participant's call: ring, consent, then every question addressed to them in turn
+    (protocol in ``voice/call.py``)."""
+    state = ws.app.state
+    call = ParticipantCall(
+        ws,
+        inv_id,
+        participant_id,
+        state.investigations,
+        state.gnani,
+        state.question_audio,
+        state.broadcaster,
+        state.media_sessions,
+        state.settings.voice_max_stream_s,
+    )
+    await call.run()

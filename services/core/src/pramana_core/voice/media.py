@@ -119,11 +119,17 @@ class MediaSession:
         broadcaster: EventBroadcaster,
         active: ActiveSessions,
         max_s: float,
+        *,
+        call: CallSession | None = None,
+        send_lock: asyncio.Lock | None = None,
     ) -> None:
         self.ws, self.inv_id, self.question_id = ws, inv_id, question_id
         self.svc, self.gnani, self.cache = svc, gnani, cache
         self.broadcaster, self.active, self.max_s = broadcaster, active, max_s
-        self.call = CallSession(
+        self.in_call = call is not None
+        """Part of a participant call (``voice/call.py``): the call owns ringing, consent and
+        hang-up; this session runs one question turn and returns to IDLE."""
+        self.call = call or CallSession(
             call_id=f"{inv_id}:{question_id}", participant_id="", timers=CALL_TIMERS
         )
         self.played_until: float | None = None
@@ -131,7 +137,7 @@ class MediaSession:
         self.spoken: bytes | None = None
         self.submitting = False
         self.done = asyncio.Event()
-        self._send_lock = asyncio.Lock()
+        self._send_lock = send_lock or asyncio.Lock()
 
     # -- sending ---------------------------------------------------------------------------
 
@@ -234,6 +240,10 @@ class MediaSession:
             await self.fail(ApiError(403, "WRONG_INVESTIGATION", "token is for another scenario"))
         return q
 
+    async def turn(self, q: PendingQuestion, play: bool) -> None:
+        """One question turn inside a participant call (the call is already ASKING)."""
+        await self._converse(q, play)
+
     async def _converse(self, q: PendingQuestion, play: bool) -> None:
         langs, codemix = stt_options(q.participant)
         try:
@@ -255,8 +265,9 @@ class MediaSession:
                     }
                 )
                 self.call.start_question(q.id)
-                await self.fire(CallEvent.ACCEPTED)
-                await self.fire(CallEvent.CONSENT_YES)  # -> ASKING
+                if not self.in_call:
+                    await self.fire(CallEvent.ACCEPTED)
+                    await self.fire(CallEvent.CONSENT_YES)  # -> ASKING
                 if play:
                     await self._speak(q)
                 if self.played_until is None:
@@ -426,8 +437,14 @@ class MediaSession:
                 try:
                     await self.svc.pending_question(self.inv_id, q.id, q.participant.id)
                 except ApiError as exc:
-                    if not self.submitting:
-                        await self.fail(exc)
+                    if self.submitting:
+                        continue
+                    if self.in_call and self.call.can(CallEvent.PREEMPT):
+                        # In a call, a withdrawn question ends this turn, not the call.
+                        await self.fire(CallEvent.PREEMPT)
+                        await self.send({"type": "question_withdrawn", "question_id": q.id})
+                        return
+                    await self.fail(exc)
 
     async def _submit(
         self, q: PendingQuestion, *, text: str | None = None, outcome: str | None = None
@@ -460,7 +477,10 @@ class MediaSession:
         )
         shown = result.model_copy(update={"state": for_participant(result.state, q.participant.id)})
         await self.send({"type": "answer", "result": shown.model_dump(mode="json")})
-        await self._hang_up(CallEvent.OBSERVATION_PROPOSED)
+        if self.in_call:
+            await self.fire(CallEvent.OBSERVATION_PROPOSED)  # -> IDLE; the call asks next
+        else:
+            await self._hang_up(CallEvent.OBSERVATION_PROPOSED)
 
 
 def _wav_seconds(audio: bytes) -> float:

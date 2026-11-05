@@ -1095,6 +1095,83 @@ class InvestigationService:
             scenario_id=row.scenario_id,
         )
 
+    async def record_consent(
+        self, inv_id: str, participant_id: str, consented: bool, reason: str
+    ) -> InvestigationState:
+        """Log a call's consent outcome. Anything but a yes takes the person out of the
+        investigation: their pending question is cancelled and the engine re-plans without them.
+
+        Replay is unchanged in kind: ``ParticipantUnavailable`` already drives the engine, and
+        ``ConsentRecorded`` / ``QuestionCancelled`` only record what happened.
+        """
+        async with self._lock(inv_id):
+            try:
+                async with self.db.transaction() as session:
+                    row = await self._load_row(session, inv_id, lock=True)
+                    if participant_id not in {p.id for p in self._request(row).participants}:
+                        raise not_found("participant")
+                    engine = await self._engine(session, row)
+                    self._event(
+                        session,
+                        inv_id,
+                        "ConsentRecorded",
+                        {
+                            "participant_id": participant_id,
+                            "consented": consented,
+                            "reason": reason,
+                        },
+                    )
+                    row.version += 1
+                    version = row.version
+                    active = row.status in {st.value for st in ANSWERABLE_STATUSES}
+                    if not consented and active and engine.participants[participant_id].available:
+                        engine.set_available(participant_id, False)
+                        self._event(
+                            session,
+                            inv_id,
+                            "ParticipantUnavailable",
+                            {"participant_id": participant_id, "reason": reason},
+                        )
+                        pending = (
+                            (
+                                await session.execute(
+                                    select(QuestionRow).where(
+                                        QuestionRow.investigation_id == inv_id,
+                                        QuestionRow.participant_id == participant_id,
+                                        QuestionRow.status == QuestionStatus.PENDING.value,
+                                    )
+                                )
+                            )
+                            .scalars()
+                            .all()
+                        )
+                        for q in pending:
+                            q.status = QuestionStatus.CANCELLED.value
+                            self._event(
+                                session,
+                                inv_id,
+                                "QuestionCancelled",
+                                {"question_id": q.id, "reason": reason},
+                            )
+                        if pending:
+                            self._apply_plan(session, row, engine, engine.plan())
+            except BaseException:
+                self._cache.pop(inv_id, None)
+                raise
+            self._cache[inv_id] = (version, engine)
+        log.info(
+            "consent_recorded",
+            investigation_id=inv_id,
+            participant_id=participant_id,
+            consented=consented,
+        )
+        return await self.get(inv_id)
+
+    async def scenario_of(self, inv_id: str) -> str:
+        async with self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+        return row.scenario_id
+
     def verify_participant_token(self, token: str) -> ParticipantClaims:
         """Check a participant token this core issued (signature, expiry, audience)."""
         return verify_token(self._signing_key.public_key(), token)

@@ -145,6 +145,18 @@ Send the same token as `Authorization: Bearer {token}` on the core calls below.
 The answer response includes `extraction`: what was understood (`outcome`, `hedge`,
 `directness`, `injection_suspected`). Show it back to the participant ("I understood: off").
 
+### A whole call over one socket
+
+`WS /v1/investigations/{id}/participants/{pid}/call` (protocol in `voice/call.py`): send
+`{"type":"start","token":...,"play":true}`, receive `ringing`, send `{"type":"accept"}`, receive
+`consent_request {text}` (and its audio), send `{"type":"consent","answer":"yes"|"no"|"later"}`.
+After a yes, every question the engine addresses to this person runs as a turn on the same
+socket (the per-question frames: `ready`, `tts_*`, PCM16 up, `commit`, `transcript`, `answer`),
+and the call waits in `IDLE` for the next one. It ends with `call_end {reason}`.
+Declining, saying "later", not answering the ring, or 20 s of silence takes the person out of the
+investigation (`ConsentRecorded`, `ParticipantUnavailable`, `QuestionCancelled`); the engine asks
+someone else.
+
 ## 3. Approval and repair (console and electrician)
 
 | Step | Who | Call |

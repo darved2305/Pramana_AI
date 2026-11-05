@@ -12,8 +12,9 @@ Timers, all measured with the injected clock:
   is re-asked once (``LISTENING -> ASKING``); after ``unavailable_s`` (20 s) in total the
   participant is treated as unavailable. Hearing speech resets the silence clock.
 
-Preemption hooks: ``preempt()`` asks to abandon the question being spoken (only possible while
-``ASKING``). Each time the agent starts speaking, the utterance id increases, so audio and
+Preemption hooks: ``preempt()`` asks to abandon the current question, while it is being
+spoken (``ASKING``) or while the answer is awaited (``LISTENING``, when it was answered elsewhere
+or withdrawn). Each time the agent starts speaking, the utterance id increases, so audio and
 transcripts belonging to an older utterance can be recognised and dropped
 (``is_current_utterance``), following Retell's stale ``response_id`` rule.
 """
@@ -87,6 +88,9 @@ TRANSITIONS: dict[tuple[CallState, CallEvent], CallState] = {
     (S.LISTENING, E.SILENCE_REPROMPT): S.ASKING,
     (S.LISTENING, E.SILENCE_TIMEOUT): S.UNAVAILABLE,
     (S.LISTENING, E.LATER): S.CLOSING,
+    # Not in PLAN section 12: the question was answered elsewhere or withdrawn while we were
+    # listening. The call drops it and moves to the next question or closes.
+    (S.LISTENING, E.PREEMPT): S.PREEMPTING,
     (S.EXTRACTING, E.INCOMPLETE): S.LISTENING,
     (S.EXTRACTING, E.NEEDS_CONFIRM): S.CONFIRMING,
     (S.EXTRACTING, E.OBSERVATION_PROPOSED): S.IDLE,
