@@ -571,7 +571,9 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "पिवळा",
     ),
     "red": _phrases("red", "laal", "lal", "लाल"),
-    "up": _phrases("up", "upar", "ऊपर", "upper side", "on position", "वर आहे", "var aahe", "वरच", "varach"),
+    "up": _phrases(
+        "up", "upar", "ऊपर", "upper side", "on position", "वर आहे", "var aahe", "वरच", "varach"
+    ),
     "tripped": _phrases(
         "tripped",
         "trip",
