@@ -48,7 +48,7 @@ and OpenAPI drift, generated-type drift and the bundle secret scan are clean.
 | D06 push channel | **done** | SSE `GET /v1/investigations/{id}/stream` (ADR 0009): resume by `after_seq` / `Last-Event-ID`, 15 s heartbeat, non-blocking writers. `test_event_stream.py` (15, real uvicorn). Console uses it with polling fallback; the real-backend M1 Playwright test checks the stream was opened |
 | D15 LLM clients | **done** | Typed errors, schema check, keys redacted: `test_llm_client.py`; reasoning-control retry in `eval/tests/test_benchmark.py` |
 | D04 voice gateway v1 | **done (emulated)** | AudioWorklet capture (`npm run check:worklet`), per-question media WebSocket with Prisma v3.0 context (ADR 0013), driven by the call runtime (barge-in, one re-prompt, silence timeout). `test_media_ws.py` (18) against the Prisma emulation. **Live turn verified** (`scripts/live_media_turn.py`, synthesised Hinglish answer). The browser socket through the Next rewrite is proven by `apps/web/tests-real/media-proxy.spec.ts` (core close codes 4401 and 4503 reach the browser) |
-| D07 call runtime | **done** | `calls/runtime.py`, every state x event pair in `test_call_runtime.py`; drives each media session |
+| D07 call runtime | **done** | `calls/runtime.py`, every state x event pair in `test_call_runtime.py`. It drives a whole participant call over one socket (`voice/call.py`): ring, logged consent, question after question, and release on decline, "later", no answer or silence, after which the engine asks someone else (`test_call_ws.py`, 6 tests; replay identical). The participant page rings and asks consent (`apps/web/tests-real/call.spec.ts`) |
 | D08 participant app v0 | **done** | `/join/<token>`: view card, text, tap, live voice with WAV fallback, capability and repair report; real-backend M1 Playwright test |
 | D09 simulator shell | **done** | `test_sim_api.py` |
 | N04 belief upgrades | **done** | ADR 0008; `test_belief_model.py` (Hypothesis: order invariance, normalisation, monotonicity, EIG bounds); hand computation exact |
@@ -83,7 +83,9 @@ missed abstentions; the metric was fixed. See NOTES.md.
 - Live Gnani: synthesised turns through the media socket only; human recordings (VOICE_SAMPLES.md) still needed.
 - Abstention on unidentifiable scenarios (68%) is a calibration target for the stopping rule.
 - The held-out extraction set has been seen; a fresh blind set is needed.
-- Per-call sockets with in-call consent, and preemption across parallel calls (D17, Nov 7).
+- Preemption across parallel calls (D17, Nov 7); the per-call socket and consent exist.
+- Phones need HTTPS: the free Cloudflare quick tunnel needs `cloudflared` installed (blocked on
+  the user's permission); quick tunnels carry no SSE, so the console falls back to polling.
 - Incremental TTS (Timbre streaming chunk format unverified); login throttle is per process.
 - Local setup: a dev core now enforces sign-in. Create a user with
   `uv run python -m pramana_core.auth.bootstrap`; scripts use `CORE_AUTOMATION_KEY` from `.env`.
