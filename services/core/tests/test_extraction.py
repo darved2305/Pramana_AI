@@ -339,3 +339,27 @@ def test_a_vanished_network_means_no_network() -> None:
     assert X.extract_sync("matlab network hi gayab hai", YES_NO).outcome == "no"
     wifi = ["no_network", "stuck_connecting", "connected"]
     assert X.extract_sync("network गायब है", wifi).outcome == "no_network"
+
+
+# -- regressions from open-source voices through live speech recognition (2026-11-05) ----------
+
+
+@pytest.mark.parametrize("text", ["माहित नाही.", "मला माहिती नाही", "mahiti nahi"])
+def test_marathi_dont_know_spellings_are_unsure_not_no(text: str) -> None:
+    # Speech recognition wrote "माहित नाही" (short i); it was recorded as "no".
+    e = X.extract_sync(text, YES_NO)
+    assert e.outcome == "unknown"
+    assert e.hedge.value == "unsure"
+
+
+@pytest.mark.parametrize(
+    ("text", "outcome"),
+    [("light chal rahi hai", "on"), ("लाइट चल रही है", "on"), ("light nahi chal rahi", "off")],
+)
+def test_working_light_is_on(text: str, outcome: str) -> None:
+    assert X.extract_sync(text, ON_OFF).outcome == outcome
+
+
+def test_misheard_dikh_as_dekh_still_means_no_network() -> None:
+    wifi = ["no_network", "stuck_connecting", "connected"]
+    assert X.extract_sync("wifi देख ही नहीं रहा", wifi).outcome == "no_network"
