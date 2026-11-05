@@ -6,9 +6,11 @@ REST calls use ``httpx.MockTransport``; realtime uses ``fake_gnani.FakeGnani``. 
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import struct
+import time
 import wave
 from collections.abc import Iterator
 from typing import Any
@@ -21,7 +23,7 @@ from fastapi.testclient import TestClient
 
 from pramana_core.main import create_app
 from pramana_core.voice import gnani as gmod
-from pramana_core.voice.gnani import GnaniClient, VoiceError, wav_duration_s
+from pramana_core.voice.gnani import GnaniClient, GnaniSttStream, VoiceError, wav_duration_s
 
 
 def wav(seconds: float, rate: int = 16000) -> bytes:
@@ -320,3 +322,21 @@ def test_voice_routes_without_key(migrated_db: str) -> None:
         assert r.status_code == 422
         r = c.post("/v1/voice/tts", json={"text": ""})
         assert r.status_code == 422
+
+
+async def test_closing_a_session_does_not_wait_for_gnanis_handshake() -> None:
+    # Gnani takes about a second to complete a close; the next question must not wait for it.
+    class SlowClose:
+        closed = False
+
+        async def close(self) -> None:
+            await asyncio.sleep(1.0)
+            SlowClose.closed = True
+
+    stream = GnaniSttStream(SlowClose(), {"config": {}}, expect_v3=False)  # type: ignore[arg-type]
+    started = time.perf_counter()
+    await stream.aclose()
+    assert time.perf_counter() - started < 0.1
+    assert not SlowClose.closed
+    await asyncio.sleep(1.2)
+    assert SlowClose.closed  # it still completes, in the background

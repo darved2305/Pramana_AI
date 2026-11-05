@@ -168,8 +168,21 @@ class GnaniSttStream:
         )
 
     async def aclose(self) -> None:
-        with contextlib.suppress(Exception):
-            await self._ws.close()
+        """Start closing and return at once. Gnani takes about a second to complete the close
+        handshake, and nothing depends on it: the next question should not wait for it."""
+        task = asyncio.create_task(_close_quietly(self._ws))
+        _CLOSING.add(task)
+        task.add_done_callback(_CLOSING.discard)
+
+
+_CLOSING: set[asyncio.Task[None]] = set()
+"""Close handshakes in progress (kept referenced so they are not garbage-collected)."""
+CLOSE_TIMEOUT_S = 3.0
+
+
+async def _close_quietly(ws: ClientConnection) -> None:
+    with contextlib.suppress(Exception):
+        await asyncio.wait_for(ws.close(), CLOSE_TIMEOUT_S)
 
 
 class GnaniClient:

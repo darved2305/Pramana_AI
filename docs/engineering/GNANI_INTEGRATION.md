@@ -95,6 +95,12 @@ Per the EULA, accuracy and latency results stay out of this repository; they are
   value the bot meant. Spoken answers the decision hinged on were re-asked once each, so the
   spoken run took more questions than a typed one. Synthetic voices, one run.
 
+- **Closing a realtime session takes Gnani about a second** to complete the WebSocket close
+  handshake (opening takes less). The gateway now starts the close and moves on, so the next
+  question does not wait for it; the close completes in the background, bounded at 3 s
+  (`GnaniSttStream.aclose`, `test_gnani_adapter.py`). Billing is by audio sent, so this
+  changes no cost.
+
 ## Usage guards (`voice/governor.py`)
 
 | Guard | Setting | Default | Account limit |
