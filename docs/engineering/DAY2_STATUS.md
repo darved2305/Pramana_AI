@@ -102,6 +102,7 @@ Next steps for a new session: `HANDOFF.md`.
 - Parallel calls with preemption (D17) are done: up to 3 people at once, questions withdrawn when another answer settles them (ADR 0011). Verified with tests, live voice bots on Gnani, and a run in the browser. Sustained load (3 calls for 10 minutes) is not yet measured.
 - Phones need HTTPS: the free Cloudflare quick tunnel works (`cloudflared` installed); quick
   tunnels carry no SSE, so the console falls back to polling.
-- Incremental TTS (Timbre streaming chunk format unverified); login throttle is per process.
+- Streamed TTS is done (Timbre SSE, raw PCM, checked live; see VOICE_ARCHITECTURE.md). The
+  login throttle is per process, which is enough while one core process serves the app.
 - Local setup: a dev core now enforces sign-in. Create a user with
   `uv run python -m pramana_core.auth.bootstrap`; scripts use `CORE_AUTOMATION_KEY` from `.env`.

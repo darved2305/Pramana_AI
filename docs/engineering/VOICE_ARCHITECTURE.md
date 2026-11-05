@@ -115,12 +115,23 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   `scripts/voice_bot_run.py` prints the caller-side turn latency. Under the Gnani EULA these
   measurements stay out of the repository.
 
+- **Streamed question audio.** A question that is not cached yet is synthesised over Timbre SSE
+  with `container: raw` (checked live on 2026-11-05: headerless PCM16 chunks, the first well
+  before the last). The media socket forwards it as `tts_start {format: "pcm_s16le",
+  sample_rate: 24000, streaming: true}` plus binary pieces of at least 0.2 s; the browser
+  schedules them back to back (`apps/web/src/lib/audio/media.ts`). "Listen to the question"
+  streams too: `GET .../audio` sends a WAV header with an open-ended length, then PCM as it
+  arrives (`X-Audio-Streamed: true`), played while downloading
+  (`apps/web/src/lib/audio/wav-stream.ts`). The joined audio is cached as a normal WAV, so a
+  repeat is one WAV at no cost. If the stream fails before its first chunk, one REST WAV is
+  used. Tests: `test_gnani_adapter.py` (SSE parsing, typed failures), `test_media_ws.py`
+  (streamed then cached, fallback, streamed Listen endpoint), `apps/web/tests/streamed-audio.spec.ts`
+  (decoded and scheduled gaplessly in Chrome).
+
 ## Not yet implemented
 
 - Preemption across parallel calls (ADR 0011): several people on calls at once, with a
   question dropped when another answer makes it pointless. The per-call socket
   (`voice/call.py`: ring, logged consent, question after question, release on decline or
   silence) exists; the console does not yet start calls for several people at once.
-- Incremental TTS. Question audio is synthesised by Timbre REST and sent in chunks, because the
-  chunk format of the WS/SSE endpoints is undocumented and has not been checked live.
 - Published latency figures. Measurements exist but stay private under the Gnani EULA.

@@ -32,7 +32,7 @@ measured Gnani accuracy or latency numbers must not be published outside the tea
 | Errors | 401 key, 402 credit, 403 scope, 429 (no Retry-After), 504 upstream 5 s | doc | Typed `VOICE_*` codes; retry only 429/5xx/connection errors with 0.5/1/2 s backoff (Gnani's guidance) |
 | Concurrency | Per-organisation cap; the number is not published | doc | `GNANI_MAX_CONCURRENCY=1` until measured |
 | TTS | REST/SSE/WS with the same JSON body; WS takes one request at a time; no incremental text | doc | REST WAV for now (simplest playable artefact) |
-| TTS chunk format | Not documented whether WS/SSE chunks are WAV or raw; SDK strips a RIFF header from every chunk | doc + src | Avoided by using REST WAV; must be checked live before streaming TTS |
+| TTS chunk format | Not documented whether WS/SSE chunks are WAV or raw; SDK strips a RIFF header from every chunk | doc + src + live | Live (2026-11-05): SSE with `container: raw` gives headerless PCM16 chunks (base64 in `chunk` events, `complete` at the end). Used for uncached questions; REST WAV is the fallback |
 | Voices | v3.0: 13 voices × 10 languages, **no Hinglish**; v2.5 Poorvi = `hi-en` | doc | `hi-en` is routed to timbre-v2.5/Poorvi; Marathi defaults to v3.0 Shivani (provisional, pending a listening test) |
 | Devanagari TTS | Auto-detect treats Devanagari as Hindi; Marathi must be explicit | doc | We always pass the language explicitly |
 | LiveKit plugin | Cannot select v3.0 | src | LiveKit is dropped as plan B (see VOICE_ARCHITECTURE.md) |
