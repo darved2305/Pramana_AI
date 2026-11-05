@@ -138,6 +138,8 @@ export const EVENT_LABEL: Record<string, string> = {
   BeliefUpdated: "Belief updated",
   PlanComputed: "Plan computed",
   QuestionAsked: "Question asked",
+  QuestionWithdrawn: "Question withdrawn",
+  QuestionCancelled: "Question cancelled",
   DecisionReached: "Decision reached",
   Abstained: "Abstained",
   ApprovalRequested: "Approval requested",

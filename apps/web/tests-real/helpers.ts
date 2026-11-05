@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 
 /** Direct calls to the real core, as automation (used only to arrange and to check state). */
 export const CORE = process.env.E2E_CORE_URL as string;
@@ -52,3 +52,49 @@ export async function signIn(page: Page, who: keyof typeof USERS, next = "/app")
   await page.getByRole("button", { name: "Log in", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${next.replace(/[/?]/g, (c) => `\\${c}`)}$`));
 }
+
+export async function openParticipant(browser: Browser, url: string): Promise<Page> {
+  // A separate browser context: no staff cookie, only the link.
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.goto(url);
+  return page;
+}
+
+/** Answer the pending question on the participant's own page, from their surroundings card. */
+export async function answerTruthfully(p: Page, questionText: string, probeLabel: string, typed: boolean) {
+  const there = p.getByRole("button", { name: "I am there now" });
+  // The page polls; wait until it shows this very question, not the previous screen.
+  await expect(p.getByRole("heading", { level: 1 })).toHaveText(questionText, { timeout: 20_000 });
+  if (await there.isVisible()) await there.click();
+  const card = p.locator("details", { hasText: "What you can see here (simulation)" });
+  await expect(card).toBeVisible();
+  if (!(await card.evaluate((d) => (d as HTMLDetailsElement).open))) await card.locator("summary").click();
+  const row = card.locator("div", { has: p.locator("dt", { hasText: probeLabel }) }).last();
+  await expect(row).toBeVisible();
+  const value = (await row.locator("dd").innerText()).trim();
+  if (typed) {
+    await p.getByLabel("Type your answer").fill(PHRASES[value] ?? value);
+    await p.getByRole("button", { name: "Send" }).click();
+  } else {
+    await p.getByRole("group", { name: "Answers" }).getByRole("button", { name: value.replace(/_/g, " "), exact: true }).click();
+  }
+  await expect(p.getByRole("status")).toContainText("I understood");
+  return value;
+}
+
+// How someone might say each outcome (Hinglish and Marathi on purpose); the core must extract it.
+export const PHRASES: Record<string, string> = {
+  yes: "haan, khul rahi hai",
+  no: "nahi, khul nahi rahi",
+  on: "haan chalu hai",
+  off: "band aahe",
+  green: "lights green hain",
+  amber: "orange dikh rahi hain",
+  red: "laal hai",
+  up: "breaker upar hai",
+  tripped: "breaker neeche hai, trip hai",
+  no_network: "NAVA-WiFi dikh hi nahi raha",
+  stuck_connecting: "connecting pe atka hai",
+  connected: "connected hai",
+};

@@ -10,7 +10,7 @@ import { core } from "@/lib/api/core";
 import { describeError } from "@/lib/api/http";
 import type { Contradiction } from "@/lib/data/derive";
 import { clock, locationLabel, outcomeWord, participantName, probeLabel } from "@/lib/data/derive";
-import type { Approval, InvestigationState, Observation, SitePack } from "@/lib/api/types";
+import type { Approval, InvestigationState, Observation, Question, SitePack } from "@/lib/api/types";
 import { outcomeTone } from "@/components/app/BuildingMap";
 import { hasRole } from "@/lib/api/auth";
 import { useCurrentUser } from "@/lib/data/session";
@@ -30,15 +30,16 @@ export function ConversationPanel({
   onState: (s: InvestigationState) => void;
   onLinks: () => void;
 }) {
-  const q = state.pending_question;
-  const asking = q?.action.participant_id;
+  const waiting = state.pending_questions?.length ? state.pending_questions : state.pending_question ? [state.pending_question] : [];
+  const asking = new Set(waiting.map((w) => w.action.participant_id));
+  const parallel = (state.max_parallel_calls ?? 1) > 1;
 
   return (
     <Card className="flex flex-col p-4" aria-labelledby="conv-title">
       <CardHeader
         id="conv-title"
         title="Conversation"
-        subtitle={`${state.questions_asked} question${state.questions_asked === 1 ? "" : "s"} asked so far`}
+        subtitle={`${state.questions_asked} question${state.questions_asked === 1 ? "" : "s"} asked so far${parallel ? ` · up to ${state.max_parallel_calls} people at once` : ""}`}
         action={
           <Button size="sm" onClick={onLinks}>
             Participant links
@@ -46,23 +47,32 @@ export function ConversationPanel({
         }
       />
 
-      {q ? (
-        <div className="mt-4 rounded-[14px] border-[0.8px] border-info/40 bg-info/[.06] p-4" aria-live="polite">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-info pulse-dot" aria-hidden />
-            <span className="text-[13px] font-medium text-info">Waiting for {participantName(state, asking)}</span>
-            {q.kind === "confirm" ? <Badge tone="warn">Just checking</Badge> : null}
-            {q.action.requires_move ? <Badge>Walk to {locationLabel(pack, q.action.location_id)}</Badge> : null}
-            <span className="ml-auto text-[12px] text-muted">asked {clock(q.asked_at)}</span>
-          </div>
-          <p lang={q.language === "hi-en" ? "hi-Latn" : q.language} className="mt-3 text-[17px] leading-relaxed text-fg">
-            {q.text}
-          </p>
-          <p className="mt-2 text-[12px] text-muted">
-            In {langLabel(q.language)} · checks: {probeLabel(pack, q.action.probe_id)} · possible answers:{" "}
-            {q.outcomes.map(outcomeWord).join(", ")}
-          </p>
-          {!readOnly ? <RecordAnswer state={state} onState={onState} /> : null}
+      {waiting.length ? (
+        <div className="mt-4 flex flex-col gap-3" aria-live="polite">
+          {waiting.length > 1 ? (
+            <p className="text-[12px] text-muted" data-testid="parallel-count">
+              {waiting.length} questions out at the same time. A question is withdrawn if another answer makes it pointless.
+            </p>
+          ) : null}
+          {waiting.map((q) => (
+            <div key={q.id} className="rounded-[14px] border-[0.8px] border-info/40 bg-info/[.06] p-4" data-testid="pending-question">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-info pulse-dot" aria-hidden />
+                <span className="text-[13px] font-medium text-info">Waiting for {participantName(state, q.action.participant_id)}</span>
+                {q.kind === "confirm" ? <Badge tone="warn">Just checking</Badge> : null}
+                {q.action.requires_move ? <Badge>Walk to {locationLabel(pack, q.action.location_id)}</Badge> : null}
+                <span className="ml-auto text-[12px] text-muted">asked {clock(q.asked_at)}</span>
+              </div>
+              <p lang={q.language === "hi-en" ? "hi-Latn" : q.language} className="mt-3 text-[17px] leading-relaxed text-fg">
+                {q.text}
+              </p>
+              <p className="mt-2 text-[12px] text-muted">
+                In {langLabel(q.language)} · checks: {probeLabel(pack, q.action.probe_id)} · possible answers:{" "}
+                {q.outcomes.map(outcomeWord).join(", ")}
+              </p>
+              {!readOnly ? <RecordAnswer key={q.id} state={state} question={q} onState={onState} /> : null}
+            </div>
+          ))}
         </div>
       ) : (
         <Notice className="mt-4">No question is waiting. {state.status === "investigating" ? "The planner is choosing the next one." : "The investigation has stopped asking."}</Notice>
@@ -72,7 +82,7 @@ export function ConversationPanel({
         {state.participants.map((p) => {
           const theirs = state.observations.filter((o) => o.participant_id === p.id);
           const last = theirs.at(-1);
-          const isAsking = asking === p.id;
+          const isAsking = asking.has(p.id);
           return (
             <li key={p.id} className="flex gap-3 py-3">
               <div className="relative">
@@ -116,8 +126,7 @@ export function ConversationPanel({
 }
 
 /** Lets the console record an answer someone gave by phone or in person. */
-function RecordAnswer({ state, onState }: { state: InvestigationState; onState: (s: InvestigationState) => void }) {
-  const q = state.pending_question!;
+function RecordAnswer({ state, question: q, onState }: { state: InvestigationState; question: Question; onState: (s: InvestigationState) => void }) {
   const [mode, setMode] = useState<"tap" | "text">("tap");
   const [text, setText] = useState("");
   const [outcome, setOutcome] = useState(q.outcomes[0] ?? "");

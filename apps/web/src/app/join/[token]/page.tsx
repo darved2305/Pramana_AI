@@ -130,7 +130,9 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     );
 
   const me = state.participants.find((p) => p.id === payload.p);
-  const q = state.pending_question && state.pending_question.action.participant_id === payload.p ? state.pending_question : null;
+  const q =
+    state.pending_questions?.find((w) => w.action.participant_id === payload.p) ??
+    (state.pending_question && state.pending_question.action.participant_id === payload.p ? state.pending_question : null);
   const needsMove = q?.action.requires_move && moved !== q.id;
   const place = q ? (state.participants.length ? q.action.location_id : "") : "";
   const grant = state.approvals?.find((a) => a.participant_id === payload.p && a.status === "approved");

@@ -50,6 +50,7 @@ export default function NewInvestigationPage() {
   const [reporter, setReporter] = useState<string>("");
   const [overrides, setOverrides] = useState<Record<string, Partial<ParticipantSpec>>>({});
   const [seed, setSeed] = useState("19");
+  const [parallel, setParallel] = useState(1);
   const [faultMode, setFaultMode] = useState<"random" | "specified">("random");
   const [faultComponent, setFaultComponent] = useState("");
   const [faultKind, setFaultKind] = useState("");
@@ -105,6 +106,7 @@ export default function NewInvestigationPage() {
             seed: Number(seed),
             fault: faultMode === "random" ? "random" : { faults: [{ component_id: faultComponent, mode: faultKind }] },
           },
+          max_parallel_calls: parallel,
         }
       : null;
 
@@ -403,6 +405,15 @@ export default function NewInvestigationPage() {
                 <Field label="Simulation seed" hint="The same seed and fault reproduce the same run." error={err && err.includes("seed") ? err : null}>
                   {(a) => <Input {...a} inputMode="numeric" value={seed} onChange={(e) => setSeed(e.target.value.replace(/\D/g, ""))} className="font-mono" />}
                 </Field>
+                <Field label="People asked at once" hint="With more than one, a question still out is withdrawn when another answer makes it pointless. At most 3.">
+                  {(a) => (
+                    <Select {...a} value={String(parallel)} onChange={(e) => setParallel(Number(e.target.value))} data-testid="parallel-calls">
+                      <option value="1">One at a time</option>
+                      <option value="2">Up to 2</option>
+                      <option value="3">Up to 3</option>
+                    </Select>
+                  )}
+                </Field>
                 <fieldset className="flex flex-col gap-3">
                   <legend className="mb-1 text-[13px] font-medium text-fg-2">Hidden fault</legend>
                   <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border-[0.8px] border-line p-3 has-[:checked]:border-accent/60">
@@ -461,7 +472,7 @@ export default function NewInvestigationPage() {
                   onEdit={() => go(2)}
                 />
                 <Summary k="Languages" v={participants.map((p) => `${p.display_name}: ${langLabel(p.languages.template_language)}`).join(" · ")} onEdit={() => go(3)} />
-                <Summary k="Scenario" v={`Seed ${seed} · ${faultMode === "random" ? "sealed random fault" : `${faultComponent} ${faultKind}`}`} onEdit={() => go(5)} />
+                <Summary k="Scenario" v={`Seed ${seed} · ${faultMode === "random" ? "sealed random fault" : `${faultComponent} ${faultKind}`} · ${parallel === 1 ? "one person at a time" : `up to ${parallel} people at once`}`} onEdit={() => go(5)} />
               </dl>
               <div className="flex flex-col gap-4">
                 <Checkbox

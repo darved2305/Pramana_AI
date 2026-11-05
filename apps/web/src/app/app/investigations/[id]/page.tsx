@@ -171,7 +171,7 @@ function CommandCenter({
             id="env-title"
             title="Environment"
             subtitle="People, places and what has been observed in each"
-            action={s.pending_question ? <Badge tone="info">Asking about {locationLabel(pack, s.pending_question.action.location_id).replace(/^the /, "")}</Badge> : undefined}
+            action={(s.pending_questions?.length ?? 0) > 1 ? <Badge tone="info">Asking {s.pending_questions?.length} people at once</Badge> : s.pending_question ? <Badge tone="info">Asking about {locationLabel(pack, s.pending_question.action.location_id).replace(/^the /, "")}</Badge> : undefined}
           />
           <div className="mt-4">
             {pack ? (
