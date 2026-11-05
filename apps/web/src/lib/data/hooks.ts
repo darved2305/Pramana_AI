@@ -146,8 +146,13 @@ export function pollingSource(pollMs: number, token?: string): EventFeedSource {
  * Events arriving together are delivered as one batch. If the stream cannot be opened (the
  * server refused it, or it failed three times without delivering anything), this falls back
  * to `fallback` for the rest of the subscription.
+ *
+ * The server sends `ready` as soon as the stream opens. A proxy that buffers the stream (a
+ * Cloudflare quick tunnel does: it does not support server-sent events) answers 200 and then
+ * delivers nothing, without any error. If `ready` has not arrived within `readyMs`, the stream
+ * is treated as unusable and polling takes over.
  */
-export function streamSource(fallback: EventFeedSource, flushMs = 60): EventFeedSource {
+export function streamSource(fallback: EventFeedSource, flushMs = 60, readyMs = 5000): EventFeedSource {
   return {
     subscribe(id, afterSeq, onEvents, onReset) {
       if (typeof window === "undefined" || typeof window.EventSource === "undefined") {
@@ -159,6 +164,7 @@ export function streamSource(fallback: EventFeedSource, flushMs = 60): EventFeed
       let failures = 0;
       let pending: EventEnvelope[] = [];
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
+      let readyTimer: ReturnType<typeof setTimeout> | null = null;
 
       const flush = () => {
         flushTimer = null;
@@ -167,12 +173,16 @@ export function streamSource(fallback: EventFeedSource, flushMs = 60): EventFeed
         if (batch.length && !stopped) onEvents(batch);
       };
       const toPolling = () => {
+        if (readyTimer) clearTimeout(readyTimer);
+        readyTimer = null;
         es?.close();
         es = null;
         if (!stopped && !stopFallback) stopFallback = fallback.subscribe(id, afterSeq, onEvents, onReset);
       };
       const open = () => {
         es = new window.EventSource(`/api/core/v1/investigations/${encodeURIComponent(id)}/stream?after_seq=${afterSeq()}`);
+        if (readyTimer) clearTimeout(readyTimer);
+        readyTimer = setTimeout(toPolling, readyMs);
         es.onmessage = (m) => {
           failures = 0;
           try {
@@ -184,6 +194,8 @@ export function streamSource(fallback: EventFeedSource, flushMs = 60): EventFeed
         };
         es.addEventListener("ready", () => {
           failures = 0;
+          if (readyTimer) clearTimeout(readyTimer);
+          readyTimer = null;
         });
         es.addEventListener("reset", () => {
           pending = [];
@@ -206,6 +218,7 @@ export function streamSource(fallback: EventFeedSource, flushMs = 60): EventFeed
         es?.close();
         stopFallback?.();
         if (flushTimer) clearTimeout(flushTimer);
+        if (readyTimer) clearTimeout(readyTimer);
       };
     },
   };
