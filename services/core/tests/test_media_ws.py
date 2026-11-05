@@ -40,8 +40,18 @@ class Tts:
     def __init__(self) -> None:
         self.status = 200
         self.calls = 0
+        self.stt_text = ""
+        """What the REST second decode hears ("" = nothing)."""
+        self.stt_requests: list[httpx.Request] = []
 
-    def __call__(self, _req: httpx.Request) -> httpx.Response:
+    def __call__(self, req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/stt/v3":
+            # The REST second decode of a decision-critical answer: nothing heard by default,
+            # so the person is asked again, as without a second decode.
+            self.stt_requests.append(req)
+            return httpx.Response(
+                200, json={"success": True, "transcript": self.stt_text, "model": "prisma-v3.0"}
+            )
         self.calls += 1
         if self.status != 200:
             return httpx.Response(self.status, json={"detail": "no"})
@@ -489,3 +499,31 @@ def test_hanging_up_ends_the_call(env: Env) -> None:
         msgs, _, code = drain(ws, calls=True)
     assert states(msgs)[-2:] == ["CLOSING", "ENDED"]
     assert code == 1000
+
+
+def test_live_answer_confirmed_by_a_second_decode_is_not_asked_again(env: Env) -> None:
+    state, q, phrase = start(env)
+    env.fake.transcript = phrase
+    env.tts.stt_text = phrase  # the independent decode of the same audio agrees
+    pid = q["action"]["participant_id"]
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(
+            json.dumps(
+                {"type": "start", "token": token(env, state["id"], pid), "play_question": False}
+            )
+        )
+        until(ws, "ready")
+        ws.send_bytes(PCM)
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs, _, code = drain(ws)
+    assert code == 1000
+    assert msgs[-1]["type"] == "answer"
+    events = env.client.get(f"/v1/investigations/{state['id']}/events").json()
+    confirmed = [e["payload"] for e in events if e["type"] == "ObservationConfirmed"]
+    assert env.tts.stt_requests  # the first S1 answer is decision-critical: it was checked
+    assert confirmed[-1]["method"] == "second_decode"
+    assert b"keyterms" not in env.tts.stt_requests[-1].content
+    after = env.client.get(f"/v1/investigations/{state['id']}").json()
+    assert (after["pending_question"] or {}).get("kind") != "confirm"
+    assert env.client.get(f"/v1/investigations/{state['id']}/replay").json()["identical"]

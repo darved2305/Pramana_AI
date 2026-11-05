@@ -99,6 +99,12 @@ async def voice_answer(
         detected=stt.detected_language,
         provider_ms=stt.provider_latency_ms,
     )
+
+    async def unbiased_decode() -> str | None:
+        # The same audio without the answer vocabulary or the question as context.
+        alt = await gnani.transcribe(data, audio.filename or "answer.wav", langs, codemix=codemix)
+        return None if alt.empty else alt.transcript
+
     result = await svc.answer(
         inv_id,
         SubmitAnswer(
@@ -107,6 +113,7 @@ async def voice_answer(
             text=stt.transcript[:1000],
             modality=Modality.VOICE,
         ),
+        second_decode=unbiased_decode,
     )
     return visible_voice_answer(VoiceAnswerResult(stt=stt, result=result), who)
 

@@ -98,6 +98,15 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   stays pending. Every transition is sent as `call_state`. Tests: `test_media_ws.py`
   (spoken turn, barge-in, re-prompt then give up, hang up).
 
+- **Decision-critical spoken answers are checked by a second decode, not by asking again.**
+  The first recognition is steered toward the expected words (the probe's answer vocabulary as
+  `keyterms`, the question as context). When one spoken answer would move the decision, the
+  same audio is decoded again through Prisma REST *without* that steering (about Rs 0.02). If
+  both readings give the same outcome, the speech discount is removed and the call moves on,
+  logged as `ObservationConfirmed {method: "second_decode"}`. If they differ, nothing is heard,
+  or the check fails (budget, rate limit), the person is asked again as before
+  (`investigations.py::_second_decode_agrees`; `test_voice_turns.py`, `test_media_ws.py`).
+
 ## Not yet implemented
 
 - Preemption across parallel calls (ADR 0011): several people on calls at once, with a

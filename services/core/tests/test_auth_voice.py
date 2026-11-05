@@ -74,4 +74,5 @@ def test_participant_answers_by_voice_with_their_join_token(
     assert r.status_code == 200, r.text
     obs = r.json()["result"]["observation"]
     assert (obs["outcome"], obs["modality"]) == ("no_network", "voice")
-    assert fake.paths() == ["/api/v1/tts/inference", "/stt/v3"]
+    # Question audio, the answer, and the independent check of a decision-critical answer.
+    assert fake.paths() == ["/api/v1/tts/inference", "/stt/v3", "/stt/v3"]

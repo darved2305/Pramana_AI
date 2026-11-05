@@ -37,18 +37,26 @@ class FakeGnaniHttp:
 
     def __init__(self) -> None:
         self.transcript = "NAVA-WiFi dikh hi nahi raha"
+        self.transcripts: list[str] = []
+        """Played first, one per STT request, before falling back to ``transcript``."""
+        self.stt_statuses: list[int] = []
+        """HTTP statuses for the next STT requests (then 200)."""
         self.calls: list[tuple[str, httpx.Request]] = []
 
     def __call__(self, req: httpx.Request) -> httpx.Response:
         self.calls.append((req.url.path, req))
         if req.url.path == "/api/v1/tts/inference":
             return httpx.Response(200, content=wav(0.5, 24000))
+        status = self.stt_statuses.pop(0) if self.stt_statuses else 200
+        if status != 200:
+            return httpx.Response(status, json={"detail": "refused"})
+        text = self.transcripts.pop(0) if self.transcripts else self.transcript
         return httpx.Response(
             200,
             json={
                 "success": True,
                 "request_id": "r1",
-                "transcript": self.transcript,
+                "transcript": text,
                 "model": "prisma-v3.0",
                 "detected_language_code": "hi-IN",
                 "processing_time": 0.2,
@@ -129,7 +137,8 @@ def test_voice_answer_uses_question_context_and_updates_the_belief(
         "voice",
     )
     assert obs["transcript"] == "NAVA-WiFi dikh hi nahi raha"
-    fields = form_fields(fake.calls[-1][1])
+    # The first decode carries the question context (the second, a check, deliberately not).
+    fields = form_fields(next(r for path, r in fake.calls if path == "/stt/v3"))
     assert fields["model"] == "prisma-v3.0"
     assert fields["language_code"] == "hi-IN,en-IN"
     assert fields["format"] == "codemix"  # Riya is registered as a code-mixing speaker
@@ -239,9 +248,12 @@ def _voice(client: TestClient, inv: dict[str, Any], who: str = "p_riya") -> dict
 def test_decision_critical_spoken_answer_is_confirmed(
     voice: tuple[TestClient, FakeGnaniHttp],
 ) -> None:
-    client, _ = voice
+    client, fake = voice
     inv = create(client)
-    first = _voice(client, inv)  # "NAVA-WiFi dikh hi nahi raha": moves the decision a lot
+    # "NAVA-WiFi dikh hi nahi raha" moves the decision a lot; the independent second decode
+    # disagrees, so the person is asked again.
+    fake.transcripts = ["NAVA-WiFi dikh hi nahi raha", "connected hai"]
+    first = _voice(client, inv)
     state = first["result"]["state"]
     confirm = state["pending_question"]
     assert confirm["kind"] == "confirm"
@@ -262,9 +274,10 @@ def test_contradicted_confirmation_discards_the_misheard_answer(
 ) -> None:
     client, fake = voice
     inv = create(client)
+    fake.transcripts = ["NAVA-WiFi dikh hi nahi raha", "connected hai"]  # decodes disagree
     first = _voice(client, inv)
     confirm = first["result"]["state"]["pending_question"]
-    fake.transcript = "connected hai"  # the second recognition disagrees
+    fake.transcript = "connected hai"  # the person's second answer disagrees too
     second = _voice(client, {**inv, "pending_question": confirm})
     state = second["result"]["state"]
     original = [o for o in state["observations"] if o["probe_id"] == "wifi_status"]
@@ -290,3 +303,38 @@ def test_typed_answers_are_not_reconfirmed(voice: tuple[TestClient, FakeGnaniHtt
         },
     )
     assert r.json()["state"]["pending_question"]["kind"] == "probe"
+
+
+def _stt_requests(fake: FakeGnaniHttp) -> list[httpx.Request]:
+    return [r for path, r in fake.calls if path != "/api/v1/tts/inference"]
+
+
+def test_an_agreeing_second_decode_confirms_without_asking_again(
+    voice: tuple[TestClient, FakeGnaniHttp],
+) -> None:
+    client, fake = voice
+    inv = create(client)
+    out = _voice(client, inv)  # both decodes read "NAVA-WiFi dikh hi nahi raha"
+    state = out["result"]["state"]
+    assert state["pending_question"]["kind"] == "probe"  # no "just checking" question
+    events = client.get(f"/v1/investigations/{inv['id']}/events").json()
+    confirmed = [e["payload"] for e in events if e["type"] == "ObservationConfirmed"]
+    assert confirmed[-1]["agreed"] is True
+    assert confirmed[-1]["method"] == "second_decode"
+    first, second = _stt_requests(fake)[-2:]
+    assert b"keyterms" in first.content  # the first decode is steered by the answer words
+    assert b"keyterms" not in second.content  # the check is not
+    assert b"previous_text" not in second.content
+    assert client.get(f"/v1/investigations/{inv['id']}/replay").json()["identical"]
+
+
+def test_a_failed_second_decode_falls_back_to_asking_again(
+    voice: tuple[TestClient, FakeGnaniHttp],
+) -> None:
+    client, fake = voice
+    inv = create(client)
+    fake.stt_statuses = [200, 429, 429, 429, 429]  # the check is refused (rate limited)
+    out = _voice(client, inv)
+    assert out["result"]["state"]["pending_question"]["kind"] == "confirm"
+    events = client.get(f"/v1/investigations/{inv['id']}/events").json()
+    assert not [e for e in events if e["type"] == "ObservationConfirmed"]

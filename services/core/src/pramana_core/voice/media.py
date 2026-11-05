@@ -49,8 +49,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import json
 import time
+import wave
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -77,6 +79,8 @@ CALL_TIMERS = CallTimers()
 PLAYBACK_GRACE_S = 1.0
 """Extra time after the question audio's length before assuming it finished playing."""
 TIMER_POLL_S = 0.25
+MAX_ANSWER_AUDIO = 30 * 16000 * 2
+"""The last 30 s of the answer (16 kHz PCM16) are kept for an independent second decode."""
 
 
 def close_code_for(status: int) -> int:
@@ -135,6 +139,7 @@ class MediaSession:
         self.played_until: float | None = None
         """Monotonic time by which the question audio has surely finished playing."""
         self.spoken: bytes | None = None
+        self.answer_audio = bytearray()
         self.submitting = False
         self.done = asyncio.Event()
         self._send_lock = send_lock or asyncio.Lock()
@@ -338,6 +343,9 @@ class MediaSession:
                 if len(data) > MAX_CLIENT_FRAME or len(data) % 2:
                     await self.fail(ApiError(400, "MEDIA_BAD_FRAME", "frames are PCM16, <= 64 KiB"))
                 await upstream.send_pcm(data)
+                self.answer_audio += data
+                if len(self.answer_audio) > MAX_ANSWER_AUDIO:
+                    del self.answer_audio[: len(self.answer_audio) - MAX_ANSWER_AUDIO]
                 continue
             try:
                 ctl = json.loads(msg.get("text") or "")
@@ -372,6 +380,7 @@ class MediaSession:
                 if not text:
                     # Empty or pure noise: no evidence, the question stays pending.
                     await self.send({"type": "empty_transcript"})
+                    self.answer_audio.clear()  # the next attempt is a new answer
                     continue
                 latency = ev.raw.get("latency")
                 await self.send(
@@ -451,6 +460,16 @@ class MediaSession:
     ) -> None:
         self.submitting = True
         started = time.perf_counter()
+        audio = bytes(self.answer_audio)
+
+        async def unbiased_decode() -> str | None:
+            # The same audio, without the answer vocabulary as context (REST, <= 30 s).
+            if len(audio) < 3200:  # under 0.1 s: nothing to decode
+                return None
+            langs, codemix = stt_options(q.participant)
+            alt = await self.gnani.transcribe(_wav(audio), "answer.wav", langs, codemix=codemix)
+            return None if alt.empty else alt.transcript
+
         try:
             result = await self.svc.answer(
                 self.inv_id,
@@ -461,6 +480,7 @@ class MediaSession:
                     outcome=outcome,
                     modality=Modality.VOICE if text is not None else Modality.TEXT,
                 ),
+                second_decode=unbiased_decode if text is not None else None,
             )
         except ApiError as exc:
             await self.fail(exc)
@@ -492,3 +512,13 @@ def _wav_seconds(audio: bytes) -> float:
     if rate <= 0:
         return 0.0
     return (len(audio) - 44) / (2 * channels * rate)
+
+
+def _wav(pcm16: bytes, rate: int = 16000) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm16)
+    return buf.getvalue()

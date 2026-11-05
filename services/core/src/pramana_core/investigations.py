@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import json
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -404,6 +405,56 @@ class InvestigationService:
         }
         self._event(session, row.id, "DecisionReached" if decided else "Abstained", row.outcome)
 
+    async def _second_decode_agrees(
+        self,
+        session: AsyncSession,
+        inv_id: str,
+        engine: Engine,
+        q: QuestionRow,
+        extraction: Extraction,
+        outcomes: list[str],
+        second_decode: Callable[[], Awaitable[str | None]] | None,
+    ) -> bool:
+        """Confirm a decision-critical spoken answer from a second, independent recognition of
+        the same audio (no answer vocabulary or question as context, so it is not biased toward
+        the expected words). Agreement removes the speech discount, as a re-asked answer would;
+        anything else (disagreement, nothing heard, a failure) falls back to asking again."""
+        if second_decode is None:
+            return False
+        try:
+            alt = await second_decode()
+        except Exception as exc:  # budget, rate limit, provider error: ask the person instead
+            log.warning("second_decode_failed", investigation_id=inv_id, error=type(exc).__name__)
+            return False
+        if not alt:
+            return False
+        heard = await self.extractor.extract(alt, outcomes, question=q.text)
+        if heard.outcome != extraction.outcome or heard.injection_suspected:
+            log.info(
+                "second_decode_disagrees",
+                investigation_id=inv_id,
+                first=extraction.outcome,
+                second=heard.outcome,
+            )
+            return False
+        engine.confirm(q.participant_id, q.probe_id, q.location_id, True)
+        self._event(
+            session,
+            inv_id,
+            "ObservationConfirmed",
+            {
+                "participant_id": q.participant_id,
+                "probe_id": q.probe_id,
+                "location_id": q.location_id,
+                "original_outcome": extraction.outcome,
+                "heard": heard.outcome,
+                "agreed": True,
+                "question_id": q.id,
+                "method": "second_decode",
+            },
+        )
+        return True
+
     def _ask_confirmation(
         self, session: AsyncSession, row: InvestigationRow, engine: Engine, asked: QuestionRow
     ) -> None:
@@ -590,7 +641,16 @@ class InvestigationService:
             transcript=req.report.text,
         )
 
-    async def answer(self, inv_id: str, ans: SubmitAnswer) -> AnswerResult:
+    async def answer(
+        self,
+        inv_id: str,
+        ans: SubmitAnswer,
+        *,
+        second_decode: Callable[[], Awaitable[str | None]] | None = None,
+    ) -> AnswerResult:
+        """Record an answer. ``second_decode`` (spoken answers only) returns an independent
+        transcript of the same audio; it is called only if the decision hinges on this answer.
+        If it reads the same outcome, the answer counts as confirmed without asking again."""
         async with self._lock(inv_id):
             try:
                 async with self.db.transaction() as session:
@@ -656,11 +716,16 @@ class InvestigationService:
                         )
                         await self._supersede(session, inv_id, obs)
                         continue_planning = True
-                        if (
+                        critical = (
                             ans.modality == Modality.VOICE
                             and observed.used_as_evidence
                             and observed.decision_critical
+                        )
+                        if critical and await self._second_decode_agrees(
+                            session, inv_id, engine, q, extraction, outcomes, second_decode
                         ):
+                            critical = False  # confirmed by an independent decode
+                        if critical:
                             # The decision hinges on one spoken answer, and speech recognition
                             # gives no confidence score: confirm it before relying on it.
                             # The answer did move the belief: record that, so the console and
