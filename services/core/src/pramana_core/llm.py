@@ -383,11 +383,7 @@ class LlmClient:
                 return LlmResult(data, self.model, False, tokens)
             last = f"HTTP {r.status_code}: {r.text[:200]}"
             body = r.text.lower()
-            if (
-                r.status_code == 429
-                and "quota" in body
-                and ("per day" in body or "perday" in body or "free_tier_requests" in body)
-            ):
+            if r.status_code == 429 and _daily_limit(body):
                 # A daily quota cannot recover by backing off: fail fast, remember it.
                 with self._lock:
                     self._budget.exhaust_today()
@@ -395,7 +391,11 @@ class LlmClient:
             if r.status_code in (429, 500, 502, 503, 504):
                 last_kind = LlmRateLimitedError if r.status_code == 429 else LlmProviderError
                 retry_after = r.headers.get("retry-after")
-                pause(float(retry_after) if retry_after and retry_after.isdigit() else backoff)
+                wait = float(retry_after) if retry_after and retry_after.isdigit() else backoff
+                if wait > MAX_RETRY_WAIT_S:
+                    # A wait this long is a quota window, not a blip: fail now, do not sleep.
+                    raise last_kind(self._safe(f"provider asks to wait {wait:.0f}s: {last}"))
+                pause(wait)
                 backoff = min(backoff * 2, 60)
                 continue
             if (
@@ -419,3 +419,19 @@ class LlmClient:
 
     def __repr__(self) -> str:  # never show the key, even in debug output
         return f"LlmClient(provider={self.provider!r}, model={self.model!r})"
+
+
+MAX_RETRY_WAIT_S = 120.0
+"""Longest provider-requested wait the client will sleep through before giving up."""
+
+
+def _daily_limit(body: str) -> bool:
+    """A 429 about a per-day limit: backing off cannot help until the window resets.
+
+    Gemini says "Quota exceeded ... free_tier_requests"; Groq says "Rate limit reached ... on
+    tokens per day (TPD)" or "requests per day (RPD)", without the word "quota".
+    """
+    b = body.lower()
+    return (
+        "per day" in b or "perday" in b or "free_tier_requests" in b or "(tpd)" in b or "(rpd)" in b
+    )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -294,3 +295,39 @@ def test_abstention_recall_counts_only_unidentifiable_scenarios() -> None:
     assert s["abstention_recall"] == 0.5
     assert s["accuracy_when_unidentifiable_but_decided"] == 1.0
     assert s["pair_accuracy"] == 0.5
+
+
+def test_groq_tokens_per_day_limit_fails_fast(tmp_path: Path) -> None:
+    # Groq's daily token cap does not say "quota"; it used to be retried for minutes.
+    calls = 0
+    body = (
+        '{"error": {"message": "Rate limit reached for model `openai/gpt-oss-120b` in '
+        "organization `org_x` service tier `on_demand` on tokens per day (TPD): Limit 200000, "
+        'Used 199500, Requested 3500. Please try again in 7m12s.", "type": "tokens"}}'
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, text=body, headers={"retry-after": "432"})
+
+    c = client(tmp_path, handler)
+    with pytest.raises(LlmError, match="daily quota exhausted"):
+        c.complete_json([{"role": "user", "content": "1"}], {})
+    assert calls == 1
+
+
+def test_a_long_retry_after_is_not_slept_through(tmp_path: Path) -> None:
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, text='{"error": "slow down"}', headers={"retry-after": "900"})
+
+    c = client(tmp_path, handler)
+    started = time.monotonic()
+    with pytest.raises(LlmError, match="asks to wait 900s"):
+        c.complete_json([{"role": "user", "content": "1"}], {})
+    assert time.monotonic() - started < 5
+    assert calls == 1

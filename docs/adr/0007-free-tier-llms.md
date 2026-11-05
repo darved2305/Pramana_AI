@@ -35,3 +35,11 @@ still needed.
 **Consequences.** Free-tier data may be used by the provider, so only synthetic site data and
 participant answers are sent, never personal data. The extractor works fully offline
 (`LLM_EXTRACTOR_PROVIDER=none`, which is the default).
+
+**Groq's daily token cap (checked 2026-11-05).** The free tier for `openai/gpt-oss-120b` also
+caps tokens per day at 200,000 (published sample limits; the account's limits page is
+authoritative). One LLM-policy step costs about 3,500 tokens, so a day buys about 55 steps, or
+roughly 9 benchmark scenarios. Groq's 429 for this limit says "tokens per day (TPD)" and not
+"quota", so the client used to sleep through it for minutes at a time; it now fails fast on any
+per-day 429 and never sleeps more than 120 s on `retry-after` (`eval/tests/test_benchmark.py`).
+Responses are cached, so the LLM comparison resumes across days at no cost.
