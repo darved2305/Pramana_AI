@@ -10,5 +10,5 @@ if (-not $env:PG_BIN) {
     }
 }
 
-uv run python scripts/staging.py
+uv run python scripts/staging.py --fake-gnani
 exit $LASTEXITCODE

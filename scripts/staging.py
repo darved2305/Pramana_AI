@@ -35,6 +35,7 @@ TUNNEL_NAME = "pramana-staging"
 CORE_PORT = 8010
 SIM_PORT = 8110
 WEB_PORT = 3002
+GNANI_EMULATOR_PORT = 8099
 
 CORE_ENV_KEYS = {
     str(field.alias or name)
@@ -120,6 +121,7 @@ def make_environments(
     *,
     inherited: Mapping[str, str] | None = None,
     root: Path = ROOT,
+    fake_gnani: bool = False,
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     """Build isolated core, simulator and web environments from the private .env values."""
     origin = normalized_public_origin(public_origin)
@@ -156,6 +158,11 @@ def make_environments(
         CORS_ORIGINS=json.dumps([origin]),
         PYTHONUNBUFFERED="1",
     )
+    if fake_gnani:
+        core.update(
+            GNANI_BASE_URL=f"http://127.0.0.1:{GNANI_EMULATOR_PORT}",
+            GNANI_API_KEY="pramana-staging-emulator",
+        )
 
     sim = shared | {key: value for key, value in merged.items() if key in SIM_ENV_KEYS}
     sim.update(
@@ -572,6 +579,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--public-origin", default=public_origin)
     parser.add_argument("--tunnel-token-file", type=Path, default=DEFAULT_TOKEN_FILE)
+    parser.add_argument(
+        "--fake-gnani",
+        action="store_true",
+        help="run the local protocol emulator instead of sending requests to Gnani",
+    )
     return parser.parse_args(argv)
 
 
@@ -584,6 +596,7 @@ def production_services(
     public_origin: str,
     token_file: Path,
     token: str,
+    fake_gnani: bool = False,
 ) -> list[ServiceSpec]:
     python = sys.executable
     npm = shutil.which("npm") or "npm"
@@ -610,7 +623,7 @@ def production_services(
     ) -> Callable[[], ManagedChild]:
         return lambda: ManagedChild(name, args, env, cwd, secrets).start()
 
-    return [
+    services = [
         ServiceSpec(
             "sim",
             child("sim", [python, "-m", "pramana_sim"], sim_env, SIM_ROOT),
@@ -640,6 +653,29 @@ def production_services(
             startup_timeout_s=120.0,
         ),
     ]
+    if fake_gnani:
+        services.insert(
+            0,
+            ServiceSpec(
+                "gnani-emulator",
+                child(
+                    "gnani-emulator",
+                    [
+                        python,
+                        str(ROOT / "scripts" / "gnani_emulator.py"),
+                        "--serve",
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        str(GNANI_EMULATOR_PORT),
+                    ],
+                    _system_environment(os.environ),
+                    ROOT,
+                ),
+                lambda: http_ok(f"http://127.0.0.1:{GNANI_EMULATOR_PORT}/stats"),
+            ),
+        )
+    return services
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -652,7 +688,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         validate_worker_binding()
         token = validate_tunnel_token(options.tunnel_token_file)
         settings = load_private_environment()
-        core_env, sim_env, web_env = make_environments(settings, public_origin)
+        core_env, sim_env, web_env = make_environments(
+            settings, public_origin, fake_gnani=options.fake_gnani
+        )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         say(f"[staging] {exc}")
         return 2
@@ -673,6 +711,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             public_origin=public_origin,
             token_file=options.tunnel_token_file,
             token=token,
+            fake_gnani=options.fake_gnani,
         )
     except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
         say(f"[staging] preparation failed ({type(exc).__name__})")
@@ -682,7 +721,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), _interrupt)
-    say("[staging] starting simulator, core, production web, then the tunnel")
+    if options.fake_gnani:
+        say("[staging] using the local Gnani protocol emulator; no Gnani credentials are forwarded")
+    say("[staging] starting services, production web, then the tunnel")
     try:
         supervisor.run()
     except KeyboardInterrupt:

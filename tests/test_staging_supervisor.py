@@ -72,6 +72,30 @@ def test_production_environment_forces_secure_auth_and_isolates_web_secrets() ->
     assert "PARTICIPANT_SIGNING_KEY" not in web
 
 
+def test_emulated_gnani_environment_does_not_forward_configured_credentials() -> None:
+    core, _, _ = staging.make_environments(
+        {
+            "SIM_OPERATOR_KEY": "sim-key",
+            "PARTICIPANT_SIGNING_KEY": "signing-key",
+            "SIM_PARTICIPANT_PUBLIC_KEY": "participant-public-key",
+            "CORE_AUTOMATION_KEY": "automation-key",
+            "GNANI_API_KEY": "configured-key",
+            "GNANI_BASE_URL": "https://api.vachana.ai",
+        },
+        "https://pramana-staging.account.workers.dev",
+        fake_gnani=True,
+    )
+
+    assert core["GNANI_BASE_URL"] == "http://127.0.0.1:8099"
+    assert core["GNANI_API_KEY"] == "pramana-staging-emulator"
+
+
+def test_unattended_staging_launcher_uses_the_gnani_emulator() -> None:
+    launcher = (ROOT / "scripts" / "staging-start.ps1").read_text(encoding="utf-8")
+
+    assert "uv run python scripts/staging.py --fake-gnani" in launcher
+
+
 def test_production_build_is_reused_until_source_or_upstream_changes(tmp_path: Path) -> None:
     web_root = tmp_path / "web"
     source = web_root / "src" / "page.tsx"
