@@ -9,6 +9,7 @@ CCTV screen.
 from __future__ import annotations
 
 import pytest
+
 from pramana_contracts import ProbeAction, TemplateLanguage
 from pramana_core.language.extraction import RuleExtractor
 from pramana_core.language.realize import realize
