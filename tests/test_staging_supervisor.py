@@ -100,6 +100,28 @@ def test_unattended_staging_launcher_uses_the_gnani_emulator() -> None:
     ) in launcher
 
 
+def test_emulator_starts_before_simulator_core_and_web(monkeypatch: object) -> None:
+    monkeypatch.setattr(staging.shutil, "which", lambda _: "cloudflared")  # type: ignore[attr-defined]
+    services = staging.production_services(
+        {},
+        {},
+        {},
+        {},
+        public_origin="https://pramana-staging.account.workers.dev",
+        token_file=Path("token.txt"),
+        token="test-token",
+        fake_gnani=True,
+    )
+
+    assert [service.name for service in services] == [
+        "gnani-emulator",
+        "sim",
+        "core",
+        "web",
+        "tunnel",
+    ]
+
+
 def test_production_build_is_reused_until_source_or_upstream_changes(tmp_path: Path) -> None:
     web_root = tmp_path / "web"
     source = web_root / "src" / "page.tsx"
