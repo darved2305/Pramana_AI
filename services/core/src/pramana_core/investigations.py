@@ -866,12 +866,18 @@ class InvestigationService:
             try:
                 async with self.db.transaction() as session:
                     row = await self._load_row(session, inv_id, lock=True)
+                    q = await session.get(QuestionRow, ans.question_id, with_for_update=True)
+                    if q is not None and q.investigation_id != inv_id:
+                        q = None  # another investigation's question: not found here
+                    if q is not None and q.status == QuestionStatus.WITHDRAWN.value:
+                        # An answer racing the conclusion was to a question withdrawn at that
+                        # moment: say so, so a call ends that turn quietly instead of failing.
+                        raise ApiError(409, "QUESTION_NOT_PENDING", _not_pending(q.status))
                     if row.status not in {st.value for st in ANSWERABLE_STATUSES}:
                         raise ApiError(
                             409, "INVESTIGATION_NOT_ACTIVE", f"investigation is {row.status}"
                         )
-                    q = await session.get(QuestionRow, ans.question_id, with_for_update=True)
-                    if q is None or q.investigation_id != inv_id:
+                    if q is None:
                         raise not_found("question")
                     if q.status != QuestionStatus.PENDING.value:
                         raise ApiError(409, "QUESTION_NOT_PENDING", _not_pending(q.status))

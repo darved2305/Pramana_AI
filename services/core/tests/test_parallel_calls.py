@@ -126,6 +126,10 @@ def test_a_withdrawn_question_cannot_be_answered(core: TestClient) -> None:
         json={"question_id": qid, "participant_id": pid, "text": "haan"},
     )
     assert reopened.status_code == 409
+    # Not "investigation is decided": a call on its way with this answer must learn that its
+    # question was withdrawn, which ends the turn gracefully (found by scripts/load_test.py).
+    assert reopened.json()["error"]["code"] == "QUESTION_NOT_PENDING"
+    assert "withdrawn" in reopened.json()["error"]["message"]
 
 
 def test_a_question_made_pointless_mid_run_is_withdrawn(
