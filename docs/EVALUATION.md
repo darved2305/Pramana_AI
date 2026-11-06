@@ -1,4 +1,4 @@
-# EVALUATION.md — Benchmark design, baselines, metrics, ablations, falsification
+# EVALUATION.md - Benchmark design, baselines, metrics, ablations, falsification
 
 > **There are no results in this file.** Every number below is a target, a configuration value, or a cost estimate. Result tables are filled in only by `eval/report.py` from a `summary.json` produced by a tagged commit.
 >
@@ -142,6 +142,15 @@ All policies use the same `PolicyEnv`: the same feasible action menu, the same s
 8. − presence challenges (S7 family)
 9. − verification (catch rate drops to the symptom check)
 10. − OPEN_WORLD hypothesis (abstention behaviour)
+
+### Presence checks
+
+`uv run python -m pramana_eval.presence_eval --n 200 --seed-start 20000 --false-presence-rate 0.3 --out eval/reports/presence-YYYY-MM-DD`
+compares the engine's presence checks with an ablation on the same seeded scenarios. Eligible
+scenarios add a guard who sometimes gives a false observation after claiming to be at a restricted
+location. The simulator's private token check determines whether the challenge passes. This is a
+logic-mode experiment for one generated adversary model, not an estimate of real misreporting or
+generalization to other buildings.
 
 ---
 

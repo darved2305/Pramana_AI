@@ -54,6 +54,36 @@ def test_answers_use_common_random_numbers(pack: DomainPack, model: CompiledMode
     assert a._asked[(who.id, "wifi_status", who.location_id)] == 2
 
 
+def test_false_presence_adversary_is_seeded_and_reports_wrong_remote_observations(
+    pack: DomainPack, model: CompiledModel
+) -> None:
+    scenario = generate(pack, model, 20_000, false_presence_rate=1.0)
+    assert scenario.presence_adversary_id is not None
+    adversary = next(p for p in scenario.people if p.spec.id == scenario.presence_adversary_id)
+    assert adversary.false_presence_p == 1.0
+    answers = Answers(pack, scenario)
+    evidence = answers.ask(scenario.presence_adversary_id, "switch_leds", "IDF2")
+    truth = answers.world.observe(pack.probe_by_id["switch_leds"], "IDF2")
+    assert answers.last_false_presence(scenario.presence_adversary_id, "switch_leds", "IDF2")
+    assert evidence.outcome != truth
+
+
+def test_presence_check_ablation_runs_through_the_main_engine_api(
+    pack: DomainPack, model: CompiledModel
+) -> None:
+    for seed in range(20_000, 20_030):
+        scenario = generate(pack, model, seed, false_presence_rate=1.0)
+        if scenario.presence_adversary_id is None:
+            continue
+        enabled = run_episode(pack, model, scenario, Ours(), presence_checks=True)
+        if not enabled.presence_challenges:
+            continue
+        disabled = run_episode(pack, model, scenario, Ours(), presence_checks=False)
+        assert disabled.presence_challenges == 0
+        return
+    pytest.fail("the adversarial scenarios did not cause the engine to request a challenge")
+
+
 def test_participants_err_at_their_own_rate(pack: DomainPack, model: CompiledModel) -> None:
     wrong = total = 0
     for s in range(300):
