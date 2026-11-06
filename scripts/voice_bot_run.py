@@ -29,6 +29,7 @@ import asyncio
 import base64
 import contextlib
 import json
+import random
 import statistics
 import sys
 import time
@@ -105,6 +106,23 @@ class Run:
         self.args = args
         self.core = httpx.AsyncClient(base_url=args.core, headers=automation_headers(), timeout=60)
         self.sim = httpx.AsyncClient(base_url=args.sim, timeout=30)
+        self.variants = Path(args.variants) if getattr(args, "variants", None) else None
+        self.rng = random.Random(getattr(args, "seed", 0))
+        self.think = tuple(
+            float(x) for x in (getattr(args, "think_s", None) or "0.3,0.3").split(",")
+        )
+        junk = getattr(args, "junk", None)
+        self.junk = sorted(Path(junk).glob("*.wav")) if junk else []
+        self.junk_p = float(getattr(args, "junk_p", 0.0) or 0.0)
+        self.silent_p = float(getattr(args, "silent_p", 0.0) or 0.0)
+        self.said: dict[str, tuple[str, str, str]] = {}
+        """Per participant, the last thing spoken: (kind, clip name, true value)."""
+        self.truth_clip: dict[str, Path] = {}
+        self.silent_turns: set[str] = set()
+        self.outcomes: list[dict[str, str]] = []
+        """Every recorded answer: what was said (junk or truth) and what the core recorded."""
+        self.reprompts = 0
+        self.walked_back = 0
         self.clips = Path(args.clips)
         self.tokens: dict[str, dict[str, str]] = {}
         self.inv: dict[str, Any] = {}
@@ -142,6 +160,15 @@ class Run:
         r = await self.sim.post(
             f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": action["probe_id"]}, headers=h
         )
+        if r.status_code == 409 and r.json().get("error", {}).get("code") == "NOT_OBSERVABLE_HERE":
+            # Walked off for a question that was then withdrawn: a person walks back first.
+            await self.sim.post(
+                f"/sim/v1/scenarios/{sid}/move", json={"to": action["location_id"]}, headers=h
+            )
+            self.walked_back += 1
+            r = await self.sim.post(
+                f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": action["probe_id"]}, headers=h
+            )
         r.raise_for_status()
         return str(r.json()["value"])
 
@@ -211,10 +238,33 @@ class Run:
                     self.log.append(
                         f"  -> recorded {obs['probe_id']}={obs['outcome']} ({obs['modality']})"
                     )
+                    kind_said, clip_said, truth = self.said.get(pid, ("truth", "?", "?"))
+                    self.outcomes.append(
+                        {
+                            "said": kind_said,
+                            "clip": clip_said,
+                            "truth": truth,
+                            "recorded": obs["outcome"],
+                            "probe": obs["probe_id"],
+                            "state": obs.get("state", ""),
+                        }
+                    )
                 elif kind == "empty_transcript":
                     self.log.append(f"  {pid}: nothing recognised, speaking again")
-                    if pid in self.last_clip:
-                        await self.speak(ws, pid, self.last_clip[pid])
+                    clip = self.truth_clip.get(pid) or self.last_clip.get(pid)
+                    if clip is not None:
+                        self.said[pid] = ("truth", clip.stem, self.said.get(pid, ("", "", "?"))[2])
+                        await self.speak(ws, pid, clip)
+                elif kind == "reprompt":
+                    self.reprompts += 1
+                    self.log.append(f"  {pid}: silence, Pramana asked again")
+                    if pid in self.silent_turns and pid in self.truth_clip:
+                        self.silent_turns.discard(pid)
+                        clip = self.truth_clip[pid]
+                        self.said[pid] = ("truth", clip.stem, self.said.get(pid, ("", "", "?"))[2])
+                        task = asyncio.create_task(self.speak_after(ws, pid, clip, 1.0))
+                        self.tasks.add(task)
+                        task.add_done_callback(self.tasks.discard)
                 elif kind == "error" and m.get("fatal"):
                     self.log.append(f"  {pid}: error {m['code']}: {m['message']}")
                 elif kind == "call_end":
@@ -227,20 +277,54 @@ class Run:
         if q is None:
             return
         value = await self.observe(pid, q["action"])
-        clip = self.clips / f"{lang}__{value}.wav"
-        if not clip.exists():
-            sys.exit(f"missing clip {clip.name}")
+        clip = self.pick_clip(lang, q["action"]["probe_id"], value)
         a = q["action"]
         self.log.append(
             f"Q{s['questions_asked']} to {pid} [{a['probe_id']}@{a['location_id']}]"
             f"{f' ({len(waiting(s))} in flight)' if len(waiting(s)) > 1 else ''}"
-            f" {ready['text']!r}  (sim shows: {value})"
+            f" {ready['text']!r}  (sim shows: {value}; says take {clip.stem})"
         )
         self.last_clip[pid] = clip
-        await asyncio.sleep(0.3)
+        self.truth_clip[pid] = clip
+        roll = self.rng.random()
+        if self.silent_p and roll < self.silent_p:
+            # Say nothing this time: the call should ask again after its silence timer.
+            self.silent_turns.add(pid)
+            self.said[pid] = ("silent", "-", value)
+            self.log.append(f"  {pid} stays silent")
+            return
+        if self.junk and roll < self.silent_p + self.junk_p:
+            junk = self.rng.choice(self.junk)
+            self.said[pid] = ("junk", junk.stem, value)
+            self.log.append(f"  {pid} says something irrelevant: {junk.stem}")
+            clip = junk
+        else:
+            self.said[pid] = ("truth", clip.stem, value)
+        await asyncio.sleep(self.rng.uniform(*self.think))  # a person takes a moment
         # The call can end while this bot is talking (e.g. its question was withdrawn).
         with contextlib.suppress(websockets.ConnectionClosed):
             await self.speak(ws, pid, clip)
+
+    async def speak_after(self, ws: Any, pid: str, clip: Path, delay: float) -> None:
+        await asyncio.sleep(delay)
+        with contextlib.suppress(websockets.ConnectionClosed):
+            await self.speak(ws, pid, clip)
+
+    def pick_clip(self, lang: str, probe_id: str, value: str) -> Path:
+        """The answer clip. With ``--variants``, a random take of this answer to this question
+        (other voices, phrasings, phone-band or noisy audio, named
+        ``<lang>__<probe>__<value>__<tag>.wav``), else the one plain clip."""
+        base = self.clips / f"{lang}__{value}.wav"
+        takes = (
+            sorted(self.variants.glob(f"{lang}__{probe_id}__{value}__*.wav"))
+            if self.variants
+            else []
+        )
+        if takes:
+            return self.rng.choice([*takes, base] if base.exists() else takes)
+        if not base.exists():
+            sys.exit(f"missing clip {base.name}")
+        return base
 
     async def speak(self, ws: Any, pid: str, clip: Path) -> None:
         voice = b"\x00\x00" * 4800 + pcm(clip)  # lead-in, then the answer
@@ -378,6 +462,31 @@ class Run:
             f"replay identical: {replay.get('identical')}\n"
             f"voice spend for this run: Rs {after - before:.2f}"
         )
+        junk = [o for o in self.outcomes if o["said"] == "junk"]
+        truth = [o for o in self.outcomes if o["said"] == "truth"]
+        invented = [o for o in junk if o["recorded"] != "unknown"]
+        misheard = [o for o in truth if o["recorded"] not in ("unknown", o["truth"])]
+        print(
+            f"edge: {len(junk)} irrelevant utterances, {len(invented)} became evidence | "
+            f"{len(truth)} true answers, {len(misheard)} recorded wrong | "
+            f"re-prompts after silence: {self.reprompts} | walked back: {self.walked_back}"
+        )
+        if getattr(self.args, "report", None):
+            Path(self.args.report).write_text(
+                json.dumps(
+                    {
+                        "status": s["status"],
+                        "correct": gt.get("correct"),
+                        "replay_identical": replay.get("identical"),
+                        "reprompts": self.reprompts,
+                        "walked_back": self.walked_back,
+                        "answers": self.outcomes,
+                    },
+                    ensure_ascii=False,
+                    indent=1,
+                ),
+                encoding="utf-8",
+            )
         return 0 if s["status"] == "verified" and replay.get("identical") else 1
 
 
@@ -392,6 +501,17 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=900.0)
     ap.add_argument("--human", help="participant id answered by a person on their phone")
     ap.add_argument("--attach", help="continue this investigation instead of creating one")
+    ap.add_argument(
+        "--variants",
+        help="folder of other takes, <lang>__<probe>__<value>__<tag>.wav (e.g. MMS voices, "
+        "phone-band and noisy versions): each answer uses a random one",
+    )
+    ap.add_argument("--think-s", default="0.3,0.3", help="pause before answering: min,max seconds")
+    ap.add_argument("--seed", type=int, default=0, help="seed for the takes and pauses")
+    ap.add_argument("--junk", help="folder of irrelevant or vague speech, noise (any .wav)")
+    ap.add_argument("--junk-p", type=float, default=0.0, help="chance of saying junk first")
+    ap.add_argument("--silent-p", type=float, default=0.0, help="chance of staying silent once")
+    ap.add_argument("--report", help="write every recorded answer, with what was said, as JSON")
     ap.add_argument("--public-url", default="http://localhost:3002", help="web app address")
     ap.add_argument(
         "--parallel", type=int, default=1, choices=[1, 2, 3], help="people asked at once"
