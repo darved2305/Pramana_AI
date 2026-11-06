@@ -18,9 +18,13 @@ The tests are skipped, with the reason shown, when PostgreSQL is unreachable.
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import subprocess
+import tempfile
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
@@ -39,6 +43,13 @@ DB_URL = os.environ.get(
 )
 CORE_PORT = int(os.environ.get("PRAMANA_E2E_CORE_PORT", "8030"))
 SIM_PORT = int(os.environ.get("PRAMANA_E2E_SIM_PORT", "8130"))
+
+
+@contextmanager
+def temporary_work_directory(*, parent: Path | None = None) -> Iterator[Path]:
+    """Create an e2e work directory that is removed after the fixture finishes."""
+    with tempfile.TemporaryDirectory(prefix="pramana-e2e-", dir=parent) as directory:
+        yield Path(directory)
 
 
 async def ensure_database(url: str) -> None:
@@ -82,6 +93,11 @@ class Process:
     _log: IO[bytes] | None = field(default=None, repr=False)
 
     def start(self) -> None:
+        kwargs: dict[str, object] = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
         self._log = self.log_path.open("ab")
         self.proc = subprocess.Popen(  # fixed argument list
             self.args,
@@ -90,6 +106,7 @@ class Process:
             stdin=subprocess.DEVNULL,
             stdout=self._log,
             stderr=subprocess.STDOUT,
+            **kwargs,  # type: ignore[call-overload]
         )
 
     def alive(self) -> bool:
@@ -97,12 +114,24 @@ class Process:
 
     def kill(self) -> None:
         """A crash: no shutdown handlers, no flushing, nothing graceful."""
-        if self.proc is not None and self.proc.poll() is None:
-            self.proc.kill()
-            self.proc.wait(timeout=10)
-        if self._log is not None:
-            self._log.close()
-            self._log = None
+        try:
+            if self.proc is not None:
+                if os.name == "nt":
+                    if self.proc.poll() is None:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(self.proc.pid)],
+                            capture_output=True,
+                            check=False,
+                        )
+                else:
+                    with suppress(ProcessLookupError):
+                        os.killpg(self.proc.pid, signal.SIGKILL)
+                if self.proc.poll() is None:
+                    self.proc.wait(timeout=10)
+        finally:
+            if self._log is not None:
+                self._log.close()
+                self._log = None
 
     def tail(self, n: int = 40) -> str:
         try:
