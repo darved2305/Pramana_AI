@@ -19,7 +19,6 @@ import type {
   SitePack,
   VoiceStatus,
 } from "@/lib/api/types";
-import { SETTLED } from "@/lib/api/types";
 import { useHydrated, usePrefs, usePreviewMode } from "@/lib/store/local";
 
 export type Load<T> =
@@ -283,8 +282,10 @@ export function useInvestigation(id: string, source?: EventFeedSource): Investig
     };
   }, [id, isPreview, refresh, hydrated]);
 
-  // Poll the event log while the investigation can still change.
-  const settled = state ? SETTLED.includes(state.status) && !state.pending_question : false;
+  // Follow the event log while the investigation can still change. A decision is not the end:
+  // approval (often from another browser), the repair, verification and the reveal follow, so
+  // only a closed investigation stops changing.
+  const settled = state ? state.status === "closed" : false;
   const live = !isPreview && status === "ready" && !settled;
   // Pushed over server-sent events, with polling as the fallback. Callers passing their own
   // source should memoise it.
