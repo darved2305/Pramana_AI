@@ -9,6 +9,8 @@ from pramana_core.language.presence import normalize_presence_answer
     ("spoken", "expected"),
     [
         ("K 7 Q", "K7Q"),
+        ("ACF", "ACF"),
+        ("acf", "ACF"),
         ("k seven q", "K7Q"),
         ("के सात क्यू", "K7Q"),
         ("के सेव्हन क्यू", "K7Q"),
