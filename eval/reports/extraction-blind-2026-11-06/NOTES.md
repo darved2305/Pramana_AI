@@ -82,4 +82,3 @@ set is no longer blind because the extractor has been tuned against it, as docum
 | `extraction_blind_2026-11-05.jsonl` | 80/80 | 0 | 0 | 0 |
 | `extraction_heldout.jsonl` | 74/80 | 1 | 3 | 0 |
 | `extraction_set.jsonl` development | 47/48 | 0 | 1 | 0 |
-
