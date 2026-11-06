@@ -94,6 +94,10 @@ def test_unattended_staging_launcher_uses_the_gnani_emulator() -> None:
     launcher = (ROOT / "scripts" / "staging-start.ps1").read_text(encoding="utf-8")
 
     assert "uv run python scripts/staging.py --fake-gnani" in launcher
+    assert (
+        "$env:PRAMANA_STAGING_PUBLIC_ORIGIN = "
+        "'https://pramana-staging.pramana-staging-worker.workers.dev'"
+    ) in launcher
 
 
 def test_production_build_is_reused_until_source_or_upstream_changes(tmp_path: Path) -> None:
