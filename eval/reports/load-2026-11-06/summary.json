@@ -1,0 +1,1125 @@
+{
+ "git_sha": "c288652",
+ "gnani": "emulated (scripts/gnani_emulator.py); no Gnani service was called",
+ "minutes": 10.0,
+ "runs": 45,
+ "runs_ok": 45,
+ "runs_correct": 45,
+ "replay_identical": 45,
+ "voice_answers": 311,
+ "most_questions_in_flight": 3,
+ "withdrawn": 5,
+ "call_errors": [],
+ "recognizer_sessions": 316,
+ "recognizer_sessions_at_once_max": 3,
+ "recognizer_sessions_open_at_end": 0,
+ "sessions_ended_abnormally_by_core": 0,
+ "rest_second_decodes": 131,
+ "tts_streams": 9,
+ "governor_stream_cap": 16,
+ "governor_streams_in_use_max_sampled": 3,
+ "core_memory_mb_first": 111.2,
+ "core_memory_mb_last": 132.8,
+ "core_memory_mb_max": 141.0,
+ "core_memory_mb_mean_first_half": 129.9,
+ "core_memory_mb_mean_second_half": 136.8,
+ "memory_samples": [
+  [
+   0.5,
+   111.2
+  ],
+  [
+   6.1,
+   123.8
+  ],
+  [
+   11.3,
+   122.5
+  ],
+  [
+   16.6,
+   123.9
+  ],
+  [
+   21.9,
+   125.4
+  ],
+  [
+   27.1,
+   125.7
+  ],
+  [
+   32.4,
+   126.9
+  ],
+  [
+   37.7,
+   124.6
+  ],
+  [
+   43.0,
+   125.7
+  ],
+  [
+   48.2,
+   126.3
+  ],
+  [
+   53.5,
+   127.1
+  ],
+  [
+   58.8,
+   127.1
+  ],
+  [
+   64.0,
+   127.8
+  ],
+  [
+   69.2,
+   128.0
+  ],
+  [
+   74.5,
+   128.1
+  ],
+  [
+   79.8,
+   128.1
+  ],
+  [
+   85.1,
+   128.1
+  ],
+  [
+   90.4,
+   128.8
+  ],
+  [
+   95.7,
+   128.8
+  ],
+  [
+   100.9,
+   129.7
+  ],
+  [
+   106.2,
+   129.9
+  ],
+  [
+   111.5,
+   130.2
+  ],
+  [
+   116.7,
+   130.2
+  ],
+  [
+   122.0,
+   130.2
+  ],
+  [
+   127.2,
+   130.2
+  ],
+  [
+   132.5,
+   130.2
+  ],
+  [
+   137.8,
+   130.2
+  ],
+  [
+   143.1,
+   130.6
+  ],
+  [
+   148.4,
+   130.6
+  ],
+  [
+   153.6,
+   130.7
+  ],
+  [
+   158.9,
+   130.8
+  ],
+  [
+   164.2,
+   130.8
+  ],
+  [
+   169.4,
+   130.8
+  ],
+  [
+   174.7,
+   131.0
+  ],
+  [
+   179.9,
+   131.0
+  ],
+  [
+   185.1,
+   131.8
+  ],
+  [
+   190.4,
+   132.7
+  ],
+  [
+   195.7,
+   130.1
+  ],
+  [
+   201.0,
+   131.8
+  ],
+  [
+   206.2,
+   131.9
+  ],
+  [
+   211.4,
+   132.1
+  ],
+  [
+   216.7,
+   132.2
+  ],
+  [
+   222.0,
+   132.2
+  ],
+  [
+   227.3,
+   132.5
+  ],
+  [
+   232.5,
+   133.1
+  ],
+  [
+   237.9,
+   133.2
+  ],
+  [
+   243.1,
+   133.2
+  ],
+  [
+   248.4,
+   130.9
+  ],
+  [
+   253.7,
+   132.8
+  ],
+  [
+   259.0,
+   133.1
+  ],
+  [
+   264.3,
+   133.2
+  ],
+  [
+   269.6,
+   134.4
+  ],
+  [
+   274.9,
+   134.5
+  ],
+  [
+   280.2,
+   134.5
+  ],
+  [
+   285.4,
+   134.5
+  ],
+  [
+   290.7,
+   134.5
+  ],
+  [
+   295.9,
+   134.7
+  ],
+  [
+   301.2,
+   134.7
+  ],
+  [
+   306.5,
+   135.7
+  ],
+  [
+   311.7,
+   135.7
+  ],
+  [
+   316.9,
+   133.2
+  ],
+  [
+   322.2,
+   135.2
+  ],
+  [
+   327.4,
+   135.2
+  ],
+  [
+   332.6,
+   135.7
+  ],
+  [
+   337.9,
+   136.0
+  ],
+  [
+   343.1,
+   136.2
+  ],
+  [
+   348.4,
+   136.6
+  ],
+  [
+   353.7,
+   136.6
+  ],
+  [
+   358.9,
+   136.6
+  ],
+  [
+   364.2,
+   136.6
+  ],
+  [
+   369.5,
+   136.6
+  ],
+  [
+   374.8,
+   136.8
+  ],
+  [
+   380.1,
+   137.0
+  ],
+  [
+   385.4,
+   137.5
+  ],
+  [
+   390.6,
+   137.5
+  ],
+  [
+   395.9,
+   137.5
+  ],
+  [
+   401.2,
+   137.4
+  ],
+  [
+   406.5,
+   137.5
+  ],
+  [
+   411.7,
+   137.5
+  ],
+  [
+   417.0,
+   137.9
+  ],
+  [
+   422.2,
+   137.9
+  ],
+  [
+   427.5,
+   138.2
+  ],
+  [
+   432.7,
+   138.2
+  ],
+  [
+   438.0,
+   138.2
+  ],
+  [
+   443.2,
+   138.3
+  ],
+  [
+   448.5,
+   138.3
+  ],
+  [
+   453.8,
+   138.5
+  ],
+  [
+   459.1,
+   138.9
+  ],
+  [
+   464.4,
+   138.9
+  ],
+  [
+   469.7,
+   139.1
+  ],
+  [
+   474.9,
+   139.1
+  ],
+  [
+   480.3,
+   139.2
+  ],
+  [
+   485.6,
+   139.2
+  ],
+  [
+   491.0,
+   139.8
+  ],
+  [
+   496.2,
+   139.9
+  ],
+  [
+   501.5,
+   140.3
+  ],
+  [
+   506.8,
+   140.3
+  ],
+  [
+   512.1,
+   140.4
+  ],
+  [
+   517.3,
+   140.4
+  ],
+  [
+   522.6,
+   140.4
+  ],
+  [
+   527.9,
+   140.4
+  ],
+  [
+   533.1,
+   140.4
+  ],
+  [
+   538.4,
+   141.0
+  ],
+  [
+   543.7,
+   141.0
+  ],
+  [
+   549.0,
+   130.8
+  ],
+  [
+   554.3,
+   131.1
+  ],
+  [
+   559.6,
+   131.5
+  ],
+  [
+   564.8,
+   131.6
+  ],
+  [
+   570.1,
+   131.6
+  ],
+  [
+   575.4,
+   132.2
+  ],
+  [
+   580.7,
+   132.5
+  ],
+  [
+   586.0,
+   132.5
+  ],
+  [
+   591.2,
+   132.5
+  ],
+  [
+   596.5,
+   132.6
+  ],
+  [
+   601.7,
+   132.6
+  ],
+  [
+   607.0,
+   132.8
+  ]
+ ],
+ "per_run": [
+  {
+   "run": 1,
+   "investigation": "inv_e223dd16da1a",
+   "ok": true,
+   "error": null,
+   "seconds": 14.5,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 2,
+   "investigation": "inv_639dcb43618a",
+   "ok": true,
+   "error": null,
+   "seconds": 13.8,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 3,
+   "investigation": "inv_2b661c1b6cc0",
+   "ok": true,
+   "error": null,
+   "seconds": 13.2,
+   "voice_answers": 6,
+   "most_in_flight": 3,
+   "withdrawn": 1,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 8 | voice answers: 6 | most questions in flight at once: 3 | withdrawn: 1"
+  },
+  {
+   "run": 4,
+   "investigation": "inv_754f1beb9702",
+   "ok": true,
+   "error": null,
+   "seconds": 13.5,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 5,
+   "investigation": "inv_49e8d6776fe7",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 6,
+   "investigation": "inv_ae845826a5db",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 6,
+   "most_in_flight": 3,
+   "withdrawn": 1,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 8 | voice answers: 6 | most questions in flight at once: 3 | withdrawn: 1"
+  },
+  {
+   "run": 7,
+   "investigation": "inv_52c126302bcc",
+   "ok": true,
+   "error": null,
+   "seconds": 13.6,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 8,
+   "investigation": "inv_b861a9009222",
+   "ok": true,
+   "error": null,
+   "seconds": 13.6,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 9,
+   "investigation": "inv_7bdbf9d8600a",
+   "ok": true,
+   "error": null,
+   "seconds": 13.8,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 10,
+   "investigation": "inv_761616251a3b",
+   "ok": true,
+   "error": null,
+   "seconds": 13.1,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 11,
+   "investigation": "inv_25116f2a9877",
+   "ok": true,
+   "error": null,
+   "seconds": 16.5,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 1,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 1"
+  },
+  {
+   "run": 12,
+   "investigation": "inv_87cd6f5d0ecd",
+   "ok": true,
+   "error": null,
+   "seconds": 13.6,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 13,
+   "investigation": "inv_997409f7829c",
+   "ok": true,
+   "error": null,
+   "seconds": 13.2,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 14,
+   "investigation": "inv_0d83644efee0",
+   "ok": true,
+   "error": null,
+   "seconds": 13.0,
+   "voice_answers": 6,
+   "most_in_flight": 3,
+   "withdrawn": 1,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 8 | voice answers: 6 | most questions in flight at once: 3 | withdrawn: 1"
+  },
+  {
+   "run": 15,
+   "investigation": "inv_42d08edb936d",
+   "ok": true,
+   "error": null,
+   "seconds": 13.7,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 16,
+   "investigation": "inv_e76e5e9ad222",
+   "ok": true,
+   "error": null,
+   "seconds": 13.5,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 17,
+   "investigation": "inv_519b686bddd8",
+   "ok": true,
+   "error": null,
+   "seconds": 13.6,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 18,
+   "investigation": "inv_e8dbbeebe424",
+   "ok": true,
+   "error": null,
+   "seconds": 13.0,
+   "voice_answers": 6,
+   "most_in_flight": 3,
+   "withdrawn": 1,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 8 | voice answers: 6 | most questions in flight at once: 3 | withdrawn: 1"
+  },
+  {
+   "run": 19,
+   "investigation": "inv_a474e211435c",
+   "ok": true,
+   "error": null,
+   "seconds": 13.9,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 20,
+   "investigation": "inv_388bc6d5929c",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 21,
+   "investigation": "inv_8c5df6a08d9b",
+   "ok": true,
+   "error": null,
+   "seconds": 13.6,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 22,
+   "investigation": "inv_36d8202f32bd",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 23,
+   "investigation": "inv_b26c40081e2a",
+   "ok": true,
+   "error": null,
+   "seconds": 13.1,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 24,
+   "investigation": "inv_3d8e3bc9b044",
+   "ok": true,
+   "error": null,
+   "seconds": 13.2,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 25,
+   "investigation": "inv_8d8f9ea2c2fb",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 26,
+   "investigation": "inv_aed1fa73aa6e",
+   "ok": true,
+   "error": null,
+   "seconds": 13.7,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 27,
+   "investigation": "inv_228796d317c6",
+   "ok": true,
+   "error": null,
+   "seconds": 13.2,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 28,
+   "investigation": "inv_d95b71b777c4",
+   "ok": true,
+   "error": null,
+   "seconds": 13.7,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 29,
+   "investigation": "inv_5d100b326fb5",
+   "ok": true,
+   "error": null,
+   "seconds": 13.2,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 30,
+   "investigation": "inv_cf9715a70065",
+   "ok": true,
+   "error": null,
+   "seconds": 13.5,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 31,
+   "investigation": "inv_8f4c993fd965",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 32,
+   "investigation": "inv_973e35553860",
+   "ok": true,
+   "error": null,
+   "seconds": 13.1,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 33,
+   "investigation": "inv_a2627f827e22",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 34,
+   "investigation": "inv_40da3eca24a7",
+   "ok": true,
+   "error": null,
+   "seconds": 13.8,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 35,
+   "investigation": "inv_dc0f14b9424c",
+   "ok": true,
+   "error": null,
+   "seconds": 13.6,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 36,
+   "investigation": "inv_04df4330aa1f",
+   "ok": true,
+   "error": null,
+   "seconds": 13.5,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 37,
+   "investigation": "inv_ef92648ea906",
+   "ok": true,
+   "error": null,
+   "seconds": 13.8,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 38,
+   "investigation": "inv_abc988671827",
+   "ok": true,
+   "error": null,
+   "seconds": 13.2,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 39,
+   "investigation": "inv_6610dcea181f",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 40,
+   "investigation": "inv_4266e815503f",
+   "ok": true,
+   "error": null,
+   "seconds": 13.4,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 41,
+   "investigation": "inv_c7a011eb9296",
+   "ok": true,
+   "error": null,
+   "seconds": 13.3,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 42,
+   "investigation": "inv_2f965db35bfe",
+   "ok": true,
+   "error": null,
+   "seconds": 13.2,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 43,
+   "investigation": "inv_71d41b153376",
+   "ok": true,
+   "error": null,
+   "seconds": 13.5,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 44,
+   "investigation": "inv_b52bb92a2789",
+   "ok": true,
+   "error": null,
+   "seconds": 13.7,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  },
+  {
+   "run": 45,
+   "investigation": "inv_e1288db221ba",
+   "ok": true,
+   "error": null,
+   "seconds": 13.2,
+   "voice_answers": 7,
+   "most_in_flight": 3,
+   "withdrawn": 0,
+   "fatal_call_errors": [],
+   "correct": true,
+   "replay_identical": true,
+   "final": "FINAL status before reveal: verified | questions: 9 | voice answers: 7 | most questions in flight at once: 3 | withdrawn: 0"
+  }
+ ],
+ "passed": true
+}
