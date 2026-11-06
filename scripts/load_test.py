@@ -51,7 +51,7 @@ from pramana_contracts.tokens import (  # noqa: E402
 )
 from pramana_core.language.extraction import RuleExtractor  # noqa: E402
 
-DATABASE = "pramana_load"
+DATABASE = "pramana_load_pf"
 
 # One answer per observable value, in the bots' clip languages; checked against the extractor.
 ANSWERS: dict[str, dict[str, str]] = {
@@ -160,6 +160,38 @@ def working_set_mb(pid: int) -> float | None:
     return None
 
 
+def memory_slope_mb_per_min(samples: list[tuple[float, float]]) -> float | None:
+    """Least-squares RSS slope over the steady half of elapsed-time samples."""
+    if len(samples) < 4:
+        return None
+    steady = samples[len(samples) // 2 :]
+    times = [point[0] / 60.0 for point in steady]
+    values = [point[1] for point in steady]
+    mean_time = sum(times) / len(times)
+    mean_value = sum(values) / len(values)
+    denominator = sum((value - mean_time) ** 2 for value in times)
+    if denominator == 0:
+        return None
+    return (
+        sum(
+            (time - mean_time) * (value - mean_value)
+            for time, value in zip(times, values, strict=True)
+        )
+        / denominator
+    )
+
+
+def memory_growth_gate(
+    core: list[tuple[float, float]],
+    sim: list[tuple[float, float]],
+    *,
+    limit_mb_per_min: float,
+) -> bool:
+    """Require enough samples and a bounded steady-state RSS slope for both services."""
+    slopes = [memory_slope_mb_per_min(samples) for samples in (core, sim)]
+    return all(slope is not None and slope <= limit_mb_per_min for slope in slopes)
+
+
 def listener_pid(port: int) -> int | None:
     """The process listening on ``port``. On Windows a venv's python.exe is a launcher that
     starts the real interpreter as a child, so the launched pid is not the server's."""
@@ -235,29 +267,34 @@ async def one_run(core: str, sim: str, clips: Path, n: int) -> dict[str, Any]:
 
 
 async def drive(
-    args: argparse.Namespace, core: str, sim: str, clips: Path, pid: int
+    args: argparse.Namespace, core: str, sim: str, clips: Path, pid: int, sim_pid: int
 ) -> dict[str, Any]:
     deadline = time.time() + args.minutes * 60
     runs: list[dict[str, Any]] = []
-    memory: list[tuple[float, float]] = []
+    core_memory: list[tuple[float, float]] = []
+    sim_memory: list[tuple[float, float]] = []
     governor: list[dict[str, Any]] = []
     t0 = time.time()
     stop = asyncio.Event()
 
-    async def sample() -> None:
+    async def sample(sim_pid: int) -> None:
         async with httpx.AsyncClient(
             base_url=core, headers=voice_bot_run_headers(), timeout=10
         ) as c:
             while not stop.is_set():
-                mb = working_set_mb(pid)
-                if mb is not None:
-                    memory.append((round(time.time() - t0, 1), round(mb, 1)))
+                elapsed = round(time.time() - t0, 1)
+                core_mb = working_set_mb(pid)
+                sim_mb = working_set_mb(sim_pid)
+                if core_mb is not None:
+                    core_memory.append((elapsed, round(core_mb, 1)))
+                if sim_mb is not None:
+                    sim_memory.append((elapsed, round(sim_mb, 1)))
                 with contextlib.suppress(httpx.HTTPError):
                     governor.append((await c.get("/v1/voice/usage")).json())
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(stop.wait(), args.sample_s)
 
-    sampler = asyncio.create_task(sample())
+    sampler = asyncio.create_task(sample(sim_pid))
     n = 0
     while time.time() < deadline:
         n += 1
@@ -271,7 +308,13 @@ async def drive(
         )
     stop.set()
     await sampler
-    return {"runs": runs, "memory_mb": memory, "governor": governor, "seconds": time.time() - t0}
+    return {
+        "runs": runs,
+        "core_memory_mb": core_memory,
+        "sim_memory_mb": sim_memory,
+        "governor": governor,
+        "seconds": time.time() - t0,
+    }
 
 
 def voice_bot_run_headers() -> dict[str, str]:
@@ -282,8 +325,14 @@ def report(
     out: Path, result: dict[str, Any], emulator: dict[str, Any], args: argparse.Namespace
 ) -> bool:
     runs = result["runs"]
-    mem = [m for _, m in result["memory_mb"]]
-    half = len(mem) // 2
+    core_mem = [m for _, m in result["core_memory_mb"]]
+    sim_mem = [m for _, m in result["sim_memory_mb"]]
+    half = len(core_mem) // 2
+    core_slope = memory_slope_mb_per_min(result["core_memory_mb"])
+    sim_slope = memory_slope_mb_per_min(result["sim_memory_mb"])
+    memory_gate = memory_growth_gate(
+        result["core_memory_mb"], result["sim_memory_mb"], limit_mb_per_min=0.5
+    )
     max_streams = max((g.get("open_streams", 0) for g in result["governor"]), default=None)
     cap = next((g["limits"]["max_streams"] for g in result["governor"] if "limits" in g), None)
     ok_runs = sum(r["ok"] for r in runs)
@@ -310,14 +359,22 @@ def report(
         "tts_streams": emulator["tts_sse"],
         "governor_stream_cap": cap,
         "governor_streams_in_use_max_sampled": max_streams,
-        "core_memory_mb_first": mem[0] if mem else None,
-        "core_memory_mb_last": mem[-1] if mem else None,
-        "core_memory_mb_max": max(mem) if mem else None,
-        "core_memory_mb_mean_first_half": round(sum(mem[:half]) / half, 1) if half else None,
-        "core_memory_mb_mean_second_half": round(sum(mem[half:]) / (len(mem) - half), 1)
-        if mem[half:]
-        else None,
-        "memory_samples": result["memory_mb"],
+        "core_memory_mb_first": core_mem[0] if core_mem else None,
+        "core_memory_mb_last": core_mem[-1] if core_mem else None,
+        "core_memory_mb_max": max(core_mem) if core_mem else None,
+        "core_memory_mb_mean_first_half": round(sum(core_mem[:half]) / half, 1) if half else None,
+        "core_memory_mb_mean_second_half": (
+            round(sum(core_mem[half:]) / (len(core_mem) - half), 1) if core_mem[half:] else None
+        ),
+        "sim_memory_mb_first": sim_mem[0] if sim_mem else None,
+        "sim_memory_mb_last": sim_mem[-1] if sim_mem else None,
+        "sim_memory_mb_max": max(sim_mem) if sim_mem else None,
+        "core_memory_slope_mb_per_min": core_slope,
+        "sim_memory_slope_mb_per_min": sim_slope,
+        "memory_growth_limit_mb_per_min": 0.5,
+        "memory_growth_gate": memory_gate,
+        "core_memory_samples": result["core_memory_mb"],
+        "sim_memory_samples": result["sim_memory_mb"],
         "per_run": runs,
     }
     passed = (
@@ -326,6 +383,7 @@ def report(
         and not summary["call_errors"]
         and emulator["streams_now"] == 0
         and (cap is None or emulator["streams_max"] <= cap)
+        and memory_gate
     )
     summary["passed"] = passed
     out.mkdir(parents=True, exist_ok=True)
@@ -362,6 +420,9 @@ def report(
         "| Core memory MB (mean, first half / second half) | "
         f"{summary['core_memory_mb_mean_first_half']} / "
         f"{summary['core_memory_mb_mean_second_half']} |",
+        f"| Core RSS slope after warm-up (MB/min) | {core_slope} |",
+        f"| Simulator RSS slope after warm-up (MB/min) | {sim_slope} |",
+        f"| Memory growth gate (<= 0.5 MB/min each) | {'passed' if memory_gate else 'FAILED'} |",
         "",
         f"**Result: {'passed' if passed else 'FAILED'}.**",
     ]
@@ -403,7 +464,8 @@ def main() -> int:
         "PYTHONIOENCODING": "utf-8",
     }
     os.environ["CORE_AUTOMATION_KEY"] = automation_key
-    logs = Path(tempfile.mkdtemp(prefix="pramana-load-"))
+    logs_tmp = tempfile.TemporaryDirectory(prefix="pramana-load-")
+    logs = Path(logs_tmp.name)
     procs: list[subprocess.Popen[bytes]] = []
     files = contextlib.ExitStack()
     try:
@@ -422,7 +484,7 @@ def main() -> int:
                     "--log-level",
                     "warning",
                 ],
-                env=env,
+                env={**env, "PRAMANA_TRACE_NAME": "sim"},
                 cwd=ROOT,
                 stdout=files.enter_context(open(logs / "sim.log", "w")),  # noqa: SIM115
                 stderr=subprocess.STDOUT,
@@ -443,7 +505,7 @@ def main() -> int:
                     "--log-level",
                     "warning",
                 ],
-                env=env,
+                env={**env, "PRAMANA_TRACE_NAME": "core"},
                 cwd=ROOT,
                 stdout=files.enter_context(open(logs / "core.log", "w")),  # noqa: SIM115
                 stderr=subprocess.STDOUT,
@@ -451,6 +513,7 @@ def main() -> int:
         )
         wait_ready(f"http://127.0.0.1:{sim_port}/health")
         wait_ready(f"http://127.0.0.1:{core_port}/health")
+        sim_pid = listener_pid(sim_port) or procs[0].pid
         with tempfile.TemporaryDirectory(prefix="pramana-clips-") as clips:
             make_clips(Path(clips))
             result = asyncio.run(
@@ -460,16 +523,17 @@ def main() -> int:
                     f"http://127.0.0.1:{sim_port}",
                     Path(clips),
                     listener_pid(core_port) or procs[1].pid,
+                    sim_pid,
                 )
             )
         ok = report(args.out, result, stats.as_dict(), args)
-        print(f"process logs: {logs}")
         return 0 if ok else 1
     finally:
         for p in procs:
             stop(p)
         files.close()
         emulator.should_exit = True
+        logs_tmp.cleanup()
 
 
 if __name__ == "__main__":

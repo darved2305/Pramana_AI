@@ -401,7 +401,7 @@ class MediaSession:
         while True:
             msg = await self.ws.receive()
             if msg["type"] == "websocket.disconnect":
-                raise WebSocketDisconnect(msg.get("code", 1000))
+                raise WebSocketDisconnect(msg.get("code", 1000), msg.get("reason", ""))
             data = msg.get("bytes")
             if data is not None:
                 if len(data) > MAX_CLIENT_FRAME or len(data) % 2:
@@ -547,10 +547,12 @@ class MediaSession:
                 second_decode=unbiased_decode if text is not None else None,
             )
         except ApiError as exc:
-            if exc.code == "QUESTION_NOT_PENDING" and self.in_call:
-                # Withdrawn (or answered elsewhere) while this answer was on its way: in a
-                # call that ends this turn, exactly as when ``_watch`` notices it first. The
-                # answer was not used, so the turn is incomplete before it is preempted.
+            if self.in_call and exc.code in {
+                "QUESTION_NOT_PENDING",
+                "INVESTIGATION_NOT_ACTIVE",
+            }:
+                # Another call withdrew the question or concluded the investigation while this
+                # answer was in flight. End this turn as a withdrawal instead of failing the call.
                 await self.fire(CallEvent.INCOMPLETE)
                 if self.call.can(CallEvent.PREEMPT):
                     await self.fire(CallEvent.PREEMPT)

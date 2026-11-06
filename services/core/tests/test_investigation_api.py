@@ -38,6 +38,16 @@ def test_health_and_readiness(core: TestClient) -> None:
     assert "X-Request-ID" in r.headers
 
 
+def test_runtime_engine_and_lock_caches_stay_bounded(core: TestClient) -> None:
+    for _ in range(40):
+        response = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+        assert response.status_code == 201, response.text
+
+    svc = core.app.state.investigations  # type: ignore[attr-defined]
+    assert len(svc._cache) <= 32
+    assert len(svc._locks) <= 32
+
+
 def test_create_returns_belief_plan_and_first_question(core: TestClient) -> None:
     inv = create(core, fault="CB_C2_7.tripped")
     assert inv["status"] == "investigating"

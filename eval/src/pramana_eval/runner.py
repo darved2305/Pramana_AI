@@ -41,13 +41,19 @@ class Episode:
     effort one after another; parallel ones overlap."""
     withdrawn: int = 0
     """Questions withdrawn in flight because another answer made them pointless."""
+    presence_challenges: int = 0
 
 
 def run_episode(
-    pack: DomainPack, model: CompiledModel, scenario: Scenario, policy: Policy
+    pack: DomainPack,
+    model: CompiledModel,
+    scenario: Scenario,
+    policy: Policy,
+    *,
+    presence_checks: bool = False,
 ) -> Episode:
     if isinstance(policy, ParallelOurs):
-        return run_parallel_episode(pack, model, scenario, policy)
+        return run_parallel_episode(pack, model, scenario, policy, presence_checks=presence_checks)
     engine = Engine(model, scenario.specs, policy.config)
     answers = Answers(pack, scenario)
     report = answers.report()
@@ -55,6 +61,7 @@ def run_episode(
     policy.start(scenario, report)
     history: History = []
     effort = 0.0
+    presence_challenges = 0
     conclusion: Conclusion | None = None
     for _ in range(MAX_STEPS):
         step = policy.next(engine, history)
@@ -69,8 +76,10 @@ def run_episode(
         effort += costs[key]
         engine.record_question(step.participant_id)
         ev = answers.ask(*key)
-        engine.observe(ev)
+        observed = engine.observe(ev)
         history.append((step, ev))
+        if presence_checks:
+            presence_challenges += _challenge_presence(engine, answers, ev, observed)
     hit_limit = conclusion is None
     if conclusion is None:
         snap = engine.snapshot()
@@ -89,17 +98,23 @@ def run_episode(
         confidence=conclusion.confidence,
         correct=correct,
         success=correct or (not decided and abstain_ok),
-        probes=len(asked),
+        probes=len(asked) + presence_challenges,
         effort_s=effort,
         people=len({a.participant_id for a, _ in asked}),
         hit_step_limit=hit_limit,
         failed=conclusion.failed,
         wall_s=effort,
+        presence_challenges=presence_challenges,
     )
 
 
 def run_parallel_episode(
-    pack: DomainPack, model: CompiledModel, scenario: Scenario, policy: ParallelOurs
+    pack: DomainPack,
+    model: CompiledModel,
+    scenario: Scenario,
+    policy: ParallelOurs,
+    *,
+    presence_checks: bool = False,
 ) -> Episode:
     """Our planner with up to ``policy.max_parallel`` questions in flight (the service's rule,
     ``pramana_engine.schedule``). Each answer arrives ``cost_s`` after its question was asked;
@@ -111,6 +126,7 @@ def run_parallel_episode(
     inflight: list[tuple[float, int, ProbeAction, float]] = []  # (done at, order, action, asked)
     asked: list[ProbeAction] = []
     withdrawn = 0
+    presence_challenges = 0
     order = 0
     conclusion: Conclusion | None = None
 
@@ -147,7 +163,10 @@ def run_parallel_episode(
         done_at, _, action, t_ask = inflight.pop(0)
         now = done_at
         effort += done_at - t_ask
-        engine.observe(answers.ask(action.participant_id, action.probe_id, action.location_id))
+        ev = answers.ask(action.participant_id, action.probe_id, action.location_id)
+        observed = engine.observe(ev)
+        if presence_checks:
+            presence_challenges += _challenge_presence(engine, answers, ev, observed)
         asked.append(action)
     hit_limit = conclusion is None
     if conclusion is None:
@@ -165,13 +184,26 @@ def run_parallel_episode(
         confidence=conclusion.confidence,
         correct=correct,
         success=correct or (not decided and abstain_ok),
-        probes=len(asked),
+        probes=len(asked) + presence_challenges,
         effort_s=effort,
         people=len({a.participant_id for a in asked}),
         hit_step_limit=hit_limit,
         wall_s=now,
         withdrawn=withdrawn,
+        presence_challenges=presence_challenges,
     )
+
+
+def _challenge_presence(engine: Engine, answers: Answers, ev: Evidence, observed: Any) -> int:
+    """Resolve an engine-requested presence challenge using the simulated private token check."""
+    token_id = engine.presence_challenge(ev, observed)
+    if token_id is None:
+        return 0
+    engine.set_presence(ev.participant_id, ev.location_id, "pending")
+    engine.record_question(ev.participant_id)
+    passed = not answers.last_false_presence(ev.participant_id, ev.probe_id, ev.location_id)
+    engine.set_presence(ev.participant_id, ev.location_id, "verified" if passed else "failed")
+    return 1
 
 
 def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
@@ -215,6 +247,9 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
         "hit_step_limit": sum(e.hit_step_limit for e in episodes),
         "wall_s_mean": statistics.fmean(e.wall_s for e in episodes) if n else None,
         "withdrawn_mean": statistics.fmean(e.withdrawn for e in episodes) if n else None,
+        "presence_challenges_mean": (
+            statistics.fmean(e.presence_challenges for e in episodes) if n else None
+        ),
     }
 
 

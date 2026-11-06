@@ -220,6 +220,21 @@ def test_speakable_reads_codes_as_people_say_them(
     assert speakable(text, lang) == spoken
 
 
+@pytest.mark.parametrize(
+    ("language", "spoken"),
+    [
+        ("en", "1 9 2 dot 1 6 8 dot 1 dot 1 0"),
+        ("hi-en", "1 9 2 dot 1 6 8 dot 1 dot 1 0"),
+        ("hi", "वन नाइन टू डॉट वन सिक्स एट डॉट वन डॉट वन ज़ीरो"),
+        ("mr", "वन नाइन टू डॉट वन सिक्स एट डॉट वन डॉट वन झिरो"),
+    ],
+)
+def test_speakable_reads_ipv4_addresses_digit_by_digit(
+    language: TemplateLanguage, spoken: str
+) -> None:
+    assert speakable("192.168.1.10", language) == spoken
+
+
 _code = st.from_regex(r"[A-Z]{1,4}[0-9]{0,2}(-[A-Z0-9]{1,3}){0,2}", fullmatch=True)
 _word = st.sampled_from(["the", "light", "रैक", "में", "पर", "box", "मध्ये", "room 205,"])
 

@@ -120,6 +120,20 @@ def test_question_audio_is_spoken_in_the_participants_language_and_cached(
     assert fake.paths().count("/api/v1/tts/inference") == 1  # replay costs nothing
 
 
+@pytest.mark.parametrize(
+    "language", ["bn-IN", "gu-IN", "kn-IN", "ml-IN", "pa-IN", "ta-IN", "te-IN"]
+)
+def test_direct_tts_accepts_other_contract_languages_without_key_error(
+    voice: tuple[TestClient, FakeGnaniHttp], language: str
+) -> None:
+    client, fake = voice
+    response = client.post("/v1/voice/tts", json={"text": "hello", "language": language})
+    assert response.status_code == 200, response.text
+    tts_body = json.loads(fake.calls[-1][1].content)
+    assert tts_body["text"] == "hello"
+    assert tts_body["language"] == language
+
+
 def test_voice_answer_uses_question_context_and_updates_the_belief(
     voice: tuple[TestClient, FakeGnaniHttp],
 ) -> None:
