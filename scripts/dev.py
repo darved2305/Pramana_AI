@@ -1,8 +1,15 @@
-"""One command for local development: database, migrations, simulator, core (and optionally web).
+r"""One command for local development: database, migrations, simulator, core (and optionally web).
 
 Usage::
 
-    uv run python scripts/dev.py [--web] [--core-port 8000] [--sim-port 8100] [--web-port 3002]
+    # Windows PowerShell
+    .\.venv\Scripts\python.exe scripts\dev.py [options]
+
+    # POSIX
+    uv run python scripts/dev.py [options]
+
+On Windows, run Python directly. If ``uv run`` receives Ctrl-Break, uv can return the Windows
+interrupt status ``0xC000013A`` even when this supervisor has stopped every child cleanly.
 
 ``make dev`` runs the same thing. Each service runs as a child process whose output is prefixed
 with its name. Ctrl+C stops every child: on Windows each child gets its own process group and
@@ -32,6 +39,84 @@ from pathlib import Path
 from typing import IO
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _assign_kill_on_close_job(proc: subprocess.Popen[bytes]) -> int | None:
+    """Track a Windows process tree so closing its job cannot leave orphaned children."""
+    import ctypes
+    from ctypes import wintypes
+
+    class BasicLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_longlong),
+            ("PerJobUserTimeLimit", ctypes.c_longlong),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class IoCounters(ctypes.Structure):
+        _fields_ = [
+            (name, ctypes.c_ulonglong)
+            for name in (
+                "ReadOperationCount",
+                "WriteOperationCount",
+                "OtherOperationCount",
+                "ReadTransferCount",
+                "WriteTransferCount",
+                "OtherTransferCount",
+            )
+        ]
+
+    class ExtendedLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", BasicLimitInformation),
+            ("IoInfo", IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.SetInformationJobObject.argtypes = [
+        wintypes.HANDLE,
+        wintypes.INT,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    ]
+    kernel32.SetInformationJobObject.restype = wintypes.BOOL
+    kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return None
+    information = ExtendedLimitInformation()
+    information.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel32.SetInformationJobObject(
+        job, 9, ctypes.byref(information), ctypes.sizeof(information)
+    ) or not kernel32.AssignProcessToJobObject(job, int(proc._handle)):
+        kernel32.CloseHandle(job)
+        return None
+    return int(job)
+
+
+def _close_job(handle: int) -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    close_handle = ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+    close_handle(handle)
 
 
 @dataclass(frozen=True)
@@ -115,6 +200,8 @@ class Child:
     cwd: Path = ROOT
     proc: subprocess.Popen[bytes] | None = None
     _pump: threading.Thread | None = field(default=None, repr=False)
+    _stopped: bool = field(default=False, init=False, repr=False)
+    _job_handle: int | None = field(default=None, init=False, repr=False)
 
     def start(self, out: IO[str] | None = None) -> None:
         kwargs: dict[str, object] = {}
@@ -131,6 +218,8 @@ class Child:
             stderr=subprocess.STDOUT,
             **kwargs,  # type: ignore[call-overload]
         )
+        if sys.platform == "win32":
+            self._job_handle = _assign_kill_on_close_job(self.proc)
         self._pump = threading.Thread(target=self._relay, args=(out or sys.stdout,), daemon=True)
         self._pump.start()
 
@@ -153,27 +242,34 @@ class Child:
 
     def stop(self, grace_s: float = 8.0) -> None:
         proc = self.proc
-        if proc is None or proc.poll() is not None:
+        if proc is None or self._stopped:
             return
+        self._stopped = True
         try:
-            if sys.platform == "win32":
+            if proc.poll() is None and sys.platform == "win32":
                 proc.send_signal(signal.CTRL_BREAK_EVENT)
-            else:
+            elif proc.poll() is None:
                 os.killpg(proc.pid, signal.SIGTERM)
         except (OSError, ValueError):
             pass
-        try:
+        with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=grace_s)
-        except subprocess.TimeoutExpired:
-            if sys.platform == "win32":
-                # /T kills the whole tree (uv -> python, npm -> node).
+        if sys.platform == "win32":
+            # A cmd wrapper can exit while its node child remains. /T also handles that case.
+            with contextlib.suppress(OSError):
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                     capture_output=True,
                     check=False,
                 )
-            else:
+            if self._job_handle is not None:
+                _close_job(self._job_handle)
+                self._job_handle = None
+        else:
+            # The group can outlive its leader if a wrapper exits before its children.
+            with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
+        if proc.poll() is None:
             proc.wait(timeout=5)
 
 
@@ -239,15 +335,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     for name in ("SIGBREAK", "SIGTERM"):
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), _interrupt)
-    prepare(opts)
-    env = service_env(opts)
-    procs = children(opts, env)
-    checks = {
-        "sim": f"http://127.0.0.1:{opts.sim_port}/health",
-        "core": f"http://127.0.0.1:{opts.core_port}/ready",
-        "web": f"http://127.0.0.1:{opts.web_port}/",
-    }
+    procs: list[Child] = []
     try:
+        prepare(opts)
+        env = service_env(opts)
+        procs = children(opts, env)
+        checks = {
+            "sim": f"http://127.0.0.1:{opts.sim_port}/health",
+            "core": f"http://127.0.0.1:{opts.core_port}/ready",
+            "web": f"http://127.0.0.1:{opts.web_port}/",
+        }
         for c in procs:
             c.start()
             url = checks[c.name]
