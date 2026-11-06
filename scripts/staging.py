@@ -664,8 +664,6 @@ def production_services(
                         python,
                         str(ROOT / "scripts" / "gnani_emulator.py"),
                         "--serve",
-                        "--host",
-                        "127.0.0.1",
                         "--port",
                         str(GNANI_EMULATOR_PORT),
                     ],

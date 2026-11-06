@@ -122,6 +122,31 @@ def test_emulator_starts_before_simulator_core_and_web(monkeypatch: object) -> N
     ]
 
 
+def test_staging_emulator_command_uses_supported_options(monkeypatch: object) -> None:
+    monkeypatch.setattr(staging.shutil, "which", lambda _: "cloudflared")  # type: ignore[attr-defined]
+    command: list[str] = []
+
+    def capture(self: staging.ManagedChild, _out: object = None) -> staging.ManagedChild:
+        command.extend(self.args)
+        return self
+
+    monkeypatch.setattr(staging.ManagedChild, "start", capture)  # type: ignore[attr-defined]
+    services = staging.production_services(
+        {},
+        {},
+        {},
+        {},
+        public_origin="https://pramana-staging.account.workers.dev",
+        token_file=Path("token.txt"),
+        token="test-token",
+        fake_gnani=True,
+    )
+
+    services[0].start()
+
+    assert command[-3:] == ["--serve", "--port", str(staging.GNANI_EMULATOR_PORT)]
+
+
 def test_production_build_is_reused_until_source_or_upstream_changes(tmp_path: Path) -> None:
     web_root = tmp_path / "web"
     source = web_root / "src" / "page.tsx"
