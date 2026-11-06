@@ -117,6 +117,7 @@ PlanRule = Literal[
     "verification_confirmed",
     "verification_failed",
     "verification_inconclusive",
+    "presence_fallback",
 ]
 """Which branch of the stopping rule produced a plan."""
 

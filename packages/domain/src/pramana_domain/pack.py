@@ -41,6 +41,7 @@ ComponentKind = Literal[
 ObservableKind = Literal[
     "internet_works",
     "wifi_status",
+    "wifi_access_point",
     "web_by_ip",
     "powered",
     "ap_light",
@@ -55,6 +56,7 @@ ProbeClass = Literal["device", "visual", "panel"]
 KIND_OUTCOMES: dict[str, frozenset[str]] = {
     "internet_works": frozenset({"yes", "no"}),
     "wifi_status": frozenset({"no_network", "stuck_connecting", "connected"}),
+    "wifi_access_point": frozenset({"AP_2A", "AP_2B", "not_connected"}),
     "web_by_ip": frozenset({"yes", "no"}),
     "powered": frozenset({"on", "off"}),
     "ap_light": frozenset({"on", "off"}),
@@ -72,7 +74,7 @@ TARGET_KINDS: dict[str, frozenset[str]] = {
     "fibre_led": frozenset({"ont"}),
     "breaker": frozenset({"breaker"}),
 }
-DEVICE_KINDS = frozenset({"internet_works", "wifi_status", "web_by_ip"})
+DEVICE_KINDS = frozenset({"internet_works", "wifi_status", "wifi_access_point", "web_by_ip"})
 
 
 class PackModel(BaseModel):
@@ -100,6 +102,25 @@ class Location(PackModel):
     access_roles: list[Role] = Field(default_factory=list)
     wifi_coverage: list[StrictStr] = Field(default_factory=list)
     """Access points whose signal reaches this location, strongest first."""
+
+
+class PresenceToken(PackModel):
+    """A location-bound label-reading challenge definition. Values are simulator-only."""
+
+    id: StrictStr
+    location_id: StrictStr
+    kind: Literal["label_suffix"]
+    length: int = Field(ge=1, le=12)
+    prompt_templates: dict[TemplateLanguage, StrictStr]
+    display_templates: dict[TemplateLanguage, StrictStr]
+
+    @field_validator("prompt_templates", "display_templates")
+    @classmethod
+    def _all_languages(cls, v: dict[str, str]) -> dict[str, str]:
+        missing = {"en", "hi", "mr", "hi-en"} - set(v)
+        if missing:
+            raise ValueError(f"templates missing languages: {sorted(missing)}")
+        return v
 
 
 class FailureMode(PackModel):
@@ -185,6 +206,7 @@ class DomainPack(PackModel):
     version: StrictStr
     title: StrictStr
     locations: list[Location]
+    presence_tokens: list[PresenceToken] = Field(default_factory=list)
     walks: list[tuple[StrictStr, StrictStr, int]]
     walking_roles: list[Role]
     components: list[Component]
@@ -214,6 +236,10 @@ class DomainPack(PackModel):
     def decision_of(self) -> dict[str, str]:
         """Hypothesis id -> decision class id."""
         return {h: d.id for d in self.decision_classes for h in d.hypotheses}
+
+    @cached_property
+    def presence_token_by_id(self) -> dict[str, PresenceToken]:
+        return {token.id: token for token in self.presence_tokens}
 
     def fault_hypotheses(self) -> list[tuple[str, str, FailureMode]]:
         """(component id, failure mode id, mode) for every modelled single fault."""
@@ -258,6 +284,7 @@ class DomainPack(PackModel):
         _unique("location", [loc.id for loc in self.locations], errors)
         _unique("component", [c.id for c in self.components], errors)
         _unique("probe", [p.id for p in self.probes], errors)
+        _unique("presence token", [token.id for token in self.presence_tokens], errors)
         _unique("decision class", [d.id for d in self.decision_classes], errors)
 
         for loc in self.locations:
@@ -266,6 +293,18 @@ class DomainPack(PackModel):
                     errors.append(f"location {loc.id}: wifi_coverage {ap!r} is not an access point")
             if loc.restricted and not loc.access_roles:
                 errors.append(f"location {loc.id}: restricted but no access_roles")
+        for token in self.presence_tokens:
+            location = self.location_by_id.get(token.location_id)
+            if location is None:
+                errors.append(f"presence token {token.id}: unknown location {token.location_id!r}")
+            elif not location.restricted:
+                errors.append(
+                    f"presence token {token.id}: location {token.location_id} must be restricted"
+                )
+        token_locations = {token.location_id for token in self.presence_tokens}
+        for loc in self.locations:
+            if loc.restricted and loc.id not in token_locations:
+                errors.append(f"restricted location {loc.id} has no presence token")
         for src, dst, secs in self.walks:
             if src not in locs or dst not in locs:
                 errors.append(f"walk {src}-{dst}: unknown location")

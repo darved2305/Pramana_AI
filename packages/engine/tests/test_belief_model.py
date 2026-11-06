@@ -313,6 +313,9 @@ def _investigate(
         assert a is not None
         eng.record_question(a.participant_id)
         out = world.observe(campus.probe_by_id[a.probe_id], a.location_id)
+        if eng.presence_required(a.participant_id, a.location_id):
+            # Noise-free engine runs model the participant passing the site check.
+            eng.set_presence(a.participant_id, a.location_id, True)
         eng.observe(Evidence(a.participant_id, a.probe_id, a.location_id, out))
         n += 1
     return n, eng.plan().kind

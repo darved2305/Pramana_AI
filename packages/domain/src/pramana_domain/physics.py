@@ -123,6 +123,8 @@ class World:
             raise ValueError(f"probe {probe.id} cannot be made at {location_id}")
         kind = probe.kind
         if kind in DEVICE_KINDS:
+            if kind == "wifi_access_point":
+                return self.associated_ap(location_id) or "not_connected"
             if kind == "wifi_status":
                 if self.associated_ap(location_id) is None:
                     return "no_network"

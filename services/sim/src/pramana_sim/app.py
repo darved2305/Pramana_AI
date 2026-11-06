@@ -34,8 +34,10 @@ from pramana_contracts import (
     ObserveRequest,
     ObserveResult,
     ParticipantView,
+    PresenceVerificationResult,
     RevealResult,
     ScenarioCreated,
+    VerifyPresenceRequest,
 )
 from pramana_contracts.tokens import (
     TokenError,
@@ -140,7 +142,7 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
         pack = store.pack(req.pack_id)
         fault = draw_fault(pack, req.seed) if req.fault == "random" else req.fault
         assert isinstance(fault, FaultSpec)
-        scenario = Scenario.create(pack, fault, req.participants)
+        scenario = Scenario.create(pack, fault, req.participants, req.seed)
         store.add(scenario)
         return ScenarioCreated(scenario_id=scenario.id, commitment=scenario.commitment)
 
@@ -159,6 +161,13 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
         sid: str, req: ObserveRequest, who: Annotated[str, Depends(participant)]
     ) -> ObserveResult:
         return store.get(sid).observe(who, req.probe_id)
+
+    @app.post(
+        "/sim/v1/scenarios/{sid}/presence/verify",
+        dependencies=[require_operator],
+    )
+    async def verify_presence(sid: str, req: VerifyPresenceRequest) -> PresenceVerificationResult:
+        return store.get(sid).verify_presence(req.participant_id, req.token_id, req.answer)
 
     @app.post("/sim/v1/scenarios/{sid}/act")
     async def act(

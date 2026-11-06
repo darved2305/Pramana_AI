@@ -44,6 +44,13 @@ class EngineConfig:
     setup_s: float = 15.0
     fatigue_s: float = 5.0
     hearsay_factor: float = 0.5
+    unverified_presence_weight: float = 0.2
+    """Additional mix toward uniform for evidence whose location is not verified."""
+    presence_challenge_cost_s: float = 12.0
+    """Expected participant effort for a label-reading challenge."""
+    presence_challenges_enabled: bool = True
+    """Issue and price presence challenges. When disabled, location-bound evidence stays at the
+    unverified-presence weight for the full investigation (evaluation ablation)."""
     voice_weight: float = 0.9
     """Extra mixing toward uniform for spoken answers. Speech recognition adds an error channel
     with no confidence signal: on real short code-mixed turns, a few were transcribed

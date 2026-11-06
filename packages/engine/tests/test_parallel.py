@@ -231,6 +231,9 @@ def _truthful_s1_run(
         assert len(inflight) <= max_parallel
         assert len({a.participant_id for a in inflight}) == len(inflight)
         a = inflight.pop(0)
+        if eng.presence_required(a.participant_id, a.location_id):
+            # This simulation knows the participant really completed the requested move.
+            eng.set_presence(a.participant_id, a.location_id, True)
         eng.observe(
             Evidence(
                 a.participant_id, a.probe_id, a.location_id, truth[(a.probe_id, a.location_id)]
@@ -268,6 +271,8 @@ def test_a_confident_decision_withdraws_everything_in_flight(
     for a, _ in eng.menu():
         if a.participant_id != "p_imran":
             continue
+        if eng.presence_required(a.participant_id, a.location_id):
+            eng.set_presence(a.participant_id, a.location_id, True)
         eng.observe(
             Evidence(
                 a.participant_id, a.probe_id, a.location_id, truth[(a.probe_id, a.location_id)]

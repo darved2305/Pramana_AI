@@ -19,7 +19,21 @@ def obs(pack: DomainPack, faults: list[tuple[str, str]], probe: str, loc: str) -
 def test_healthy_building_everything_works(pack: DomainPack) -> None:
     table = predict(pack, [])
     for (probe, loc), value in table.items():
-        assert value in {"yes", "connected", "on", "green", "up"}, (probe, loc, value)
+        assert value in {"yes", "connected", "on", "green", "up", "AP_2A", "AP_2B"}, (
+            probe,
+            loc,
+            value,
+        )
+
+
+def test_wifi_access_point_probe_uses_location_coverage_and_faults(pack: DomainPack) -> None:
+    healthy = World(pack, frozenset())
+    ap2a_down = World(pack, frozenset({("AP_2A", "dead")}))
+
+    assert healthy.observe(pack.probe_by_id["wifi_access_point"], "F2_R205") == "AP_2B"
+    assert healthy.observe(pack.probe_by_id["wifi_access_point"], "F2_R210") == "AP_2A"
+    assert ap2a_down.observe(pack.probe_by_id["wifi_access_point"], "F2_R205") == "AP_2B"
+    assert ap2a_down.observe(pack.probe_by_id["wifi_access_point"], "F2_R210") == "not_connected"
 
 
 def test_upstream_power_loss_darkens_floors_2_and_3_only(pack: DomainPack) -> None:

@@ -8,6 +8,7 @@ was fixed at the start.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import random
 import secrets
@@ -21,6 +22,8 @@ from pramana_contracts import (
     MoveResult,
     ObserveResult,
     ParticipantView,
+    PresenceTokenView,
+    PresenceVerificationResult,
     RevealResult,
     SimParticipant,
     ViewItem,
@@ -82,19 +85,27 @@ class Scenario:
     salt: str
     commitment: str
     people: dict[str, _Person]
+    seed: int = 0
     status: ScenarioStatus = ScenarioStatus.OPEN
     world: World = field(init=False, repr=False)
     used_capabilities: set[str] = field(default_factory=set)
     interventions: list[tuple[str, str, str]] = field(default_factory=list)
     _active_faults: set[tuple[str, str]] = field(default_factory=set)
+    _presence_values: dict[str, str] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         self._active_faults = {(f.component_id, f.mode) for f in self.fault_spec.faults}
         self.world = World(self.pack, frozenset(self._active_faults))
+        alphabet = "34679ACDEFHJKMNPQRTUVWXY"
+        for token in sorted(self.pack.presence_tokens, key=lambda item: item.id):
+            rng = random.Random(f"{self.seed}:{token.id}")
+            self._presence_values[token.id] = "".join(
+                rng.choice(alphabet) for _ in range(token.length)
+            )
 
     @classmethod
     def create(
-        cls, pack: DomainPack, fault: FaultSpec, participants: list[SimParticipant]
+        cls, pack: DomainPack, fault: FaultSpec, participants: list[SimParticipant], seed: int = 0
     ) -> Scenario:
         sid = "sc_" + secrets.token_hex(6)
         salt = secrets.token_hex(16)
@@ -104,7 +115,7 @@ class Scenario:
                 raise ScenarioError(422, "UNKNOWN_LOCATION", f"unknown location {p.location_id}")
             people[p.id] = _Person(frozenset(p.roles), p.location_id)
         try:
-            return cls(sid, pack, fault, salt, commitment_for(sid, fault, salt), people)
+            return cls(sid, pack, fault, salt, commitment_for(sid, fault, salt), people, seed)
         except ValueError as exc:  # World rejects faults the pack cannot represent
             raise ScenarioError(422, "UNKNOWN_FAULT", str(exc)) from exc
 
@@ -147,7 +158,38 @@ class Scenario:
             location_label=loc.label.en,
             items=items,
             reachable_locations=self._reachable(person),
+            presence_tokens=[
+                PresenceTokenView(
+                    token_id=token.id,
+                    display_texts={
+                        language: template.format(
+                            length=token.length, value=self._presence_values[token.id]
+                        )
+                        for language, template in token.display_templates.items()
+                    },
+                )
+                for token in self.pack.presence_tokens
+                if token.location_id == person.location_id
+            ],
         )
+
+    def verify_presence(
+        self, participant_id: str, token_id: str, answer: str
+    ) -> PresenceVerificationResult:
+        """Return pass/fail for an operator supplied answer at the participant's current site."""
+        self._require_open()
+        person = self.people.get(participant_id)
+        token = self.pack.presence_token_by_id.get(token_id)
+        expected = self._presence_values.get(token_id)
+        compact_answer = "".join(char for char in answer.upper() if char.isalnum())
+        passed = bool(
+            person is not None
+            and token is not None
+            and expected is not None
+            and person.location_id == token.location_id
+            and hmac.compare_digest(compact_answer.encode(), expected.encode())
+        )
+        return PresenceVerificationResult(passed=passed)
 
     def _can_enter(self, person: _Person, location_id: str) -> bool:
         loc = self.pack.location_by_id[location_id]

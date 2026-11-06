@@ -8,6 +8,21 @@ locations:
 walks:
   - [ROOM, PANEL, 30]
 walking_roles: [electrician, guard]
+presence_tokens:
+  - id: toy_panel_label
+    location_id: PANEL
+    kind: label_suffix
+    length: 3
+    prompt_templates:
+      en: "Read the last {length} characters on the panel label at {place}."
+      hi-en: "{place} par panel label ke last {length} characters padhiye."
+      hi: "{place} पर पैनल लेबल के आखिरी {length} अक्षर पढ़ें।"
+      mr: "{place} येथील पॅनेल लेबलवरील शेवटची {length} अक्षरे वाचा."
+    display_templates:
+      en: "Panel label suffix: {value}."
+      hi-en: "Panel label ke last characters: {value}."
+      hi: "पैनल लेबल के आखिरी अक्षर: {value}।"
+      mr: "पॅनेल लेबलवरील शेवटची अक्षरे: {value}."
 components:
   - { id: FEED_MAIN, kind: feed, label: "Main feed" }
   - { id: CB_1, kind: breaker, label: "Breaker 1", powered_by: FEED_MAIN, location: PANEL,

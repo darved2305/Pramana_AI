@@ -267,6 +267,9 @@ def run_investigation(
         eng.record_question(a.participant_id)
         ans = world.observe(campus.probe_by_id[a.probe_id], a.location_id)
         path.append((a.participant_id, a.probe_id, a.location_id, ans))
+        if eng.presence_required(a.participant_id, a.location_id):
+            # Noise-free world simulations model an honest participant passing the site check.
+            eng.set_presence(a.participant_id, a.location_id, True)
         eng.observe(Evidence(a.participant_id, a.probe_id, a.location_id, ans))
     raise AssertionError("did not terminate")
 
@@ -319,6 +322,8 @@ def test_planning_is_deterministic(
 def test_confident_belief_decides_without_asking(campus_model: CompiledModel) -> None:
     tech = person("p_t", ["electrician", "guard"], "technician", "DB_C2_PANEL")
     eng = Engine(campus_model, [tech])
+    eng.set_presence("p_t", "DB_C2_PANEL", True)
+    eng.set_presence("p_t", "IDF2", True)
     for probe, loc, out in [
         ("breaker_c2_7", "DB_C2_PANEL", "tripped"),
         ("nvr_screen", "IDF2", "off"),

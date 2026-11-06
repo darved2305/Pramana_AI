@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .common import Identifier, StrictModel
+from .common import Identifier, StrictModel, TemplateLanguage
 
 
 class Fault(StrictModel):
@@ -58,6 +58,24 @@ class ParticipantView(StrictModel):
     location_label: str
     items: list[ViewItem]
     reachable_locations: list[Identifier]
+    presence_tokens: list[PresenceTokenView] = Field(default_factory=list)
+
+
+class PresenceTokenView(StrictModel):
+    """A rendered on-site label card. It is returned only to a participant at its location."""
+
+    token_id: Identifier
+    display_texts: dict[TemplateLanguage, str]
+
+
+class VerifyPresenceRequest(StrictModel):
+    participant_id: Identifier
+    token_id: Identifier
+    answer: str = Field(max_length=200)
+
+
+class PresenceVerificationResult(StrictModel):
+    passed: bool
 
 
 class MoveRequest(StrictModel):

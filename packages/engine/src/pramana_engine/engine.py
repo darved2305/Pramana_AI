@@ -43,7 +43,7 @@ from pramana_contracts import (
     RepairState,
     Skill,
 )
-from pramana_domain import ANY_ROLE, OPEN_WORLD
+from pramana_domain import ANY_ROLE, OPEN_WORLD, World
 from pramana_domain.pack import DEVICE_KINDS
 
 from .belief import (
@@ -102,6 +102,30 @@ class ObserveResult:
     than ``confirm_delta``. A spoken answer like that is worth confirming before relying on it."""
     multiple_faults_suspected: bool = False
     """Taken at face value, the answers so far fit no single fault but do fit a pair."""
+    presence_challenge_needed: bool = False
+    """The full-weight counterfactual makes this answer decision-critical at an unverified site."""
+
+
+@dataclass(frozen=True)
+class ExplanationMass:
+    code: str
+    posterior_mass: float
+    supported: bool
+
+
+@dataclass(frozen=True)
+class ReconciliationContext:
+    participant_ids: tuple[str, str]
+    location_ids: tuple[str, str]
+    access_points: tuple[str | None, str | None]
+    posterior_mass: float
+
+
+@dataclass(frozen=True)
+class ReconciliationExplanation:
+    families: tuple[ExplanationMass, ...]
+    contexts: tuple[ReconciliationContext, ...]
+    tie_break_action: ProbeAction | None
 
 
 @dataclass(frozen=True)
@@ -163,6 +187,12 @@ class Engine:
         self._fixed = np.zeros(n, dtype=bool)
         self._repair: _Repair | None = None
         self._belief_cache: _Belief | None = None
+        self._presence: dict[tuple[str, str], bool] = {}
+        self._presence_challenges: set[tuple[str, str]] = set()
+        self._challenge_availability: dict[tuple[str, str], bool] = {}
+        self._challenge_probe: dict[tuple[str, str], str] = {}
+        self._presence_recoveries: dict[tuple[str, str], str] = {}
+        self._presence_recovery_responders: dict[tuple[str, str], str] = {}
 
     # -- reliability -------------------------------------------------------------------------
 
@@ -213,12 +243,87 @@ class Engine:
     # -- evidence ----------------------------------------------------------------------------
 
     def _weight(self, ev: Evidence) -> float:
+        return self.evidence_weight(ev)
+
+    def evidence_weight(self, ev: Evidence) -> float:
+        """Existing hedge, hearsay and voice mixture, discounted for unverified presence."""
         w = self.cfg.hedge_weight[ev.hedge]
         if ev.directness == Directness.HEARSAY:
             w *= self.cfg.hearsay_factor
         if ev.modality == Modality.VOICE:
             w *= self.cfg.voice_weight
+        location_needs_proof = self.presence_required(ev.participant_id, ev.location_id)
+        proof_is_verified = self.is_presence_verified(ev.participant_id, ev.location_id)
+        if location_needs_proof and not proof_is_verified:
+            w *= self.cfg.unverified_presence_weight
         return w
+
+    def presence_required(self, participant_id: str, location_id: str) -> bool:
+        """Restricted places always need proof; elsewhere proof is needed after a move."""
+        participant = self.participants.get(participant_id)
+        location = self.model.pack.location_by_id.get(location_id)
+        if participant is None or location is None:
+            return False
+        return location.restricted or location_id != participant.spec.location_id
+
+    def is_presence_verified(self, participant_id: str, location_id: str) -> bool:
+        return self._presence.get((participant_id, location_id), False)
+
+    def record_presence_challenge(
+        self, participant_id: str, location_id: str, probe_id: str | None = None
+    ) -> bool:
+        """Reserve the one permitted challenge for a person and location."""
+        if (
+            participant_id not in self.participants
+            or location_id not in self.model.pack.location_by_id
+        ):
+            raise EvidenceError("unknown participant or location in presence challenge")
+        key = (participant_id, location_id)
+        if key in self._presence_challenges or not self.presence_required(*key):
+            return False
+        self._presence_challenges.add(key)
+        if probe_id is not None:
+            self._challenge_probe[key] = probe_id
+        self._challenge_availability[key] = self.participants[participant_id].available
+        self.participants[participant_id].available = False
+        return True
+
+    def set_presence(
+        self,
+        participant_id: str,
+        location_id: str,
+        verified: bool,
+        *,
+        challenge_failed: bool = False,
+    ) -> None:
+        """Resolve a challenge and recompute all evidence from this person at this location."""
+        if (
+            participant_id not in self.participants
+            or location_id not in self.model.pack.location_by_id
+        ):
+            raise EvidenceError("unknown participant or location in presence result")
+        key = (participant_id, location_id)
+        self._presence[key] = verified
+        probe_id = self._challenge_probe.pop(key, None)
+        if challenge_failed and probe_id is not None:
+            recovery_key = (probe_id, location_id)
+            self._presence_recoveries[recovery_key] = participant_id
+            self._presence_recovery_responders.pop(recovery_key, None)
+        elif verified:
+            completed = [
+                recovery_key
+                for recovery_key, responder in self._presence_recovery_responders.items()
+                if recovery_key[1] == location_id and responder == participant_id
+            ]
+            for recovery_key in completed:
+                self._presence_recoveries.pop(recovery_key, None)
+                self._presence_recovery_responders.pop(recovery_key, None)
+        if key in self._challenge_availability:
+            self.participants[participant_id].available = self._challenge_availability.pop(key)
+        self.participants[participant_id].location_id = (
+            location_id if verified else self.participants[participant_id].spec.location_id
+        )
+        self._changed()
 
     def _validate(self, ev: Evidence) -> int:
         ps = self.participants.get(ev.participant_id)
@@ -324,11 +429,38 @@ class Engine:
         contradiction = self._contradictions(ev, site)
         dm_before = decision_marginal(self.model, p_before)[:-1]
         self._add(ev, site)
+        recovery_key = (ev.probe_id, ev.location_id)
+        if self._presence_recovery_responders.get(
+            recovery_key
+        ) == ev.participant_id and self.is_presence_verified(ev.participant_id, ev.location_id):
+            self._presence_recoveries.pop(recovery_key, None)
+            self._presence_recovery_responders.pop(recovery_key, None)
         dm_after = decision_marginal(self.model, self.posterior())[:-1]
         d_after = int(np.argmax(dm_after))
         critical = d_after != int(np.argmax(dm_before)) or (
             abs(float(dm_after[d_after] - dm_before[d_after])) > self.cfg.confirm_delta
         )
+        challenge_needed = False
+        presence_key = (ev.participant_id, ev.location_id)
+        if (
+            self.cfg.presence_challenges_enabled
+            and self.presence_required(*presence_key)
+            and not self.is_presence_verified(*presence_key)
+            and presence_key not in self._presence_challenges
+        ):
+            old_presence = self._presence.get(presence_key)
+            self._presence[presence_key] = True
+            self._changed()
+            full_dm = decision_marginal(self.model, self.posterior())[:-1]
+            full_best = int(np.argmax(full_dm))
+            challenge_needed = full_best != int(np.argmax(dm_before)) or (
+                abs(float(full_dm[full_best] - dm_before[full_best])) > self.cfg.confirm_delta
+            )
+            if old_presence is None:
+                self._presence.pop(presence_key)
+            else:
+                self._presence[presence_key] = old_presence
+            self._changed()
         return ObserveResult(
             True,
             "committed",
@@ -337,6 +469,7 @@ class Engine:
             surprise,
             critical,
             self._only_pairs_fit(),
+            challenge_needed,
         )
 
     def confirm(self, participant_id: str, probe_id: str, location_id: str, agreed: bool) -> None:
@@ -388,6 +521,99 @@ class Engine:
                 pid, probe_id, loc = e.key
                 clashes.append(f"{pid}:{probe_id}@{loc}={e.ev.outcome}")
         return clashes
+
+    def explain_reconciliation(
+        self, first: Evidence, second: Evidence
+    ) -> ReconciliationExplanation:
+        """Rank explanations for opposed readings using the posterior and pack physics."""
+        first_site = self._validate(first)
+        second_site = self._validate(second)
+        if first.probe_id == second.probe_id and first.outcome == second.outcome:
+            raise EvidenceError("reconciliation needs opposed outcomes")
+        model = self.model
+        first_outcome = model.outcomes[first.probe_id].index(first.outcome)
+        second_outcome = model.outcomes[second.probe_id].index(second.outcome)
+        posterior = self.posterior()
+        access_point_mass: dict[tuple[str, str], float] = {}
+        access_point_contexts: dict[tuple[str, str], tuple[str | None, str | None]] = {}
+        mistake_mass = 0.0
+        same_context_mass = 0.0
+        unmodelled_mass = float(posterior[model.open_world_index])
+
+        for i, hypothesis in enumerate(model.hypotheses):
+            mass = float(posterior[i])
+            if mass <= 0.0 or hypothesis.faults is None:
+                continue
+            predicts_first = model.predictions[i, first_site] == first_outcome
+            predicts_second = model.predictions[i, second_site] == second_outcome
+            if not predicts_first or not predicts_second:
+                mistake_mass += mass
+                continue
+            if first.location_id == second.location_id:
+                same_context_mass += mass
+                continue
+            world = World(model.pack, frozenset(hypothesis.faults))
+            first_ap = world.associated_ap(first.location_id)
+            second_ap = world.associated_ap(second.location_id)
+            if first_ap is None:
+                first_ap = model.pack.location_by_id[first.location_id].wifi_coverage[0] or None
+            if second_ap is None:
+                second_ap = model.pack.location_by_id[second.location_id].wifi_coverage[0] or None
+            if first_ap is not None and second_ap is not None and first_ap != second_ap:
+                key = (first_ap, second_ap)
+                access_point_mass[key] = access_point_mass.get(key, 0.0) + mass
+                access_point_contexts[key] = (first_ap, second_ap)
+            else:
+                same_context_mass += mass
+
+        families = [
+            ExplanationMass("different_access_points", sum(access_point_mass.values()), True),
+            ExplanationMass("observer_mistake", mistake_mass, True),
+            ExplanationMass("both_right_same_context", same_context_mass, True),
+            ExplanationMass("unmodelled_cause", unmodelled_mass, False),
+            ExplanationMass("world_changed", 0.0, False),
+        ]
+        families.sort(key=lambda item: (-item.posterior_mass, item.code))
+        contexts = tuple(
+            ReconciliationContext(
+                participant_ids=(first.participant_id, second.participant_id),
+                location_ids=(first.location_id, second.location_id),
+                access_points=access_point_contexts[key],
+                posterior_mass=mass,
+            )
+            for key, mass in sorted(access_point_mass.items(), key=lambda item: (-item[1], item[0]))
+        )
+        menu = self.menu()
+        sites = [
+            (first.participant_id, first.location_id),
+            (second.participant_id, second.location_id),
+        ]
+        sites.sort(
+            key=lambda site: (
+                -len(model.pack.location_by_id[site[1]].wifi_coverage),
+                site[1],
+            )
+        )
+        preferred = [
+            action
+            for participant_id, location_id in sites
+            for action, _ in menu
+            if action.probe_id == "wifi_access_point"
+            and action.participant_id == participant_id
+            and action.location_id == location_id
+        ]
+        if not preferred:
+            preferred = [
+                action
+                for action, _ in menu
+                if action.probe_id == "wifi_access_point"
+                and action.location_id in {first.location_id, second.location_id}
+            ]
+        return ReconciliationExplanation(
+            families=tuple(families),
+            contexts=contexts[:4],
+            tie_break_action=preferred[0] if access_point_mass and preferred else None,
+        )
 
     def _only_pairs_fit(self) -> bool:
         """Taken at face value, do the answers in this era fit a pair but no single fault?"""
@@ -482,8 +708,24 @@ class Engine:
 
     # -- participant state -------------------------------------------------------------------
 
-    def record_question(self, participant_id: str) -> None:
+    def record_question(
+        self, participant_id: str, probe_id: str | None = None, location_id: str | None = None
+    ) -> None:
         self.participants[participant_id].questions_asked += 1
+        if probe_id is not None and location_id is not None:
+            recovery_key = (probe_id, location_id)
+            failed_person = self._presence_recoveries.get(recovery_key)
+            if failed_person is not None and participant_id != failed_person:
+                self._presence_recovery_responders[recovery_key] = participant_id
+            else:
+                completed = [
+                    key
+                    for key, responder in self._presence_recovery_responders.items()
+                    if responder == participant_id and key != recovery_key
+                ]
+                for key in completed:
+                    self._presence_recoveries.pop(key, None)
+                    self._presence_recovery_responders.pop(key, None)
 
     def set_available(self, participant_id: str, available: bool) -> None:
         self.participants[participant_id].available = available
@@ -613,6 +855,13 @@ class Engine:
                     + probe.exec_s
                     + self.cfg.fatigue_s * ps.questions_asked
                 )
+                if (
+                    self.cfg.presence_challenges_enabled
+                    and self.presence_required(pid, loc_id)
+                    and not self.is_presence_verified(pid, loc_id)
+                    and (pid, loc_id) not in self._presence_challenges
+                ):
+                    cost += self.cfg.presence_challenge_cost_s
                 feasible.append(
                     _Action(
                         ps,
@@ -818,6 +1067,58 @@ class Engine:
         if p_d >= cfg.tau_hi:
             return done(
                 PlanKind.DECIDE, "confident", f"{label}: P = {p_d:.3f} >= {cfg.tau_hi:.2f}."
+            )
+
+        recovery_action: _Action | None = None
+        recovery_key: tuple[str, str] | None = None
+        if p_d < cfg.tau_lo:
+            for key, failed_person in sorted(self._presence_recoveries.items()):
+                responder = self._presence_recovery_responders.get(key)
+                if responder is not None:
+                    recovery_actions = [
+                        action for action in actions if action.participant.spec.id == responder
+                    ]
+                else:
+                    recovery_actions = [
+                        action
+                        for action in actions
+                        if (action.probe_id, action.location_id) == key
+                        and action.participant.spec.id != failed_person
+                    ]
+                if recovery_actions:
+                    recovery_key = key
+                    recovery_action = max(
+                        recovery_actions,
+                        key=lambda action: (
+                            self._score(action, p).eig_decision_bits,
+                            self._score(action, p).score,
+                            -action.cost_s,
+                            action.participant.spec.id,
+                        ),
+                    )
+                    break
+        if recovery_action is not None and recovery_key is not None:
+            best = self._score(recovery_action, p)
+            failed_person = self._presence_recoveries[recovery_key]
+            asked_person = self.participants[best.action.participant_id].spec.display_name
+            reason = (
+                f"Presence could not be confirmed for {failed_person} at "
+                f"{best.action.location_id}. "
+                f"Ask {asked_person} to continue checking before relying on that observation."
+            )
+            ordinary_scores = [
+                candidate for candidate in candidates if candidate.action != best.action
+            ]
+            fallback_candidates = [best, *ordinary_scores[: max(0, cfg.top_candidates - 1)]]
+            return PlanDecision(
+                kind=PlanKind.ASK,
+                action=best.action,
+                decision_class=None,
+                decision_probability=_prob(p_d),
+                reason=reason,
+                rule="presence_fallback",
+                candidates=fallback_candidates,
+                infeasible=infeasible,
             )
 
         worth = [i for i in order if candidates[i].net_value_min > 0 and candidates[i].score > 0]

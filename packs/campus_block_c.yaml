@@ -24,6 +24,52 @@ locations:
   - { id: F3_R304,     floor: 3, kind: room,     label: { en: "room 304", hi: "room 304", mr: "खोली 304" }, wifi_coverage: [AP_3A, AP_3B] }
   - { id: F3_R310,     floor: 3, kind: room,     label: { en: "room 310", hi: "room 310", mr: "खोली 310" }, wifi_coverage: [AP_3B] }
 
+# Token definitions describe what to read. Scenario-specific values are generated and kept by the
+# simulator; they are never included in the pack or the sealed fault.
+presence_tokens:
+  - id: idf1_white_label
+    location_id: IDF1
+    kind: label_suffix
+    length: 3
+    prompt_templates:
+      en: "Could you go to {place} and read the last {length} characters on the white label?"
+      hi-en: "Could you go to {place} and white label ke last {length} characters bata sakte hain?"
+      hi: "क्या आप {place} पर जाकर सफेद लेबल के आखिरी {length} अक्षर बता सकते हैं?"
+      mr: "तुम्ही {place} येथे जाऊन पांढऱ्या लेबलवरील शेवटची {length} अक्षरे सांगू शकाल का?"
+    display_templates:
+      en: "White label suffix: {value}."
+      hi-en: "White label ke last characters: {value}."
+      hi: "सफेद लेबल के आखिरी अक्षर: {value}।"
+      mr: "पांढऱ्या लेबलवरील शेवटची अक्षरे: {value}."
+  - id: idf2_switch_label
+    location_id: IDF2
+    kind: label_suffix
+    length: 3
+    prompt_templates:
+      en: "Could you go to {place} and read the last {length} characters on the white label?"
+      hi-en: "Could you go to {place} and white label ke last {length} characters bata sakte hain?"
+      hi: "क्या आप {place} पर जाकर सफेद लेबल के आखिरी {length} अक्षर बता सकते हैं?"
+      mr: "तुम्ही {place} येथे जाऊन पांढऱ्या लेबलवरील शेवटची {length} अक्षरे सांगू शकाल का?"
+    display_templates:
+      en: "White label suffix: {value}."
+      hi-en: "White label ke last characters: {value}."
+      hi: "सफेद लेबल के आखिरी अक्षर: {value}।"
+      mr: "पांढऱ्या लेबलवरील शेवटची अक्षरे: {value}."
+  - id: db_c2_panel_label
+    location_id: DB_C2_PANEL
+    kind: label_suffix
+    length: 3
+    prompt_templates:
+      en: "Could you go to {place} and read the last {length} characters on the white label?"
+      hi-en: "Could you go to {place} and white label ke last {length} characters bata sakte hain?"
+      hi: "क्या आप {place} पर जाकर सफेद लेबल के आखिरी {length} अक्षर बता सकते हैं?"
+      mr: "तुम्ही {place} येथे जाऊन पांढऱ्या लेबलवरील शेवटची {length} अक्षरे सांगू शकाल का?"
+    display_templates:
+      en: "White label suffix: {value}."
+      hi-en: "White label ke last characters: {value}."
+      hi: "सफेद लेबल के आखिरी अक्षर: {value}।"
+      mr: "पांढऱ्या लेबलवरील शेवटची अक्षरे: {value}."
+
 # Walking times in seconds (undirected). Only staff roles are asked to walk.
 walks:
   - [GUARD_DESK, F1_LOBBY, 10]
@@ -127,6 +173,20 @@ probes:
       hi-en: "Phone ki WiFi list kholiye. NAVA-WiFi dikh hi nahi raha, connecting pe atka hai, ya connected hai?"
       hi: "फ़ोन की वाई-फ़ाई सूची खोलिए। NAVA-WiFi दिख ही नहीं रहा, कनेक्ट होने पर अटका है, या कनेक्टेड है?"
       mr: "फोनमधली वाय-फाय यादी उघडा. NAVA-WiFi दिसतच नाही, कनेक्ट होताना अडकलंय, की कनेक्टेड आहे?"
+
+  - id: wifi_access_point
+    label: "Access point shown in Wi-Fi details"
+    kind: wifi_access_point
+    class: device
+    outcomes: [AP_2A, AP_2B, not_connected]
+    roles: [any]
+    exec_s: 15
+    observes: [{ at: F2_R205 }, { at: F2_R210 }]
+    templates:
+      en: "On your Wi-Fi details screen, which access point is listed: 2A, 2B, or none?"
+      hi-en: "Wi-Fi details mein kaunsa access point dikh raha hai: 2A, 2B, ya koi nahi?"
+      hi: "वाई-फ़ाई जानकारी में कौन सा एक्सेस पॉइंट दिख रहा है: 2A, 2B, या कोई नहीं?"
+      mr: "वाय-फाय तपशीलात कोणता ॲक्सेस पॉइंट दिसतो: 2A, 2B, की एकही नाही?"
 
   - id: web_by_ip
     label: "IP test page loads"

@@ -35,11 +35,16 @@ def client() -> Iterator[TestClient]:
         yield c
 
 
-def scenario(client: TestClient, fault: Any = None, seed: int = 1) -> str:
+def scenario(
+    client: TestClient,
+    fault: Any = None,
+    seed: int = 1,
+    participants: list[dict[str, Any]] | None = None,
+) -> str:
     body = {
         "pack_id": "campus_block_c",
         "seed": seed,
-        "participants": PEOPLE,
+        "participants": PEOPLE if participants is None else participants,
         "fault": fault if fault is not None else "random",
     }
     r = client.post("/sim/v1/scenarios", json=body, headers=OPERATOR)
@@ -119,6 +124,89 @@ def test_guard_walks_to_closet_and_reads_the_recorder(client: TestClient) -> Non
     assert r.json() == {"location_id": "IDF2", "walk_s": 65}
     r = client.post(f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": "nvr_screen"}, headers=h)
     assert r.json() == {"probe_id": "nvr_screen", "location_id": "IDF2", "value": "off"}
+
+
+def test_presence_values_are_seeded_and_only_visible_at_their_location(client: TestClient) -> None:
+    participants = [
+        *PEOPLE,
+        {"id": "p_suresh", "location_id": "GUARD_DESK", "roles": ["guard"]},
+    ]
+    first = scenario(client, CB7, seed=203, participants=participants)
+    second = scenario(client, CB7, seed=203, participants=participants)
+    guard = bearer("p_mahesh", first)
+
+    off_site = client.get(f"/sim/v1/scenarios/{first}/view", headers=guard).json()
+    assert off_site["presence_tokens"] == []
+
+    client.post(f"/sim/v1/scenarios/{first}/move", json={"to": "IDF2"}, headers=guard)
+    on_site = client.get(f"/sim/v1/scenarios/{first}/view", headers=guard).json()
+    token = next(
+        item for item in on_site["presence_tokens"] if item["token_id"] == "idf2_switch_label"
+    )
+    value = token["display_texts"]["en"].removesuffix(".").split(": ", maxsplit=1)[1]
+
+    other = bearer("p_mahesh", second)
+    client.post(f"/sim/v1/scenarios/{second}/move", json={"to": "IDF2"}, headers=other)
+    other_view = client.get(f"/sim/v1/scenarios/{second}/view", headers=other).json()
+    other_token = next(
+        item for item in other_view["presence_tokens"] if item["token_id"] == "idf2_switch_label"
+    )
+    assert other_token["display_texts"]["en"].endswith(value + ".")
+
+    same_scenario_other_person = bearer("p_suresh", first)
+    client.post(
+        f"/sim/v1/scenarios/{first}/move",
+        json={"to": "IDF2"},
+        headers=same_scenario_other_person,
+    )
+    shared_view = client.get(
+        f"/sim/v1/scenarios/{first}/view", headers=same_scenario_other_person
+    ).json()
+    shared_token = next(
+        item for item in shared_view["presence_tokens"] if item["token_id"] == "idf2_switch_label"
+    )
+    assert shared_token["display_texts"]["en"].endswith(value + ".")
+
+
+def test_presence_verification_checks_current_location_and_never_returns_the_value(
+    client: TestClient,
+) -> None:
+    sid = scenario(client, CB7, seed=204)
+    h = bearer("p_mahesh", sid)
+    assert (
+        client.post(
+            f"/sim/v1/scenarios/{sid}/presence/verify",
+            json={"participant_id": "p_mahesh", "token_id": "idf2_switch_label", "answer": "ABC"},
+        ).status_code
+        == 401
+    )
+
+    client.post(f"/sim/v1/scenarios/{sid}/move", json={"to": "IDF2"}, headers=h)
+    view = client.get(f"/sim/v1/scenarios/{sid}/view", headers=h).json()
+    token = next(
+        item for item in view["presence_tokens"] if item["token_id"] == "idf2_switch_label"
+    )
+    value = token["display_texts"]["en"].removesuffix(".").split(": ", maxsplit=1)[1]
+    wrong_value = ("A" if value[0] != "A" else "B") + value[1:]
+    client.post(f"/sim/v1/scenarios/{sid}/move", json={"to": "GUARD_DESK"}, headers=h)
+
+    url = f"/sim/v1/scenarios/{sid}/presence/verify"
+    body = {"participant_id": "p_mahesh", "token_id": "idf2_switch_label", "answer": value}
+    failed = client.post(url, json=body, headers=OPERATOR)
+    assert failed.json() == {"passed": False}
+    assert value not in failed.text
+
+    client.post(f"/sim/v1/scenarios/{sid}/move", json={"to": "IDF2"}, headers=h)
+    wrong_same_length = client.post(
+        url,
+        json={**body, "answer": wrong_value},
+        headers=OPERATOR,
+    )
+    assert wrong_same_length.json() == {"passed": False}
+    assert wrong_value not in wrong_same_length.text
+    passed = client.post(url, json=body, headers=OPERATOR)
+    assert passed.json() == {"passed": True}
+    assert value not in passed.text
 
 
 def test_access_and_role_rules_are_enforced(client: TestClient) -> None:

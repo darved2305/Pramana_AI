@@ -8,6 +8,7 @@ from .pack import (
     DecisionClass,
     DomainPack,
     Location,
+    PresenceToken,
     Probe,
     load_pack,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "DomainPack",
     "FaultSet",
     "Location",
+    "PresenceToken",
     "Probe",
     "World",
     "load_pack",

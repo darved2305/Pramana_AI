@@ -133,6 +133,14 @@ class CreateInvestigation(StrictModel):
         return self
 
 
+class InvestigationPreset(StrictModel):
+    id: Literal["S2", "S7"]
+    title: str
+    description: str
+    request: CreateInvestigation
+    adversarial_participant_id: Identifier | None = None
+
+
 class QuestionStatus(StrEnum):
     PENDING = "pending"
     ANSWERED = "answered"
@@ -150,8 +158,9 @@ class Question(StrictModel):
     outcomes: list[str]
     status: QuestionStatus
     asked_at: datetime
-    kind: Literal["probe", "confirm"] = "probe"
-    """``confirm``: re-asking a spoken answer the decision hinges on, before relying on it."""
+    kind: Literal["probe", "confirm", "challenge"] = "probe"
+    """``confirm`` re-asks a spoken answer; ``challenge`` asks for a location token."""
+    presence_token_id: str | None = None
 
 
 class SubmitAnswer(StrictModel):
@@ -183,11 +192,72 @@ class AnswerResult(StrictModel):
     state: InvestigationState
 
 
+class ChallengeAnswerResult(StrictModel):
+    """Presence result with neutral copy and no transcript or expected token value."""
+
+    passed: bool
+    message: str
+    state: InvestigationState
+
+
 class VoiceAnswerResult(StrictModel):
     """A spoken answer: what Gnani heard, then the same result as a typed answer."""
 
     stt: SttResult
-    result: AnswerResult
+    result: AnswerResult | ChallengeAnswerResult
+
+
+class VoiceChallengeAnswerResult(StrictModel):
+    """A voice challenge result deliberately omits the recognised characters."""
+
+    passed: bool
+    message: str
+    state: InvestigationState
+
+
+class ChallengeIssuedPayload(StrictModel):
+    challenge_id: str
+    question_id: str
+    participant_id: Identifier
+    probe_id: Identifier | None = None
+    location_id: Identifier
+    token_id: Identifier
+    cost_s: int = Field(gt=0)
+
+
+class ChallengeResultPayload(StrictModel):
+    challenge_id: str
+    participant_id: Identifier
+    location_id: Identifier
+    result: Literal["passed", "failed", "withdrawn"]
+    reason: Literal["label_matched", "label_unavailable", "decision_reached"]
+
+
+class ContradictionFamily(StrictModel):
+    code: str
+    posterior_mass: float = Field(ge=0.0, le=1.0)
+    supported: bool
+
+
+class ContradictionContext(StrictModel):
+    participant_ids: tuple[Identifier, Identifier]
+    location_ids: tuple[Identifier, Identifier]
+    access_points: tuple[Identifier | None, Identifier | None]
+    posterior_mass: float = Field(ge=0.0, le=1.0)
+
+
+class ContradictionExplainedPayload(StrictModel):
+    explanation_id: str
+    observation_ids: tuple[str, str]
+    families: list[ContradictionFamily]
+    contexts: list[ContradictionContext]
+    tie_break_action: ProbeAction | None
+
+
+class ContradictionResolvedPayload(StrictModel):
+    explanation_id: str
+    question_id: str
+    outcome: str
 
 
 class GroundTruthComparison(StrictModel):
@@ -230,4 +300,6 @@ class EventEnvelope(StrictModel):
 
 
 AnswerResult.model_rebuild()
+ChallengeAnswerResult.model_rebuild()
 VoiceAnswerResult.model_rebuild()
+VoiceChallengeAnswerResult.model_rebuild()

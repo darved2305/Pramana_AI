@@ -15,13 +15,16 @@ from pramana_engine.belief import likelihood_matrix
 
 
 def toy_engine(model: CompiledModel) -> Engine:
-    return Engine(
+    eng = Engine(
         model,
         [
             person("p_stu", ["student"], "lay", "ROOM"),
             person("p_ele", ["electrician"], "technician", "ROOM"),
         ],
     )
+    # Hand-computation tests model a successful proof before panel observations.
+    eng.set_presence("p_ele", "PANEL", True)
+    return eng
 
 
 def test_prior_is_normalised_pack_priors(toy_model: CompiledModel) -> None:
@@ -168,6 +171,8 @@ def test_evidence_no_single_cause_explains_raises_open_world(campus_model: Compi
     """Model mismatch: a two-fault world. OPEN_WORLD must absorb it and the plan must abstain."""
     tech = person("p_t", ["it_tech", "electrician"], "technician", "IDF2")
     eng = Engine(campus_model, [tech, person("p_s", ["student"], "lay", "F3_R304")])
+    eng.set_presence("p_t", "IDF2", True)
+    eng.set_presence("p_t", "F2_CORRIDOR", True)
     # Floor-2/3 lights dead (power) yet the closet's own devices are on and the switch is green.
     eng.observe(Evidence("p_t", "closet_light", "IDF2", "off"))
     eng.observe(Evidence("p_t", "nvr_screen", "IDF2", "on"))

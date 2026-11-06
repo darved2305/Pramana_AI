@@ -407,6 +407,30 @@
       "title": "CapabilityGrant",
       "type": "object"
     },
+    "ChallengeAnswerResult": {
+      "additionalProperties": false,
+      "description": "Presence result with neutral copy and no transcript or expected token value.",
+      "properties": {
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/InvestigationState"
+        }
+      },
+      "required": [
+        "passed",
+        "message",
+        "state"
+      ],
+      "title": "ChallengeAnswerResult",
+      "type": "object"
+    },
     "CreateInvestigation": {
       "additionalProperties": false,
       "properties": {
@@ -1699,6 +1723,13 @@
           "title": "Participant Id",
           "type": "string"
         },
+        "presence_tokens": {
+          "items": {
+            "$ref": "#/$defs/PresenceTokenView"
+          },
+          "title": "Presence Tokens",
+          "type": "array"
+        },
         "reachable_locations": {
           "items": {
             "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
@@ -1799,7 +1830,8 @@
             "no_feasible_action",
             "verification_confirmed",
             "verification_failed",
-            "verification_inconclusive"
+            "verification_inconclusive",
+            "presence_fallback"
           ],
           "title": "Rule",
           "type": "string"
@@ -1825,6 +1857,38 @@
       ],
       "title": "PlanKind",
       "type": "string"
+    },
+    "PresenceTokenView": {
+      "additionalProperties": false,
+      "description": "A rendered on-site label card. It is returned only to a participant at its location.",
+      "properties": {
+        "display_texts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "propertyNames": {
+            "enum": [
+              "en",
+              "hi",
+              "mr",
+              "hi-en"
+            ]
+          },
+          "title": "Display Texts",
+          "type": "object"
+        },
+        "token_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Token Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token_id",
+        "display_texts"
+      ],
+      "title": "PresenceTokenView",
+      "type": "object"
     },
     "ProbeAction": {
       "additionalProperties": false,
@@ -1877,7 +1941,8 @@
           "default": "probe",
           "enum": [
             "probe",
-            "confirm"
+            "confirm",
+            "challenge"
           ],
           "title": "Kind",
           "type": "string"
@@ -1898,6 +1963,18 @@
           },
           "title": "Outcomes",
           "type": "array"
+        },
+        "presence_token_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Presence Token Id"
         },
         "status": {
           "$ref": "#/$defs/QuestionStatus"
@@ -2379,7 +2456,15 @@
       "description": "A spoken answer: what Gnani heard, then the same result as a typed answer.",
       "properties": {
         "result": {
-          "$ref": "#/$defs/AnswerResult"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnswerResult"
+            },
+            {
+              "$ref": "#/$defs/ChallengeAnswerResult"
+            }
+          ],
+          "title": "Result"
         },
         "stt": {
           "$ref": "#/$defs/SttResult"
