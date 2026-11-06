@@ -247,6 +247,84 @@ DID_NOT_CHECK = _phrases(
 including the Wi-Fi list. Its negation must not become "no" (a live recording, 2026-11-05)."""
 
 SENTENCE_INITIAL_ONLY = frozenset(tokenize("ho हो"))
+
+PHONE_TALK = _phrases(
+    "haan haan bolo",
+    "haan bolo",
+    "haan ji bolo",
+    "haan boliye",
+    "haan ji boliye",
+    "हाँ हाँ बोलो",
+    "हाँ बोलो",
+    "हाँ बोलिए",
+    "हाँ जी बोलिए",
+    "हां बोलो",
+    "हां बोलिए",
+    "हो बोला",
+    "हो सांगा",
+    "ho bola",
+    "haan hello",
+    "हाँ hello",
+    "हाँ हेलो",
+    "हां hello",
+    "hello hello",
+    "hello",
+    "हेलो",
+    "हॅलो",
+    "sunai de raha hai",
+    "sunai de rahi hai",
+    "awaaz aa rahi hai",
+    "आवाज़ आ रही है",
+    "आवाज आ रही है",
+)
+"""Picking up a call and checking the line ("haan bolo" is "yes, go on"): not an answer."""
+
+PRESENCE_TALK = _phrases(
+    "यहीं हूँ",
+    "यहीं हूं",
+    "यहाँ हूँ",
+    "यहां हूं",
+    "yahin hoon",
+    "yahin hu",
+    "yahan hoon",
+    "yahan hu",
+    "i am here",
+    "i'm here",
+    "im here",
+    "इथेच आहे",
+    "इथे आहे",
+    "ithech aahe",
+)
+"""Saying where one is. A bare "haan" next to it answers "are you there?", not the question."""
+
+OBJECTS: dict[str, list[tuple[str, ...]]] = {
+    "phone": _phrases(
+        "wifi",
+        "wi fi",
+        "वाई फ़ाई",
+        "वाई फाई",
+        "वाय फाय",
+        "internet",
+        "इंटरनेट",
+        "website",
+        "वेबसाइट",
+        "वेबसाइट",
+        "page",
+        "पेज",
+        "पान",
+        "net",
+    ),
+    "corridor": _phrases("corridor", "कॉरिडोर", "कॉरिडॉर", "gallery", "गैलरी"),
+    "screen": _phrases("screen", "स्क्रीन", "recorder", "रिकॉर्डर", "रेकॉर्डर", "cctv", "सीसीटीवी"),
+    "socket": _phrases("socket", "सॉकेट", "charger", "चार्जर", "charging", "plug"),
+    "router": _phrases("router", "राउटर", "gateway", "गेटवे"),
+    "fibre": _phrases("fibre", "fiber", "फ़ाइबर", "फायबर", "ont", "pon"),
+    "breaker": _phrases("breaker", "ब्रेकर", "mcb"),
+    "box": _phrases("box", "डिब्बा", "डबा"),
+    "ceiling": _phrases("ceiling", "chhat", "छत", "छताचा", "छताला"),
+}
+"""Things a question can be about. An answer clause that names only other things is about
+something else ("corridor ki lights on hain" does not answer "is the CCTV screen on?")."""
 """Marathi "ho" (yes) is also the Hindi verb "to be" ("karna ho to batana"). As yes it opens
 the answer ("हो, चालू आहे"); anywhere else it is read as the verb, never as an answer."""
 
@@ -691,6 +769,50 @@ def named_outcomes(question: str, outcomes: Sequence[str]) -> set[str]:
     return {o for o in outcomes if _find(q, OUTCOME_LEXICON.get(o, []), o)}
 
 
+def _groups(tokens: Sequence[str]) -> set[str]:
+    """Things named in ``tokens``. One-word names also match the start of a word, since Hindi
+    and Marathi attach endings to it ("कॉरिडॉरमध्ये" is "in the corridor")."""
+    out = set()
+    for g, phrases in OBJECTS.items():
+        if _find(tokens, phrases, g) or any(
+            len(p) == 1 and len(p[0]) >= 3 and t.startswith(p[0]) and not p[0].isascii()
+            for p in phrases
+            for t in tokens
+        ):
+            out.add(g)
+    return out
+
+
+def _bare_polar(tokens: Sequence[str], m: _Match) -> bool:
+    """A one-word yes or no ("haan", "हो", "nahi"), as opposed to "khul raha hai"."""
+    return m.end - m.start == 1 and m.label in ("yes", "no")
+
+
+def _about_the_question(
+    text: str, tokens: Sequence[str], matches: list[_Match], question: str
+) -> tuple[list[_Match], list[str]]:
+    """Drop answers given in a clause that names only things the question is not about.
+
+    What the question is about is read from the question itself (the CCTV screen, the corridor,
+    the wall socket), so this works in every language without a table per probe. A clause that
+    names nothing is kept: "band hai" answers whatever was asked.
+    """
+    asked = _groups(tokenize(question))
+    if not asked:
+        return matches, []
+    starts = sorted(clause_breaks(text) | {0})
+    kept, dropped = [], []
+    for m in matches:
+        lo = max(b for b in starts if b <= m.start)
+        hi = min((b for b in starts if b > m.start), default=len(tokens))
+        named = _groups(tokens[lo:hi])
+        if named and not named & asked:
+            dropped.append(f"other_object:{','.join(sorted(named))}")
+        else:
+            kept.append(m)
+    return kept, dropped
+
+
 @dataclass(frozen=True)
 class _Match:
     start: int
@@ -752,6 +874,8 @@ class RuleExtractor:
         meta = _claim(
             _find(tokens, INJECTION, "injection")
             + _find(tokens, STOP, "stop")
+            + _find(tokens, PHONE_TALK, "phone_talk")
+            + _find(tokens, PRESENCE_TALK, "presence_talk")
             + _find(tokens, UNSURE, "unsure")
             + probable
             + _find(tokens, HEARSAY, "hearsay")
@@ -777,6 +901,14 @@ class RuleExtractor:
             or m.start in starts
         ]
         matches = _claim(candidates, taken)
+        if "presence_talk" in {m.label for m in meta}:
+            # "haan, main yahin hoon": the "haan" answers "are you there?".
+            kept = [m for m in matches if not _bare_polar(tokens, m)]
+            evidence += [f"presence_talk:{tokens[m.start]}" for m in matches if m not in kept]
+            matches = kept
+        if question is not None:
+            matches, dropped = _about_the_question(text, tokens, matches, question)
+            evidence += dropped
 
         found: set[str] = set()
         breaks = clause_breaks(text)
@@ -816,7 +948,7 @@ class RuleExtractor:
             evidence.append(f"{label}<-" + " ".join(tokens[m.start : m.end]))
 
         polar = _polar(question, outcomes)
-        if not found and polar is not None:
+        if not found and polar is not None and "presence_talk" not in labels:
             free = [t for t, used in zip(tokens, taken, strict=True) if not used]
             said = {t for t in free if t not in FILLER}
             if said and said <= AFFIRM:
