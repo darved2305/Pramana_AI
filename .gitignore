@@ -20,6 +20,8 @@ build/
 # Node / web
 node_modules/
 apps/web/.next/
+infra/staging-worker/.wrangler/
+infra/staging-worker/coverage/
 apps/web/out/
 apps/web/test-results/
 apps/web/playwright-report/

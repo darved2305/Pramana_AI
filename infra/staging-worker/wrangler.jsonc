@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pramana-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-06",
+  "workers_dev": true,
+  "vpc_services": [
+    {
+      "binding": "ORIGIN",
+      "service_id": "01a1ae73-f609-77d2-9c17-f318dbb10497",
+      "remote": true
+    }
+  ],
+  "vars": {
+    "BRIDGE_WEBSOCKETS": "false"
+  }
+}

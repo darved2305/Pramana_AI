@@ -1,0 +1,17 @@
+{
+  "name": "pramana-staging-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "whoami": "wrangler whoami",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261104.1",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0",
+    "wrangler": "4.158.0"
+  }
+}
