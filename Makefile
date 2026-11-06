@@ -1,5 +1,5 @@
 # Pramana developer commands. Requires uv and a native PostgreSQL (scripts/dev_db.py).
-.PHONY: setup dev dev-web db-up db-down migrate sim core lint typecheck test e2e contracts openapi check run-text
+.PHONY: setup dev dev-web db-up db-down migrate sim core lint typecheck test e2e contracts openapi check run-text preflight
 
 setup:            ## install the workspace and create .env with fresh keys
 	uv sync
@@ -49,3 +49,6 @@ check: lint typecheck test
 
 run-text:         ## one live sealed investigation against running sim + core
 	uv run python scripts/run_text_investigation.py
+
+preflight:        ## check demo prerequisites; pass PREFLIGHT_ARGS="--url <core-url>"
+	uv run python scripts/preflight.py $(PREFLIGHT_ARGS)
