@@ -1,15 +1,21 @@
 # Pramana developer commands. Requires uv and a native PostgreSQL (scripts/dev_db.py).
 .PHONY: setup dev dev-web db-up db-down migrate sim core lint typecheck test e2e contracts openapi check run-text
 
+ifeq ($(OS),Windows_NT)
+DEV_PYTHON := .venv/Scripts/python.exe
+else
+DEV_PYTHON := uv run python
+endif
+
 setup:            ## install the workspace and create .env with fresh keys
 	uv sync
 	uv run python scripts/dev_env.py
 
 dev:              ## database + migrations + simulator + core in one command (Ctrl+C stops all)
-	uv run python scripts/dev.py
+	$(DEV_PYTHON) scripts/dev.py
 
 dev-web:          ## same as dev, plus the Next.js console on :3002
-	uv run python scripts/dev.py --web
+	$(DEV_PYTHON) scripts/dev.py --web
 
 db-up:            ## start the local PostgreSQL cluster (port 5433)
 	uv run python scripts/dev_db.py start

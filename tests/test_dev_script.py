@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import os
+import signal
+import subprocess
 import sys
 import threading
 import time
@@ -147,6 +150,18 @@ def test_service_env_keeps_explicit_cors_settings() -> None:
     assert env["CORS_ORIGINS"] == '["https://x"]'
 
 
+def test_main_returns_success_when_interrupted_during_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def interrupted(_opts: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(dev.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(dev, "prepare", interrupted)
+
+    assert dev.main([]) == 0
+
+
 def test_web_child_only_with_flag() -> None:
     env: dict[str, str] = {}
     assert [c.name for c in dev.children(dev.parse_args([]), env)] == ["sim", "core"]
@@ -167,6 +182,68 @@ def test_child_output_is_prefixed_and_stop_ends_the_process() -> None:
     assert not child.alive()
     assert time.monotonic() - started < 15
     child.stop()  # stopping twice is harmless
+
+
+def test_stop_ends_a_child_tree_even_when_a_descendant_ignores_graceful_shutdown(
+    tmp_path: Path,
+) -> None:
+    pid_file = tmp_path / "grandchild.pid"
+    ready_file = tmp_path / "grandchild.ready"
+    grandchild_code = (
+        "import signal, time\n"
+        "signal.signal(getattr(signal, 'SIGBREAK', signal.SIGTERM), signal.SIG_IGN)\n"
+        f"open({str(ready_file)!r}, 'w', encoding='utf-8').close()\n"
+        "time.sleep(60)\n"
+    )
+    parent_code = (
+        "import os, signal, subprocess, sys, time\n"
+        f"grandchild = subprocess.Popen([sys.executable, '-c', {grandchild_code!r}], "
+        "creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))\n"
+        f"while not os.path.exists({str(ready_file)!r}): time.sleep(0.01)\n"
+        f"open({str(pid_file)!r}, 'w', encoding='utf-8').write(str(grandchild.pid))\n"
+        "print('tree ready', flush=True)\n"
+        "time.sleep(0.1)\n"
+    )
+    out = io.StringIO()
+    child = dev.Child("tree", [sys.executable, "-c", parent_code], dict(os.environ))
+    grandchild_pid: int | None = None
+    try:
+        child.start(out)
+        assert dev.wait_until(
+            lambda: pid_file.exists() and "[tree] tree ready" in out.getvalue(), timeout_s=10
+        )
+        grandchild_pid = int(pid_file.read_text(encoding="utf-8"))
+        assert child.proc is not None
+        assert child.proc.wait(timeout=10) == 0
+        assert _pid_is_running(grandchild_pid)
+
+        child.stop(grace_s=2)
+
+        assert dev.wait_until(lambda: not _pid_is_running(grandchild_pid), timeout_s=5)
+    finally:
+        child.stop(grace_s=0.2)
+        if grandchild_pid is not None and _pid_is_running(grandchild_pid):
+            _kill_pid(grandchild_pid)
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _kill_pid(pid: int) -> None:
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True,
+            check=False,
+        )
+        return
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(pid, signal.SIGKILL)
 
 
 def test_output_the_console_cannot_encode_never_freezes_a_child() -> None:

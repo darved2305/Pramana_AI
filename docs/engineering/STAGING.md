@@ -3,8 +3,12 @@
 Participants' phones need an HTTPS address: browsers allow the microphone only on secure
 origins. The free route is a Cloudflare quick tunnel from the laptop running the stack.
 
+Start the stack first. On Windows PowerShell use
+`.\.venv\Scripts\python.exe scripts\dev.py --web`; on macOS or Linux use
+`uv run python scripts/dev.py --web`. The direct Windows invocation prevents `uv` from reporting
+its own Ctrl-Break status after the stack has shut down.
+
 ```bash
-uv run python scripts/dev.py --web          # database, simulator, core, console on :3002
 cloudflared tunnel --url http://localhost:3002   # prints https://<random>.trycloudflare.com
 ```
 
