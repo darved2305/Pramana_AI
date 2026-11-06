@@ -413,10 +413,14 @@ def test_evidence_no_modelled_cause_explains_ends_in_abstention(core: TestClient
     pattern, so the unknown-cause hypothesis grows and the engine abstains instead of
     dispatching anyone."""
     state = create(core)
+    sim = sim_of(core)
     for _ in range(25):
         if state["pending_question"] is None:
             break
         q = state["pending_question"]
+        if q.get("kind") == "challenge":
+            state = answer_pending(core, sim, state)["state"]
+            continue
         r = core.post(ANSWERS.format(state["id"]), json=tap(q, _least_expected(state)))
         assert r.status_code == 200, r.text
         state = r.json()["state"]

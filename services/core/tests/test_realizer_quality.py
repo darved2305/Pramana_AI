@@ -113,6 +113,18 @@ def test_linter_accepts_every_shipped_pack() -> None:
         assert errors == [], f"{path.name}:\n" + "\n".join(errors)
 
 
+def test_presence_template_linter_rejects_unknown_and_missing_slots(pack: DomainPack) -> None:
+    def change(data: dict[str, Any]) -> None:
+        token = data["presence_tokens"][0]
+        token["prompt_templates"]["en"] = "Read {length} letters at {location}?"
+        token["display_templates"]["mr"] = "पांढऱ्या लेबलवरील अक्षरे."
+
+    errors = lint_pack(_change(pack, change))
+
+    assert any("unknown placeholder '{location}'" in error for error in errors), errors
+    assert any("placeholder '{value}' has no value" in error for error in errors), errors
+
+
 @pytest.mark.parametrize(
     ("language", "replacement", "message"),
     [
@@ -208,5 +220,5 @@ def test_native_speaker_review_sheet_matches_generator() -> None:
     output = Path("docs/engineering/LANGUAGE_REVIEW.md").read_text(encoding="utf-8")
     assert output == expected
     rows = [line for line in expected.splitlines() if line.startswith(("| hi |", "| mr |"))]
-    assert len(rows) == 424
+    assert len(rows) == 440
     assert all(line.endswith("|  |") for line in rows)

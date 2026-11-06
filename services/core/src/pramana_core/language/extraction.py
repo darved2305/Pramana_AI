@@ -662,6 +662,33 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "connect zala",
         "connect jhala",
     ),
+    "AP_2A": _phrases(
+        "AP 2A",
+        "access point 2A",
+        "access point two A",
+        "2A",
+        "two A",
+        "ए पी 2A",
+        "ए पी टू ए",
+    ),
+    "AP_2B": _phrases(
+        "AP 2B",
+        "access point 2B",
+        "access point two B",
+        "2B",
+        "two B",
+        "ए पी 2B",
+        "ए पी टू बी",
+    ),
+    "not_connected": _phrases(
+        "none",
+        "not connected",
+        "no access point",
+        "कोई नहीं",
+        "काही नाही",
+        "एकही नाही",
+        "koi nahi",
+    ),
 }
 FLIP = {"yes": "no", "no": "yes", "on": "off", "off": "on", "up": "tripped", "tripped": "up"}
 

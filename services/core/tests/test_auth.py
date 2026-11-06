@@ -192,13 +192,29 @@ def _answer_truthfully(c: TestClient, sim: TestClient, inv: dict[str, Any]) -> d
     sid = tok["scenario_id"]
     if a["requires_move"]:
         assert sim.post(f"/sim/v1/scenarios/{sid}/move", json={"to": a["location_id"]}, headers=h)
-    seen = sim.post(f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": a["probe_id"]}, headers=h)
+    if q.get("kind") == "challenge":
+        view = sim.get(f"/sim/v1/scenarios/{sid}/view", headers=h)
+        assert view.status_code == 200, view.text
+        token_view = next(
+            token
+            for token in view.json()["presence_tokens"]
+            if token["token_id"] == q["presence_token_id"]
+        )
+        rendered = token_view["display_texts"][q["language"]]
+        value = rendered.rsplit(" ", maxsplit=1)[-1].rstrip(".।")
+        answer_text = " ".join(value)
+    else:
+        seen = sim.post(
+            f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": a["probe_id"]}, headers=h
+        )
+        assert seen.status_code == 200, seen.text
+        answer_text = PHRASES[seen.json()["value"]]
     r = c.post(
         f"/v1/investigations/{inv['id']}/answers",
         json={
             "question_id": q["id"],
             "participant_id": a["participant_id"],
-            "text": PHRASES[seen.json()["value"]],
+            "text": answer_text,
         },
         headers=h,
     )

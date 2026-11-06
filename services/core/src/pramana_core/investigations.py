@@ -35,6 +35,11 @@ from pramana_contracts import (
     ApprovalStatus,
     CandidateScore,
     CapabilityGrant,
+    ChallengeAnswerResult,
+    ChallengeIssuedPayload,
+    ChallengeResultPayload,
+    ContradictionExplainedPayload,
+    ContradictionResolvedPayload,
     CreateInvestigation,
     CreateScenario,
     Directness,
@@ -92,6 +97,7 @@ from .db import (
 from .errors import ApiError, not_found
 from .language.extraction import Extractor
 from .language.intake import INTAKE_PROBE, parse_report
+from .language.presence import normalize_presence_answer
 from .language.realize import CONFIRM_PREFIX, realize
 from .observability import log
 from .sim_client import SimClient
@@ -114,6 +120,8 @@ class PendingQuestion:
     participant: ParticipantSpec
     pack: DomainPack
     scenario_id: str = ""
+    kind: str = "probe"
+    presence_token_id: str | None = None
 
 
 def _now() -> datetime:
@@ -129,6 +137,40 @@ def _not_pending(status: str) -> str:
         QuestionStatus.WITHDRAWN.value: "question was withdrawn: another answer made it pointless",
         QuestionStatus.CANCELLED.value: "question was cancelled",
     }.get(status, "question already answered")
+
+
+def _opposed_observations(pack: DomainPack, first: Evidence, second: Evidence) -> bool:
+    if first.probe_id == second.probe_id:
+        return first.outcome != second.outcome
+    signals: dict[str, dict[str, bool]] = {
+        "internet_works": {"yes": True, "no": False},
+        "web_by_ip": {"yes": True, "no": False},
+        "wifi_status": {
+            "connected": True,
+            "no_network": False,
+            "stuck_connecting": False,
+        },
+        "wifi_access_point": {"AP_2A": True, "AP_2B": True, "not_connected": False},
+    }
+    first_kind = pack.probe_by_id[first.probe_id].kind
+    second_kind = pack.probe_by_id[second.probe_id].kind
+    first_signal = signals.get(first_kind, {}).get(first.outcome)
+    second_signal = signals.get(second_kind, {}).get(second.outcome)
+    return first_signal is not None and second_signal is not None and first_signal != second_signal
+
+
+_CHALLENGE_FAILURE: dict[TemplateLanguage, str] = {
+    "en": "I couldn't confirm the location; I'll ask someone else.",
+    "hi": "मैं जगह की पुष्टि नहीं कर पाया; मैं किसी और से पूछूँगा।",
+    "mr": "मी जागेची खात्री करू शकलो नाही; मी दुसऱ्या व्यक्तीला विचारेन.",
+    "hi-en": "Location confirm nahi ho saki; main kisi aur se poochunga.",
+}
+_CHALLENGE_SUCCESS: dict[TemplateLanguage, str] = {
+    "en": "Location confirmed.",
+    "hi": "जगह की पुष्टि हो गई।",
+    "mr": "जागेची खात्री झाली.",
+    "hi-en": "Location confirm ho gayi.",
+}
 
 
 class InvestigationService:
@@ -215,7 +257,24 @@ class InvestigationService:
         rows = events.all()
         for type_, payload in rows:
             if type_ == "QuestionAsked":
-                engine.record_question(payload["action"]["participant_id"])
+                action = payload["action"]
+                engine.record_question(
+                    action["participant_id"], action.get("probe_id"), action.get("location_id")
+                )
+            elif type_ == "ChallengeIssued":
+                engine.record_presence_challenge(
+                    payload["participant_id"], payload["location_id"], payload.get("probe_id")
+                )
+            elif type_ == "ChallengeResult":
+                passed = payload["result"] == "passed"
+                engine.set_presence(
+                    payload["participant_id"],
+                    payload["location_id"],
+                    passed,
+                    challenge_failed=payload["result"] == "failed",
+                )
+                if payload["result"] == "failed":
+                    engine.set_available(payload["participant_id"], False)
             elif type_ == "ObservationRecorded":
                 e = payload["evidence"]
                 engine.observe(
@@ -322,6 +381,121 @@ class InvestigationService:
             )
         return obs, result
 
+    async def _explain_contradiction(
+        self,
+        session: AsyncSession,
+        inv_id: str,
+        engine: Engine,
+        observation: Observation,
+        current: Evidence,
+    ) -> str | None:
+        """Persist the ranked, language independent explanation for an opposing reading."""
+        pack = engine.model.pack
+        prior = next(
+            (
+                item
+                for item in reversed(engine.evidence()[:-1])
+                if _opposed_observations(pack, item, current)
+            ),
+            None,
+        )
+        if prior is None:
+            return None
+        prior_row = (
+            await session.execute(
+                select(ObservationRow)
+                .where(
+                    ObservationRow.investigation_id == inv_id,
+                    ObservationRow.participant_id == prior.participant_id,
+                    ObservationRow.probe_id == prior.probe_id,
+                    ObservationRow.location_id == prior.location_id,
+                    ObservationRow.outcome == prior.outcome,
+                    ObservationRow.state == ObservationState.COMMITTED.value,
+                )
+                .order_by(ObservationRow.committed_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if prior_row is None:
+            return None
+        explanation = engine.explain_reconciliation(prior, current)
+        explanation_id = observation.id
+        payload = ContradictionExplainedPayload(
+            explanation_id=explanation_id,
+            observation_ids=(prior_row.id, observation.id),
+            families=[
+                {
+                    "code": family.code,
+                    "posterior_mass": family.posterior_mass,
+                    "supported": family.supported,
+                }
+                for family in explanation.families
+            ],
+            contexts=[
+                {
+                    "participant_ids": context.participant_ids,
+                    "location_ids": context.location_ids,
+                    "access_points": context.access_points,
+                    "posterior_mass": context.posterior_mass,
+                }
+                for context in explanation.contexts
+            ],
+            tie_break_action=explanation.tie_break_action,
+        )
+        self._event(session, inv_id, "ContradictionExplained", payload.model_dump(mode="json"))
+        return explanation_id
+
+    async def _pending_tie_break(
+        self, session: AsyncSession, inv_id: str
+    ) -> tuple[str, ProbeAction] | None:
+        explanations = (
+            await session.execute(
+                select(EventRow.payload)
+                .where(
+                    EventRow.investigation_id == inv_id,
+                    EventRow.type == "ContradictionExplained",
+                )
+                .order_by(EventRow.seq.desc())
+            )
+        ).scalars()
+        asked = (
+            await session.execute(
+                select(EventRow.payload).where(
+                    EventRow.investigation_id == inv_id,
+                    EventRow.type == "QuestionAsked",
+                )
+            )
+        ).scalars()
+        answered_ids = {
+            payload.get("tie_break_for") for payload in asked if payload.get("tie_break_for")
+        }
+        for payload in explanations:
+            explanation_id = payload["explanation_id"]
+            action = payload.get("tie_break_action")
+            if action is not None and explanation_id not in answered_ids:
+                return explanation_id, ProbeAction.model_validate(action)
+        return None
+
+    async def _tie_break_id(
+        self, session: AsyncSession, inv_id: str, question_id: str
+    ) -> str | None:
+        payloads = (
+            await session.execute(
+                select(EventRow.payload).where(
+                    EventRow.investigation_id == inv_id,
+                    EventRow.type == "QuestionAsked",
+                )
+            )
+        ).scalars()
+        return next(
+            (
+                str(payload["tie_break_for"])
+                for payload in payloads
+                if payload.get("question_id") == question_id and payload.get("tie_break_for")
+            ),
+            None,
+        )
+
     async def _supersede(self, session: AsyncSession, inv_id: str, obs: Observation) -> None:
         """Mark earlier committed answers by the same person to the same site as superseded."""
         rows = await session.execute(
@@ -344,6 +518,7 @@ class InvestigationService:
         engine: Engine,
         action: ProbeAction,
         parallel: CandidateScore | None = None,
+        tie_break_for: str | None = None,
     ) -> None:
         """Address one question to one person and log it."""
         req = self._request(row)
@@ -365,7 +540,7 @@ class InvestigationService:
                 asked_at=_now(),
             )
         )
-        engine.record_question(action.participant_id)
+        engine.record_question(action.participant_id, action.probe_id, action.location_id)
         payload: dict[str, Any] = {
             "question_id": qid,
             "action": action.model_dump(mode="json"),
@@ -379,7 +554,82 @@ class InvestigationService:
                 "cost_s": parallel.cost_s,
                 "net_value_min": parallel.net_value_min,
             }
+        if tie_break_for is not None:
+            payload["tie_break_for"] = tie_break_for
         self._event(session, row.id, "QuestionAsked", payload)
+
+    def _issue_presence_challenge(
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        *,
+        participant_id: str,
+        probe_id: str,
+        location_id: str,
+    ) -> str | None:
+        """Reserve and ask the one label question for this participant and location."""
+        pack = self.pack(row.pack_id)
+        token = next(
+            (item for item in pack.presence_tokens if item.location_id == location_id), None
+        )
+        if token is None or not engine.record_presence_challenge(
+            participant_id, location_id, probe_id
+        ):
+            return None
+        req = self._request(row)
+        person = next(p for p in req.participants if p.id == participant_id)
+        language = person.languages.template_language
+        place = pack.location_by_id[location_id].label.get(language)
+        text = token.prompt_templates[language].format(length=token.length, place=place)
+        qid = _id("q")
+        action = ProbeAction(
+            participant_id=participant_id,
+            probe_id=probe_id,
+            location_id=location_id,
+            requires_move=True,
+        )
+        session.add(
+            QuestionRow(
+                id=qid,
+                investigation_id=row.id,
+                participant_id=participant_id,
+                probe_id=probe_id,
+                location_id=location_id,
+                requires_move=action.requires_move,
+                language=language,
+                text=text,
+                status=QuestionStatus.PENDING.value,
+                kind="challenge",
+                presence_token_id=token.id,
+                asked_at=_now(),
+            )
+        )
+        engine.record_question(participant_id, probe_id, location_id)
+        challenge = ChallengeIssuedPayload(
+            challenge_id=qid,
+            question_id=qid,
+            participant_id=participant_id,
+            probe_id=probe_id,
+            location_id=location_id,
+            token_id=token.id,
+            cost_s=engine.cfg.presence_challenge_cost_s,
+        )
+        self._event(session, row.id, "ChallengeIssued", challenge.model_dump(mode="json"))
+        self._event(
+            session,
+            row.id,
+            "QuestionAsked",
+            {
+                "question_id": qid,
+                "action": action.model_dump(mode="json"),
+                "language": language,
+                "text": text,
+                "kind": "challenge",
+                "presence_token_id": token.id,
+            },
+        )
+        return qid
 
     async def _schedule(self, session: AsyncSession, row: InvestigationRow, engine: Engine) -> None:
         """After any change of belief: withdraw questions that stopped mattering, then ask or
@@ -400,6 +650,25 @@ class InvestigationService:
             .scalars()
             .all()
         )
+        pending_tie_break = await self._pending_tie_break(session, row.id)
+        if pending_tie_break is not None and not pending:
+            explanation_id, action = pending_tie_break
+            baseline = engine.plan()
+            forced = baseline.model_copy(
+                update={
+                    "kind": PlanKind.ASK,
+                    "action": action,
+                    "decision_class": None,
+                    "decision_probability": None,
+                    "moderate_confidence": False,
+                    "reason": "A location-specific check can separate the conflicting reports.",
+                    "rule": "positive_value",
+                }
+            )
+            self._apply_plan(session, row, engine, forced, tie_break_for=explanation_id)
+            return
+        challenge_questions = [q for q in pending if q.kind == "challenge"]
+        planner_questions = [q for q in pending if q.kind != "challenge"]
         actions = [
             ProbeAction(
                 participant_id=q.participant_id,
@@ -407,12 +676,30 @@ class InvestigationService:
                 location_id=q.location_id,
                 requires_move=q.requires_move,
             )
-            for q in pending
+            for q in planner_questions
         ]
-        step = schedule(engine, actions, limit)
+        remaining_slots = max(1, limit - len(challenge_questions))
+        step = schedule(engine, actions, remaining_slots)
+        if (
+            len(challenge_questions) >= limit
+            and step.plan is not None
+            and step.plan.kind == PlanKind.ASK
+        ):
+            step = step.__class__(withdraw=step.withdraw, plan=None)
+        if challenge_questions and step.plan is not None:
+            plan = step.plan
+            challenge_resolved_by_conclusion = (
+                plan.kind in (PlanKind.VERIFIED, PlanKind.NOT_VERIFIED)
+                or (plan.kind == PlanKind.DECIDE and plan.rule == "confident")
+                or (plan.kind == PlanKind.ABSTAIN and plan.rule == "open_world")
+            )
+            if not challenge_resolved_by_conclusion and plan.kind != PlanKind.ASK:
+                # An unresolved challenge can restore full-weight evidence. Moderate decisions
+                # and low-confidence abstentions must wait for it rather than cancel it.
+                step = step.__class__(withdraw=step.withdraw, plan=None)
         conclusive = step.plan is not None and step.plan.kind != PlanKind.ASK
         for i in step.withdraw:
-            q = pending[i]
+            q = planner_questions[i]
             q.status = QuestionStatus.WITHDRAWN.value
             self._event(
                 session,
@@ -426,6 +713,32 @@ class InvestigationService:
                     else "another answer made this question pointless",
                 },
             )
+        if conclusive:
+            for q in challenge_questions:
+                q.status = QuestionStatus.WITHDRAWN.value
+                engine.set_presence(q.participant_id, q.location_id, False)
+                self._event(
+                    session,
+                    row.id,
+                    "QuestionWithdrawn",
+                    {
+                        "question_id": q.id,
+                        "participant_id": q.participant_id,
+                        "reason": "the investigation reached a conclusion",
+                    },
+                )
+                self._event(
+                    session,
+                    row.id,
+                    "ChallengeResult",
+                    ChallengeResultPayload(
+                        challenge_id=q.id,
+                        participant_id=q.participant_id,
+                        location_id=q.location_id,
+                        result="withdrawn",
+                        reason="decision_reached",
+                    ).model_dump(mode="json"),
+                )
         if step.plan is not None:
             self._apply_plan(session, row, engine, step.plan)
         else:
@@ -434,14 +747,20 @@ class InvestigationService:
             self._ask(session, row, engine, extra.action, parallel=extra)
 
     def _apply_plan(
-        self, session: AsyncSession, row: InvestigationRow, engine: Engine, plan: PlanDecision
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        plan: PlanDecision,
+        *,
+        tie_break_for: str | None = None,
     ) -> None:
         """Record the plan; ask the next question or conclude."""
         self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
         self._event(session, row.id, "PlanComputed", plan.model_dump(mode="json"))
         if plan.kind == PlanKind.ASK:
             assert plan.action is not None
-            self._ask(session, row, engine, plan.action)
+            self._ask(session, row, engine, plan.action, tie_break_for=tie_break_for)
             row.status = (
                 InvestigationStatus.VERIFYING
                 if engine.snapshot().repair is not None
@@ -723,10 +1042,11 @@ class InvestigationService:
         ans: SubmitAnswer,
         *,
         second_decode: Callable[[], Awaitable[str | None]] | None = None,
-    ) -> AnswerResult:
+    ) -> AnswerResult | ChallengeAnswerResult:
         """Record an answer. ``second_decode`` (spoken answers only) returns an independent
         transcript of the same audio; it is called only if the decision hinges on this answer.
         If it reads the same outcome, the answer counts as confirmed without asking again."""
+        challenge_reply: tuple[bool, str] | None = None
         async with self._lock(inv_id):
             try:
                 async with self.db.transaction() as session:
@@ -747,91 +1067,162 @@ class InvestigationService:
                             "question was addressed to another participant",
                         )
                     engine = await self._engine(session, row)
-                    outcomes = list(self.model(row.pack_id).outcomes[q.probe_id])
-                    if ans.text is not None:
-                        extraction = await self.extractor.extract(
-                            ans.text, outcomes, question=q.text
+                    tie_break_id = await self._tie_break_id(session, inv_id, q.id)
+                    if q.kind == "challenge":
+                        if q.presence_token_id is None:
+                            raise ApiError(409, "CHALLENGE_TOKEN_MISSING", "presence token missing")
+                        token = self.pack(row.pack_id).presence_token_by_id[q.presence_token_id]
+                        raw_answer = ans.text if ans.text is not None else (ans.outcome or "")
+                        normalized = normalize_presence_answer(raw_answer, token.length)
+                        checked = await self.sim.verify_presence(
+                            row.scenario_id,
+                            q.participant_id,
+                            q.presence_token_id,
+                            normalized or "",
                         )
-                    else:
-                        if ans.outcome not in (*outcomes, UNKNOWN_OUTCOME):
-                            raise ApiError(
-                                422, "INVALID_OUTCOME", f"outcome must be one of {outcomes}"
-                            )
-                        extraction = Extraction(
-                            outcome=ans.outcome or UNKNOWN_OUTCOME,
-                            hedge=ans.hedge,
-                            directness=ans.directness,
-                            method="structured",
+                        passed = checked.passed
+                        engine.set_presence(
+                            q.participant_id,
+                            q.location_id,
+                            passed,
+                            challenge_failed=not passed,
                         )
-                    ev = Evidence(
-                        q.participant_id,
-                        q.probe_id,
-                        q.location_id,
-                        extraction.outcome,
-                        extraction.hedge,
-                        extraction.directness,
-                        ans.modality,
-                    )
-                    q.status, q.answered_at = QuestionStatus.ANSWERED.value, _now()
-                    if q.kind == "confirm":
-                        obs = await self._apply_confirmation(session, inv_id, engine, q, extraction)
-                        await self._schedule(session, row, engine)
-                        row.version += 1
-                        version = row.version
-                        continue_planning = False
-                    else:
-                        obs, observed = self._record_observation(
-                            session,
-                            inv_id,
-                            engine,
-                            ev,
-                            extraction,
-                            question_id=q.id,
-                            modality=ans.modality.value,
-                            transcript=ans.text,
-                        )
-                        await self._supersede(session, inv_id, obs)
-                        continue_planning = True
-                        critical = (
-                            ans.modality == Modality.VOICE
-                            and observed.used_as_evidence
-                            and observed.decision_critical
-                        )
-                        if critical and await self._second_decode_agrees(
-                            session, inv_id, engine, q, extraction, outcomes, second_decode
-                        ):
-                            critical = False  # confirmed by an independent decode
-                        if critical:
-                            # The decision hinges on one spoken answer, and speech recognition
-                            # gives no confidence score: confirm it before relying on it.
-                            # The answer did move the belief: record that, so the console and
-                            # replay agree with the engine while the confirmation is pending.
-                            self._event(
-                                session,
-                                inv_id,
-                                "BeliefUpdated",
-                                engine.snapshot().model_dump(mode="json"),
-                            )
-                            self._ask_confirmation(session, row, engine, q)
-                            row.version += 1
-                            version = row.version
-                            continue_planning = False
-                    if continue_planning and extraction.wants_to_stop:
-                        engine.set_available(q.participant_id, False)
+                        if not passed:
+                            engine.set_available(q.participant_id, False)
+                        q.status, q.answered_at = QuestionStatus.ANSWERED.value, _now()
                         self._event(
                             session,
                             inv_id,
-                            "ParticipantUnavailable",
-                            {"participant_id": q.participant_id, "reason": "asked to stop"},
+                            "ChallengeResult",
+                            ChallengeResultPayload(
+                                challenge_id=q.id,
+                                participant_id=q.participant_id,
+                                location_id=q.location_id,
+                                result="passed" if passed else "failed",
+                                reason="label_matched" if passed else "label_unavailable",
+                            ).model_dump(mode="json"),
                         )
-                    if continue_planning:
                         await self._schedule(session, row, engine)
                         row.version += 1
                         version = row.version
+                        language = cast(TemplateLanguage, q.language)
+                        challenge_reply = (
+                            passed,
+                            _CHALLENGE_SUCCESS[language]
+                            if passed
+                            else _CHALLENGE_FAILURE[language],
+                        )
+                    else:
+                        outcomes = list(self.model(row.pack_id).outcomes[q.probe_id])
+                        if ans.text is not None:
+                            extraction = await self.extractor.extract(
+                                ans.text, outcomes, question=q.text
+                            )
+                        else:
+                            if ans.outcome not in (*outcomes, UNKNOWN_OUTCOME):
+                                raise ApiError(
+                                    422, "INVALID_OUTCOME", f"outcome must be one of {outcomes}"
+                                )
+                            extraction = Extraction(
+                                outcome=ans.outcome or UNKNOWN_OUTCOME,
+                                hedge=ans.hedge,
+                                directness=ans.directness,
+                                method="structured",
+                            )
+                        ev = Evidence(
+                            q.participant_id,
+                            q.probe_id,
+                            q.location_id,
+                            extraction.outcome,
+                            extraction.hedge,
+                            extraction.directness,
+                            ans.modality,
+                        )
+                        q.status, q.answered_at = QuestionStatus.ANSWERED.value, _now()
+                        if q.kind == "confirm":
+                            obs = await self._apply_confirmation(
+                                session, inv_id, engine, q, extraction
+                            )
+                            await self._schedule(session, row, engine)
+                            row.version += 1
+                            version = row.version
+                            continue_planning = False
+                        else:
+                            obs, observed = self._record_observation(
+                                session,
+                                row.id,
+                                engine,
+                                ev,
+                                extraction,
+                                question_id=q.id,
+                                modality=ans.modality.value,
+                                transcript=ans.text,
+                            )
+                            await self._supersede(session, inv_id, obs)
+                            if tie_break_id is not None and extraction.outcome != UNKNOWN_OUTCOME:
+                                self._event(
+                                    session,
+                                    inv_id,
+                                    "ContradictionResolved",
+                                    ContradictionResolvedPayload(
+                                        explanation_id=tie_break_id,
+                                        question_id=q.id,
+                                        outcome=extraction.outcome,
+                                    ).model_dump(mode="json"),
+                                )
+                            await self._explain_contradiction(session, inv_id, engine, obs, ev)
+                            continue_planning = True
+                            critical = (
+                                ans.modality == Modality.VOICE
+                                and observed.used_as_evidence
+                                and observed.decision_critical
+                            )
+                            if observed.presence_challenge_needed:
+                                self._issue_presence_challenge(
+                                    session,
+                                    row,
+                                    engine,
+                                    participant_id=q.participant_id,
+                                    probe_id=q.probe_id,
+                                    location_id=q.location_id,
+                                )
+                                critical = False
+                            if critical and await self._second_decode_agrees(
+                                session, inv_id, engine, q, extraction, outcomes, second_decode
+                            ):
+                                critical = False  # confirmed by an independent decode
+                            if critical:
+                                self._event(
+                                    session,
+                                    inv_id,
+                                    "BeliefUpdated",
+                                    engine.snapshot().model_dump(mode="json"),
+                                )
+                                self._ask_confirmation(session, row, engine, q)
+                                row.version += 1
+                                version = row.version
+                                continue_planning = False
+                        if continue_planning and extraction.wants_to_stop:
+                            engine.set_available(q.participant_id, False)
+                            self._event(
+                                session,
+                                inv_id,
+                                "ParticipantUnavailable",
+                                {"participant_id": q.participant_id, "reason": "asked to stop"},
+                            )
+                        if continue_planning:
+                            await self._schedule(session, row, engine)
+                            row.version += 1
+                            version = row.version
             except BaseException:
                 self._cache.pop(inv_id, None)  # the engine may have been mutated
                 raise
             self._cache[inv_id] = (version, engine)
+        if challenge_reply is not None:
+            passed, message = challenge_reply
+            return ChallengeAnswerResult(
+                passed=passed, message=message, state=await self.get(inv_id)
+            )
         return AnswerResult(observation=obs, extraction=extraction, state=await self.get(inv_id))
 
     async def reveal(self, inv_id: str) -> InvestigationState:
@@ -965,10 +1356,11 @@ class InvestigationService:
             ),
             language=cast(TemplateLanguage, q.language),
             text=q.text,
-            outcomes=list(model.outcomes[q.probe_id]),
+            outcomes=[] if q.kind == "challenge" else list(model.outcomes[q.probe_id]),
             status=QuestionStatus(q.status),
             asked_at=q.asked_at,
-            kind="confirm" if q.kind == "confirm" else "probe",
+            kind=q.kind if q.kind in {"confirm", "challenge"} else "probe",
+            presence_token_id=q.presence_token_id,
         )
 
     async def events(self, inv_id: str, after_seq: int, limit: int) -> list[EventEnvelope]:
@@ -1244,6 +1636,8 @@ class InvestigationService:
             participant=person,
             pack=self.pack(row.pack_id),
             scenario_id=row.scenario_id,
+            kind=q.kind,
+            presence_token_id=q.presence_token_id,
         )
 
     async def record_consent(

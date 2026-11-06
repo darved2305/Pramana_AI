@@ -51,6 +51,14 @@ Create users with `uv run python -m pramana_core.auth.bootstrap --email ... --na
 
 ## 1. Console: create and watch an investigation
 
+### Reproducible scenarios
+
+Staff can fetch the built-in scenarios with `GET /v1/investigations/presets`. Each result has an
+`id` (`S2` or `S7`), a title and description, and a complete `request` body accepted by
+`POST /v1/investigations`. Use that request as the starting point when creating the scenario.
+S2 demonstrates conflicting Wi-Fi reports and their reconciliation. S7 demonstrates a restricted
+location check and a presence challenge.
+
 ```http
 POST /v1/investigations
 {
@@ -99,7 +107,7 @@ the report text or the id (case-insensitive; `%` and `_` are literal). Each item
 | `plan.reason` | A one-paragraph explanation generated from the numbers, not by an LLM |
 | `plan.candidates[]` | "Why this question?": `eig_decision_bits`, `cost_s`, `score`, `net_value_min`, and `outcomes[]`, the predicted result of each possible answer |
 | `plan.infeasible[]` | Observations nobody available can make, and why ("needs role electrician") |
-| `pending_question` | The question waiting for an answer: who, what and where, plus `text` in their language. `kind` is `probe` or `confirm`: a spoken answer the decision hinges on is re-asked once before it is relied on. Show "just checking" for `confirm` |
+| `pending_question` | The question waiting for an answer: who, what and where, plus `text` in their language. `kind` is `probe`, `confirm` or `challenge`. A `challenge` has `presence_token_id`, an empty `outcomes` list, and asks the person to read a site label. |
 | `observations[]` | The evidence ledger: outcome, hedge, directness, modality, transcript and `state` (`committed`, `discarded` or `superseded`) |
 | `approvals[]` | Approval cards: action, target, risk, reversibility, rationale and status |
 | `ground_truth` | After the reveal: the fault, `commitment_verified`, and whether the decision was `correct` |
@@ -114,6 +122,8 @@ Poll `GET /v1/investigations/{id}/events?after_seq=N`. It returns new events in 
 - `ApprovalRequested`, `ApprovalDecided`, `CapabilityIssued`, `InterventionReported`
 - `VerificationResult`, `Reopened`, `GroundTruthRevealed`
 - `ObservationConfirmed` (`agreed`: true, false, or null if the confirmation was unclear)
+- `ChallengeIssued` and `ChallengeResult` (participant, location, token id on issue, cost, and pass/fail/withdrawn reason; never the expected characters)
+- `ContradictionExplained` and `ContradictionResolved` (language-independent explanation codes, posterior masses, supported access-point contexts, the tie-break action, and its answer)
 
 Re-fetch the state after any event, or fold `BeliefUpdated` and `PlanComputed` payloads
 directly.
@@ -134,6 +144,20 @@ after a decision, an abstention or a verification result, and it closes the scen
    `requires_move` is true, first `POST {sim_url}/sim/v1/scenarios/{sid}/move {"to": location_id}`.
 Send the same token as `Authorization: Bearer {token}` on the core calls below.
 
+For a `challenge`, move first and then read the rendered label card from the participant's
+simulator view. `GET {sim_url}/sim/v1/scenarios/{sid}/view` includes `presence_tokens` only when
+that participant is physically at the token's location. Submit the spoken or typed letters and
+digits through the same text or voice answer route as other questions. The response is a
+`ChallengeAnswerResult` with `passed`, neutral `message` and updated `state`; it contains no
+recognised code or observation. A failed check leaves that person's evidence at the documented
+unverified-presence weight and the planner can ask someone else. A challenge is not reissued to
+the same person at the same location.
+
+The simulator also exposes `POST /sim/v1/scenarios/{sid}/presence/verify` for core-to-simulator
+use. It requires `X-Operator-Key` and accepts `{participant_id, token_id, answer}`. Its only result
+is `{passed: true|false}`. Do not call it from a participant page. Token characters are generated
+per scenario and are never returned by this endpoint or written into events.
+
 4. Answer by **text**: `POST /v1/investigations/{id}/answers {question_id, participant_id, text}`.
    Or by **tap**: send `outcome` (one of `pending_question.outcomes`) instead of `text`.
 5. Answer by **voice**: `GET /v1/investigations/{id}/questions/{qid}/audio` plays the question
@@ -144,6 +168,8 @@ Send the same token as `Authorization: Bearer {token}` on the core calls below.
 
 The answer response includes `extraction`: what was understood (`outcome`, `hedge`,
 `directness`, `injection_suspected`). Show it back to the participant ("I understood: off").
+Challenge responses are the exception: they intentionally omit extraction details and recognised
+characters.
 
 ### A whole call over one socket
 

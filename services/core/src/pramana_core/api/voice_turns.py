@@ -12,13 +12,19 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket
 from fastapi.responses import Response, StreamingResponse
 
-from pramana_contracts import Modality, SubmitAnswer, VoiceAnswerResult
+from pramana_contracts import (
+    ChallengeAnswerResult,
+    Modality,
+    SubmitAnswer,
+    VoiceAnswerResult,
+    VoiceChallengeAnswerResult,
+)
 
 from ..auth.deps import authorize_participant
 from ..errors import ApiError
 from ..investigations import InvestigationService
 from ..observability import log
-from ..visibility import visible_voice_answer
+from ..visibility import visible_state, visible_voice_answer
 from ..voice.call import ParticipantCall
 from ..voice.conversation import (
     STREAM_SAMPLE_RATE,
@@ -103,7 +109,7 @@ async def voice_answer(
     question_id: Annotated[str, Form()],
     participant_id: Annotated[str, Form()],
     audio: Annotated[UploadFile, File()],
-) -> VoiceAnswerResult:
+) -> VoiceAnswerResult | VoiceChallengeAnswerResult:
     svc, gnani, _ = _deps(request)
     who = await authorize_participant(request, inv_id, participant_id)
     q = await svc.pending_question(inv_id, question_id, participant_id)
@@ -119,7 +125,7 @@ async def voice_answer(
         audio.filename or "answer.wav",
         langs,
         codemix=codemix,
-        keyterms=answer_keyterms(q.pack, q.probe_id),
+        keyterms=answer_keyterms(q.pack, q.probe_id, presence_challenge=q.kind == "challenge"),
         previous_text=q.text,  # the question just asked, as recognition context (REST only)
     )
     if stt.empty:
@@ -148,6 +154,12 @@ async def voice_answer(
         ),
         second_decode=unbiased_decode,
     )
+    if isinstance(result, ChallengeAnswerResult):
+        return VoiceChallengeAnswerResult(
+            passed=result.passed,
+            message=result.message,
+            state=visible_state(result.state, who),
+        )
     return visible_voice_answer(VoiceAnswerResult(stt=stt, result=result), who)
 
 

@@ -64,6 +64,17 @@ Format and scene timing:
 5. **2:15–2:45** Under the hood: belief bars and bits; "LLMs translate, math decides"; the isolation guarantee; event replay.
 6. **2:45–3:00** Benchmark summary, from `summary.json` only, and the team split.
 
+### Scenario notes for S2 and S7
+
+- **S2:** Use the built-in preset. The event stream records ranked reconciliation codes and
+  posterior masses, then shows the Wi-Fi access-point check the planner asks to separate the
+  different-room explanation from an incorrect answer. The event carries language-independent
+  codes and access-point contexts for the console to render from templates and pack labels.
+- **S7:** Use the built-in preset with the fictional guard. A challenge asks for the last three
+  characters on the IDF-2 label. The simulator displays that card only after a participant really
+  moves to IDF-2. A failed check uses neutral copy and sends the next question to another person;
+  neither the event stream nor the verification response contains the expected characters.
+
 ## 5. Live demo protocol (interviews and judges)
 
 1. **"You pick the fault."** The judge selects a fault (or "random") in the operator panel. Only the hash is shown.

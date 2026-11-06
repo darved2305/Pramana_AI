@@ -50,6 +50,9 @@ HINGLISH = {
     "red": "laal light hai",
     "up": "breaker upar hai",
     "tripped": "breaker neeche hai",
+    "AP_2A": "AP 2A dikh raha hai",
+    "AP_2B": "AP 2B dikh raha hai",
+    "not_connected": "koi nahi",
 }
 TABLES = {**_bot_phrases(), "hi-en": HINGLISH}
 

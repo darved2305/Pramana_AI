@@ -41,6 +41,14 @@ def truthful(env: Env, inv_id: str, q: dict[str, Any]) -> str:
     sid = tok.json()["scenario_id"]
     if a["requires_move"]:
         env.sim.post(f"/sim/v1/scenarios/{sid}/move", json={"to": a["location_id"]}, headers=h)
+    if q.get("kind") == "challenge":
+        view = env.sim.get(f"/sim/v1/scenarios/{sid}/view", headers=h).json()
+        token_view = next(
+            item for item in view["presence_tokens"] if item["token_id"] == q["presence_token_id"]
+        )
+        rendered = token_view["display_texts"][q["language"]]
+        value = rendered.rsplit(" ", maxsplit=1)[-1].rstrip(".।")
+        return " ".join(value)
     seen = env.sim.post(
         f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": a["probe_id"]}, headers=h
     )
@@ -97,6 +105,71 @@ def test_a_call_rings_asks_consent_and_asks_question_after_question(env: Env) ->
     assert all(a["result"]["observation"]["modality"] == "voice" for a in answered)
     consented = [e for e in events(env, inv["id"]) if e["type"] == "ConsentRecorded"]
     assert consented[0]["payload"]["consented"] is True
+    assert env.client.get(f"/v1/investigations/{inv['id']}/replay").json()["identical"]
+
+
+def test_call_answers_presence_challenge_without_transcribing_the_code(env: Env) -> None:
+    presets = env.client.get("/v1/investigations/presets")
+    assert presets.status_code == 200, presets.text
+    preset = next(item for item in presets.json() if item["id"] == "S7")
+    created = env.client.post("/v1/investigations", json=preset["request"])
+    assert created.status_code == 201, created.text
+    inv = dict(created.json())
+
+    for _ in range(12):
+        q = inv["pending_question"]
+        assert q is not None, "S7 ended before a call challenge could be tested"
+        if q["kind"] == "challenge":
+            break
+        answer = env.client.post(
+            f"/v1/investigations/{inv['id']}/answers",
+            json={
+                "question_id": q["id"],
+                "participant_id": q["action"]["participant_id"],
+                "text": truthful(env, inv["id"], q),
+            },
+        )
+        assert answer.status_code == 200, answer.text
+        inv = answer.json()["state"]
+    else:
+        raise AssertionError("S7 did not issue a presence challenge")
+
+    q = inv["pending_question"]
+    assert q is not None
+    assert q["kind"] == "challenge"
+    participant_id = q["action"]["participant_id"]
+    with env.client.websocket_connect(url(inv["id"], participant_id)) as ws:
+        ws.send_text(
+            json.dumps(
+                {
+                    "type": "start",
+                    "token": token(env, inv["id"], participant_id),
+                    "play": True,
+                }
+            )
+        )
+        until(ws, "ringing")
+        ws.send_text(json.dumps({"type": "accept"}))
+        until(ws, "consent_request")
+        ws.send_text(json.dumps({"type": "consent", "answer": "yes"}))
+        until(ws, "ready")
+        state = env.client.get(f"/v1/investigations/{inv['id']}").json()
+        challenge = state["pending_question"]
+        assert challenge is not None
+        assert challenge["id"] == q["id"]
+        env.fake.transcript = truthful(env, inv["id"], challenge)
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        answer_frame = until(ws, "answer")[-1]
+
+    assert answer_frame["result"]["passed"] is True
+    assert "observation" not in answer_frame["result"]
+    assert "transcript" not in answer_frame
+    events_after = events(env, inv["id"])
+    assert any(
+        event["type"] == "ChallengeResult" and event["payload"]["result"] == "passed"
+        for event in events_after
+    )
     assert env.client.get(f"/v1/investigations/{inv['id']}/replay").json()["identical"]
 
 

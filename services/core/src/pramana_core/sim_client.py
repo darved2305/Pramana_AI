@@ -10,7 +10,13 @@ from __future__ import annotations
 import httpx
 from pydantic import BaseModel
 
-from pramana_contracts import CreateScenario, RevealResult, ScenarioCreated
+from pramana_contracts import (
+    CreateScenario,
+    PresenceVerificationResult,
+    RevealResult,
+    ScenarioCreated,
+    VerifyPresenceRequest,
+)
 
 from .errors import ApiError
 
@@ -60,6 +66,13 @@ class SimClient:
     async def reveal(self, scenario_id: str) -> RevealResult:
         resp = await self._post(f"/sim/v1/scenarios/{scenario_id}/reveal")
         return RevealResult.model_validate_json(resp.content)
+
+    async def verify_presence(
+        self, scenario_id: str, participant_id: str, token_id: str, answer: str
+    ) -> PresenceVerificationResult:
+        req = VerifyPresenceRequest(participant_id=participant_id, token_id=token_id, answer=answer)
+        resp = await self._post(f"/sim/v1/scenarios/{scenario_id}/presence/verify", req)
+        return PresenceVerificationResult.model_validate_json(resp.content)
 
     async def health(self) -> bool:
         try:

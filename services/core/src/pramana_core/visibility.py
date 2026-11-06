@@ -12,6 +12,7 @@ from __future__ import annotations
 from pramana_contracts import (
     AnswerResult,
     BeliefSnapshot,
+    ChallengeAnswerResult,
     InvestigationState,
     PlanDecision,
     VoiceAnswerResult,
@@ -68,7 +69,9 @@ def visible_state(state: InvestigationState, who: Principal) -> InvestigationSta
     return for_participant(state, who.participant_id)
 
 
-def visible_answer(result: AnswerResult, who: Principal) -> AnswerResult:
+def visible_answer(
+    result: AnswerResult | ChallengeAnswerResult, who: Principal
+) -> AnswerResult | ChallengeAnswerResult:
     return result.model_copy(update={"state": visible_state(result.state, who)})
 
 

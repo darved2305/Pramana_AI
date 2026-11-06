@@ -21,6 +21,7 @@ from pramana_domain import DomainPack
 
 from ..errors import ApiError
 from ..language.extraction import OUTCOME_LEXICON
+from ..language.presence import presence_answer_keyterms
 from ..language.speakable import speakable
 from .gnani import GnaniClient
 
@@ -33,18 +34,22 @@ TTS_LANGUAGE: dict[TemplateLanguage, str] = {
 MAX_KEYTERMS = 200  # Prisma v3.0 limit
 
 
-def answer_keyterms(pack: DomainPack, probe_id: str) -> list[str]:
+def answer_keyterms(
+    pack: DomainPack, probe_id: str, *, presence_challenge: bool = False
+) -> list[str]:
     """Vocabulary a correct answer to this probe is likely to contain (question-conditioned ASR).
 
     Multi-word phrases come first because they carry the most context. The names on the
     equipment the question mentions are included so they are not misheard as other words.
     """
+    if presence_challenge:
+        return presence_answer_keyterms()[:MAX_KEYTERMS]
     probe = pack.probe_by_id[probe_id]
     terms: list[str] = []
     for outcome in probe.outcomes:
         phrases = sorted(OUTCOME_LEXICON.get(outcome, []), key=len, reverse=True)
         terms.extend(" ".join(p) for p in phrases)
-    if probe.kind in ("wifi_status", "internet_works", "web_by_ip"):
+    if probe.kind in ("wifi_status", "wifi_access_point", "internet_works", "web_by_ip"):
         terms.append("NAVA-WiFi")
     seen: set[str] = set()
     out = []

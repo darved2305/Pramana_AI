@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import pytest
 
 from pramana_contracts import Directness, Hedge
@@ -42,6 +46,9 @@ LEDS = ["green", "amber", "off"]
         ("breaker neeche hai", ["up", "tripped"], "tripped"),
         ("ब्रेकर वर आहे", ["up", "tripped"], "up"),
         ("कनेक्ट होताना अडकलंय", WIFI, "stuck_connecting"),
+        ("2A", ["AP_2A", "AP_2B", "not_connected"], "AP_2A"),
+        ("AP 2B", ["AP_2A", "AP_2B", "not_connected"], "AP_2B"),
+        ("काही नाही", ["AP_2A", "AP_2B", "not_connected"], "not_connected"),
         ("हाँ, खुल रही है", YES_NO, "yes"),
         ("नहीं, खुल नहीं रही", YES_NO, "no"),
         ("हो, उघडतं", YES_NO, "yes"),
@@ -133,6 +140,22 @@ def test_every_pack_outcome_has_a_lexicon_entry() -> None:
     for probe in pack.probes:
         for outcome in probe.outcomes:
             assert OUTCOME_LEXICON.get(outcome), f"{probe.id}:{outcome} has no phrases"
+
+
+def test_voice_bot_phrase_table_covers_every_pack_outcome() -> None:
+    script = Path(__file__).resolve().parents[3] / "scripts/make_bot_clips.py"
+    spec = importlib.util.spec_from_file_location("bot_clip_phrases", script)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["bot_clip_phrases"] = module
+    spec.loader.exec_module(module)
+
+    pack = load_pack("campus_block_c")
+    for language, table in module.PHRASES.items():
+        for probe in pack.probes:
+            for outcome in probe.outcomes:
+                assert outcome in table, f"{language}:{probe.id}:{outcome} has no bot phrase"
 
 
 # Sentences from a real Hinglish recording (2026-11-04): Gnani's transcript and the read script.

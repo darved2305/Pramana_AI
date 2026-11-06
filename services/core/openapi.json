@@ -455,6 +455,30 @@
     "title": "CapabilityGrant",
     "type": "object"
    },
+   "ChallengeAnswerResult": {
+    "additionalProperties": false,
+    "description": "Presence result with neutral copy and no transcript or expected token value.",
+    "properties": {
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "passed": {
+      "title": "Passed",
+      "type": "boolean"
+     },
+     "state": {
+      "$ref": "#/components/schemas/InvestigationState"
+     }
+    },
+    "required": [
+     "passed",
+     "message",
+     "state"
+    ],
+    "title": "ChallengeAnswerResult",
+    "type": "object"
+   },
    "CreateInvestigation": {
     "additionalProperties": false,
     "properties": {
@@ -941,6 +965,50 @@
      "offset"
     ],
     "title": "InvestigationPage",
+    "type": "object"
+   },
+   "InvestigationPreset": {
+    "additionalProperties": false,
+    "properties": {
+     "adversarial_participant_id": {
+      "anyOf": [
+       {
+        "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Adversarial Participant Id"
+     },
+     "description": {
+      "title": "Description",
+      "type": "string"
+     },
+     "id": {
+      "enum": [
+       "S2",
+       "S7"
+      ],
+      "title": "Id",
+      "type": "string"
+     },
+     "request": {
+      "$ref": "#/components/schemas/CreateInvestigation"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "description",
+     "request"
+    ],
+    "title": "InvestigationPreset",
     "type": "object"
    },
    "InvestigationState": {
@@ -1634,7 +1702,8 @@
        "no_feasible_action",
        "verification_confirmed",
        "verification_failed",
-       "verification_inconclusive"
+       "verification_inconclusive",
+       "presence_fallback"
       ],
       "title": "Rule",
       "type": "string"
@@ -1712,7 +1781,8 @@
       "default": "probe",
       "enum": [
        "probe",
-       "confirm"
+       "confirm",
+       "challenge"
       ],
       "title": "Kind",
       "type": "string"
@@ -1733,6 +1803,17 @@
       },
       "title": "Outcomes",
       "type": "array"
+     },
+     "presence_token_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Presence Token Id"
      },
      "status": {
       "$ref": "#/components/schemas/QuestionStatus"
@@ -2302,7 +2383,15 @@
     "description": "A spoken answer: what Gnani heard, then the same result as a typed answer.",
     "properties": {
      "result": {
-      "$ref": "#/components/schemas/AnswerResult"
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AnswerResult"
+       },
+       {
+        "$ref": "#/components/schemas/ChallengeAnswerResult"
+       }
+      ],
+      "title": "Result"
      },
      "stt": {
       "$ref": "#/components/schemas/SttResult"
@@ -2313,6 +2402,30 @@
      "result"
     ],
     "title": "VoiceAnswerResult",
+    "type": "object"
+   },
+   "VoiceChallengeAnswerResult": {
+    "additionalProperties": false,
+    "description": "A voice challenge result deliberately omits the recognised characters.",
+    "properties": {
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "passed": {
+      "title": "Passed",
+      "type": "boolean"
+     },
+     "state": {
+      "$ref": "#/components/schemas/InvestigationState"
+     }
+    },
+    "required": [
+     "passed",
+     "message",
+     "state"
+    ],
+    "title": "VoiceChallengeAnswerResult",
     "type": "object"
    }
   }
@@ -2642,6 +2755,32 @@
     ]
    }
   },
+  "/v1/investigations/presets": {
+   "get": {
+    "description": "Requests the S2 and S7 scenarios use to create a reproducible investigation.",
+    "operationId": "list_investigation_presets_v1_investigations_presets_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/InvestigationPreset"
+         },
+         "title": "Response List Investigation Presets V1 Investigations Presets Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Investigation Presets",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
   "/v1/investigations/{inv_id}": {
    "get": {
     "operationId": "get_investigation_v1_investigations__inv_id__get",
@@ -2713,7 +2852,15 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/AnswerResult"
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/AnswerResult"
+          },
+          {
+           "$ref": "#/components/schemas/ChallengeAnswerResult"
+          }
+         ],
+         "title": "Response Submit Answer V1 Investigations  Inv Id  Answers Post"
         }
        }
       },
@@ -2765,7 +2912,15 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/VoiceAnswerResult"
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/VoiceAnswerResult"
+          },
+          {
+           "$ref": "#/components/schemas/VoiceChallengeAnswerResult"
+          }
+         ],
+         "title": "Response Voice Answer V1 Investigations  Inv Id  Answers Voice Post"
         }
        }
       },

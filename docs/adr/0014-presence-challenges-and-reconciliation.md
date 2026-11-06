@@ -19,7 +19,7 @@ Room 205 can associate with AP_2B or AP_2A, while Room 210 can associate only wi
 ### Presence
 
 1. A pack declares presence-token definitions, never token values. A definition names its location,
-   what to read, and reviewed spoken/display prompts in English, Hindi, Marathi and Hinglish.
+   what to read, and localized spoken/display prompts in English, Hindi, Marathi and Hinglish.
 2. The simulator derives each value deterministically from the scenario seed and token id using an
    alphabet that avoids ambiguous characters. It returns the value only in that participant's view
    while the participant is at the token location. The value is separate from the sealed fault and
@@ -61,10 +61,12 @@ Room 205 can associate with AP_2B or AP_2A, while Room 210 can associate only wi
 3. The pack does not model changes over time. `world_changed` is emitted with zero mass and
    `supported: false`, alongside `world_change_not_modelled`; it is not presented as an inferred
    explanation.
-4. The explanation includes a deterministic tie-break action selected from feasible probes by
-   expected information gain about the ranked explanation families. For the S2 Wi-Fi case, an
-   AP-association reading in Room 205 distinguishes the two coverage paths. It is an ordinary
-   question, so normal question costs, parallel limits, withdrawal and event replay apply.
+4. When different-access-point mass is present, the explanation includes a deterministic,
+   feasible `wifi_access_point` check at one of the observed locations. Prefer the location with
+   broader pack coverage, then follow the engine menu order. The direct AP reading tests the
+   leading context explanation against an observer mistake; it is a targeted context check, not
+   a general explanation-family information-gain search. It is an ordinary question, so normal
+   question costs, parallel limits, withdrawal and event replay apply.
 5. Emit `ContradictionExplained` as a new event after the observations that support it. Its payload
    contains observation ids, explanation codes and posterior masses, and the tie-break action.
    It contains no generated prose; the console renders reviewed language templates.

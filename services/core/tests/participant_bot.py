@@ -27,6 +27,9 @@ PHRASES = {
     "no_network": "NAVA-WiFi dikh hi nahi raha",
     "stuck_connecting": "connecting pe atka hai",
     "connected": "connected hai",
+    "AP_2A": "AP 2A dikh raha hai",
+    "AP_2B": "AP 2B dikh raha hai",
+    "not_connected": "no access point",
 }
 
 
@@ -46,6 +49,28 @@ def answer_pending(
             f"/sim/v1/scenarios/{sid}/move", json={"to": a["location_id"]}, headers=headers
         )
         assert moved.status_code == 200, moved.text
+    if q.get("kind") == "challenge":
+        view = sim.get(f"/sim/v1/scenarios/{sid}/view", headers=headers)
+        assert view.status_code == 200, view.text
+        token = next(
+            item
+            for item in view.json()["presence_tokens"]
+            if item["token_id"] == q["presence_token_id"]
+        )
+        rendered = token["display_texts"][q["language"]]
+        value = rendered.rsplit(" ", maxsplit=1)[-1].rstrip(".।")
+        r = core.post(
+            f"/v1/investigations/{inv['id']}/answers",
+            json={
+                "question_id": q["id"],
+                "participant_id": a["participant_id"],
+                "text": " ".join(value),
+            },
+        )
+        assert r.status_code == 200, r.text
+        result: dict[str, Any] = r.json()
+        assert result["passed"] is True
+        return result
     seen = sim.post(
         f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": a["probe_id"]}, headers=headers
     )

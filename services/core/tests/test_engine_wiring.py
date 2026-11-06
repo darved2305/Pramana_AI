@@ -12,7 +12,7 @@ from participant_bot import run_to_conclusion
 pytestmark = pytest.mark.db
 
 STAFF = [
-    *PEOPLE,
+    *[{**person, "question_budget": 12} for person in PEOPLE],
     {
         "id": "p_ravi",
         "display_name": "Ravi",
@@ -20,6 +20,7 @@ STAFF = [
         "skill": "technician",
         "location_id": "IDF1",
         "languages": {"stt_candidates": ["en-IN"], "template_language": "en"},
+        "question_budget": 12,
     },
 ]
 

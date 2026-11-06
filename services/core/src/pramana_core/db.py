@@ -94,6 +94,7 @@ class QuestionRow(Base):
     text: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16))
     kind: Mapped[str] = mapped_column(String(16), default="probe", server_default="probe")
+    presence_token_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     asked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

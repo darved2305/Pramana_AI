@@ -269,7 +269,9 @@ class MediaSession:
             async with self.gnani.stream(
                 langs,
                 codemix=codemix,
-                keyterms=answer_keyterms(q.pack, q.probe_id),
+                keyterms=answer_keyterms(
+                    q.pack, q.probe_id, presence_challenge=q.kind == "challenge"
+                ),
                 min_segment_ms=100,
             ) as upstream:
                 stream_ms = round((time.perf_counter() - t0) * 1000)
@@ -280,7 +282,10 @@ class MediaSession:
                         "participant_id": q.participant.id,
                         "text": q.text,
                         "language": q.language,
-                        "outcomes": list(q.pack.probe_by_id[q.probe_id].outcomes),
+                        "outcomes": []
+                        if q.kind == "challenge"
+                        else list(q.pack.probe_by_id[q.probe_id].outcomes),
+                        "answer_kind": "alphanumeric" if q.kind == "challenge" else "outcome",
                         "model_confirmed": upstream.model_confirmed,
                     }
                 )
@@ -447,14 +452,15 @@ class MediaSession:
                     self.answer_audio.clear()  # the next attempt is a new answer
                     continue
                 latency = ev.raw.get("latency")
-                await self.send(
-                    {
-                        "type": "transcript",
-                        "text": text,
-                        "detected_language": ev.raw.get("detected_language_code"),
-                        "provider_latency_ms": float(latency) if latency is not None else None,
-                    }
-                )
+                if q.kind != "challenge":
+                    await self.send(
+                        {
+                            "type": "transcript",
+                            "text": text,
+                            "detected_language": ev.raw.get("detected_language_code"),
+                            "provider_latency_ms": float(latency) if latency is not None else None,
+                        }
+                    )
                 await self._heard_speech()
                 await self.fire(CallEvent.FINAL_TRANSCRIPT)
                 await self._submit(q, text=text[:1000])

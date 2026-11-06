@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from core_testkit import body
 from fastapi.testclient import TestClient
-from participant_bot import PHRASES
+from participant_bot import answer_pending
 
 from pramana_contracts import InvestigationState
 from pramana_core.visibility import for_participant
@@ -22,27 +22,9 @@ def create(core: TestClient, parallel: int, fault: str = "CB_C2_7.tripped") -> d
     return dict(r.json())
 
 
-def truthful_text(core: TestClient, sim: TestClient, inv_id: str, q: dict[str, Any]) -> str:
-    a = q["action"]
-    tok = core.post(f"/v1/investigations/{inv_id}/participants/{a['participant_id']}/token")
-    sid, h = tok.json()["scenario_id"], {"Authorization": f"Bearer {tok.json()['token']}"}
-    if a["requires_move"]:
-        sim.post(f"/sim/v1/scenarios/{sid}/move", json={"to": a["location_id"]}, headers=h)
-    seen = sim.post(f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": a["probe_id"]}, headers=h)
-    return PHRASES[seen.json()["value"]]
-
-
 def answer(core: TestClient, sim: TestClient, inv_id: str, q: dict[str, Any]) -> dict[str, Any]:
-    r = core.post(
-        f"/v1/investigations/{inv_id}/answers",
-        json={
-            "question_id": q["id"],
-            "participant_id": q["action"]["participant_id"],
-            "text": truthful_text(core, sim, inv_id, q),
-        },
-    )
-    assert r.status_code == 200, r.text
-    return dict(r.json()["state"])
+    result = answer_pending(core, sim, {"id": inv_id, "pending_question": q})
+    return dict(result["state"])
 
 
 def run(core: TestClient, inv: dict[str, Any], pick: int = 0) -> tuple[dict[str, Any], int]:
@@ -106,7 +88,19 @@ def test_a_parallel_run_reaches_the_right_decision(core: TestClient, pick: int) 
     asked = {e["payload"]["question_id"] for e in log if e["type"] == "QuestionAsked"}
     withdrawn = [e for e in log if e["type"] == "QuestionWithdrawn"]
     answered = len([e for e in log if e["type"] == "ObservationRecorded"]) - 1  # minus intake
-    assert answered + len(withdrawn) == len(asked), (answered, len(withdrawn), len(asked))
+    answered_challenges = len(
+        [
+            e
+            for e in log
+            if e["type"] == "ChallengeResult" and e["payload"]["result"] in {"passed", "failed"}
+        ]
+    )
+    assert answered + answered_challenges + len(withdrawn) == len(asked), (
+        answered,
+        answered_challenges,
+        len(withdrawn),
+        len(asked),
+    )
     assert all(e["payload"]["question_id"] in asked for e in withdrawn)
     replay = core.get(f"/v1/investigations/{inv['id']}/replay").json()
     assert replay["identical"], replay

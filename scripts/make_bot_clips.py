@@ -30,6 +30,9 @@ PHRASES: dict[str, dict[str, str]] = {
         "red": "लाल लाइट है",
         "up": "ब्रेकर ऊपर है",
         "tripped": "ब्रेकर नीचे है",
+        "AP_2A": "ए पी टू ए दिख रहा है",
+        "AP_2B": "ए पी टू बी दिख रहा है",
+        "not_connected": "कोई नहीं",
     },
     "mr": {
         "yes": "हो, चालू आहे",
@@ -44,6 +47,9 @@ PHRASES: dict[str, dict[str, str]] = {
         "red": "लाल दिवा आहे",
         "up": "ब्रेकर वर आहे",
         "tripped": "ब्रेकर खाली आहे",
+        "AP_2A": "ए पी टू ए दिसत आहे",
+        "AP_2B": "ए पी टू बी दिसत आहे",
+        "not_connected": "एकही नाही",
     },
 }
 VOICES = {"hi": "facebook/mms-tts-hin", "mr": "facebook/mms-tts-mar"}

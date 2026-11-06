@@ -45,7 +45,24 @@ def replay(events: list[dict[str, Any]]) -> Engine:
     for e in events:
         t, p = e["type"], e["payload"]
         if t == "QuestionAsked":
-            engine.record_question(p["action"]["participant_id"])
+            action = p["action"]
+            engine.record_question(
+                action["participant_id"], action.get("probe_id"), action.get("location_id")
+            )
+        elif t == "ChallengeIssued":
+            engine.record_presence_challenge(
+                p["participant_id"], p["location_id"], p.get("probe_id")
+            )
+        elif t == "ChallengeResult":
+            passed = p["result"] == "passed"
+            engine.set_presence(
+                p["participant_id"],
+                p["location_id"],
+                passed,
+                challenge_failed=p["result"] == "failed",
+            )
+            if p["result"] == "failed":
+                engine.set_available(p["participant_id"], False)
         elif t == "ObservationRecorded":
             ev = p["evidence"]
             engine.observe(

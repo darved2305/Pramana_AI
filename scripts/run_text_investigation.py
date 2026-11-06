@@ -10,7 +10,8 @@ synthesised by Timbre in the participant's language, the answer phrase is synthe
 context, extracted, and applied. This spends credits (roughly Rs 0.3 per turn).
 
 Usage: python scripts/run_text_investigation.py [--seed N] [--fault CB_C2_7.tripped]
-       [--lie probe_id=outcome] [--voice] [--core http://127.0.0.1:8000]
+       [--preset S2|S7] [--lie probe_id=outcome] [--false-presence participant_id]
+       [--voice] [--core http://127.0.0.1:8000]
        [--sim http://127.0.0.1:8100]
 """
 
@@ -38,6 +39,9 @@ PHRASES = {
     "no_network": "NAVA-WiFi dikh hi nahi raha",
     "stuck_connecting": "connecting pe atka hai",
     "connected": "connected hai",
+    "AP_2A": "AP 2A dikh raha hai",
+    "AP_2B": "AP 2B dikh raha hai",
+    "not_connected": "no access point",
 }
 
 # What a Marathi or Hindi speaker might say, in their own script (used with --voice).
@@ -183,9 +187,15 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--core", default="http://127.0.0.1:8000")
     ap.add_argument("--sim", default="http://127.0.0.1:8100")
-    ap.add_argument("--seed", type=int, default=19)
+    ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--preset", choices=("S2", "S7"), help="use a built-in investigation preset")
     ap.add_argument("--fault", default=None, help="component.mode, default: random (sealed)")
     ap.add_argument("--lie", action="append", default=[], help="probe_id=outcome to misreport")
+    ap.add_argument(
+        "--false-presence",
+        default=None,
+        help="participant id who stays put when asked to prove a moved or restricted location",
+    )
     ap.add_argument("--voice", action="store_true", help="speak every turn through real Gnani")
     ap.add_argument(
         "--repair",
@@ -195,28 +205,34 @@ def main() -> None:
     ap.add_argument("--exclude", action="append", default=[], help="participant id to leave out")
     args = ap.parse_args()
     lies = dict(item.split("=", 1) for item in args.lie)
-    fault: Any = "random"
-    if args.fault:
-        comp, mode = args.fault.split(".")
-        fault = {"faults": [{"component_id": comp, "mode": mode}]}
-
     # The core enforces sign-in outside tests; scripts act through the automation key.
     core = httpx.Client(base_url=args.core, timeout=60, headers=automation_headers())
     sim = httpx.Client(base_url=args.sim)
-    inv = check(
-        core.post(
-            "/v1/investigations",
-            json={
-                "pack_id": "campus_block_c",
-                "participants": [p for p in PEOPLE if p["id"] not in args.exclude],
-                "report": {
-                    "text": "Floor 3 pe WiFi nahi chal raha, kuch khul nahi raha",
-                    "reporter_id": "p_riya",
-                },
-                "scenario": {"seed": args.seed, "fault": fault},
+    if args.preset:
+        presets = check(core.get("/v1/investigations/presets"))
+        request = next(item["request"] for item in presets if item["id"] == args.preset)
+    else:
+        request = {
+            "pack_id": "campus_block_c",
+            "participants": [p for p in PEOPLE if p["id"] not in args.exclude],
+            "report": {
+                "text": "Floor 3 pe WiFi nahi chal raha, kuch khul nahi raha",
+                "reporter_id": "p_riya",
             },
-        )
-    )
+            "scenario": {"seed": 19, "fault": "random"},
+        }
+    if args.preset:
+        request["participants"] = [
+            p for p in request["participants"] if p["id"] not in args.exclude
+        ]
+    if request["report"]["reporter_id"] not in {p["id"] for p in request["participants"]}:
+        sys.exit("cannot exclude the preset's reporter")
+    if args.seed is not None:
+        request["scenario"]["seed"] = args.seed
+    if args.fault:
+        comp, mode = args.fault.split(".")
+        request["scenario"]["fault"] = {"faults": [{"component_id": comp, "mode": mode}]}
+    inv = check(core.post("/v1/investigations", json=request))
     print(f"investigation {inv['id']}  sealed commitment {inv['sealed_commitment']}")
 
     def play(inv: dict[str, Any], step: int) -> tuple[dict[str, Any], int]:
@@ -224,7 +240,8 @@ def main() -> None:
             step += 1
             q, a = inv["pending_question"], inv["pending_question"]["action"]
             best = next(
-                c for c in inv["plan"]["candidates"] if c["action"] == inv["plan"]["action"]
+                (c for c in inv["plan"]["candidates"] if c["action"] == inv["plan"]["action"]),
+                None,
             )
             tok = check(
                 core.post(
@@ -232,7 +249,8 @@ def main() -> None:
                 )
             )
             h = {"Authorization": f"Bearer {tok['token']}"}
-            if a["requires_move"]:
+            false_presence = args.false_presence == a["participant_id"]
+            if a["requires_move"] and not false_presence:
                 check(
                     sim.post(
                         f"/sim/v1/scenarios/{tok['scenario_id']}/move",
@@ -240,28 +258,60 @@ def main() -> None:
                         headers=h,
                     )
                 )
-            seen = check(
-                sim.post(
-                    f"/sim/v1/scenarios/{tok['scenario_id']}/observe",
-                    json={"probe_id": a["probe_id"]},
-                    headers=h,
+            challenge = q["kind"] == "challenge"
+            if challenge:
+                if false_presence:
+                    answer_text = "K 7 Q"
+                else:
+                    view = check(sim.get(f"/sim/v1/scenarios/{tok['scenario_id']}/view", headers=h))
+                    token_view = next(
+                        item
+                        for item in view["presence_tokens"]
+                        if item["token_id"] == q["presence_token_id"]
+                    )
+                    rendered = token_view["display_texts"][q["language"]]
+                    answer_text = " ".join(rendered.rsplit(" ", maxsplit=1)[-1].rstrip(".।"))
+                phrase = answer_text if args.voice else "[presence response]"
+                said = answer_text
+                seen = None
+            elif false_presence:
+                said = lies.get(
+                    a["probe_id"], "green" if "green" in q["outcomes"] else q["outcomes"][0]
                 )
-            )["value"]
-            said = lies.get(a["probe_id"], seen)
+                phrase = (
+                    NATIVE.get(q["language"], {}).get(said, PHRASES[said])
+                    if args.voice
+                    else PHRASES[said]
+                )
+                seen = None
+            else:
+                seen = check(
+                    sim.post(
+                        f"/sim/v1/scenarios/{tok['scenario_id']}/observe",
+                        json={"probe_id": a["probe_id"]},
+                        headers=h,
+                    )
+                )["value"]
+                said = lies.get(a["probe_id"], seen)
+                phrase = (
+                    NATIVE.get(q["language"], {}).get(said, PHRASES[said])
+                    if args.voice
+                    else PHRASES[said]
+                )
             print(f"\n[{step}] ask {a['participant_id']} ({q['language']}): {q['text']}")
-            print(
-                f"    why: EIG_D {best['eig_decision_bits']:.2f} bits, cost {best['cost_s']:.0f} s,"
-                f" net value {best['net_value_min']:.2f} min"
-            )
-            print(
-                "    previews: "
-                + ", ".join(
-                    f"{o['outcome']}->{o['decision']}({o['decision_probability']:.2f})"
-                    for o in best["outcomes"]
+            if best is not None:
+                print(
+                    f"    why: EIG_D {best['eig_decision_bits']:.2f} bits, "
+                    f"cost {best['cost_s']:.0f} s, net value {best['net_value_min']:.2f} min"
                 )
-            )
+                print(
+                    "    previews: "
+                    + ", ".join(
+                        f"{o['outcome']}->{o['decision']}({o['decision_probability']:.2f})"
+                        for o in best["outcomes"]
+                    )
+                )
             lang = q["language"]
-            phrase = NATIVE.get(lang, PHRASES)[said] if args.voice else PHRASES[said]
             if args.voice:
                 spoken_q = core.get(f"/v1/investigations/{inv['id']}/questions/{q['id']}/audio")
                 check_audio(spoken_q, "question audio")
@@ -275,13 +325,16 @@ def main() -> None:
                     files={"audio": ("answer.wav", answer_wav.content, "audio/wav")},
                 )
                 voiced = check(r)
-                res = voiced["result"]
-                stt = voiced["stt"]
-                print(
-                    f"    spoke question ({len(spoken_q.content)} B WAV); "
-                    f"participant said {phrase!r}; Prisma heard {stt['transcript']!r} "
-                    f"[{stt['detected_language']}]"
-                )
+                if challenge:
+                    res = voiced
+                else:
+                    res = voiced["result"]
+                    stt = voiced["stt"]
+                    print(
+                        f"    spoke question ({len(spoken_q.content)} B WAV); "
+                        f"participant said {phrase!r}; Prisma heard {stt['transcript']!r} "
+                        f"[{stt['detected_language']}]"
+                    )
             else:
                 res = check(
                     core.post(
@@ -289,15 +342,21 @@ def main() -> None:
                         json={
                             "question_id": q["id"],
                             "participant_id": a["participant_id"],
-                            "text": phrase,
+                            "text": answer_text if challenge else phrase,
                         },
                     )
                 )
             inv = res["state"]
             b = inv["belief"]
-            lie = "  (MISREPORTED)" if said != seen else ""
-            heard_ok = "" if res["extraction"]["outcome"] == said else "  (NOT UNDERSTOOD AS SAID)"
-            print(f"    answer: {phrase!r} -> {res['extraction']['outcome']}{lie}{heard_ok}")
+            if challenge:
+                label = "passed" if res["passed"] else "not confirmed"
+                print(f"    presence check: {label}; {res['message']}")
+            else:
+                lie = "  (MISREPORTED)" if seen is not None and said != seen else ""
+                heard_ok = (
+                    "" if res["extraction"]["outcome"] == said else "  (NOT UNDERSTOOD AS SAID)"
+                )
+                print(f"    answer: {phrase!r} -> {res['extraction']['outcome']}{lie}{heard_ok}")
             print(
                 f"    belief: {b['map_decision']} P={b['map_decision_probability']:.3f}, "
                 f"top cause {b['hypotheses'][0]['id']} {b['hypotheses'][0]['probability']:.3f}, "

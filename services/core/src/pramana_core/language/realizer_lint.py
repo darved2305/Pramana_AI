@@ -41,6 +41,9 @@ _OUTCOME_WORDING: dict[TemplateLanguage, dict[str, tuple[str, ...]]] = {
         "no_network": ("missing", "not there", "not showing"),
         "stuck_connecting": ("stuck on connecting", "stuck", "connecting"),
         "connected": ("connected",),
+        "AP_2A": ("2A",),
+        "AP_2B": ("2B",),
+        "not_connected": ("none",),
     },
     "hi": {
         "yes": ("हाँ", "हां"),
@@ -55,6 +58,9 @@ _OUTCOME_WORDING: dict[TemplateLanguage, dict[str, tuple[str, ...]]] = {
         "no_network": ("दिख ही नहीं", "नहीं दिख"),
         "stuck_connecting": ("अटका", "अटकी", "अटके", "कनेक्ट होने पर अटका"),
         "connected": ("कनेक्टेड", "जुड़ गया", "जुड़ी"),
+        "AP_2A": ("2A",),
+        "AP_2B": ("2B",),
+        "not_connected": ("कोई नहीं",),
     },
     "mr": {
         "yes": ("हो", "होय"),
@@ -69,6 +75,9 @@ _OUTCOME_WORDING: dict[TemplateLanguage, dict[str, tuple[str, ...]]] = {
         "no_network": ("दिसतच नाही", "दिसत नाही"),
         "stuck_connecting": ("अडकलं", "अडकले", "कनेक्ट होताना अडकलं"),
         "connected": ("कनेक्टेड", "जुडलं", "कनेक्ट झालं"),
+        "AP_2A": ("2A",),
+        "AP_2B": ("2B",),
+        "not_connected": ("एकही नाही",),
     },
     "hi-en": {
         "yes": ("haan", "yes"),
@@ -83,6 +92,9 @@ _OUTCOME_WORDING: dict[TemplateLanguage, dict[str, tuple[str, ...]]] = {
         "no_network": ("dikh hi nahi", "missing", "not showing"),
         "stuck_connecting": ("atka", "connecting pe atka", "stuck"),
         "connected": ("connected",),
+        "AP_2A": ("2A",),
+        "AP_2B": ("2B",),
+        "not_connected": ("koi nahi",),
     },
 }
 
@@ -362,6 +374,51 @@ def lint_pack(pack: DomainPack) -> list[str]:
                         machine_ids=machine_ids,
                         question=True,
                     )
+
+    for token in pack.presence_tokens:
+        location = pack.location_by_id[token.location_id]
+        places = {language: location.label.get(language) for language in LANGUAGES}
+        for language in LANGUAGES:
+            label = f"presence:{token.id} [{language}]"
+            prompt = token.prompt_templates.get(language)
+            display = token.display_templates.get(language)
+            if prompt is None or display is None:
+                issues.append(f"{label}: missing template language")
+                continue
+            if "{length}" not in prompt:
+                issues.append(f"{label}: placeholder '{{length}}' has no value")
+            if "{value}" not in display:
+                issues.append(f"{label}: placeholder '{{value}}' has no value")
+            prompt_text = _render(
+                prompt,
+                {"place": places[language], "length": str(token.length)},
+                frozenset({"place", "length"}),
+                label,
+                issues,
+            )
+            _lint_text(
+                prompt_text,
+                label=label,
+                language=language,
+                issues=issues,
+                machine_ids=machine_ids,
+                question=True,
+            )
+            display_label = f"presence:{token.id} [display, {language}]"
+            display_text = _render(
+                display,
+                {"value": "K7Q"},
+                frozenset({"value"}),
+                display_label,
+                issues,
+            )
+            _lint_text(
+                display_text,
+                label=display_label,
+                language=language,
+                issues=issues,
+                machine_ids=machine_ids,
+            )
 
     return issues
 

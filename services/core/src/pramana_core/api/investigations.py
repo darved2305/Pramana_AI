@@ -9,9 +9,11 @@ from pramana_contracts import (
     AnswerResult,
     ApprovalDecision,
     CapabilityGrant,
+    ChallengeAnswerResult,
     CreateInvestigation,
     EventEnvelope,
     InvestigationPage,
+    InvestigationPreset,
     InvestigationState,
     InvestigationStatus,
     ReportIntervention,
@@ -24,6 +26,7 @@ from ..auth.deps import authorize_participant, authorize_read, require_staff
 from ..auth.service import Principal
 from ..directory import ConsoleQueries
 from ..investigations import InvestigationService
+from ..presets import investigation_presets
 from ..visibility import visible_answer, visible_state
 
 router = APIRouter(prefix="/v1/investigations", tags=["investigations"])
@@ -57,6 +60,12 @@ async def create_investigation(body: CreateInvestigation, svc: Svc) -> Investiga
     return await svc.create(body)
 
 
+@router.get("/presets", dependencies=[Depends(require_staff())])
+async def list_investigation_presets() -> list[InvestigationPreset]:
+    """Requests the S2 and S7 scenarios use to create a reproducible investigation."""
+    return investigation_presets()
+
+
 @router.get("/{inv_id}")
 async def get_investigation(inv_id: str, svc: Svc, request: Request) -> InvestigationState:
     who = await authorize_read(request, inv_id)
@@ -66,7 +75,7 @@ async def get_investigation(inv_id: str, svc: Svc, request: Request) -> Investig
 @router.post("/{inv_id}/answers")
 async def submit_answer(
     inv_id: str, body: SubmitAnswer, svc: Svc, request: Request
-) -> AnswerResult:
+) -> AnswerResult | ChallengeAnswerResult:
     who = await authorize_participant(request, inv_id, body.participant_id)
     return visible_answer(await svc.answer(inv_id, body), who)
 

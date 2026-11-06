@@ -68,13 +68,14 @@ only) is available only after a decision or abstention.
 | Text investigation end to end: decision, approval, repair, verification, reveal, byte-identical replay | `tests/e2e/test_m1.py` (real sim and core processes, including a hard crash mid-investigation), `apps/web/tests-real/m1.spec.ts` |
 | Console for operators and approvers: live events (with a polling fallback), causes, plan reasoning, evidence ledger, approvals, replay, participant directory, evaluation reports | `apps/web/tests-real/console.spec.ts` |
 | Participant page from a personal link: only their own question, simulated surroundings, tap, text or voice answers, incoming call with consent | `apps/web/tests-real/call.spec.ts`, `live-only.spec.ts` |
+| Presence challenges and reconciliation: off-site claims fail neutrally, another person can verify the site, and S2 asks an access-point tie-break with replay-safe events | `tests/e2e/test_p2_presence.py`, `services/core/tests/test_presence_challenges.py`, `services/core/tests/test_reconciliation.py` |
 | Parallel calls with withdrawal | `packages/engine/tests/test_parallel.py`, `services/core/tests/test_parallel_calls.py`, `apps/web/tests-real/parallel.spec.ts`; live run with three voice bots on Gnani (correct, verified, replay identical) |
 | Voice on live Gnani: three open-source voice bots, and one real person on a phone over a free tunnel, each reached a verified, correct repair | `scripts/voice_bot_run.py`, `docs/engineering/STAGING.md` |
 | Streamed question audio (Timbre SSE), cached for reuse | `services/core/tests/test_media_ws.py`, `apps/web/tests/streamed-audio.spec.ts` |
 | Sign-in with server sessions, operator and approver roles, CSRF header, join tokens kept out of URLs | `docs/adr/0010-authentication.md`, `services/core/tests/test_auth*.py` |
 
-Tests: 1,467 Python tests (unit, property, protocol emulation, end to end), 29 browser UI tests
-and 16 browser tests against a real core, simulator and PostgreSQL. CI runs both stacks.
+Tests: 1,711 Python tests passed and 6 skipped (unit, property, protocol emulation, end to end),
+32 browser UI tests, and 16 browser tests against a real core, simulator and PostgreSQL. CI runs both stacks.
 
 ## Results so far (simulated building, logic mode)
 

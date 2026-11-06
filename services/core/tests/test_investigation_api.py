@@ -126,7 +126,7 @@ def test_a_mistaken_answer_changes_the_plan(core: TestClient) -> None:
     sim = TestClient(core.sim_app)  # type: ignore[attr-defined]
     _, honest_path = run_to_conclusion(core, sim, create(core, fault="CB_C2_7.tripped"))
     _, lied_path = run_to_conclusion(
-        core, sim, create(core, fault="CB_C2_7.tripped"), override={"breaker_c2_7": "up"}
+        core, sim, create(core, fault="CB_C2_7.tripped"), override={"nvr_screen": "on"}
     )
     assert honest_path != lied_path
 
