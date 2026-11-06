@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import sys
 import time
 import wave
@@ -91,6 +92,26 @@ class CallSocketMetrics:
             "active": len(self._active),
             "three_way_seconds": round(self._three_way_seconds, 3),
         }
+
+
+def latency_percentiles_ms(values: list[float]) -> dict[str, float | int | None]:
+    """Return interpolated caller-side latency percentiles and their sample count."""
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        return {"p50_ms": None, "p95_ms": None, "sample_count": 0}
+
+    def at(probability: float) -> float:
+        position = (len(ordered) - 1) * probability
+        lower = math.floor(position)
+        upper = math.ceil(position)
+        fraction = position - lower
+        return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+
+    return {
+        "p50_ms": at(0.5),
+        "p95_ms": at(0.95),
+        "sample_count": len(ordered),
+    }
 
 
 def join_segment(payload: dict[str, str]) -> str:

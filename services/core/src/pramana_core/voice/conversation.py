@@ -66,7 +66,7 @@ class QuestionAudioCache:
     def __init__(
         self,
         max_entries: int = 64,
-        max_bytes: int = 32 * 1024 * 1024,
+        max_bytes: int = 4 * 1024 * 1024,
         *,
         disk_dir: Path | None = None,
         max_disk_files: int = 500,
@@ -128,6 +128,10 @@ class QuestionAudioCache:
 
     def __len__(self) -> int:
         return len(self._items)
+
+    @property
+    def bytes_cached(self) -> int:
+        return self._bytes
 
 
 async def speak_question(

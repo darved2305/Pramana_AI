@@ -83,6 +83,23 @@ def voice(migrated_db: str, sim_app: FastAPI) -> Iterator[tuple[TestClient, Fake
         yield client, fake
 
 
+def test_voice_usage_reports_runtime_cache_sizes(
+    voice: tuple[TestClient, FakeGnaniHttp],
+) -> None:
+    client, _ = voice
+    client.app.state.question_audio.put("test-audio", b"wav")
+    response = client.get("/v1/voice/usage")
+    assert response.status_code == 200
+    assert response.json()["runtime_caches"] == {
+        "question_audio_entries": 1,
+        "question_audio_bytes": 3,
+        "investigation_engine_entries": 0,
+        "investigation_lock_entries": 0,
+        "event_subscribers": 0,
+        "active_participant_sessions": 0,
+    }
+
+
 def create(client: TestClient) -> dict[str, Any]:
     r = client.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
     assert r.status_code == 201, r.text
@@ -257,8 +274,20 @@ def test_question_audio_cache_is_bounded() -> None:
     cache.put("c", b"1234")
     assert len(cache) == 2
     assert cache.get("a") is None
+    assert cache.bytes_cached == 8
     cache.put("big", b"x" * 11)
     assert cache.get("big") is None
+
+
+def test_default_question_audio_cache_evicts_old_clips_under_memory_pressure() -> None:
+    cache = QuestionAudioCache()
+    first = b"a" * (3 * 1024 * 1024)
+    second = b"b" * (3 * 1024 * 1024)
+    cache.put("first", first)
+    cache.put("second", second)
+    assert len(cache) == 1
+    assert cache.get("first") is None
+    assert cache.get("second") == second
 
 
 def _voice(client: TestClient, inv: dict[str, Any], who: str = "p_riya") -> dict[str, Any]:

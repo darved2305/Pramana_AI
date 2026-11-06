@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from voice_bot_common import CallSocketMetrics
+from voice_bot_common import CallSocketMetrics, latency_percentiles_ms
 
 
 def test_call_socket_metrics_accumulate_three_way_hold_time() -> None:
@@ -22,4 +22,20 @@ def test_call_socket_metrics_accumulate_three_way_hold_time() -> None:
         "peak_open": 3,
         "active": 0,
         "three_way_seconds": 12.5,
+    }
+
+
+def test_latency_percentiles_use_interpolated_caller_samples() -> None:
+    assert latency_percentiles_ms([100, 200, 300, 400]) == {
+        "p50_ms": 250.0,
+        "p95_ms": 385.0,
+        "sample_count": 4,
+    }
+
+
+def test_latency_percentiles_report_no_samples() -> None:
+    assert latency_percentiles_ms([]) == {
+        "p50_ms": None,
+        "p95_ms": None,
+        "sample_count": 0,
     }

@@ -46,6 +46,7 @@ from voice_bot_common import (
     CallSocketMetrics,
     encode_synthetic_pcm,
     join_segment,
+    latency_percentiles_ms,
     mine,
     pcm,
     transcript_for_value,
@@ -404,6 +405,11 @@ class Run:
         def med(xs: list[float]) -> str:
             return f"{statistics.median(xs):.0f} ms (n={len(xs)})" if xs else "-"
 
+        caller_latency = latency_percentiles_ms(self.answer_ms)
+
+        def percentile(value: float | int | None) -> str:
+            return f"{value:.0f} ms" if value is not None else "-"
+
         label = (
             "EMULATED LATENCY (local test provider)"
             if self.args.synthetic
@@ -412,7 +418,10 @@ class Run:
         print(
             f"\n{label}\n"
             f"  end of speech -> transcript:            {med(self.stt_ms)}\n"
-            f"  end of speech -> answer recorded:       {med(self.answer_ms)}\n"
+            f"  caller-side end of speech -> answer:    "
+            f"p50 {percentile(caller_latency['p50_ms'])}; "
+            f"p95 {percentile(caller_latency['p95_ms'])} "
+            f"(n={caller_latency['sample_count']})\n"
             f"  answer recorded -> next question audio: {med(self.next_ms)}"
         )
         print(
@@ -451,6 +460,23 @@ class Run:
         }
         if self.args.synthetic:
             print("LOAD_RESULT_JSON=" + json.dumps(result, separators=(",", ":")), flush=True)
+        live_result = {
+            key: result[key]
+            for key in (
+                "investigation_id",
+                "status",
+                "questions_asked",
+                "voice_answers",
+                "revealed_correct",
+                "commitment_verified",
+                "replay_identical",
+                "withdrawn_questions",
+                "call_socket_closes",
+                "call_socket_metrics",
+                "max_questions_in_flight",
+            )
+        }
+        print("VOICE_RESULT_JSON=" + json.dumps(live_result, separators=(",", ":")), flush=True)
         return (
             0
             if s["status"] == "verified"

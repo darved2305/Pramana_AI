@@ -75,9 +75,19 @@ async def voice_usage(request: Request) -> dict[str, object]:
     g = _gnani(request)
     ledger = g.governor.ledger
     by_service = await ledger.by_service_today() if hasattr(ledger, "by_service_today") else {}
+    state = request.app.state
+    question_audio = state.question_audio
+    runtime_caches = {
+        "question_audio_entries": len(question_audio),
+        "question_audio_bytes": question_audio.bytes_cached,
+        **state.investigations.runtime_cache_stats(),
+        "event_subscribers": state.broadcaster.count(),
+        "active_participant_sessions": len(state.media_sessions.jtis),
+    }
     return {
         "spent_today_inr": round(await ledger.spent_today(), 4),
         "by_service": by_service,
+        "runtime_caches": runtime_caches,
         **g.governor.status(),
     }
 

@@ -9,7 +9,7 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-from harness import DEFAULT_SCRATCH, ROOT, LoadOptions, run_load
+from harness import DEFAULT_SCRATCH, ROOT, LoadOptions, live_summary_line, run_load
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +57,7 @@ def main() -> None:
     )
     summary = asyncio.run(run_load(options))
     if args.live:
+        print(live_summary_line(summary), flush=True)
         print("Live load completed. The core budget and rate guards remained active.", flush=True)
     else:
         print(

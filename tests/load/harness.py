@@ -647,6 +647,8 @@ async def _sample_runtime(
             sample["open_streams"] = usage.get("open_streams")
             sample["peak_streams"] = usage.get("peak_streams")
             sample["stream_cap"] = (usage.get("limits") or {}).get("max_streams")
+            if isinstance(usage.get("runtime_caches"), dict):
+                sample["runtime_caches"] = usage["runtime_caches"]
         except (httpx.HTTPError, ValueError) as exc:
             sample_errors.append(f"voice usage sample: {type(exc).__name__}")
         if fake_url is not None:
@@ -732,7 +734,17 @@ def _run_bot(
         tail = "\n".join((result.stdout + result.stderr).splitlines()[-80:])
         raise RuntimeError(f"voice bot run failed with exit code {result.returncode}:\n{tail}")
     if options.live:
-        return {"live_run_completed": True}
+        summary_line = next(
+            (
+                line.removeprefix("VOICE_RESULT_JSON=")
+                for line in reversed(result.stdout.splitlines())
+                if line.startswith("VOICE_RESULT_JSON=")
+            ),
+            None,
+        )
+        if summary_line is None:
+            raise RuntimeError("live voice bot run did not emit its result facts")
+        return json.loads(summary_line)
     lines = result.stdout.splitlines()
     summary_line = next(
         (
@@ -761,6 +773,63 @@ def _percentile_fields(investigations: list[dict[str, Any]]) -> dict[str, Any]:
         "min_ms": round(min(turn_latencies), 3) if turn_latencies else None,
         "max_ms": round(max(turn_latencies), 3) if turn_latencies else None,
     }
+
+
+def _load_window_complete(elapsed_s: float, target_s: float, three_call_seconds: float) -> bool:
+    """Require both the requested wall-clock window and three-way socket time."""
+    return elapsed_s >= target_s and three_call_seconds >= target_s
+
+
+def live_summary_line(summary: dict[str, Any]) -> str:
+    """Serialize live load facts; live summaries have no provider latency samples."""
+    return "LIVE_LOAD_SUMMARY=" + json.dumps(summary, separators=(",", ":"))
+
+
+def _stream_cap_summary(samples: list[dict[str, Any]], configured_cap: int) -> dict[str, Any]:
+    open_counts = [
+        int(sample["open_streams"]) for sample in samples if sample.get("open_streams") is not None
+    ]
+    peak_counts = [
+        int(sample["peak_streams"]) for sample in samples if sample.get("peak_streams") is not None
+    ]
+    reported_caps = [
+        int(sample["stream_cap"]) for sample in samples if sample.get("stream_cap") is not None
+    ]
+    max_open = max(open_counts) if open_counts else None
+    max_peak = max(peak_counts) if peak_counts else None
+    passed = bool(peak_counts) and max_peak is not None and max_peak <= configured_cap
+    passed = passed and (max_open is None or max_open <= configured_cap)
+    passed = passed and all(cap == configured_cap for cap in reported_caps)
+    return {
+        "configured": configured_cap,
+        "max_open_observed": max_open,
+        "max_peak_observed": max_peak,
+        "passed": passed,
+    }
+
+
+def _runtime_cache_summary(samples: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    cache_maps = [
+        sample["runtime_caches"]
+        for sample in samples
+        if isinstance(sample.get("runtime_caches"), dict)
+    ]
+    keys = {key for caches in cache_maps for key in caches}
+    result: dict[str, dict[str, int]] = {}
+    for key in sorted(keys):
+        values = [
+            int(value)
+            for caches in cache_maps
+            if isinstance((value := caches.get(key)), int) and not isinstance(value, bool)
+        ]
+        if values:
+            result[key] = {"start": values[0], "end": values[-1], "peak": max(values)}
+    return result
+
+
+def _memory_checks_passed(checks: list[dict[str, Any]], *, full_run: bool) -> bool:
+    """Short runs do not assert leak thresholds; full runs need valid passing samples."""
+    return not full_run or (bool(checks) and all(bool(item.get("passed")) for item in checks))
 
 
 def _notes(summary: dict[str, Any]) -> str:
@@ -973,16 +1042,15 @@ async def run_load(options: LoadOptions) -> dict[str, Any]:
             idle_probe=True,
             bot_log=logs / "voice-bots.log",
         )
-        if not options.live:
-            investigations.append(first)
+        investigations.append(first)
 
-        while time.monotonic() - workload_started < options.duration_s or (
-            not options.live
-            and sum(
+        while not _load_window_complete(
+            time.monotonic() - workload_started,
+            options.duration_s,
+            sum(
                 float((item.get("call_socket_metrics") or {}).get("three_way_seconds", 0))
                 for item in investigations
-            )
-            < options.duration_s
+            ),
         ):
             delay = 4.0 if len(investigations) == 1 else 0.0
             result = await asyncio.to_thread(
@@ -1000,8 +1068,7 @@ async def run_load(options: LoadOptions) -> dict[str, Any]:
                 idle_probe=False,
                 bot_log=logs / "voice-bots.log",
             )
-            if not options.live:
-                investigations.append(result)
+            investigations.append(result)
 
         sample_stop.set()
         if sample_task is not None:
@@ -1135,11 +1202,10 @@ async def run_load(options: LoadOptions) -> dict[str, Any]:
         and item.get("revealed_correct") is True
         and item.get("commitment_verified") is True
         and item.get("replay_identical") is True
-        and item.get("replay_replayed_sha256") == item.get("replay_recorded_sha256")
         for item in investigations
     )
     provider_counts = {
-        key: provider_final.get(key, 0)
+        key: None if options.live else provider_final.get(key, 0)
         for key in (
             "stt_rest_requests",
             "tts_rest_requests",
@@ -1151,6 +1217,7 @@ async def run_load(options: LoadOptions) -> dict[str, Any]:
         )
     }
     all_failures: list[str] = []
+    stream_cap = _stream_cap_summary(samples, options.stream_cap)
     if failure is not None:
         process_text = "\n".join(
             f"{process.name} log:\n{process.tail(40)}" for process in processes
@@ -1215,13 +1282,36 @@ async def run_load(options: LoadOptions) -> dict[str, Any]:
             all_failures.append("participant and core call WebSocket close counts differ")
         if sample_errors:
             all_failures.append(f"runtime metric sampling errors: {sample_errors[:5]}")
-        if full_run and not all(item.get("passed") for item in memory_checks):
+        if not stream_cap["passed"]:
+            all_failures.append("sampled governor stream count exceeded its configured cap")
+        if full_run and not _memory_checks_passed(memory_checks, full_run=True):
             all_failures.append("RSS growth exceeded the configured leak thresholds")
     else:
+        if not investigations:
+            all_failures.append("no live S1 investigations completed")
+        if not all_passed:
+            all_failures.append(
+                "a live investigation was not correct, verified, commitment-checked, "
+                "and replay-identical"
+            )
+        if peak_calls < 3:
+            all_failures.append("three participant call sockets were never open at once")
+        if three_call_seconds < options.duration_s:
+            all_failures.append(
+                "three-way call socket time did not reach the requested load duration"
+            )
+        if not stream_cap["passed"]:
+            all_failures.append("sampled governor stream count exceeded its configured cap")
         if any(close.get("code") not in ALLOWED_CALL_CLOSE_CODES for close in participant_closes):
             all_failures.append("live participant WebSocket had an unexpected close code")
         if unexpected_closes:
             all_failures.append("live core-side WebSocket close code was unexpected")
+        if len(participant_closes) != len(core_call_closes):
+            all_failures.append("participant and core call WebSocket close counts differ")
+        if full_run and not _memory_checks_passed(memory_checks, full_run=True):
+            all_failures.append("RSS growth exceeded the configured leak thresholds")
+        if sample_errors:
+            all_failures.append(f"runtime metric sampling errors: {sample_errors[:5]}")
 
     keep_failure_artifacts = bool(
         all_failures and os.environ.get("PRAMANA_LOAD_KEEP_FAILURE_ARTIFACTS") == "1"
@@ -1242,11 +1332,12 @@ async def run_load(options: LoadOptions) -> dict[str, Any]:
         "stream_cap_probe": cap_probe,
         "tts_rest_probe": tts_probe,
         "provider": provider_counts,
+        "stream_cap": stream_cap,
         "latency": None if options.live else _percentile_fields(investigations),
         "websocket_closes": {
             "participant_client_count": len(participant_closes),
             "participant_core_count": len(core_call_closes),
-            "provider_server_count": len(provider_server_closes),
+            "provider_server_count": None if options.live else len(provider_server_closes),
             "provider_core_count": len(core_provider_closes),
             "unexpected_count": len(unexpected_closes),
             "participant_client": participant_closes,
@@ -1279,6 +1370,7 @@ async def run_load(options: LoadOptions) -> dict[str, Any]:
             "max_provider_peak_streams": max(provider_usage_samples)
             if provider_usage_samples
             else provider_final.get("peak_active_websocket_sessions"),
+            "runtime_caches": _runtime_cache_summary(samples),
             "sample_errors": sample_errors,
             "leak_checks": memory_checks,
             "slope_limit_mib_per_min": RSS_SLOPE_LIMIT_MIB_PER_MIN,
@@ -1292,5 +1384,7 @@ async def run_load(options: LoadOptions) -> dict[str, Any]:
     if not keep_failure_artifacts:
         shutil.rmtree(run_dir, ignore_errors=True)
     if all_failures:
+        if options.live:
+            print(live_summary_line(summary), flush=True)
         raise RuntimeError("load run failed:\n- " + "\n- ".join(all_failures))
     return summary

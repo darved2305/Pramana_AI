@@ -9,6 +9,7 @@ Consistency model:
   because the engine is deterministic.
 * The in-memory engine is a cache keyed by the row's ``version``. A command mutates the cached
   engine before committing, so any failure evicts it; the next command rebuilds from events.
+* Per-investigation locks are held weakly, so an idle investigation does not leave a lock behind.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
+from weakref import WeakValueDictionary
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -148,7 +150,7 @@ class InvestigationService:
         self._signing_key = private_key_from_b64(signing_key_b64)
         self._engine_config = engine_config or EngineConfig()
         self._models: dict[str, CompiledModel] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
         self._cache: dict[str, tuple[int, Engine]] = {}
 
     # -- helpers ---------------------------------------------------------------------------------
@@ -196,6 +198,10 @@ class InvestigationService:
         return row
 
     async def _engine(self, session: AsyncSession, row: InvestigationRow) -> Engine:
+        if row.status == InvestigationStatus.CLOSED.value:
+            self._cache.pop(row.id, None)
+            engine, _ = await self._rebuild(session, row)
+            return engine
         cached = self._cache.get(row.id)
         if cached is not None and cached[0] == row.version:
             return cached[1]
@@ -1329,6 +1335,12 @@ class InvestigationService:
 
     def evict(self, inv_id: str) -> None:
         self._cache.pop(inv_id, None)
+
+    def runtime_cache_stats(self) -> dict[str, int]:
+        return {
+            "investigation_engine_entries": len(self._cache),
+            "investigation_lock_entries": len(self._locks),
+        }
 
     # -- replay and recovery ----------------------------------------------------------------------
 

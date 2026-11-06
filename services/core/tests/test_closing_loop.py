@@ -90,6 +90,11 @@ def test_full_closing_loop_verifies_the_repair(core: TestClient) -> None:
     assert final["approvals"][0]["status"] == "executed"
     gt = core.post(f"/v1/investigations/{inv['id']}/reveal").json()["ground_truth"]
     assert gt["correct"] is True
+    investigations = core.app.state.investigations  # type: ignore[attr-defined]
+    assert inv["id"] not in investigations._cache
+    assert core.get(f"/v1/investigations/{inv['id']}").status_code == 200
+    assert inv["id"] not in investigations._cache
+    assert inv["id"] not in investigations._locks
     types = [e["type"] for e in core.get(f"/v1/investigations/{inv['id']}/events").json()]
     for t in (
         "ApprovalRequested",
