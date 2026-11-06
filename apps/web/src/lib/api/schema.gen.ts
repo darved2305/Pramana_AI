@@ -745,6 +745,11 @@ export interface components {
             pack_id: string;
             /** Participants */
             participants: components["schemas"]["ParticipantSpec"][];
+            /**
+             * Presence Checks
+             * @default false
+             */
+            presence_checks?: boolean;
             report: components["schemas"]["Report"];
             scenario: components["schemas"]["ScenarioRequest"];
         };
@@ -756,6 +761,18 @@ export interface components {
             label: string;
             /** Probability */
             probability: number;
+        };
+        /** DependsOn */
+        DependsOn: {
+            /** Component Id */
+            component_id: string;
+            /** Component Label */
+            component_label: string;
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "earlier" | "new";
         };
         /**
          * Directness
@@ -780,6 +797,44 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** DisagreementSide */
+        DisagreementSide: {
+            /** Location Id */
+            location_id: string;
+            /** Outcome */
+            outcome: string;
+            /** P Mistaken */
+            p_mistaken: number;
+            /** Participant Id */
+            participant_id: string;
+            /** Probe Id */
+            probe_id: string;
+        };
+        /**
+         * DisagreementView
+         * @description Two people's different answers to the same question, and how the engine reads them.
+         */
+        DisagreementView: {
+            earlier: components["schemas"]["DisagreementSide"];
+            /** Explanation */
+            explanation: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "both_right" | "one_mistaken";
+            new: components["schemas"]["DisagreementSide"];
+            /** Observation Id */
+            observation_id: string;
+            /** Only One Depends */
+            only_one_depends: components["schemas"]["DependsOn"][];
+            /** P Both Right */
+            p_both_right: number;
+            /** Reconciling Hypothesis */
+            reconciling_hypothesis: string | null;
+            /** Reconciling Label */
+            reconciling_label: string | null;
         };
         /** EvaluationReport */
         EvaluationReport: {
@@ -933,6 +988,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Disagreements */
+            disagreements?: components["schemas"]["DisagreementView"][];
             ground_truth?: components["schemas"]["GroundTruthComparison"] | null;
             /** Id */
             id: string;
@@ -951,6 +1008,13 @@ export interface components {
             /** Pending Questions */
             pending_questions?: components["schemas"]["Question"][];
             plan: components["schemas"]["PlanDecision"];
+            /** Presence Checks */
+            presence_checks?: components["schemas"]["PresenceCheckView"][];
+            /**
+             * Presence Checks Enabled
+             * @default false
+             */
+            presence_checks_enabled?: boolean;
             /** Questions Asked */
             questions_asked: number;
             report: components["schemas"]["Report"];
@@ -1170,6 +1234,28 @@ export interface components {
          * @enum {string}
          */
         PlanKind: "ask" | "decide" | "abstain" | "verified" | "not_verified";
+        /**
+         * PresenceCheckView
+         * @description A presence check (docs/adr/0014). Nobody is accused: a failed check only means the
+         *     answer from that place counts for less, and someone else is asked.
+         */
+        PresenceCheckView: {
+            /** Location Id */
+            location_id: string;
+            /** Observation Id */
+            observation_id: string;
+            /** Participant Id */
+            participant_id: string;
+            /** Question Id */
+            question_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "passed" | "failed";
+            /** Token Id */
+            token_id: string;
+        };
         /** ProbeAction */
         ProbeAction: {
             /** Location Id */
@@ -1196,7 +1282,7 @@ export interface components {
              * @default probe
              * @enum {string}
              */
-            kind?: "probe" | "confirm";
+            kind?: "probe" | "confirm" | "challenge";
             /**
              * Language
              * @enum {string}

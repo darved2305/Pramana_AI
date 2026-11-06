@@ -15,8 +15,18 @@ import { ApiError, describeError } from "@/lib/api/http";
 import { decodeJoin, type JoinPayload } from "@/lib/join";
 import { startRecording, type Recording } from "@/lib/audio/recorder";
 import { QuestionMediaSession } from "@/lib/audio/media";
-import type { AnswerResult, Approval, InvestigationState, ParticipantView } from "@/lib/api/types";
+import type { AnswerResult, Approval, Extraction, InvestigationState, ParticipantView } from "@/lib/api/types";
 import { outcomeWord } from "@/lib/data/derive";
+
+/** What the participant is told was understood. A location check is a reading, not an outcome. */
+function heardAs(x: Extraction): string {
+  const reading = x.evidence?.find((e) => e.startsWith("reading:"));
+  if (reading !== undefined) {
+    const value = reading.slice("reading:".length);
+    return value === "-" ? "no label reading. Thank you, someone else will be asked" : `the label reads ${value}. Thank you`;
+  }
+  return outcomeWord(x.outcome);
+}
 
 export default function JoinPage() {
   return (
@@ -157,7 +167,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         { question_id: q.id, participant_id: payload.p, ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }) },
         payload.t,
       );
-      setUnderstood(`I understood: ${outcomeWord(r.extraction.outcome)}`);
+      setUnderstood(`I understood: ${heardAs(r.extraction)}`);
       setText("");
       setState(r.state);
     } catch (e) {
@@ -190,7 +200,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         },
         onAnswer: (result) => {
           const r = result as AnswerResult;
-          setUnderstood(`I heard "${heard}" and understood: ${outcomeWord(r.extraction.outcome)}`);
+          setUnderstood(`I heard "${heard}" and understood: ${heardAs(r.extraction)}`);
           setState(r.state);
           session.endTurn();
           setPhase("idle");
@@ -278,7 +288,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         },
         onAnswer: (result) => {
           const r = result as AnswerResult;
-          setUnderstood(`I heard "${heard}" and understood: ${outcomeWord(r.extraction.outcome)}`);
+          setUnderstood(`I heard "${heard}" and understood: ${heardAs(r.extraction)}`);
           setState(r.state);
           done(session);
         },
@@ -357,7 +367,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           setUnderstood("Recorded. (Preview: nothing was sent.)");
         } else {
           const r = await core.answerByVoice(state.id, q.id, payload.p, wav, payload.t);
-          setUnderstood(`I heard "${r.stt.transcript}" and understood: ${outcomeWord(r.result.extraction.outcome)}`);
+          setUnderstood(`I heard "${r.stt.transcript}" and understood: ${heardAs(r.result.extraction)}`);
           setState(r.result.state);
         }
       } catch (e) {
@@ -455,6 +465,9 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       {q && callPhase !== "consent" && callPhase !== "connecting" ? (
         <section aria-live="polite" className="mt-2 flex flex-col">
           {q.kind === "confirm" ? <span className="mb-2 w-fit rounded-full bg-warn/15 px-2.5 py-1 text-[12px] text-warn">Just checking</span> : null}
+          {q.kind === "challenge" ? (
+            <span className="mb-2 w-fit rounded-full bg-cream/15 px-2.5 py-1 text-[12px] text-cream">Quick location check</span>
+          ) : null}
           <h1 lang={q.language === "hi-en" ? "hi-Latn" : q.language} className="text-[24px] font-medium leading-snug">
             {q.text}
           </h1>
@@ -523,7 +536,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
                   id="ans"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="Or type your answer"
+                  placeholder={q.kind === "challenge" ? "Type what the label says" : "Or type your answer"}
                   className="h-[52px] min-w-0 flex-1 border-[0.8px] border-cream/40 bg-transparent px-4 text-[16px] outline-none transition-[border-radius] duration-500 placeholder:text-cream/40 focus:rounded-[26px] focus:border-cream"
                 />
                 <button type="submit" className="btn-line" disabled={!text.trim() || phase !== "idle"}>
@@ -558,7 +571,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         </p>
       ) : null}
 
-      {view?.items.length ? (
+      {view && (view.items.length || view.labels?.length) ? (
         <details className="mt-auto pt-8 text-[14px]">
           <summary className="cursor-pointer text-cream/60">What you can see here (simulation)</summary>
           <dl className="mt-3 divide-y divide-cream/10">
@@ -566,6 +579,12 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
               <div key={it.label} className="flex justify-between gap-4 py-2">
                 <dt className="text-cream/60">{it.label}</dt>
                 <dd>{it.value}</dd>
+              </div>
+            ))}
+            {(view.labels ?? []).map((l) => (
+              <div key={l.token_id} className="flex justify-between gap-4 py-2">
+                <dt className="text-cream/60">{l.label}</dt>
+                <dd className="font-mono tracking-[0.2em]">{l.value}</dd>
               </div>
             ))}
           </dl>

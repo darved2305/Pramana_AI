@@ -20,7 +20,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,7 @@ from pramana_contracts import (
     CreateInvestigation,
     CreateScenario,
     Directness,
+    DisagreementView,
     EventEnvelope,
     Extraction,
     GroundTruthComparison,
@@ -50,6 +51,8 @@ from pramana_contracts import (
     ParticipantSpec,
     PlanDecision,
     PlanKind,
+    PresenceCheck,
+    PresenceCheckView,
     ProbeAction,
     Question,
     QuestionStatus,
@@ -90,9 +93,11 @@ from .db import (
     QuestionRow,
 )
 from .errors import ApiError, not_found
+from .language.explain import disagreement_view
 from .language.extraction import Extractor
 from .language.intake import INTAKE_PROBE, parse_report
-from .language.realize import CONFIRM_PREFIX, realize
+from .language.presence import read_code
+from .language.realize import CONFIRM_PREFIX, realize, realize_challenge
 from .observability import log
 from .sim_client import SimClient
 
@@ -238,6 +243,14 @@ class InvestigationService:
                     payload["location_id"],
                     bool(payload["agreed"]),
                 )
+            elif type_ == "ChallengeIssued":
+                engine.set_presence(payload["participant_id"], payload["location_id"], "pending")
+            elif type_ == "ChallengeResult":
+                engine.set_presence(
+                    payload["participant_id"],
+                    payload["location_id"],
+                    "verified" if payload["passed"] else "failed",
+                )
             elif type_ == "Reopened":
                 engine.reopen()
             elif type_ == "InterventionReported":
@@ -320,6 +333,12 @@ class InvestigationService:
                     "conflicts_with": result.contradiction,
                 },
             )
+        if result.disagreements:
+            row_pack = engine.model.pack
+            names = {p.spec.id: p.spec.display_name for p in engine.participants.values()}
+            for d in result.disagreements:
+                view = disagreement_view(row_pack, names, d, obs.id)
+                self._event(session, inv_id, "DisagreementExplained", view.model_dump(mode="json"))
         return obs, result
 
     async def _supersede(self, session: AsyncSession, inv_id: str, obs: Observation) -> None:
@@ -530,6 +549,122 @@ class InvestigationService:
             },
         )
         return True
+
+    def _ask_challenge(
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        asked: QuestionRow,
+        obs: Observation,
+        token_id: str,
+    ) -> None:
+        """Ask the same person to read the presence token at the place they reported from."""
+        engine.set_presence(asked.participant_id, asked.location_id, "pending")
+        lang = cast(TemplateLanguage, asked.language)
+        text = realize_challenge(self.pack(row.pack_id), token_id, asked.location_id, lang)
+        qid = _id("q")
+        session.add(
+            QuestionRow(
+                id=qid,
+                investigation_id=row.id,
+                participant_id=asked.participant_id,
+                probe_id=asked.probe_id,
+                location_id=asked.location_id,
+                requires_move=False,
+                language=asked.language,
+                text=text,
+                status=QuestionStatus.PENDING.value,
+                kind="challenge",
+                asked_at=_now(),
+            )
+        )
+        engine.record_question(asked.participant_id)
+        self._event(
+            session,
+            row.id,
+            "ChallengeIssued",
+            {
+                "question_id": qid,
+                "observation_id": obs.id,
+                "participant_id": asked.participant_id,
+                "location_id": asked.location_id,
+                "token_id": token_id,
+            },
+        )
+        self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
+        self._event(
+            session,
+            row.id,
+            "QuestionAsked",
+            {
+                "question_id": qid,
+                "action": {
+                    "participant_id": asked.participant_id,
+                    "probe_id": asked.probe_id,
+                    "location_id": asked.location_id,
+                    "requires_move": False,
+                },
+                "language": asked.language,
+                "text": text,
+                "kind": "challenge",
+                "challenges_question": asked.id,
+            },
+        )
+
+    async def _apply_challenge(
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        q: QuestionRow,
+        ans: SubmitAnswer,
+        extraction: Extraction,
+    ) -> Observation:
+        """Send the reading to the simulator (which alone knows the value) and record the
+        result. A wrong reading, or none ("I can't see it"), fails the check: nobody is
+        accused, the answer from that place just keeps counting for little."""
+        issued = (
+            await session.execute(
+                select(EventRow.payload)
+                .where(EventRow.investigation_id == row.id, EventRow.type == "ChallengeIssued")
+                .order_by(EventRow.seq)
+            )
+        ).scalars()
+        payload = next((p for p in issued if p["question_id"] == q.id), None)
+        if payload is None:
+            raise ApiError(409, "NOTHING_TO_CHECK", "this presence check was not found")
+        reading = read_code(ans.text or "")
+        result = await self.sim.check_presence(
+            row.scenario_id,
+            PresenceCheck(
+                participant_id=q.participant_id, token_id=payload["token_id"], answer=reading
+            ),
+        )
+        engine.set_presence(
+            q.participant_id, q.location_id, "verified" if result.passed else "failed"
+        )
+        extraction.evidence.append(f"reading:{reading or '-'}")
+        self._event(
+            session,
+            row.id,
+            "ChallengeResult",
+            {
+                "question_id": q.id,
+                "observation_id": payload["observation_id"],
+                "participant_id": q.participant_id,
+                "location_id": q.location_id,
+                "token_id": payload["token_id"],
+                "passed": result.passed,
+                "reading": reading,
+            },
+        )
+        original = await session.get(ObservationRow, payload["observation_id"])
+        if original is None:
+            raise ApiError(409, "NOTHING_TO_CHECK", "the answer being checked was not found")
+        return Observation.model_validate(
+            {c: getattr(original, c) for c in Observation.model_fields}
+        )
 
     def _ask_confirmation(
         self, session: AsyncSession, row: InvestigationRow, engine: Engine, asked: QuestionRow
@@ -748,7 +883,20 @@ class InvestigationService:
                         )
                     engine = await self._engine(session, row)
                     outcomes = list(self.model(row.pack_id).outcomes[q.probe_id])
-                    if ans.text is not None:
+                    if q.kind == "challenge":
+                        if ans.text is None:
+                            raise ApiError(
+                                422,
+                                "READING_REQUIRED",
+                                "a presence check is answered by reading the label, aloud or typed",
+                            )
+                        extraction = Extraction(
+                            outcome=UNKNOWN_OUTCOME,
+                            hedge=Hedge.CERTAIN,
+                            directness=Directness.DIRECT,
+                            method="rules",
+                        )
+                    elif ans.text is not None:
                         extraction = await self.extractor.extract(
                             ans.text, outcomes, question=q.text
                         )
@@ -773,7 +921,13 @@ class InvestigationService:
                         ans.modality,
                     )
                     q.status, q.answered_at = QuestionStatus.ANSWERED.value, _now()
-                    if q.kind == "confirm":
+                    if q.kind == "challenge":
+                        obs = await self._apply_challenge(session, row, engine, q, ans, extraction)
+                        await self._schedule(session, row, engine)
+                        row.version += 1
+                        version = row.version
+                        continue_planning = False
+                    elif q.kind == "confirm":
                         obs = await self._apply_confirmation(session, inv_id, engine, q, extraction)
                         await self._schedule(session, row, engine)
                         row.version += 1
@@ -792,7 +946,20 @@ class InvestigationService:
                         )
                         await self._supersede(session, inv_id, obs)
                         continue_planning = True
-                        critical = (
+                        token = (
+                            engine.presence_challenge(ev, observed)
+                            if row.request.get("presence_checks")
+                            else None
+                        )
+                        if token is not None:
+                            # Check presence before a decision rests on this answer. The
+                            # answer counts for little until the check passes, so nothing is
+                            # decided on it meanwhile (docs/adr/0014).
+                            self._ask_challenge(session, row, engine, q, obs, token)
+                            row.version += 1
+                            version = row.version
+                            continue_planning = False
+                        critical = token is None and (
                             ans.modality == Modality.VOICE
                             and observed.used_as_evidence
                             and observed.decision_critical
@@ -923,6 +1090,36 @@ class InvestigationService:
                 .scalars()
                 .all()
             )
+            testimony = (
+                await session.execute(
+                    select(EventRow.type, EventRow.payload)
+                    .where(
+                        EventRow.investigation_id == inv_id,
+                        EventRow.type.in_(
+                            ("ChallengeIssued", "ChallengeResult", "DisagreementExplained")
+                        ),
+                    )
+                    .order_by(EventRow.seq)
+                )
+            ).all()
+        checks: dict[str, PresenceCheckView] = {}
+        disagreements: list[DisagreementView] = []
+        for type_, payload in testimony:
+            if type_ == "ChallengeIssued":
+                checks[payload["question_id"]] = PresenceCheckView(
+                    question_id=payload["question_id"],
+                    observation_id=payload["observation_id"],
+                    participant_id=payload["participant_id"],
+                    location_id=payload["location_id"],
+                    token_id=payload["token_id"],
+                    status="pending",
+                )
+            elif type_ == "ChallengeResult" and payload["question_id"] in checks:
+                checks[payload["question_id"]] = checks[payload["question_id"]].model_copy(
+                    update={"status": "passed" if payload["passed"] else "failed"}
+                )
+            elif type_ == "DisagreementExplained":
+                disagreements.append(DisagreementView.model_validate(payload))
         model = self.model(row.pack_id)
         waiting = [
             self._question_view(model, q)
@@ -942,6 +1139,9 @@ class InvestigationService:
             pending_question=waiting[0] if waiting else None,
             pending_questions=waiting,
             max_parallel_calls=int(row.request.get("max_parallel_calls", 1)),
+            presence_checks_enabled=bool(row.request.get("presence_checks", False)),
+            presence_checks=list(checks.values()),
+            disagreements=disagreements,
             observations=[
                 Observation.model_validate({c: getattr(o, c) for c in Observation.model_fields})
                 for o in observations
@@ -965,10 +1165,12 @@ class InvestigationService:
             ),
             language=cast(TemplateLanguage, q.language),
             text=q.text,
-            outcomes=list(model.outcomes[q.probe_id]),
+            outcomes=[] if q.kind == "challenge" else list(model.outcomes[q.probe_id]),
             status=QuestionStatus(q.status),
             asked_at=q.asked_at,
-            kind="confirm" if q.kind == "confirm" else "probe",
+            kind=cast(Literal["probe", "confirm", "challenge"], q.kind)
+            if q.kind in ("confirm", "challenge")
+            else "probe",
         )
 
     async def events(self, inv_id: str, after_seq: int, limit: int) -> list[EventEnvelope]:

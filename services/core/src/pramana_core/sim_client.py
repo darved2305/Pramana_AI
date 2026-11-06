@@ -10,7 +10,13 @@ from __future__ import annotations
 import httpx
 from pydantic import BaseModel
 
-from pramana_contracts import CreateScenario, RevealResult, ScenarioCreated
+from pramana_contracts import (
+    CreateScenario,
+    PresenceCheck,
+    PresenceCheckResult,
+    RevealResult,
+    ScenarioCreated,
+)
 
 from .errors import ApiError
 
@@ -60,6 +66,12 @@ class SimClient:
     async def reveal(self, scenario_id: str) -> RevealResult:
         resp = await self._post(f"/sim/v1/scenarios/{scenario_id}/reveal")
         return RevealResult.model_validate_json(resp.content)
+
+    async def check_presence(self, scenario_id: str, req: PresenceCheck) -> PresenceCheckResult:
+        """Ask the simulator whether a reading matches a presence token. The value is never
+        returned: only whether it matched."""
+        resp = await self._post(f"/sim/v1/scenarios/{scenario_id}/presence/check", req)
+        return PresenceCheckResult.model_validate_json(resp.content)
 
     async def health(self) -> bool:
         try:

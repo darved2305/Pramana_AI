@@ -340,6 +340,35 @@ move_templates:
   hi: "क्या आप {place} तक जा सकते हैं? वहाँ पहुँचकर: "
   mr: "तुम्ही {place} पर्यंत जाऊ शकाल का? तिथे पोहोचल्यावर: "
 
+# Presence checks (PRODUCT.md U8). Before a decision rests on what someone says they saw in a
+# restricted place they walked to, they are asked to read a detail only someone there can see.
+# The values are not here: each simulated scenario draws fresh ones and shows them only on site.
+presence_tokens:
+  - id: idf2_switch_label
+    at: IDF2
+    label: "Label on the network switch (last three characters)"
+    templates:
+      en: "One quick check, since you are in {place}: please read the last three characters on the white label of the network switch."
+      hi-en: "Ek chhota sa check, aap {place} mein hain: network switch ke white label ke aakhri teen akshar padhiye."
+      hi: "एक छोटी सी जाँच, आप {place} में हैं: नेटवर्क स्विच के सफ़ेद लेबल के आख़िरी तीन अक्षर पढ़िए।"
+      mr: "एक छोटी तपासणी, तुम्ही {place} मध्ये आहात: नेटवर्क स्विचच्या पांढऱ्या लेबलवरची शेवटची तीन अक्षरं वाचा."
+  - id: idf1_rack_label
+    at: IDF1
+    label: "Label on the rack door (last three characters)"
+    templates:
+      en: "One quick check, since you are in {place}: please read the last three characters on the label of the rack door."
+      hi-en: "Ek chhota sa check, aap {place} mein hain: rack ke darwaze ke label ke aakhri teen akshar padhiye."
+      hi: "एक छोटी सी जाँच, आप {place} में हैं: रैक के दरवाज़े के लेबल के आख़िरी तीन अक्षर पढ़िए।"
+      mr: "एक छोटी तपासणी, तुम्ही {place} मध्ये आहात: रॅकच्या दरवाज्यावरच्या लेबलची शेवटची तीन अक्षरं वाचा."
+  - id: db_c2_door_label
+    at: DB_C2_PANEL
+    label: "Label inside the panel door (last three characters)"
+    templates:
+      en: "One quick check, since you are at {place}: please read the last three characters on the label inside the panel door."
+      hi-en: "Ek chhota sa check, aap {place} pe hain: panel ke darwaze ke andar wale label ke aakhri teen akshar padhiye."
+      hi: "एक छोटी सी जाँच, आप {place} पर हैं: पैनल के दरवाज़े के अंदर वाले लेबल के आख़िरी तीन अक्षर पढ़िए।"
+      mr: "एक छोटी तपासणी, तुम्ही {place} जवळ आहात: पॅनलच्या दरवाज्याच्या आतल्या लेबलची शेवटची तीन अक्षरं वाचा."
+
 # Operational decisions. Each hypothesis maps to exactly one decision class.
 decision_classes:
   - { id: DISPATCH_ELECTRICIAN_DB_C2, label: "Send the electrician to panel DB-C2", hypotheses: [CB_C2_7.tripped, CB_C2_5.tripped] }

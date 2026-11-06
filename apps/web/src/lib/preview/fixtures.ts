@@ -261,6 +261,23 @@ export const previewInvestigation: InvestigationState = {
   approvals,
   questions_asked: 6,
   ground_truth: null,
+  presence_checks_enabled: true,
+  presence_checks: [
+    { question_id: "q_preview_check", observation_id: "obs_preview_3", participant_id: "p_imran", location_id: "DB_C2_PANEL", token_id: "db_c2_door_label", status: "passed" },
+  ],
+  disagreements: [
+    {
+      observation_id: "obs_preview_5",
+      earlier: { participant_id: "p_riya", probe_id: "wifi_status", location_id: "F3_R304", outcome: "no_network", p_mistaken: 0.31 },
+      new: { participant_id: "p_riya", probe_id: "wifi_status", location_id: "F3_R304", outcome: "connected", p_mistaken: 0.12 },
+      kind: "one_mistaken",
+      p_both_right: 0,
+      reconciling_hypothesis: null,
+      reconciling_label: null,
+      only_one_depends: [],
+      explanation: "No likely cause makes both answers right. If one of them is mistaken, it is more likely the first reading (31%).",
+    },
+  ],
 };
 
 /** A short event log matching the story above, for the replay screen. */

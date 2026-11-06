@@ -19,6 +19,15 @@ CONFIRM_PREFIX: dict[TemplateLanguage, str] = {
 original, item-specific form (not "did you say off?"), so the confirmation is not leading."""
 
 
+def realize_challenge(
+    pack: DomainPack, token_id: str, location_id: str, language: TemplateLanguage
+) -> str:
+    """The presence-check question for ``token_id`` (docs/adr/0014)."""
+    token = next(t for t in pack.presence_tokens if t.id == token_id)
+    place = pack.location_by_id[location_id].label.get(language)
+    return token.templates[language].replace("{place}", place)
+
+
 def realize(pack: DomainPack, action: ProbeAction, language: TemplateLanguage) -> str:
     probe = pack.probe_by_id[action.probe_id]
     place = pack.location_by_id[action.location_id].label.get(language)

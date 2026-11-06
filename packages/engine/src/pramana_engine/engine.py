@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -56,9 +57,12 @@ from .belief import (
 from .config import EngineConfig
 from .model import OPEN_WORLD_PREDICTION, CompiledModel
 from .quadrature import beta_reliability_rule
+from .testimony import Disagreement, explain
 
 SiteKey = tuple[str, str, str]  # (participant_id, probe_id, location_id)
 Group = tuple[str, str]  # (participant_id, probe class): one shared unknown reliability
+Presence = Literal["pending", "verified", "failed"]
+"""A presence check of one person at one restricted place (docs/adr/0014)."""
 
 
 class EvidenceError(ValueError):
@@ -102,6 +106,10 @@ class ObserveResult:
     than ``confirm_delta``. A spoken answer like that is worth confirming before relying on it."""
     multiple_faults_suspected: bool = False
     """Taken at face value, the answers so far fit no single fault but do fit a pair."""
+    disagreements: tuple[Disagreement, ...] = ()
+    """Earlier answers by other people to the same probe with a different outcome, each with
+    the engine's reading of it: both right (a cause that affects only one place) or one
+    mistaken, and how likely each is (``testimony.explain``)."""
 
 
 @dataclass(frozen=True)
@@ -163,6 +171,7 @@ class Engine:
         self._fixed = np.zeros(n, dtype=bool)
         self._repair: _Repair | None = None
         self._belief_cache: _Belief | None = None
+        self._presence: dict[tuple[str, str], Presence] = {}
 
     # -- reliability -------------------------------------------------------------------------
 
@@ -218,6 +227,9 @@ class Engine:
             w *= self.cfg.hearsay_factor
         if ev.modality == Modality.VOICE:
             w *= self.cfg.voice_weight
+        unproven = self._presence.get((ev.participant_id, ev.location_id)) in ("pending", "failed")
+        if unproven and self.model.pack.probe_by_id[ev.probe_id].kind not in DEVICE_KINDS:
+            w *= self.cfg.presence_unverified_weight
         return w
 
     def _validate(self, ev: Evidence) -> int:
@@ -337,7 +349,68 @@ class Engine:
             surprise,
             critical,
             self._only_pairs_fit(),
+            self._disagreements(ev),
         )
+
+    def _disagreements(self, ev: Evidence) -> tuple[Disagreement, ...]:
+        """Other people's answers in this era to the same probe that differ from ``ev``."""
+        post = self.posterior()
+        new = (ev.participant_id, ev.probe_id, ev.location_id, ev.outcome)
+        out = []
+        for e in self._current_entries():
+            if (
+                e.ev.participant_id == ev.participant_id
+                or e.ev.probe_id != ev.probe_id
+                or e.ev.outcome == ev.outcome
+            ):
+                continue
+            earlier = (e.ev.participant_id, e.ev.probe_id, e.ev.location_id, e.ev.outcome)
+            out.append(explain(self.model, post, earlier, new))
+        return tuple(out)
+
+    # -- presence ------------------------------------------------------------------------------
+
+    def presence_challenge(self, ev: Evidence, result: ObserveResult) -> str | None:
+        """The presence token to check ``ev`` with before relying on it, or ``None``.
+
+        Asked when a decision-critical answer is about what is seen in a restricted place the
+        person had to go to (they are not registered there), the place has a presence token,
+        and this person has not been checked there yet. A claim of having gone somewhere is the
+        cheapest lie to tell and the hardest to notice (scenario S7).
+        """
+        pack = self.model.pack
+        token = pack.presence_token_at(ev.location_id)
+        ps = self.participants[ev.participant_id]
+        if (
+            token is None
+            or not result.used_as_evidence
+            or not result.decision_critical
+            or self._repair is not None
+            or pack.probe_by_id[ev.probe_id].kind in DEVICE_KINDS
+            or not pack.location_by_id[ev.location_id].restricted
+            or ps.spec.location_id == ev.location_id
+            or (ev.participant_id, ev.location_id) in self._presence
+        ):
+            return None
+        return token.id
+
+    def set_presence(self, participant_id: str, location_id: str, state: Presence) -> None:
+        """Record a presence check. While it is pending, and after it fails, what the person
+        reports seeing at that place counts at ``presence_unverified_weight``; once it passes
+        it counts in full. A failed check also means they are not there, so they are planned
+        as still at their registered place."""
+        ps = self.participants.get(participant_id)
+        if ps is None:
+            raise EvidenceError(f"unknown participant {participant_id}")
+        if location_id not in self.model.pack.location_by_id:
+            raise EvidenceError(f"unknown location {location_id}")
+        self._presence[(participant_id, location_id)] = state
+        if state == "failed" and ps.location_id == location_id:
+            ps.location_id = ps.spec.location_id
+        self._changed()
+
+    def presence(self, participant_id: str, location_id: str) -> Presence | None:
+        return self._presence.get((participant_id, location_id))
 
     def confirm(self, participant_id: str, probe_id: str, location_id: str, agreed: bool) -> None:
         """Apply a confirmation of an earlier spoken answer.

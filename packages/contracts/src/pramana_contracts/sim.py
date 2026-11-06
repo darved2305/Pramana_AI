@@ -51,6 +51,14 @@ class ViewItem(StrictModel):
     value: str
 
 
+class ViewLabel(StrictModel):
+    """A detail printed on equipment, visible only to someone standing there (presence token)."""
+
+    token_id: Identifier
+    label: str
+    value: str
+
+
 class ParticipantView(StrictModel):
     scenario_id: str
     participant_id: Identifier
@@ -58,6 +66,21 @@ class ParticipantView(StrictModel):
     location_label: str
     items: list[ViewItem]
     reachable_locations: list[Identifier]
+    labels: list[ViewLabel] = Field(default_factory=list)
+    """Presence-token labels at this place. Shown only on site, never to the core."""
+
+
+class PresenceCheck(StrictModel):
+    """Does this answer match the presence token? Asked by the core, which never sees the value."""
+
+    participant_id: Identifier
+    token_id: Identifier
+    answer: str = Field(max_length=64)
+
+
+class PresenceCheckResult(StrictModel):
+    passed: bool
+    attempts_left: int
 
 
 class MoveRequest(StrictModel):

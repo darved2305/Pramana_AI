@@ -19,7 +19,7 @@ import { IconArrowLeft, IconCopy, IconLink, IconLock, IconPlay } from "@/compone
 import { BuildingMap } from "@/components/app/BuildingMap";
 import { Avatar } from "@/components/app/Avatar";
 import { DecisionBar, DiagnosisPanel, HypothesisPanel, ReasoningPanel } from "@/components/console/BeliefPanels";
-import { ApprovalPanel, ContradictionPanel, ConversationPanel, EvidenceLedger } from "@/components/console/ActivityPanels";
+import { ApprovalPanel, ContradictionPanel, ConversationPanel, EvidenceLedger, TestimonyPanel } from "@/components/console/ActivityPanels";
 import { useInvestigation, usePack } from "@/lib/data/hooks";
 import { useCurrentUser } from "@/lib/data/session";
 import { hasRole } from "@/lib/api/auth";
@@ -213,6 +213,8 @@ function CommandCenter({
       </div>
 
       <EvidenceLedger state={s} pack={pack} />
+
+      <TestimonyPanel state={s} pack={pack} />
 
       <div className="grid gap-4 xl:grid-cols-3">
         <ContradictionPanel items={contradictions} state={s} pack={pack} />

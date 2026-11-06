@@ -21,9 +21,11 @@ from pramana_contracts import (
     MoveResult,
     ObserveResult,
     ParticipantView,
+    PresenceCheckResult,
     RevealResult,
     SimParticipant,
     ViewItem,
+    ViewLabel,
 )
 from pramana_contracts.tokens import CapabilityClaims
 from pramana_domain import DomainPack, World
@@ -68,6 +70,18 @@ def draw_fault(pack: DomainPack, seed: int) -> FaultSpec:
     return rng.choices(options, weights=weights, k=1)[0]
 
 
+PRESENCE_ALPHABET = "AFHKLMQRXY345679"
+"""Characters of a presence-token value: no pair sounds alike when read aloud (no B/D/P/T/V,
+no M/N together with 1/I or 0/O), so a correct reading survives speech recognition."""
+PRESENCE_LENGTH = 3
+PRESENCE_ATTEMPTS = 2
+"""Checks allowed per person and token, so the core cannot be used to guess the value."""
+
+
+def canonical_reading(text: str) -> str:
+    return "".join(c for c in text.upper() if c.isascii() and c.isalnum())
+
+
 @dataclass
 class _Person:
     roles: frozenset[str]
@@ -87,8 +101,15 @@ class Scenario:
     used_capabilities: set[str] = field(default_factory=set)
     interventions: list[tuple[str, str, str]] = field(default_factory=list)
     _active_faults: set[tuple[str, str]] = field(default_factory=set)
+    presence_values: dict[str, str] = field(default_factory=dict, repr=False)
+    presence_attempts: dict[tuple[str, str], int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not self.presence_values:
+            self.presence_values = {
+                t.id: "".join(secrets.choice(PRESENCE_ALPHABET) for _ in range(PRESENCE_LENGTH))
+                for t in self.pack.presence_tokens
+            }
         self._active_faults = {(f.component_id, f.mode) for f in self.fault_spec.faults}
         self.world = World(self.pack, frozenset(self._active_faults))
 
@@ -147,7 +168,28 @@ class Scenario:
             location_label=loc.label.en,
             items=items,
             reachable_locations=self._reachable(person),
+            labels=[
+                ViewLabel(token_id=t.id, label=t.label, value=self.presence_values[t.id])
+                for t in self.pack.presence_tokens
+                if t.at == person.location_id
+            ],
         )
+
+    def check_presence(
+        self, participant_id: str, token_id: str, answer: str
+    ) -> PresenceCheckResult:
+        """Compare a reading of a presence token with its value, without disclosing it."""
+        self._person(participant_id)
+        if token_id not in self.presence_values:
+            raise ScenarioError(422, "UNKNOWN_TOKEN", f"unknown presence token {token_id}")
+        key = (participant_id, token_id)
+        used = self.presence_attempts.get(key, 0)
+        if used >= PRESENCE_ATTEMPTS:
+            return PresenceCheckResult(passed=False, attempts_left=0)
+        self.presence_attempts[key] = used + 1
+        reading = canonical_reading(answer)
+        passed = bool(reading) and secrets.compare_digest(reading, self.presence_values[token_id])
+        return PresenceCheckResult(passed=passed, attempts_left=PRESENCE_ATTEMPTS - used - 1)
 
     def _can_enter(self, person: _Person, location_id: str) -> bool:
         loc = self.pack.location_by_id[location_id]

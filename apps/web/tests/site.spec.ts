@@ -152,7 +152,7 @@ test.describe("preview console", () => {
   test("command center shows every panel with preview labels", async ({ page }) => {
     const errors = trackErrors(page);
     await page.goto("/app/investigations/preview-0001");
-    for (const h of ["Environment", "Competing causes", "What to do", "Conversation", "Why this question", "Evidence ledger", "Contradictions", "Approvals", "Diagnosis"]) {
+    for (const h of ["Environment", "Competing causes", "What to do", "Conversation", "Why this question", "Evidence ledger", "Testimony", "Contradictions", "Approvals", "Diagnosis"]) {
       await expect(page.getByRole("heading", { name: h, exact: true })).toBeVisible();
     }
     await expect(page.getByText("Preview data").first()).toBeVisible();

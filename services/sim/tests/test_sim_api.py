@@ -385,3 +385,74 @@ def test_repair_in_a_two_fault_world_clears_only_its_own_fault(client: TestClien
     reveal = client.post(f"/sim/v1/scenarios/{sid}/reveal", headers=OPERATOR).json()
     assert reveal["commitment_verified"] is True  # the seal is of the original faults
     assert len(reveal["fault_spec"]["faults"]) == 2
+
+
+# -- presence tokens (S7) -----------------------------------------------------------------------
+
+
+def _check(client: TestClient, sid: str, answer: str, pid: str = "p_mahesh", **kw: Any) -> Any:
+    body = {"participant_id": pid, "token_id": "idf2_switch_label", "answer": answer}
+    return client.post(f"/sim/v1/scenarios/{sid}/presence/check", json=body, **kw)
+
+
+def _label(client: TestClient, sid: str) -> str:
+    h = bearer("p_mahesh", sid)
+    client.post(f"/sim/v1/scenarios/{sid}/move", json={"to": "IDF2"}, headers=h)
+    view = client.get(f"/sim/v1/scenarios/{sid}/view", headers=h).json()
+    (label,) = view["labels"]
+    assert label["token_id"] == "idf2_switch_label"
+    value: str = label["value"]
+    return value
+
+
+def test_presence_label_is_shown_only_on_site(client: TestClient) -> None:
+    sid = scenario(client, CB7)
+    h = bearer("p_mahesh", sid)
+    assert client.get(f"/sim/v1/scenarios/{sid}/view", headers=h).json()["labels"] == []
+    value = _label(client, sid)
+    assert len(value) == 3
+    assert set(value) <= set("AFHKLMQRXY345679")
+
+
+def test_presence_check_never_discloses_the_value(client: TestClient) -> None:
+    sid = scenario(client, CB7)
+    value = _label(client, sid)
+    r = _check(client, sid, "zzz", headers=OPERATOR)
+    assert r.status_code == 200
+    assert r.json() == {"passed": False, "attempts_left": 1}
+    assert value not in r.text
+    r = _check(client, sid, f" {value[0]} {value[1].lower()}-{value[2]}. ", headers=OPERATOR)
+    assert r.json() == {"passed": True, "attempts_left": 0}
+
+
+def test_presence_check_is_limited_and_needs_the_operator_key(client: TestClient) -> None:
+    sid = scenario(client, CB7)
+    value = _label(client, sid)
+    assert _check(client, sid, value).status_code == 401
+    assert _check(client, sid, value, headers=bearer("p_mahesh", sid)).status_code == 401
+    _check(client, sid, "AAA", headers=OPERATOR)
+    _check(client, sid, "AAA", headers=OPERATOR)
+    # Two tries are used up: even the right reading no longer passes (no brute force).
+    assert _check(client, sid, value, headers=OPERATOR).json() == {
+        "passed": False,
+        "attempts_left": 0,
+    }
+
+
+def test_presence_check_rejects_unknown_tokens_people_and_empty_readings(
+    client: TestClient,
+) -> None:
+    sid = scenario(client, CB7)
+    body = {"participant_id": "p_mahesh", "token_id": "nope", "answer": "AAA"}
+    r = client.post(f"/sim/v1/scenarios/{sid}/presence/check", json=body, headers=OPERATOR)
+    assert r.status_code == 422
+    assert _check(client, sid, "AAA", pid="p_nobody", headers=OPERATOR).status_code == 403
+    assert _check(client, sid, "  -- ", headers=OPERATOR).json()["passed"] is False
+
+
+def test_presence_values_are_fresh_per_scenario(client: TestClient) -> None:
+    values = {_label(client, scenario(client, CB7)) for _ in range(12)}
+    assert len(values) > 1
+    from pramana_sim.scenario import PRESENCE_ALPHABET
+
+    assert all(set(v) <= set(PRESENCE_ALPHABET) for v in values)

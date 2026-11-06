@@ -363,6 +363,83 @@ export function ContradictionPanel({ items, state, pack }: { items: Contradictio
   );
 }
 
+/* ---------- Testimony: how disagreements fit, and presence checks ---------- */
+
+const pct = (p: number) => `${Math.round(p * 100)}%`;
+
+const CHECK_TONE = { pending: "warn", passed: "ok", failed: "bad" } as const;
+const CHECK_WORD = { pending: "Waiting for the reading", passed: "Confirmed on site", failed: "Could not confirm" } as const;
+
+export function TestimonyPanel({ state, pack }: { state: InvestigationState; pack?: SitePack }) {
+  const disagreements = state.disagreements ?? [];
+  const checks = state.presence_checks ?? [];
+  const count = disagreements.length + checks.length;
+  return (
+    <Card className="p-4" aria-labelledby="testimony-title">
+      <CardHeader
+        id="testimony-title"
+        title="Testimony"
+        subtitle="Why people disagree, and checks that someone really was where they said"
+        action={count ? <Badge tone="info">{count}</Badge> : undefined}
+      />
+      {count === 0 ? (
+        <EmptyState
+          className="py-8"
+          title="Nothing to weigh yet"
+          body={
+            state.presence_checks_enabled
+              ? "When two people answer differently, the engine shows how both could be right. A decisive answer from a restricted place is confirmed with a label only someone there can read."
+              : "When two people answer differently, the engine shows how both could be right. Presence checks are off for this investigation."
+          }
+        />
+      ) : (
+        <ul className="mt-4 flex flex-col gap-3">
+          {checks.map((c) => (
+            <li key={c.question_id} className="rounded-[12px] border-[0.8px] border-line p-3" data-testid="presence-check">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[14px] text-fg">
+                  <IconShield className="mr-1.5 inline h-4 w-4 align-[-3px] text-muted" />
+                  {participantName(state, c.participant_id)} at {locationLabel(pack, c.location_id)}
+                </p>
+                <Badge tone={CHECK_TONE[c.status]}>{CHECK_WORD[c.status]}</Badge>
+              </div>
+              <p className="mt-1 text-[13px] text-fg-2">
+                {c.status === "failed"
+                  ? "Their answer from there now counts for little, and someone else is asked. Nobody is accused."
+                  : c.status === "passed"
+                    ? "They read the label correctly, so their answer from there counts in full."
+                    : "Asked to read a label only someone there can see. Until then, their answer from there counts for little."}
+              </p>
+            </li>
+          ))}
+          {disagreements.map((d) => (
+            <li key={`${d.observation_id}-${d.earlier.participant_id}`} className="rounded-[12px] border-[0.8px] border-line p-3" data-testid="disagreement">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[14px] text-fg">{probeLabel(pack, d.new.probe_id)}</p>
+                <Badge tone={d.kind === "both_right" ? "ok" : "warn"}>{d.kind === "both_right" ? "Both can be right" : "One is likely mistaken"}</Badge>
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {[d.earlier, d.new].map((side) => (
+                  <div key={side.participant_id} className="rounded-[10px] bg-white/[.03] p-2.5 text-[13px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{participantName(state, side.participant_id)}</span>
+                      <Badge tone={outcomeTone(side.outcome) === "good" ? "ok" : outcomeTone(side.outcome) === "bad" ? "bad" : "warn"}>{outcomeWord(side.outcome)}</Badge>
+                    </div>
+                    <p className="mt-1 text-[12px] text-muted">
+                      {locationLabel(pack, side.location_id)} · mistaken {pct(side.p_mistaken)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-[13px] text-fg-2">{d.explanation}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 /* ---------- Approvals ---------- */
 
 export function ApprovalPanel({

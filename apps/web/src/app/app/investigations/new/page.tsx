@@ -51,6 +51,7 @@ export default function NewInvestigationPage() {
   const [overrides, setOverrides] = useState<Record<string, Partial<ParticipantSpec>>>({});
   const [seed, setSeed] = useState("19");
   const [parallel, setParallel] = useState(1);
+  const [presenceChecks, setPresenceChecks] = useState(false);
   const [faultMode, setFaultMode] = useState<"random" | "specified">("random");
   const [faultComponent, setFaultComponent] = useState("");
   const [faultKind, setFaultKind] = useState("");
@@ -107,6 +108,7 @@ export default function NewInvestigationPage() {
             fault: faultMode === "random" ? "random" : { faults: [{ component_id: faultComponent, mode: faultKind }] },
           },
           max_parallel_calls: parallel,
+          presence_checks: presenceChecks,
         }
       : null;
 
@@ -414,6 +416,21 @@ export default function NewInvestigationPage() {
                     </Select>
                   )}
                 </Field>
+                <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border-[0.8px] border-line p-3 has-[:checked]:border-accent/60">
+                  <input
+                    type="checkbox"
+                    checked={presenceChecks}
+                    onChange={(e) => setPresenceChecks(e.target.checked)}
+                    className="mt-1 accent-[var(--accent)]"
+                    data-testid="presence-checks"
+                  />
+                  <span>
+                    <span className="block text-[14px] font-medium">Check presence at restricted places</span>
+                    <span className="block text-[13px] text-muted">
+                      Before a decision rests on what someone reports from a closet or panel they walked to, they are asked to read a label only someone there can see.
+                    </span>
+                  </span>
+                </label>
                 <fieldset className="flex flex-col gap-3">
                   <legend className="mb-1 text-[13px] font-medium text-fg-2">Hidden fault</legend>
                   <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border-[0.8px] border-line p-3 has-[:checked]:border-accent/60">

@@ -46,6 +46,8 @@ export type InvestigationSummary = S["InvestigationSummary"];
 export type PackSummary = S["PackSummary"];
 export type EvaluationReportSummary = S["EvaluationReportSummary"];
 export type EvaluationReport = S["EvaluationReport"];
+export type PresenceCheckView = S["PresenceCheckView"];
+export type DisagreementView = S["DisagreementView"];
 
 export type SttLanguage = LanguageProfile["stt_candidates"][number];
 export type TemplateLanguage = LanguageProfile["template_language"];
@@ -89,6 +91,8 @@ export interface ParticipantView {
   location_label: string;
   items: { label: string; value: string }[];
   reachable_locations: string[] | { id: string; label?: string }[];
+  /** Labels printed on equipment here (presence checks). Only shown to people on site. */
+  labels?: { token_id: string; label: string; value: string }[];
 }
 
 /** GET /v1/voice/status */

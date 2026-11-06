@@ -64,6 +64,9 @@ class EngineConfig:
     top_infeasible: int = 5
     planning_reliability: float = 0.95
     """Reliability assumed when valuing actions nobody present can perform (abstention report)."""
+    presence_unverified_weight: float = 0.2
+    """Weight of what someone reports seeing in a restricted place while their presence there
+    is being checked, or after the check failed (PRODUCT.md: unverified presence 0.2)."""
     confirm_delta: float = 0.15
     """A single answer moving the leading decision's probability by more than this is
     decision-critical (PRODUCT.md, confirmation arbiter)."""

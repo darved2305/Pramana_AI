@@ -1,9 +1,10 @@
 """Bayesian diagnosis engine and value-of-information planner. Pure: no I/O, no clock."""
 
 from .config import EngineConfig
-from .engine import Engine, Evidence, EvidenceError, ObserveResult
+from .engine import Engine, Evidence, EvidenceError, ObserveResult, Presence
 from .model import MULTIPLE_FAULTS, CompiledModel, Hypothesis, compile_pack
 from .scheduler import Schedule, schedule
+from .testimony import Disagreement, Side
 
 MODEL_VERSION = "2"
 """Version of the probability model (hypotheses, likelihoods, reliability). Bump it whenever
@@ -15,13 +16,16 @@ __all__ = [
     "MODEL_VERSION",
     "MULTIPLE_FAULTS",
     "CompiledModel",
+    "Disagreement",
     "Engine",
     "EngineConfig",
     "Evidence",
     "EvidenceError",
     "Hypothesis",
     "ObserveResult",
+    "Presence",
     "Schedule",
+    "Side",
     "compile_pack",
     "schedule",
 ]

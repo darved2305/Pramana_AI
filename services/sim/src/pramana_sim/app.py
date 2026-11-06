@@ -34,6 +34,8 @@ from pramana_contracts import (
     ObserveRequest,
     ObserveResult,
     ParticipantView,
+    PresenceCheck,
+    PresenceCheckResult,
     RevealResult,
     ScenarioCreated,
 )
@@ -169,6 +171,10 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
         except TokenError as exc:
             raise HTTPException(403, str(exc)) from exc
         return store.get(sid).act(who, req.action, req.target, claims)
+
+    @app.post("/sim/v1/scenarios/{sid}/presence/check", dependencies=[require_operator])
+    async def check_presence(sid: str, req: PresenceCheck) -> PresenceCheckResult:
+        return store.get(sid).check_presence(req.participant_id, req.token_id, req.answer)
 
     @app.post("/sim/v1/scenarios/{sid}/close", status_code=204, dependencies=[require_operator])
     async def close(sid: str) -> None:

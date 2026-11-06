@@ -171,6 +171,28 @@ class Action(PackModel):
     instructions: dict[TemplateLanguage, StrictStr]
 
 
+class PresenceToken(PackModel):
+    """A detail only someone standing at a restricted place can read (PRODUCT.md U8).
+
+    Its value is not in the pack: each simulated scenario draws a fresh one and shows it only
+    to people who are there, and only the simulator can check an answer against it."""
+
+    id: StrictStr
+    at: StrictStr
+    label: StrictStr
+    """What the detail is, as shown on the participant's card ("Label on the network switch")."""
+    templates: dict[TemplateLanguage, StrictStr]
+    """The challenge question. ``{place}`` is the place's name."""
+
+    @field_validator("templates")
+    @classmethod
+    def _all_languages(cls, v: dict[str, str]) -> dict[str, str]:
+        missing = {"en", "hi", "mr", "hi-en"} - set(v)
+        if missing:
+            raise ValueError(f"templates missing languages: {sorted(missing)}")
+        return v
+
+
 class DecisionClass(PackModel):
     id: StrictStr
     label: StrictStr
@@ -198,6 +220,7 @@ class DomainPack(PackModel):
     move_templates: dict[TemplateLanguage, StrictStr]
     decision_classes: list[DecisionClass]
     loss_minutes: LossMinutes
+    presence_tokens: list[PresenceToken] = Field(default_factory=list)
 
     # -- indices ---------------------------------------------------------------------------
 
@@ -217,6 +240,9 @@ class DomainPack(PackModel):
     def decision_of(self) -> dict[str, str]:
         """Hypothesis id -> decision class id."""
         return {h: d.id for d in self.decision_classes for h in d.hypotheses}
+
+    def presence_token_at(self, location_id: str) -> PresenceToken | None:
+        return next((t for t in self.presence_tokens if t.at == location_id), None)
 
     def fault_hypotheses(self) -> list[tuple[str, str, FailureMode]]:
         """(component id, failure mode id, mode) for every modelled single fault."""
@@ -269,6 +295,13 @@ class DomainPack(PackModel):
                     errors.append(f"location {loc.id}: wifi_coverage {ap!r} is not an access point")
             if loc.restricted and not loc.access_roles:
                 errors.append(f"location {loc.id}: restricted but no access_roles")
+        _unique("presence token", [t.id for t in self.presence_tokens], errors)
+        _unique("presence token place", [t.at for t in self.presence_tokens], errors)
+        for t in self.presence_tokens:
+            if t.at not in locs:
+                errors.append(f"presence token {t.id}: unknown location {t.at!r}")
+            elif not self.location_by_id[t.at].restricted:
+                errors.append(f"presence token {t.id}: {t.at} is not restricted")
         for src, dst, secs in self.walks:
             if src not in locs or dst not in locs:
                 errors.append(f"walk {src}-{dst}: unknown location")

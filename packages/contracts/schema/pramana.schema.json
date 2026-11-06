@@ -431,6 +431,11 @@
           "title": "Participants",
           "type": "array"
         },
+        "presence_checks": {
+          "default": false,
+          "title": "Presence Checks",
+          "type": "boolean"
+        },
         "report": {
           "$ref": "#/$defs/Report"
         },
@@ -473,6 +478,35 @@
       "title": "DecisionBelief",
       "type": "object"
     },
+    "DependsOn": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Component Id",
+          "type": "string"
+        },
+        "component_label": {
+          "title": "Component Label",
+          "type": "string"
+        },
+        "side": {
+          "enum": [
+            "earlier",
+            "new"
+          ],
+          "title": "Side",
+          "type": "string"
+        }
+      },
+      "required": [
+        "side",
+        "component_id",
+        "component_label"
+      ],
+      "title": "DependsOn",
+      "type": "object"
+    },
     "Directness": {
       "enum": [
         "direct",
@@ -512,6 +546,117 @@
         "updated_at"
       ],
       "title": "DirectoryParticipant",
+      "type": "object"
+    },
+    "DisagreementSide": {
+      "additionalProperties": false,
+      "properties": {
+        "location_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "outcome": {
+          "title": "Outcome",
+          "type": "string"
+        },
+        "p_mistaken": {
+          "title": "P Mistaken",
+          "type": "number"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "probe_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Probe Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "participant_id",
+        "probe_id",
+        "location_id",
+        "outcome",
+        "p_mistaken"
+      ],
+      "title": "DisagreementSide",
+      "type": "object"
+    },
+    "DisagreementView": {
+      "additionalProperties": false,
+      "description": "Two people's different answers to the same question, and how the engine reads them.",
+      "properties": {
+        "earlier": {
+          "$ref": "#/$defs/DisagreementSide"
+        },
+        "explanation": {
+          "title": "Explanation",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "both_right",
+            "one_mistaken"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "new": {
+          "$ref": "#/$defs/DisagreementSide"
+        },
+        "observation_id": {
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "only_one_depends": {
+          "items": {
+            "$ref": "#/$defs/DependsOn"
+          },
+          "title": "Only One Depends",
+          "type": "array"
+        },
+        "p_both_right": {
+          "title": "P Both Right",
+          "type": "number"
+        },
+        "reconciling_hypothesis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reconciling Hypothesis"
+        },
+        "reconciling_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reconciling Label"
+        }
+      },
+      "required": [
+        "observation_id",
+        "earlier",
+        "new",
+        "kind",
+        "p_both_right",
+        "reconciling_hypothesis",
+        "reconciling_label",
+        "only_one_depends",
+        "explanation"
+      ],
+      "title": "DisagreementView",
       "type": "object"
     },
     "EvaluationReport": {
@@ -902,6 +1047,13 @@
           "title": "Created At",
           "type": "string"
         },
+        "disagreements": {
+          "items": {
+            "$ref": "#/$defs/DisagreementView"
+          },
+          "title": "Disagreements",
+          "type": "array"
+        },
         "ground_truth": {
           "anyOf": [
             {
@@ -960,6 +1112,18 @@
         },
         "plan": {
           "$ref": "#/$defs/PlanDecision"
+        },
+        "presence_checks": {
+          "items": {
+            "$ref": "#/$defs/PresenceCheckView"
+          },
+          "title": "Presence Checks",
+          "type": "array"
+        },
+        "presence_checks_enabled": {
+          "default": false,
+          "title": "Presence Checks Enabled",
+          "type": "boolean"
         },
         "questions_asked": {
           "title": "Questions Asked",
@@ -1685,6 +1849,13 @@
           "title": "Items",
           "type": "array"
         },
+        "labels": {
+          "items": {
+            "$ref": "#/$defs/ViewLabel"
+          },
+          "title": "Labels",
+          "type": "array"
+        },
         "location_id": {
           "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
           "title": "Location Id",
@@ -1826,6 +1997,54 @@
       "title": "PlanKind",
       "type": "string"
     },
+    "PresenceCheckView": {
+      "additionalProperties": false,
+      "description": "A presence check (docs/adr/0014). Nobody is accused: a failed check only means the\nanswer from that place counts for less, and someone else is asked.",
+      "properties": {
+        "location_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Location Id",
+          "type": "string"
+        },
+        "observation_id": {
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "participant_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Participant Id",
+          "type": "string"
+        },
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "passed",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "token_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Token Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question_id",
+        "observation_id",
+        "participant_id",
+        "location_id",
+        "token_id",
+        "status"
+      ],
+      "title": "PresenceCheckView",
+      "type": "object"
+    },
     "ProbeAction": {
       "additionalProperties": false,
       "properties": {
@@ -1877,7 +2096,8 @@
           "default": "probe",
           "enum": [
             "probe",
-            "confirm"
+            "confirm",
+            "challenge"
           ],
           "title": "Kind",
           "type": "string"
@@ -2372,6 +2592,32 @@
         "value"
       ],
       "title": "ViewItem",
+      "type": "object"
+    },
+    "ViewLabel": {
+      "additionalProperties": false,
+      "description": "A detail printed on equipment, visible only to someone standing there (presence token).",
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "token_id": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Token Id",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token_id",
+        "label",
+        "value"
+      ],
+      "title": "ViewLabel",
       "type": "object"
     },
     "VoiceAnswerResult": {

@@ -122,6 +122,9 @@ class CreateInvestigation(StrictModel):
     max_parallel_calls: int = Field(default=1, ge=1, le=3)
     """How many people may have a question at the same time (docs/adr/0011: at most 3). With
     more than one, a question in flight is withdrawn when another answer makes it pointless."""
+    presence_checks: bool = False
+    """Before a decision rests on what someone says they saw in a restricted place they walked
+    to, ask them to read a detail only someone there can see (docs/adr/0014)."""
 
     @model_validator(mode="after")
     def _consistent(self) -> CreateInvestigation:
@@ -150,8 +153,10 @@ class Question(StrictModel):
     outcomes: list[str]
     status: QuestionStatus
     asked_at: datetime
-    kind: Literal["probe", "confirm"] = "probe"
-    """``confirm``: re-asking a spoken answer the decision hinges on, before relying on it."""
+    kind: Literal["probe", "confirm", "challenge"] = "probe"
+    """``confirm``: re-asking a spoken answer the decision hinges on, before relying on it.
+    ``challenge``: a presence check; answered with a reading in text or speech, not an outcome
+    (``outcomes`` is empty)."""
 
 
 class SubmitAnswer(StrictModel):
@@ -199,6 +204,50 @@ class GroundTruthComparison(StrictModel):
     """None when the investigation abstained (correctness of abstention is judged by eval)."""
 
 
+class PresenceCheckView(StrictModel):
+    """A presence check (docs/adr/0014). Nobody is accused: a failed check only means the
+    answer from that place counts for less, and someone else is asked."""
+
+    question_id: str
+    observation_id: str
+    """The answer that triggered the check."""
+    participant_id: Identifier
+    location_id: Identifier
+    token_id: Identifier
+    status: Literal["pending", "passed", "failed"]
+
+
+class DisagreementSide(StrictModel):
+    participant_id: Identifier
+    probe_id: Identifier
+    location_id: Identifier
+    outcome: str
+    p_mistaken: float
+    """P(this answer is not what is there to see), from the posterior when it was explained."""
+
+
+class DependsOn(StrictModel):
+    side: Literal["earlier", "new"]
+    component_id: Identifier
+    component_label: str
+
+
+class DisagreementView(StrictModel):
+    """Two people's different answers to the same question, and how the engine reads them."""
+
+    observation_id: str
+    earlier: DisagreementSide
+    new: DisagreementSide
+    kind: Literal["both_right", "one_mistaken"]
+    p_both_right: float
+    reconciling_hypothesis: str | None
+    reconciling_label: str | None
+    only_one_depends: list[DependsOn]
+    """Faults of the reconciling cause that change what one side sees and not the other."""
+    explanation: str
+    """A plain-English sentence built only from the numbers above and the pack's names."""
+
+
 class InvestigationState(StrictModel):
     id: str
     pack_id: Identifier
@@ -219,6 +268,9 @@ class InvestigationState(StrictModel):
     pending_questions: list[Question] = Field(default_factory=list)
     """Every question waiting for an answer, oldest first (several with parallel calls)."""
     max_parallel_calls: int = 1
+    presence_checks_enabled: bool = False
+    presence_checks: list[PresenceCheckView] = Field(default_factory=list)
+    disagreements: list[DisagreementView] = Field(default_factory=list)
 
 
 class EventEnvelope(StrictModel):

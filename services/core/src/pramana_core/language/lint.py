@@ -181,6 +181,16 @@ def lint_pack(
                 out += _lint_question(
                     f"{at} after walking", lang, move + text, probe.outcomes, MAX_WORDS_WITH_MOVE
                 )
+    for token in pack.presence_tokens:
+        where = f"presence token {token.id}"
+        _check_languages(where, token.templates, out)
+        _check_placeholders(where, token.templates, {"place"}, out)
+        for tlang, template in token.templates.items():
+            text = template.replace("{place}", pack.location_by_id[token.at].label.get(tlang))
+            out += lint_spoken(where, tlang, text)
+            n = _words(text)
+            if n > MAX_WORDS:
+                out.append(LintIssue("length", where, tlang, f"{n} words (max {MAX_WORDS})"))
     for name, texts in (extra or {}).items():
         _check_languages(name, texts, out)
         _check_placeholders(name, texts, set(), out)
