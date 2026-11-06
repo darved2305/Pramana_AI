@@ -56,16 +56,16 @@ def main() -> None:
     ]
     results: dict[str, list[Episode]] = {}
     start = time.perf_counter()
-    for name, enabled in (("E_presence_checks", True), ("E_no_presence_checks", False)):
+    for name, checks_on in (("E_presence_checks", True), ("E_no_presence_checks", False)):
         policy = Ours(name)
         results[name] = [
-            run_episode(pack, model, scenario, policy, presence_checks=enabled)
+            run_episode(pack, model, scenario, policy, presence_checks=checks_on)
             for scenario in scenarios
         ]
         print(f"{name:24s} done ({time.perf_counter() - start:.0f} s)", flush=True)
 
-    enabled = results["E_presence_checks"]
-    disabled = results["E_no_presence_checks"]
+    with_checks = results["E_presence_checks"]
+    without_checks = results["E_no_presence_checks"]
     summary: dict[str, Any] = {
         "git_sha": code_version,
         "python": platform.python_version(),
@@ -80,7 +80,7 @@ def main() -> None:
         "false_presence_rate": args.false_presence_rate,
         "policies": {name: summarize(episodes) for name, episodes in results.items()},
         "paired_presence_checks_minus_ablation": {
-            field: paired_difference(enabled, disabled, field)
+            field: paired_difference(with_checks, without_checks, field)
             for field in ("success", "probes", "effort_s", "wall_s")
         },
     }
