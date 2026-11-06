@@ -1,4 +1,4 @@
-# DEMO.md — Setup, storyboard, participant roles, recording, publishing
+# DEMO.md - Setup, storyboard, participant roles, recording, publishing
 
 > **Non-negotiables**
 > - Real people speaking in real time, and real AI reasoning.
@@ -14,15 +14,16 @@
 
 | Role | Who (real person) | Language | Device | Simulated location | Permissions |
 |---|---|---|---|---|---|
-| Operator / duty manager | Darshan | English | Laptop (console) | Remote | Approver |
+| Operator / duty manager | Darshan | English | Laptop (console) | Remote | Operator |
+| Independent approver | Nikhil | English | Private browser window on laptop | Remote | Approver only |
 | Riya (student) | Volunteer A or teammate | Hinglish | Phone (Chrome) + wired earphones | Room 304, Floor 3 | Observe |
 | Mahesh (security guard) | Volunteer B (native Marathi) | Marathi | Phone + earphones | Guard desk, ground floor; has closet keys | Observe (closets) |
 | Imran (electrician) | Volunteer C (native Hindi) or Nikhil | Hindi | Phone + earphones | Maintenance room | Observe panels; repair with approval |
-| Engine monitor | Nikhil | — | Laptop (`/dev/metrics`, logs) | — | — |
+| Engine monitor | Nikhil | - | Laptop (`/dev/metrics`, logs) | - | - |
 
 - **Names.** Use synthetic display names only. Volunteers sign a one-paragraph consent covering voice recording for the demo video.
 - **Rooms.** Put each participant in a separate room, or at least out of earshot of the others. Calls are 1:1, so nobody should hear another participant's answers.
-- **Pre-flight (`make preflight`).** Checks keys, credits remaining, staging health, Gnani STT/TTS round trip (< 2 s), mic permission on every phone, and wall clocks synced.
+- **Pre-flight (`make preflight`).** Checks configured keys, the core's guarded voice budget, service health, disk space, clips and clock skew. Add `--live` for a Gnani STT/TTS round trip. Check microphone permission on each phone separately.
 
 ## 2. Participant briefing (read aloud, in their language)
 
@@ -42,27 +43,28 @@ Format and scene timing:
 | Time | Visual | Audio | On-screen text |
 |---|---|---|---|
 | 0:00–0:03 | Black screen, then the console fades in with a dimmed floor-stack of the hostel | Hostel ambience | **"This AI can't see the building."** · small: *Simulated building · real voices · real-time AI* |
-| 0:03–0:06 | Seal badge pulses: `Hidden fault sealed · #a91f…` | — | **"It can only talk to the people inside."** |
+| 0:03–0:06 | Seal badge pulses: `Hidden fault sealed · #a91f…` | - | **"It can only talk to the people inside."** |
 | 0:06–0:10 | Riya's phone: she speaks; Floor 3 turns red; 12 hypothesis bars appear | Riya (Hinglish, real): "Floor 3 pe WiFi bilkul nahi chal raha…" | Subtitle EN |
-| 0:10–0:15 | Two call cards light up together (Riya, Mahesh). A popover opens on Mahesh's card | AI (Timbre, Marathi): "तुम्ही IDF-2 खोलीत जाऊन स्विचवरचे दिवे दिसतात का ते सांगाल का?" | **"It decides who should look at what."** · popover: *+0.7 bits · guard has keys* |
+| 0:10–0:15 | Three call cards light up together (Riya, Mahesh, Imran). A popover opens on Mahesh's card | AI (Timbre, Marathi): "तुम्ही IDF-2 खोलीत जाऊन स्विचवरचे दिवे दिसतात का ते सांगाल का?" | **"It decides who should look at what."** · popover: *+0.7 bits · guard has keys* |
 | 0:15–0:19 | ⏩ Mahesh walks (sim); answers; bars split roughly evenly between "switch dead" and "closet power" | Mahesh (Marathi): "एकही दिवा चालू नाही." | Subtitle EN: "Not a single light is on." |
 | 0:19–0:27 | **The twist.** AI asks about the CCTV. Popover explains why. Mahesh answers. Bars snap: "Breaker C2-7 tripped" dominant; decision bar fills | AI: "त्याच खोलीतला CCTV चा स्क्रीन चालू आहे की बंद?" · Mahesh: "तो पण बंद आहे." | **"Why ask about CCTV to fix Wi-Fi? It shares the closet's power."** then **"It stops asking once the action is certain."** |
-| 0:27–0:34 | Console approval drawer: *Reset breaker 7 · reversible · electrician only* → Approve (role check ✓). Imran's card opens | AI (Hindi): "Imran ji, approval mil gaya hai — DB-C2 mein breaker 7 reset kar dijiye." · Imran: "Trip tha… reset kar diya." | **"Nothing physical happens without an authorized human."** |
+| 0:27–0:34 | Console approval drawer: *Reset breaker 7 · reversible · electrician only* → Approve (role check ✓). Imran's card opens | AI (Hindi): "Imran ji, approval mil gaya hai - DB-C2 mein breaker 7 reset kar dijiye." · Imran: "Trip tha… reset kar diya." | **"Nothing physical happens without an authorized human."** |
 | 0:34–0:44 | Verification card: *Held-out prediction: the CCTV must be rebooting* → asks Mahesh; Riya's phone shows Wi-Fi back | AI (Marathi): "आता CCTV स्क्रीनवर काय दिसतंय?" · Mahesh: "सुरू होतोय, लोगो आलाय." · Riya: "WiFi aa gaya!" | **"It doesn't trust 'fixed'. It tests a prediction it hasn't used."** → ✓ VERIFIED |
-| 0:44–0:50 | Reveal: the hash expands into `CB_C2_7 tripped` ✓ *matches* | — | Chips: *4 questions · 3 people · 3 languages · 3m 12s real time* (actual values from the take) |
-| 0:50–0:57 | Benchmark card: a single line from `summary.json`, **only if it is true and significant**; otherwise use the fallback text | — | e.g., "Across N simulated outages: fewer questions than a checklist and a frontier-LLM policy, with fewer confident mistakes." Fallback: "Benchmarked against a checklist and a frontier-LLM policy, results in repo." |
-| 0:57–1:00 | End card | — | **"Not a voice bot. An investigator."** · *Built on Gnani Prisma v3.0 + Timbre* · #GnaniAI #GreatIndianAIInternshipChallenge |
+| 0:44–0:50 | Reveal: the hash expands into `CB_C2_7 tripped` ✓ *matches* | - | Chips: *4 questions · 3 people · 3 languages · 3m 12s real time* (actual values from the take) |
+| 0:50–0:57 | Benchmark card: a single line from `summary.json`, **only if it is true and significant**; otherwise use the fallback text | - | e.g., "Across N simulated outages: fewer questions than a checklist and a frontier-LLM policy, with fewer confident mistakes." Fallback: "Benchmarked against a checklist and a frontier-LLM policy, results in repo." |
+| 0:57–1:00 | End card | - | **"Not a voice bot. An investigator."** · *Built on Gnani Prisma v3.0 + Timbre* · #GnaniAI #GreatIndianAIInternshipChallenge |
 
 **Script rule.** Lines shown in this table are *what we expect*. The real take uses whatever people actually said. If an answer differs, the plan will differ too; keep that take if it is clean, because it proves nothing is scripted.
 
 ## 4. The 3-minute walkthrough (linked from the submission explanation)
 
 1. **0:00–0:20** The problem: physical outages with no sensors; why voice; the constraint "it can't see".
-2. **0:20–1:10** The full S1 run at near real speed, including the presence challenge on Mahesh ("read the last three letters on the switch label").
+2. **0:20–1:10** The full S1 run at near real speed: three people asked at once, separate approval, repair, verification, reveal and replay.
 3. **1:10–1:45** S2 contradiction: two students disagree; the reconciliation hypothesis ("different APs"); the tie-break.
-4. **1:45–2:15** Parallel preemption: an in-flight question is rewritten after another answer arrives. Then S4 abstention: "can't tell; needs IDF-2 access".
-5. **2:15–2:45** Under the hood: belief bars and bits; "LLMs translate, math decides"; the isolation guarantee; event replay.
-6. **2:45–3:00** Benchmark summary, from `summary.json` only, and the team split.
+4. **1:45–2:10** S7 presence challenge: the guard claims IDF-2 and green switch lights from the guard desk, then cannot read the label. Show the honest variant pass the same check.
+5. **2:10–2:30** Parallel preemption: an in-flight question is rewritten after another answer arrives. Then S4 abstention: "can't tell; needs IDF-2 access".
+6. **2:30–2:45** Under the hood: belief bars and bits; "LLMs translate, math decides"; the isolation guarantee; event replay.
+7. **2:45–3:00** Benchmark summary, from `summary.json` only, and the team split.
 
 ## 5. Live demo protocol (interviews and judges)
 
@@ -71,6 +73,76 @@ Format and scene timing:
 3. Show the **Why this question?** preview *before* the answer, then show the belief moving after it.
 4. At the end, **reveal** the fault and verify the hash in front of them.
 5. Open **replay** and step through any decision with its candidate table.
+
+## Rehearsal runbook
+
+Start the local stack in one terminal. These ports keep the core away from the other service on port 8000:
+
+```powershell
+$env:PYTHONIOENCODING = "utf-8"
+uv run python scripts/dev.py --web --core-port 8010 --sim-port 8110 --web-port 3002
+```
+
+Run preflight in a second terminal. It reads keys from the worktree `.env` and environment, checks the core `/ready` response for PostgreSQL and simulator status, verifies the automation identity, checks today's guarded voice budget, clock skew, disk space and the voice-bot clips folder. It does not check phone microphone permissions. The live speech round trip is opt-in and spends a small amount:
+
+```powershell
+uv run python scripts/preflight.py --url http://127.0.0.1:8010 --clips "$env:USERPROFILE\pramana-voice-samples\bot"
+uv run python scripts/preflight.py --url http://127.0.0.1:8010 --clips "$env:USERPROFILE\pramana-voice-samples\bot" --live
+```
+
+With GNU Make installed, run the same checks with the Make target:
+
+```sh
+make preflight PREFLIGHT_ARGS="--url http://127.0.0.1:8010 --clips $HOME/pramana-voice-samples/bot"
+make preflight PREFLIGHT_ARGS="--url http://127.0.0.1:8010 --clips $HOME/pramana-voice-samples/bot --live"
+```
+
+The live check performs one short Timbre synthesis and Prisma transcription. The round-trip row reports pass or fail only; it does not print speech latency or accuracy. Check the phone microphone permission on each device separately before inviting people.
+
+S1 creates the specified `CB_C2_7.tripped` investigation with three people asked at once. The operator key handles investigation work. Approval uses a different signed-in account with only the approver role. The operator account cannot approve the repair, and the approver account cannot operate the investigation. Create the account if needed, then set its credentials in the terminal that will run the rehearsal:
+
+```powershell
+uv run python -m pramana_core.auth.bootstrap --email approver@example.com --name "Demo approver" --roles approver
+$env:PRAMANA_APPROVER_EMAIL = "approver@example.com"
+$approverSecret = Read-Host "Approver password" -AsSecureString
+$env:PRAMANA_APPROVER_PASSWORD = [System.Net.NetworkCredential]::new("", $approverSecret).Password
+```
+
+Run S1. The timeline follows each simulator-card answer, separate approval, repair, held-out verification, reveal and replay check. `--report` writes the generated summary used to support rehearsal claims:
+
+```powershell
+uv run python scripts/demo_rehearse.py --scenario S1 --core http://127.0.0.1:8010 --sim http://127.0.0.1:8110 --report eval/reports/demo-rehearsal-S1.json
+```
+
+Run S2 for the two students who disagree about room 210 coverage. The runner uses main's scenario payload, then shows the explanation, reveal and replay result:
+
+```powershell
+uv run python scripts/demo_rehearse.py --scenario S2 --core http://127.0.0.1:8010 --sim http://127.0.0.1:8110 --report eval/reports/demo-rehearsal-S2.json
+```
+
+Run S7 twice. The adversary version says the switch lights are green in IDF-2 while staying at the guard desk, then fails the label check. The honest version walks when asked, reads the value on the simulator card and passes:
+
+The payload follows the console form: `presence_checks` is enabled for S7 and disabled for S1 and S2. S7 uses the two-person setup from main's scenario test, with Riya as reporter and Mahesh at the guard desk.
+
+```powershell
+uv run python scripts/demo_rehearse.py --scenario S7 --variant adversary --core http://127.0.0.1:8010 --sim http://127.0.0.1:8110 --report eval/reports/demo-rehearsal-S7-adversary.json
+uv run python scripts/demo_rehearse.py --scenario S7 --variant honest --core http://127.0.0.1:8010 --sim http://127.0.0.1:8110 --report eval/reports/demo-rehearsal-S7-honest.json
+```
+
+The runner performs reveal and replay as part of each command. To inspect an investigation in the console, copy its ID from the timeline and open:
+
+```text
+http://localhost:3002/app/investigations/<investigation-id>
+http://localhost:3002/app/investigations/<investigation-id>/replay
+```
+
+On screen, check that S1 starts with three questions in flight, each participant page shows only that person's simulator card and question, the approval is visible before the repair, verification starts after the intervention, and the reveal matches the starting hash. In S2, open the Testimony panel and check the reconciliation explanation. In S7, confirm that the adversary's check is failed and the honest participant's check is passed. In replay, confirm the event sequence reproduces the recorded state.
+
+For live voice-bot checks, run non-live preflight first. This command spends Gnani credits; keep its output private because it includes measured voice timing:
+
+```powershell
+uv run python scripts/voice_bot_run.py --clips "$env:USERPROFILE\pramana-voice-samples\bot" --core http://127.0.0.1:8010 --sim http://127.0.0.1:8110 --parallel 3 --play
+```
 
 ## 6. Recording plan
 
@@ -92,7 +164,10 @@ Format and scene timing:
 - [ ] "Simulated building" and "real voices · real-time AI" appear on screen in the first 3 s.
 - [ ] Every time compression is labelled.
 - [ ] Every spoken line is real: no TTS standing in for a human, no re-recorded lines.
-- [ ] Numbers come only from `summary.json` (commit SHA noted in the post's reply or the README).
+- [ ] Benchmark comparisons, sample counts, and confidence claims come from `summary.json`; note its commit SHA in the post's reply or README.
+- [ ] Rehearsal question counts, parallelism, verification, correctness, and replay claims come from the generated rehearsal report or recorded take log.
+- [ ] People and language counts for a take come from the recorded take log, not the storyboard.
+- [ ] No scenario outcome is claimed from a planned script. Use generated reveal and replay results for a rehearsal, or events from the selected recording take.
 - [ ] No "first", "world's first" or "works on real buildings" claims.
 - [ ] No standalone Gnani-model accuracy or latency numbers (EULA §16).
 - [ ] No real phone numbers, names or IDs on screen.
