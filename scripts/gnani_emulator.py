@@ -18,6 +18,7 @@ bot's answer goes through the real call socket, recognizer session, extractor an
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import base64
 import io
@@ -26,6 +27,7 @@ import struct
 import threading
 import time
 import wave
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import uvicorn
@@ -218,3 +220,23 @@ def serve_in_thread(port: int) -> tuple[Stats, uvicorn.Server]:
     if not server.started:
         raise RuntimeError("emulator did not start")
     return stats, server
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Serve the local Gnani protocol emulator.")
+    parser.add_argument("--serve", action="store_true", help="run as a foreground server")
+    parser.add_argument("--port", type=int, default=8099)
+    options = parser.parse_args(argv)
+    if not options.serve:
+        parser.error("--serve is required")
+    uvicorn.run(
+        create_app(Stats()),
+        host="127.0.0.1",
+        port=options.port,
+        log_level="warning",
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

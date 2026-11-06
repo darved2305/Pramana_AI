@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -456,3 +458,127 @@ def test_presence_values_are_fresh_per_scenario(client: TestClient) -> None:
     from pramana_sim.scenario import PRESENCE_ALPHABET
 
     assert all(set(v) <= set(PRESENCE_ALPHABET) for v in values)
+
+
+def _persistent_settings(state_file: Path) -> SimSettings:
+    return SimSettings(
+        operator_key=SecretStr("op-secret"),
+        oracle_key=SecretStr("oracle-secret"),
+        participant_public_key=public_key_b64(KEY),
+        state_file=str(state_file),
+    )
+
+
+def test_repaired_world_and_used_capability_survive_simulator_restart(tmp_path: Path) -> None:
+    state_file = tmp_path / "scenarios.json"
+    settings = _persistent_settings(state_file)
+    with TestClient(create_app(settings)) as first:
+        sid = electrician_scenario(first)
+        electrician = bearer("p_imran", sid)
+        assert (
+            first.post(
+                f"/sim/v1/scenarios/{sid}/move", json={"to": "DB_C2_PANEL"}, headers=electrician
+            ).status_code
+            == 200
+        )
+        cap = capability(sid)
+        assert act(first, sid, "p_imran", cap).status_code == 200
+
+    snapshot = json.loads(state_file.read_text(encoding="utf-8"))
+    saved = snapshot["scenarios"][0]
+    assert saved["active_faults"] == []
+    assert len(saved["used_capabilities"]) == 1
+    assert saved["interventions"] == [["p_imran", "reset_breaker", "CB_C2_7"]]
+
+    with TestClient(create_app(settings)) as restarted:
+        view = restarted.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_imran", sid))
+        assert view.json()["location_id"] == "DB_C2_PANEL"
+        seen = restarted.post(
+            f"/sim/v1/scenarios/{sid}/observe",
+            json={"probe_id": "breaker_c2_7"},
+            headers=bearer("p_imran", sid),
+        )
+        assert seen.json()["value"] == "up"
+        replay = act(restarted, sid, "p_imran", cap)
+        assert replay.status_code == 409
+        assert replay.json()["error"]["code"] == "CAPABILITY_USED"
+
+
+def test_presence_value_and_attempt_limit_survive_simulator_restart(tmp_path: Path) -> None:
+    settings = _persistent_settings(tmp_path / "scenarios.json")
+    with TestClient(create_app(settings)) as first:
+        sid = scenario(first, CB7)
+        value = _label(first, sid)
+        failed = _check(first, sid, "AAA", headers=OPERATOR)
+        assert failed.json() == {"passed": False, "attempts_left": 1}
+
+    with TestClient(create_app(settings)) as restarted:
+        assert _label(restarted, sid) == value
+        passed = _check(restarted, sid, value, headers=OPERATOR)
+        assert passed.json() == {"passed": True, "attempts_left": 0}
+
+
+def test_closed_scenario_stays_closed_and_revealable_after_restart(tmp_path: Path) -> None:
+    settings = _persistent_settings(tmp_path / "scenarios.json")
+    with TestClient(create_app(settings)) as first:
+        sid = scenario(first, CB7)
+        commitment = first.post(f"/sim/v1/scenarios/{sid}/close", headers=OPERATOR).status_code
+        assert commitment == 204
+
+    with TestClient(create_app(settings)) as restarted:
+        view = restarted.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_riya", sid))
+        assert view.status_code == 409
+        assert view.json()["error"]["code"] == "SCENARIO_CLOSED"
+        reveal = restarted.post(f"/sim/v1/scenarios/{sid}/reveal", headers=OPERATOR)
+        assert reveal.status_code == 200
+        assert reveal.json()["fault_spec"] == CB7
+        assert reveal.json()["commitment_verified"] is True
+
+
+def test_invalid_snapshot_fails_simulator_startup_closed(tmp_path: Path) -> None:
+    state_file = tmp_path / "scenarios.json"
+    state_file.write_text("not valid json", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="state file could not be loaded"):
+        create_app(_persistent_settings(state_file))
+
+
+def test_legacy_snapshot_without_presence_state_migrates_on_load(tmp_path: Path) -> None:
+    state_file = tmp_path / "scenarios.json"
+    settings = _persistent_settings(state_file)
+    with TestClient(create_app(settings)) as first:
+        sid = scenario(first, CB7)
+        _label(first, sid)
+
+    snapshot = json.loads(state_file.read_text(encoding="utf-8"))
+    snapshot["version"] = 1
+    snapshot["scenarios"][0].pop("presence_values")
+    snapshot["scenarios"][0].pop("presence_attempts")
+    state_file.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    with TestClient(create_app(settings)) as restarted:
+        view = restarted.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_mahesh", sid))
+        assert view.status_code == 200
+        assert view.json()["location_id"] == "IDF2"
+        (label,) = view.json()["labels"]
+        assert label["token_id"] == "idf2_switch_label"
+        assert len(label["value"]) == 3
+
+
+def test_failed_snapshot_write_rolls_back_participant_move(tmp_path: Path) -> None:
+    state_file = tmp_path / "scenarios.json"
+    settings = _persistent_settings(state_file)
+    with TestClient(create_app(settings), raise_server_exceptions=False) as client:
+        sid = scenario(client, CB7)
+        state_file.unlink()
+        state_file.mkdir()
+
+        moved = client.post(
+            f"/sim/v1/scenarios/{sid}/move",
+            json={"to": "IDF2"},
+            headers=bearer("p_mahesh", sid),
+        )
+        assert moved.status_code == 500
+        restored = client.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_mahesh", sid))
+        assert restored.status_code == 200
+        assert restored.json()["location_id"] == "GUARD_DESK"
+        assert list(tmp_path.glob("scenarios.json.*.tmp")) == []
