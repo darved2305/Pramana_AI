@@ -108,8 +108,18 @@ class SttStreamEvent:
 class GnaniSttStream:
     """One realtime Prisma session. Owned by a single task; not shared between calls."""
 
-    def __init__(self, ws: ClientConnection, connected: dict[str, Any], expect_v3: bool) -> None:
+    def __init__(
+        self,
+        ws: ClientConnection,
+        connected: dict[str, Any],
+        expect_v3: bool,
+        *,
+        session_id: str,
+        correlation: dict[str, str] | None = None,
+    ) -> None:
         self._ws = ws
+        self.session_id = session_id
+        self.correlation = correlation or {}
         self.connected = connected
         cfg = connected.get("config") or {}
         # v3.0 sessions echo language_code/format; v2.5 (the silent fallback) does not.
@@ -170,7 +180,7 @@ class GnaniSttStream:
     async def aclose(self) -> None:
         """Start closing and return at once. Gnani takes about a second to complete the close
         handshake, and nothing depends on it: the next question should not wait for it."""
-        task = asyncio.create_task(_close_quietly(self._ws))
+        task = asyncio.create_task(_close_quietly(self._ws, self.session_id, self.correlation))
         _CLOSING.add(task)
         task.add_done_callback(_CLOSING.discard)
 
@@ -180,13 +190,21 @@ _CLOSING: set[asyncio.Task[None]] = set()
 CLOSE_TIMEOUT_S = 3.0
 
 
-async def _close_quietly(ws: ClientConnection) -> None:
+async def _close_quietly(
+    ws: ClientConnection, session_id: str, correlation: dict[str, str]
+) -> None:
     try:
         await asyncio.wait_for(ws.close(), CLOSE_TIMEOUT_S)
     except Exception as exc:
         log.warning("gnani_ws_close_failed", error=type(exc).__name__)
     finally:
-        log.info("gnani_ws_closed", code=ws.close_code, reason=ws.close_reason or "")
+        log.info(
+            "gnani_ws_closed",
+            session_id=session_id,
+            code=ws.close_code,
+            reason=ws.close_reason or "",
+            **correlation,
+        )
 
 
 class GnaniClient:
@@ -476,12 +494,14 @@ class GnaniClient:
         min_silence_ms: int = 600,
         min_segment_ms: int = 100,
         idle_timeout_s: int = 60,
+        correlation: dict[str, str] | None = None,
     ) -> GnaniSttStream:
         """Open a realtime session with per-question context headers."""
         key = self._require_key()
+        session_id = uuid.uuid4().hex
         headers = {
             "x-api-key-id": key,
-            "x-api-request-id": uuid.uuid4().hex,
+            "x-api-request-id": session_id,
             "model": model,
             "x-model": model,
             "x-sample-rate": str(SAMPLE_RATE),
@@ -539,7 +559,13 @@ class GnaniClient:
             raise VoiceError(
                 502, "VOICE_STREAM_FAILED", str(first.get("message", "unexpected first message"))
             )
-        stream = GnaniSttStream(ws, first, expect_v3=(model == PRISMA_V3))
+        stream = GnaniSttStream(
+            ws,
+            first,
+            expect_v3=(model == PRISMA_V3),
+            session_id=session_id,
+            correlation=correlation,
+        )
         if not stream.model_confirmed:
             log.warning("gnani_model_not_confirmed", requested=model)
         return stream

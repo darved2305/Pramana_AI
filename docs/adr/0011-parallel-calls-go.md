@@ -76,10 +76,13 @@ points, 95% CI [-1.7, +4.3]); time to conclusion falls by 70 s [61, 79]; the pri
 more questions and 89 s more total participant effort. Parallel calls buy speed with people's
 time; the console default stays one at a time.
 
-## Validation still pending
+## Load evidence and remaining validation
 
-- Sustained load passed against the local Gnani emulator: three participant call sockets were
-  open for at least ten minutes across back-to-back S1 investigations. The generated results are
-  in `eval/reports/load-2026-11-05/`. This did not test live Gnani behavior.
+- The 2026-11-06 local Gnani emulator run measured a 600-second window. At least three participant
+  call sockets were open for 596.206 seconds, with 3.794 seconds below three calls across seven
+  handoffs (99.3676% coverage; longest gap 1.129 seconds). It completed 110 correct, verified S1
+  investigations with byte-identical replay and zero unexpected WebSocket closes. The governor
+  stayed within its cap, and both core and simulator RSS stayed within the configured leak limits.
+  The report is in `eval/reports/load-2026-11-06/`. This did not test live Gnani behavior.
 - Preemption latency on live Gnani (target 1 s) has not been measured.
 - Live parallel calls with the voice bots and humans: see `docs/engineering/HANDOFF.md`.

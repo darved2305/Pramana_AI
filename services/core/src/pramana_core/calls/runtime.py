@@ -149,6 +149,8 @@ class CallSession:
     utterance: int = 0
     """Id of the agent's current utterance; increases every time the agent starts speaking."""
     question_id: str | None = None
+    disconnect_code: int | None = None
+    disconnect_reason: str = ""
     history: list[Transition] = field(default_factory=list)
     _listeners: list[Listener] = field(default_factory=list)
     _entered_at: float = 0.0

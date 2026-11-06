@@ -32,6 +32,7 @@ import asyncio
 import contextlib
 import json
 import time
+import uuid
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -97,6 +98,7 @@ class ParticipantCall:
         self.send_lock = asyncio.Lock()
         self.play = True
         self.questions = 0
+        self.call_session_id = uuid.uuid4().hex
 
     async def send(self, msg: dict[str, Any]) -> None:
         async with self.send_lock:
@@ -122,6 +124,8 @@ class ParticipantCall:
         await self.ws.accept()
         code, jti, reason = 1000, None, "ended"
         disconnected = False
+        socket_close_reason = ""
+        call_end_sent = False
         try:
             start = await self._receive("start", START_TIMEOUT_S)
             try:
@@ -148,30 +152,58 @@ class ParticipantCall:
                 await self._release("no answer during the call")
         except WebSocketDisconnect as exc:
             code = exc.code
+            socket_close_reason = str(getattr(exc, "reason", ""))
+            self.call.disconnect_code = code
+            self.call.disconnect_reason = socket_close_reason
             reason = "participant disconnected"
             disconnected = True
             if self.call.can(CallEvent.DISCONNECTED):
                 self.call.fire(CallEvent.DISCONNECTED)
+        except Exception:
+            code, reason = 1011, "error"
+            raise
         finally:
             if jti is not None:
                 self.active.jtis.discard(jti)
-        log.info(
-            "call_ended",
-            investigation_id=self.inv_id,
-            participant_id=self.participant_id,
-            reason=reason,
-            questions=self.questions,
-            socket_close_code=code,
-            socket_close_reason="",
-        )
-        if not disconnected:
-            with contextlib.suppress(Exception):
-                await self.send({"type": "call_end", "reason": reason})
-                await self.ws.close(code=code)
+            if self.call.disconnect_code is not None:
+                code = self.call.disconnect_code
+                socket_close_reason = self.call.disconnect_reason
+                reason = "participant disconnected"
+                disconnected = True
+                if self.call.can(CallEvent.DISCONNECTED):
+                    self.call.fire(CallEvent.DISCONNECTED)
+            task = asyncio.current_task()
+            if task is not None and task.cancelling() and not disconnected:
+                code, reason = 1011, "call handler cancelled"
+            elif not disconnected:
+                try:
+                    await self.send({"type": "call_end", "reason": reason})
+                    call_end_sent = True
+                except Exception:
+                    pass
+                with contextlib.suppress(Exception):
+                    await self.ws.close(code=code, reason=socket_close_reason)
+            log.info(
+                "call_ended",
+                investigation_id=self.inv_id,
+                participant_id=self.participant_id,
+                call_session_id=self.call_session_id,
+                reason=reason,
+                questions=self.questions,
+                socket_close_code=code,
+                socket_close_reason=socket_close_reason,
+                socket_close_initiator="participant" if disconnected else "server",
+                call_end_sent=call_end_sent,
+            )
 
     async def _converse(self, language: TemplateLanguage) -> str:
         await self.send(
-            {"type": "ringing", "participant_id": self.participant_id, "language": language}
+            {
+                "type": "ringing",
+                "participant_id": self.participant_id,
+                "language": language,
+                "call_session_id": self.call_session_id,
+            }
         )
         ring = await self._receive_ring()
         if ring != "accept":
@@ -283,7 +315,9 @@ class ParticipantCall:
                     if receive in done:
                         message = receive.result()
                         if message["type"] == "websocket.disconnect":
-                            raise WebSocketDisconnect(message.get("code", 1000))
+                            raise WebSocketDisconnect(
+                                message.get("code", 1000), message.get("reason", "")
+                            )
                         if message.get("text"):
                             with contextlib.suppress(json.JSONDecodeError):
                                 control = json.loads(message["text"])

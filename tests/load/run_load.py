@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
         "--database-url",
         default=os.environ.get(
             "PRAMANA_LOAD_DATABASE_URL",
-            "postgresql+asyncpg://pramana@localhost:5433/pramana_load_p3",
+            "postgresql+asyncpg://pramana@localhost:5433/pramana_load_fa31",
         ),
     )
     parser.add_argument("--scratch-dir", type=Path, default=DEFAULT_SCRATCH)
@@ -57,7 +57,25 @@ def main() -> None:
     )
     summary = asyncio.run(run_load(options))
     if args.live:
-        print("Live load completed. The core budget and rate guards remained active.", flush=True)
+        print(
+            "LIVE_LOAD_SUMMARY="
+            + json.dumps(
+                {
+                    "duration_seconds": summary["load_duration_seconds"],
+                    "three_call_seconds": summary["three_call_seconds"],
+                    "under_three_call_seconds": summary["three_call_window"][
+                        "under_three_call_seconds"
+                    ],
+                    "all_investigations_passed": summary["all_investigations_passed"],
+                    "unexpected_websocket_closes": summary["websocket_closes"]["unexpected_count"],
+                    "stream_cap_respected": summary["stream_cap_respected"],
+                    "memory_checks_passed": summary["memory_checks_passed"],
+                    "private_evidence_path": summary["private_evidence_path"],
+                },
+                separators=(",", ":"),
+            ),
+            flush=True,
+        )
     else:
         print(
             "LOAD_SUMMARY="

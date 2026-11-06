@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,11 +13,13 @@ from fake_gnani import FakeGnani
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from participant_bot import PHRASES
+from starlette.websockets import WebSocketDisconnect
 from test_media_ws import PCM, Env, drain, env, fake, make_env, token, until
 
 from pramana_core.calls.runtime import CallTimers
 from pramana_core.voice import call as call_mod
 from pramana_core.voice import media
+from pramana_core.voice.call import ParticipantCall
 
 pytestmark = pytest.mark.db
 __all__ = ["env", "fake"]
@@ -130,6 +133,109 @@ def test_call_close_is_logged_with_websocket_code_and_reason(
     ended = next(entry for entry in entries if entry["event"] == "call_ended")
     assert ended["socket_close_code"] == 1000
     assert ended["socket_close_reason"] == ""
+    assert ended["socket_close_initiator"] == "server"
+    assert ended["call_end_sent"] is True
+    assert ended["call_session_id"]
+
+
+async def test_participant_disconnect_reason_is_preserved_in_call_log(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries: list[dict[str, Any]] = []
+
+    class CaptureLog:
+        def info(self, event: str, **fields: Any) -> None:
+            entries.append({"event": event, **fields})
+
+    class DisconnectedSocket:
+        async def accept(self) -> None:
+            pass
+
+        async def receive_text(self) -> str:
+            return json.dumps({"type": "start", "token": "token", "play": False})
+
+        async def send_text(self, _text: str) -> None:
+            raise AssertionError("a disconnected socket must not receive call_end")
+
+        async def close(self, **_kwargs: Any) -> None:
+            raise AssertionError("the server must not close a participant-disconnected socket")
+
+    class CallService:
+        def verify_participant_token(self, _token: str) -> Any:
+            return SimpleNamespace(sub="p_riya", scn="scenario-1", jti="token-id")
+
+        async def get(self, _inv_id: str) -> Any:
+            participant = SimpleNamespace(
+                id="p_riya", languages=SimpleNamespace(template_language="en")
+            )
+            return SimpleNamespace(participants=[participant])
+
+        async def scenario_of(self, _inv_id: str) -> str:
+            return "scenario-1"
+
+    participant_call = ParticipantCall(
+        DisconnectedSocket(),
+        "inv-1",
+        "p_riya",
+        CallService(),  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        media.ActiveSessions(),
+        300,
+    )
+
+    async def disconnect(_language: str) -> str:
+        raise WebSocketDisconnect(1000, "operator closed the socket early")
+
+    monkeypatch.setattr(call_mod, "log", CaptureLog())
+    monkeypatch.setattr(participant_call, "_converse", disconnect)
+
+    await participant_call.run()
+
+    ended = next(entry for entry in entries if entry["event"] == "call_ended")
+    assert ended["socket_close_initiator"] == "participant"
+    assert ended["socket_close_code"] == 1000
+    assert ended["socket_close_reason"] == "operator closed the socket early"
+    assert ended["call_end_sent"] is False
+
+
+def test_disconnect_during_a_question_preserves_client_close_reason(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entries: list[dict[str, Any]] = []
+
+    class CaptureLog:
+        def info(self, event: str, **fields: Any) -> None:
+            entries.append({"event": event, **fields})
+
+    monkeypatch.setattr(call_mod, "log", CaptureLog())
+    inv = create(env)
+    pid = inv["pending_question"]["action"]["participant_id"]
+    active = env.client.app.state.media_sessions
+    with env.client.websocket_connect(url(inv["id"], pid)) as ws:
+        ws.send_text(
+            json.dumps({"type": "start", "token": token(env, inv["id"], pid), "play": False})
+        )
+        until(ws, "ringing")
+        ws.send_text(json.dumps({"type": "accept"}))
+        until(ws, "consent_request")
+        ws.send_text(json.dumps({"type": "consent", "answer": "yes"}))
+        until(ws, "ready")
+        ws.close(code=1000, reason="participant ended the call early")
+
+    deadline = time.monotonic() + 1.0
+    while not any(entry["event"] == "call_ended" for entry in entries):
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"the disconnected call was not logged: entries={entries!r}, active={active.jtis!r}"
+            )
+        time.sleep(0.01)
+    ended = next(entry for entry in entries if entry["event"] == "call_ended")
+
+    assert ended["socket_close_initiator"] == "participant"
+    assert ended["socket_close_reason"] == "participant ended the call early"
+    assert ended["call_end_sent"] is False
 
 
 def test_declining_consent_takes_the_person_out_and_the_engine_asks_someone_else(
@@ -289,6 +395,9 @@ def test_hanging_up_during_idle_releases_the_call_session(
     assert not active.jtis
     ended = next(entry for entry in entries if entry["event"] == "call_ended")
     assert ended["socket_close_code"] == 1000
+    assert ended["socket_close_initiator"] == "participant"
+    assert ended["call_end_sent"] is False
+    assert ended["call_session_id"]
 
 
 def test_two_people_on_calls_at_once_in_one_investigation(env: Env) -> None:

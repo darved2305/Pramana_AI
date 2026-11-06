@@ -210,7 +210,7 @@ def create_app(emulator: FakeGnaniEmulator | None = None) -> FastAPI:
     @app.websocket("/stt/v3/stream")
     async def stt_realtime(ws: WebSocket) -> None:
         await ws.accept()
-        session_id = uuid.uuid4().hex
+        session_id = ws.headers.get("x-api-request-id") or uuid.uuid4().hex
         fake._ws_opened(session_id)
         audio = bytearray()
         transcript_sent = False

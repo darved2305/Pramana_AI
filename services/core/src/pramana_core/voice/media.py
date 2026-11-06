@@ -221,6 +221,8 @@ class MediaSession:
         except WebSocketDisconnect:
             if self.call.can(CallEvent.DISCONNECTED):
                 self.call.fire(CallEvent.DISCONNECTED)
+            if self.in_call:
+                raise
             return
         finally:
             if jti is not None:
@@ -272,6 +274,11 @@ class MediaSession:
                 codemix=codemix,
                 keyterms=answer_keyterms(q.pack, q.probe_id),
                 min_segment_ms=100,
+                correlation={
+                    "investigation_id": self.inv_id,
+                    "participant_id": q.participant.id,
+                    "question_id": q.id,
+                },
             ) as upstream:
                 stream_ms = round((time.perf_counter() - t0) * 1000)
                 await self.send(
@@ -454,7 +461,11 @@ class MediaSession:
         while True:
             msg = await self.ws.receive()
             if msg["type"] == "websocket.disconnect":
-                raise WebSocketDisconnect(msg.get("code", 1000))
+                code = int(msg.get("code", 1000))
+                reason = str(msg.get("reason", ""))
+                self.call.disconnect_code = code
+                self.call.disconnect_reason = reason
+                raise WebSocketDisconnect(code, reason)
             data = msg.get("bytes")
             if data is not None:
                 if len(data) > MAX_CLIENT_FRAME or len(data) % 2:

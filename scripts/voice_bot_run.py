@@ -32,6 +32,7 @@ import json
 import statistics
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -59,10 +60,12 @@ class Run:
         self.core = httpx.AsyncClient(base_url=args.core, headers=automation_headers(), timeout=60)
         self.sim = httpx.AsyncClient(base_url=args.sim, timeout=30)
         self.clips = Path(args.clips) if args.clips else None
+        self.socket_event_log = Path(args.socket_events) if args.socket_events else None
         self.tokens: dict[str, dict[str, str]] = {}
         self.inv: dict[str, Any] = {}
         self.log: list[str] = []
         self.voice_answers = 0
+        self.stt_streams_opened = 0
         # Latency as the caller experiences it (private: printed, never committed).
         self.t_eos: dict[str, float] = {}
         """Per call: when the answer's voice ended (end of the clip, before the silence)."""
@@ -71,7 +74,9 @@ class Run:
         self.answer_ms: list[float] = []
         self.next_ms: list[float] = []
         self.tasks: set[asyncio.Task[None]] = set()
-        self.lock = asyncio.Lock()
+        self.task_errors: list[BaseException] = []
+        self.observe_locks: dict[str, asyncio.Lock] = {}
+        self.location_by_scenario: dict[str, str] = {}
         self.last_clip: dict[str, bytes] = {}
         self.call_closes: list[dict[str, Any]] = []
         self.call_metrics = CallSocketMetrics()
@@ -87,6 +92,28 @@ class Run:
         self.idle_probe_pid: str | None = None
         self.idle_probe_complete = False
 
+    def socket_event(
+        self,
+        event: str,
+        pid: str,
+        socket_id: str,
+        call_session_id: str | None = None,
+        **fields: Any,
+    ) -> None:
+        record = {
+            "event": event,
+            "at_monotonic": time.monotonic(),
+            "socket_id": socket_id,
+            "investigation_id": self.inv["id"],
+            "participant_id": pid,
+            "call_session_id": call_session_id,
+            **fields,
+        }
+        if self.socket_event_log is not None:
+            self.socket_event_log.parent.mkdir(parents=True, exist_ok=True)
+            with self.socket_event_log.open("a", encoding="utf-8") as file:
+                file.write(json.dumps(record, separators=(",", ":")) + "\n")
+
     async def state(self) -> dict[str, Any]:
         r = await self.core.get(f"/v1/investigations/{self.inv['id']}")
         r.raise_for_status()
@@ -98,16 +125,38 @@ class Run:
         tok = self.tokens[pid]
         h = {"Authorization": f"Bearer {tok['token']}"}
         sid = tok["scenario_id"]
-        if action["requires_move"]:
+        lock = self.observe_locks.setdefault(sid, asyncio.Lock())
+        async with lock:
+            location_id = str(action["location_id"])
+            if action["requires_move"] or self.location_by_scenario.get(sid) != location_id:
+                r = await self.sim.post(
+                    f"/sim/v1/scenarios/{sid}/move",
+                    json={"to": location_id},
+                    headers=h,
+                )
+                r.raise_for_status()
+                self.location_by_scenario[sid] = location_id
             r = await self.sim.post(
-                f"/sim/v1/scenarios/{sid}/move", json={"to": action["location_id"]}, headers=h
+                f"/sim/v1/scenarios/{sid}/observe",
+                json={"probe_id": action["probe_id"]},
+                headers=h,
             )
             r.raise_for_status()
-        r = await self.sim.post(
-            f"/sim/v1/scenarios/{sid}/observe", json={"probe_id": action["probe_id"]}, headers=h
-        )
-        r.raise_for_status()
-        return str(r.json()["value"])
+            return str(r.json()["value"])
+
+    def _turn_task_done(self, task: asyncio.Task[None]) -> None:
+        self.tasks.discard(task)
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            self.task_errors.append(error)
+
+    async def _finish_turn_tasks(self) -> None:
+        while self.tasks:
+            await asyncio.gather(*tuple(self.tasks), return_exceptions=True)
+        if self.task_errors:
+            raise self.task_errors[0]
 
     async def bot(self, person: dict[str, Any]) -> None:
         """Answer every call to this person until the investigation no longer needs them."""
@@ -146,10 +195,14 @@ class Run:
         call_reason: str | None = None
         ws: Any = None
         call_open = False
+        socket_id = uuid.uuid4().hex
+        call_session_id: str | None = None
+        call_end_received = False
         try:
             async with websockets.connect(url, max_size=2**23, ping_interval=None) as ws:
                 self.call_metrics.opened(pid)
                 call_open = True
+                self.socket_event("open", pid, socket_id)
                 await ws.send(
                     json.dumps(
                         {
@@ -165,10 +218,12 @@ class Run:
                     m = json.loads(raw)
                     kind = m["type"]
                     if kind == "ringing":
+                        call_session_id = str(m.get("call_session_id", "")) or None
                         await ws.send(json.dumps({"type": "accept"}))
                     elif kind == "consent_request":
                         await ws.send(json.dumps({"type": "consent", "answer": "yes"}))
                     elif kind == "ready":
+                        self.stt_streams_opened += 1
                         if pid == self.silent_pid and not self.silent_used:
                             self.silent_used = True
                             self.log.append(f"  {pid}: intentionally silent for the load check")
@@ -180,7 +235,7 @@ class Run:
                         # Read frames and timers while the bot prepares and speaks its answer.
                         task = asyncio.create_task(self.turn(ws, pid, lang, m))
                         self.tasks.add(task)
-                        task.add_done_callback(self.tasks.discard)
+                        task.add_done_callback(self._turn_task_done)
                     elif kind == "tts_end":
                         if pid in self.t_answer:
                             self.next_ms.append((time.monotonic() - self.t_answer.pop(pid)) * 1000)
@@ -214,17 +269,16 @@ class Run:
                         self.idle_heartbeats += 1
                         if pid == self.idle_probe_pid:
                             self.log.append(
-                                f"  {pid}: idle heartbeat received; ending the probe call"
+                                f"  {pid}: idle heartbeat received; keeping the probe call open"
                             )
                             self.idle_probe_complete = True
-                            call_reason = "idle_probe_complete"
-                            break
                     elif kind == "stop_playback":
                         self.barge_ins += 1
                         self.log.append(f"  {pid}: prompt playback stopped for barge-in")
                     elif kind == "error" and m.get("fatal"):
                         self.log.append(f"  {pid}: error {m['code']}: {m['message']}")
                     elif kind == "call_end":
+                        call_end_received = True
                         call_reason = str(m["reason"])
                         self.log.append(f"  call with {pid} ended: {call_reason}")
                         break
@@ -237,11 +291,27 @@ class Run:
                     self.call_metrics.closed(pid)
                 self.call_closes.append(
                     {
+                        "call_session_id": call_session_id,
+                        "investigation_id": self.inv["id"],
                         "participant_id": pid,
+                        "call_end_received": call_end_received,
+                        "call_end_reason": call_reason,
+                        "expected_close_code": (
+                            4408 if self.args.silent_first and pid == self.silent_pid else 1000
+                        ),
                         "code": ws.close_code,
                         "reason": ws.close_reason or "",
                     }
                 )
+                if call_open:
+                    self.socket_event(
+                        "close",
+                        pid,
+                        socket_id,
+                        call_session_id,
+                        code=ws.close_code,
+                        reason=ws.close_reason or "",
+                    )
         return call_reason
 
     async def turn(self, ws: Any, pid: str, lang: str, ready: dict[str, Any]) -> None:
@@ -290,6 +360,7 @@ class Run:
         """Bots play everyone except a human participant, who answers from their own phone."""
         bots = [p for p in PEOPLE if p["id"] != self.args.human]
         await asyncio.gather(*(self.bot(p) for p in bots), self.wait_for_human())
+        await self._finish_turn_tasks()
 
     async def wait_for_human(self) -> None:
         """Return once nothing is pending for the human (the bots return on their own)."""
@@ -327,9 +398,11 @@ class Run:
         grant.raise_for_status()
         g = grant.json()
         sid = self.tokens["p_imran"]["scenario_id"]
-        await self.sim.post(
+        move = await self.sim.post(
             f"/sim/v1/scenarios/{sid}/move", json={"to": g["location_id"]}, headers=imran
         )
+        move.raise_for_status()
+        self.location_by_scenario[sid] = str(g["location_id"])
         act = await self.sim.post(
             f"/sim/v1/scenarios/{sid}/act",
             json={"action": "reset_breaker", "target": "CB_C2_7", "capability": g["capability"]},
@@ -430,13 +503,12 @@ class Run:
             "decision": s["belief"]["map_decision"],
             "questions_asked": s["questions_asked"],
             "voice_answers": self.voice_answers,
+            "stt_streams_opened": self.stt_streams_opened,
             "revealed_correct": gt.get("correct"),
             "commitment_verified": sealed,
             "replay_identical": replay_identical,
             "replay_replayed_sha256": replay.get("replayed_sha256"),
             "replay_recorded_sha256": replay.get("recorded_sha256"),
-            "emulated_eos_to_transcript_ms": self.stt_ms,
-            "emulated_eos_to_answer_ms": self.answer_ms,
             "withdrawn_questions": self.withdrawn,
             "idle_heartbeats": self.idle_heartbeats,
             "barge_ins": self.barge_ins,
@@ -450,6 +522,9 @@ class Run:
             "max_questions_in_flight": self.most_at_once,
         }
         if self.args.synthetic:
+            result["emulated_eos_to_transcript_ms"] = self.stt_ms
+            result["emulated_eos_to_answer_ms"] = self.answer_ms
+        if self.args.synthetic or self.socket_event_log is not None:
             print("LOAD_RESULT_JSON=" + json.dumps(result, separators=(",", ":")), flush=True)
         return (
             0
@@ -468,6 +543,9 @@ def main() -> None:
     ap.add_argument("--core", default="http://127.0.0.1:8000")
     ap.add_argument("--sim", default="http://127.0.0.1:8100")
     ap.add_argument("--clips")
+    ap.add_argument(
+        "--socket-events", help="append call-socket lifecycle events to this JSONL file"
+    )
     ap.add_argument(
         "--synthetic", action="store_true", help="encode deterministic local test audio"
     )

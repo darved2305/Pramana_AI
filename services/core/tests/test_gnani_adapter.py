@@ -296,11 +296,19 @@ async def test_client_close_logs_provider_code_and_reason(
     fake = FakeGnani().start()
     g = GnaniClient("k", fake.base_url, 5)
     try:
-        stream = await g.open_stream(["hi-IN"])
+        stream = await g.open_stream(
+            ["hi-IN"], correlation={"investigation_id": "inv-1", "question_id": "q-1"}
+        )
         await stream.aclose()
         await asyncio.gather(*tuple(gmod._CLOSING))
 
-        assert entries == [{"event": "gnani_ws_closed", "code": 1000, "reason": ""}]
+        assert len(entries) == 1
+        assert entries[0]["event"] == "gnani_ws_closed"
+        assert entries[0]["session_id"]
+        assert entries[0]["investigation_id"] == "inv-1"
+        assert entries[0]["question_id"] == "q-1"
+        assert entries[0]["code"] == 1000
+        assert entries[0]["reason"] == ""
     finally:
         await g.aclose()
         fake.stop()
@@ -351,12 +359,16 @@ async def test_closing_a_session_does_not_wait_for_gnanis_handshake() -> None:
     # Gnani takes about a second to complete a close; the next question must not wait for it.
     class SlowClose:
         closed = False
+        close_code = 1000
+        close_reason = ""
 
         async def close(self) -> None:
             await asyncio.sleep(1.0)
             SlowClose.closed = True
 
-    stream = GnaniSttStream(SlowClose(), {"config": {}}, expect_v3=False)  # type: ignore[arg-type]
+    stream = GnaniSttStream(
+        SlowClose(), {"config": {}}, expect_v3=False, session_id="stt-slow-close"
+    )  # type: ignore[arg-type]
     started = time.perf_counter()
     await stream.aclose()
     assert time.perf_counter() - started < 0.1
