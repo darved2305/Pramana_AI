@@ -6,15 +6,18 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, LayoutGroup } from "motion/react";
 import { clsx } from "clsx";
 import { Badge, Card, CardHeader, EmptyState, ErrorState, IconButton, PageHeader, PreviewBadge, ProbBar, Skeleton, Tag } from "@/components/ui";
+import { ReconciliationCard } from "@/components/console/ActivityPanels";
 import { IconArrowLeft, IconPause, IconPlay, IconSkipBack, IconSkipFwd } from "@/components/ui/icons";
-import { useEventLog } from "@/lib/data/hooks";
-import { EVENT_LABEL, clock, foldEvents, outcomeWord, pct } from "@/lib/data/derive";
-import type { BeliefSnapshot, EventEnvelope } from "@/lib/api/types";
+import { useEventLog, useInvestigation, usePack } from "@/lib/data/hooks";
+import { EVENT_LABEL, clock, foldEvents, locationLabel, outcomeWord, participantName, pct, presenceChallenges, reconciliationExplanations } from "@/lib/data/derive";
+import type { BeliefSnapshot, EventEnvelope, InvestigationState, Observation, SitePack } from "@/lib/api/types";
 import { usePrefersReducedMotion } from "@/lib/hooks/useReducedMotion";
 
 export default function ReplayPage() {
   const { id } = useParams<{ id: string }>();
   const log = useEventLog(id);
+  const investigation = useInvestigation(id);
+  const pack = usePack(investigation.state?.pack_id);
   return (
     <div className="flex flex-col gap-5">
       <Link href={`/app/investigations/${id}`} className="inline-flex w-fit items-center gap-1.5 text-[14px] text-muted hover:text-fg">
@@ -36,13 +39,13 @@ export default function ReplayPage() {
           <EmptyState title="No events yet" body="This investigation has not recorded any events." />
         </Card>
       ) : (
-        <Player events={log.data} />
+        <Player events={log.data} state={investigation.state} pack={pack.data} />
       )}
     </div>
   );
 }
 
-function Player({ events }: { events: EventEnvelope[] }) {
+function Player({ events, state, pack }: { events: EventEnvelope[]; state?: InvestigationState; pack?: SitePack }) {
   const [i, setI] = useState(0);
   const [playing, setPlaying] = useState(false);
   const reduced = usePrefersReducedMotion();
@@ -143,7 +146,7 @@ function Player({ events }: { events: EventEnvelope[] }) {
         <div className="flex flex-col gap-4">
           <Card className="p-4" aria-live="polite">
             <CardHeader title={EVENT_LABEL[ev.type] ?? ev.type} subtitle={`seq ${ev.seq} · ${new Date(ev.ts).toLocaleString()}`} />
-            <EventBody ev={ev} />
+            <EventBody ev={ev} events={events.slice(0, i + 1)} state={state} pack={pack} observations={folded.observations} />
           </Card>
           <Card className="p-4">
             <CardHeader title="Timeline" />
@@ -178,7 +181,19 @@ function Player({ events }: { events: EventEnvelope[] }) {
   );
 }
 
-function EventBody({ ev }: { ev: EventEnvelope }) {
+function EventBody({
+  ev,
+  events,
+  state,
+  pack,
+  observations,
+}: {
+  ev: EventEnvelope;
+  events: EventEnvelope[];
+  state?: InvestigationState;
+  pack?: SitePack;
+  observations: Observation[];
+}) {
   const p = ev.payload as Record<string, unknown>;
   if (ev.type === "ObservationRecorded")
     return (
@@ -193,9 +208,55 @@ function EventBody({ ev }: { ev: EventEnvelope }) {
   if (ev.type === "PlanComputed" && typeof p.reason === "string") return <p className="mt-3 text-[14px] leading-relaxed text-fg-2">{p.reason}</p>;
   if (ev.type === "QuestionAsked" && typeof p.text === "string") return <p className="mt-3 text-[15px]">{p.text}</p>;
   if (ev.type === "BeliefUpdated") return <p className="mt-3 text-[14px] text-fg-2">The belief on the left now reflects this update.</p>;
+  if (ev.type === "ChallengeIssued") {
+    const challenge = presenceChallenges(events).find((item) => item.challengeId === p.challenge_id);
+    if (!challenge) return <p className="mt-3 text-[14px] text-fg-2">A location check was asked.</p>;
+    return (
+      <div className="mt-3 flex flex-col gap-2 text-[14px]">
+        <p>{participantName(state, challenge.participantId)} was asked to confirm their location at {replayPlace(pack, challenge.locationId)}.</p>
+        <div className="flex flex-wrap items-center gap-2"><Badge tone="info">Asked</Badge><span className="text-[12px] text-muted">Location-specific evidence has reduced weight while this check is pending.</span></div>
+      </div>
+    );
+  }
+  if (ev.type === "ChallengeResult") {
+    const challenge = presenceChallenges(events).find((item) => item.challengeId === p.challenge_id);
+    if (!challenge) return <p className="mt-3 text-[14px] text-fg-2">The location check was resolved.</p>;
+    return (
+      <div className="mt-3 flex flex-col gap-2 text-[14px]">
+        {challenge.status === "passed" ? (
+          <p>Location confirmed for {participantName(state, challenge.participantId)} at {replayPlace(pack, challenge.locationId)}.</p>
+        ) : challenge.reason === "decision_reached" ? (
+          <p>The location check for {participantName(state, challenge.participantId)} was withdrawn when the investigation reached a decision.</p>
+        ) : (
+          <p>Location not confirmed for {participantName(state, challenge.participantId)}; asking someone else.</p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={challenge.status === "passed" ? "ok" : "warn"}>{challenge.status === "passed" ? "Passed" : "Not confirmed"}</Badge>
+          {challenge.status !== "passed" ? <span className="text-[12px] text-muted">Location-specific evidence keeps reduced weight.</span> : null}
+        </div>
+      </div>
+    );
+  }
+  if (ev.type === "ContradictionExplained") {
+    const explanation = reconciliationExplanations(events).find((item) => item.explanationId === p.explanation_id);
+    return explanation ? (
+      <ul className="mt-3"><ReconciliationCard explanation={explanation} state={state} pack={pack} priorObservations={observations} /></ul>
+    ) : <p className="mt-3 text-[14px] text-fg-2">The core ranked possible explanations for these answers.</p>;
+  }
+  if (ev.type === "ContradictionResolved") {
+    return <p className="mt-3 text-[14px] text-ok">Tie-break answered: {formatOutcome(String(p.outcome ?? ""))}.</p>;
+  }
   return (
     <pre className="scroll-thin mt-3 max-h-[180px] overflow-auto rounded-[10px] bg-black/30 p-3 font-mono text-[11px] text-fg-2">
       {JSON.stringify(p, null, 2)}
     </pre>
   );
+}
+
+function replayPlace(pack: SitePack | undefined, id: string) {
+  return locationLabel(pack, id).replace(/^the /i, "");
+}
+
+function formatOutcome(value: string) {
+  return value.replace(/^AP_/, "access point ").replace(/_/g, " ");
 }

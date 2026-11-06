@@ -8,9 +8,9 @@ import { Badge, Button, Card, CardHeader, Dialog, EmptyState, Field, Input, Noti
 import { IconAlert, IconMic, IconShield } from "@/components/ui/icons";
 import { core } from "@/lib/api/core";
 import { describeError } from "@/lib/api/http";
-import type { Contradiction } from "@/lib/data/derive";
-import { clock, locationLabel, outcomeWord, participantName, probeLabel } from "@/lib/data/derive";
-import type { Approval, InvestigationState, Observation, Question, SitePack } from "@/lib/api/types";
+import type { Contradiction, PresenceChallenge, ReconciliationExplanation } from "@/lib/data/derive";
+import { clock, locationLabel, outcomeWord, participantName, pct, presenceChallenges, probeLabel, reconciliationExplanations } from "@/lib/data/derive";
+import type { Approval, EventEnvelope, InvestigationState, Observation, Question, SitePack } from "@/lib/api/types";
 import { outcomeTone } from "@/components/app/BuildingMap";
 import { hasRole } from "@/lib/api/auth";
 import { useCurrentUser } from "@/lib/data/session";
@@ -20,18 +20,21 @@ import { useCurrentUser } from "@/lib/data/session";
 export function ConversationPanel({
   state,
   pack,
+  events,
   readOnly,
   onState,
   onLinks,
 }: {
   state: InvestigationState;
   pack?: SitePack;
+  events: EventEnvelope[];
   readOnly: boolean;
   onState: (s: InvestigationState) => void;
   onLinks: () => void;
 }) {
   const waiting = state.pending_questions?.length ? state.pending_questions : state.pending_question ? [state.pending_question] : [];
   const asking = new Set(waiting.map((w) => w.action.participant_id));
+  const challenges = presenceChallenges(events);
   const parallel = (state.max_parallel_calls ?? 1) > 1;
 
   return (
@@ -79,6 +82,8 @@ export function ConversationPanel({
       ) : (
         <Notice className="mt-4">No question is waiting. {state.status === "investigating" ? "The planner is choosing the next one." : "The investigation has stopped asking."}</Notice>
       )}
+
+      <PresenceChallengeStatus challenges={challenges} state={state} pack={pack} />
 
       <ul className="mt-4 flex flex-col divide-y divide-line">
         {state.participants.map((p) => {
@@ -216,9 +221,10 @@ function RecordAnswer({ state, question: q, onState }: { state: InvestigationSta
 
 /* ---------- Evidence ledger ---------- */
 
-export function EvidenceLedger({ state, pack }: { state: InvestigationState; pack?: SitePack }) {
+export function EvidenceLedger({ state, pack, events }: { state: InvestigationState; pack?: SitePack; events: EventEnvelope[] }) {
   const [view, setView] = useState<"all" | "committed" | "set_aside">("all");
   const [q, setQ] = useState("");
+  const challenges = useMemo(() => presenceChallenges(events), [events]);
   const rows = useMemo(() => {
     return [...state.observations]
       .reverse()
@@ -276,7 +282,7 @@ export function EvidenceLedger({ state, pack }: { state: InvestigationState; pac
             </thead>
             <tbody className="divide-y divide-line">
               {rows.map((o) => (
-                <LedgerRow key={o.id} o={o} state={state} pack={pack} />
+                <LedgerRow key={o.id} o={o} state={state} pack={pack} presence={presenceForObservation(o, challenges)} />
               ))}
             </tbody>
           </table>
@@ -286,7 +292,7 @@ export function EvidenceLedger({ state, pack }: { state: InvestigationState; pac
   );
 }
 
-function LedgerRow({ o, state, pack }: { o: Observation; state: InvestigationState; pack?: SitePack }) {
+function LedgerRow({ o, state, pack, presence }: { o: Observation; state: InvestigationState; pack?: SitePack; presence?: PresenceChallenge }) {
   const tone = outcomeTone(o.outcome);
   return (
     <tr className={clsx("align-top", o.state !== "committed" && "opacity-55")}>
@@ -302,6 +308,9 @@ function LedgerRow({ o, state, pack }: { o: Observation; state: InvestigationSta
           <Badge tone={tone === "good" ? "ok" : tone === "bad" ? "bad" : "warn"}>{outcomeWord(o.outcome)}</Badge>
         </span>
         {o.transcript ? <span className="mt-1 block max-w-[46ch] text-[12px] italic text-muted">&ldquo;{o.transcript}&rdquo;</span> : null}
+        {presence?.status === "passed" ? <Badge className="mt-1" tone="ok">Presence verified</Badge> : null}
+        {presence?.status === "asked" ? <Badge className="mt-1" tone="info">Presence check asked · reduced weight</Badge> : null}
+        {presence?.status === "not_confirmed" ? <Badge className="mt-1" tone="warn">Presence not confirmed · reduced weight</Badge> : null}
         {o.injection_suspected ? (
           <span className="mt-1 flex items-center gap-1 text-[12px] text-bad">
             <IconAlert className="h-3.5 w-3.5" /> Possible instruction injection
@@ -325,19 +334,23 @@ function LedgerRow({ o, state, pack }: { o: Observation; state: InvestigationSta
 
 /* ---------- Contradictions ---------- */
 
-export function ContradictionPanel({ items, state, pack }: { items: Contradiction[]; state: InvestigationState; pack?: SitePack }) {
+export function ContradictionPanel({ items, state, pack, events }: { items: Contradiction[]; state: InvestigationState; pack?: SitePack; events: EventEnvelope[] }) {
+  const explanations = reconciliationExplanations(events);
   return (
     <Card className="p-4" aria-labelledby="contra-title">
       <CardHeader
         id="contra-title"
         title="Contradictions"
-        subtitle="Answers about the same thing in the same place that disagree"
-        action={items.length ? <Badge tone="warn">{items.length}</Badge> : undefined}
+        subtitle="Conflicting evidence, context explanations and targeted follow-up questions"
+        action={items.length + explanations.length ? <Badge tone="warn">{items.length + explanations.length}</Badge> : undefined}
       />
-      {items.length === 0 ? (
+      {items.length === 0 && explanations.length === 0 ? (
         <EmptyState className="py-8" title="No conflicts" body="When two answers disagree, they appear here side by side with what could explain it." />
       ) : (
         <ul className="mt-4 flex flex-col gap-3">
+          {explanations.map((explanation) => (
+            <ReconciliationCard key={explanation.explanationId} explanation={explanation} state={state} pack={pack} />
+          ))}
           {items.map((c) => (
             <li key={c.key} className="rounded-[12px] border-[0.8px] border-warn/30 p-3">
               <p className="text-[14px] text-fg">
@@ -368,6 +381,126 @@ export function ContradictionPanel({ items, state, pack }: { items: Contradictio
       )}
     </Card>
   );
+}
+
+function PresenceChallengeStatus({ challenges, state, pack }: { challenges: PresenceChallenge[]; state: InvestigationState; pack?: SitePack }) {
+  if (!challenges.length) return null;
+  const pending = challenges.filter((challenge) => challenge.status === "asked");
+  const failed = [...challenges].reverse().find(
+    (challenge) => challenge.status === "not_confirmed" && challenge.reason !== "decision_reached",
+  );
+  return (
+    <section aria-labelledby="presence-title" className="mt-4 rounded-[12px] border-[0.8px] border-info/25 bg-info/[.04] p-3">
+      <h3 id="presence-title" className="text-[13px] font-medium text-fg">Presence checks</h3>
+      {pending.map((challenge) => (
+        <Notice key={challenge.challengeId} tone="info" className="mt-2">
+          Location check in progress for {participantName(state, challenge.participantId)} at {locationLabel(pack, challenge.locationId)}. Evidence from there has reduced weight until the check passes.
+        </Notice>
+      ))}
+      {failed ? (
+        <Notice key={failed.challengeId} tone="warn" className="mt-2">
+          {state.status === "investigating"
+            ? `Location not confirmed for ${participantName(state, failed.participantId)}; asking someone else.`
+            : `Location not confirmed for ${participantName(state, failed.participantId)}; their location-specific evidence kept reduced weight.`}
+        </Notice>
+      ) : null}
+      <ul className="mt-2 flex flex-col divide-y divide-line">
+        {challenges.map((challenge) => (
+          <li key={challenge.challengeId} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-[13px]">
+            <span className="font-medium">{participantName(state, challenge.participantId)}</span>
+            <span className="text-muted">· {locationLabel(pack, challenge.locationId)}</span>
+            <Badge className="ml-auto" tone={challenge.status === "passed" ? "ok" : challenge.status === "asked" ? "info" : "warn"}>
+              {challenge.status === "passed" ? "Passed" : challenge.status === "asked" ? "Asked" : "Not confirmed"}
+            </Badge>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function presenceForObservation(observation: Observation, challenges: PresenceChallenge[]) {
+  return [...challenges].reverse().find(
+    (challenge) => challenge.participantId === observation.participant_id && challenge.locationId === observation.location_id,
+  );
+}
+
+export function ReconciliationCard({
+  explanation,
+  state,
+  pack,
+  priorObservations,
+}: {
+  explanation: ReconciliationExplanation;
+  state?: InvestigationState;
+  pack?: SitePack;
+  priorObservations?: Observation[];
+}) {
+  const availableObservations = priorObservations ?? state?.observations ?? [];
+  const observations = explanation.observationIds
+    .map((id) => availableObservations.find((observation) => observation.id === id))
+    .filter((observation): observation is Observation => observation !== undefined);
+  return (
+    <li className="rounded-[12px] border-[0.8px] border-warn/30 p-3" data-testid="reconciliation-explanation">
+      <p className="text-[14px] font-medium text-fg">Conflicting answers</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {observations.map((observation) => (
+          <div key={observation.id} className="min-w-0 rounded-[10px] bg-white/[.03] p-2.5 text-[13px]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">{participantName(state, observation.participant_id)}</span>
+              <Badge tone="info">{outcomeWord(observation.outcome)}</Badge>
+            </div>
+            <p className="mt-1 text-[12px] text-muted">{locationLabel(pack, observation.location_id)}</p>
+            {observation.transcript ? <p className="mt-1 break-words text-[12px] text-fg-2">&ldquo;{observation.transcript}&rdquo;</p> : null}
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[12px] uppercase tracking-[0.06em] text-muted">Ranked explanations</p>
+      <ol className="mt-1 flex flex-col gap-2 text-[13px] text-fg-2">
+        {[...explanation.families].sort((a, b) => b.posteriorMass - a.posteriorMass).map((family) => (
+          <li key={family.code} className="flex items-start gap-2">
+            <span className="min-w-0 flex-1">{explanationSentence(family.code, explanation, pack)}</span>
+            <span className="shrink-0 font-mono text-fg">{pct(family.posteriorMass)}</span>
+            {!family.supported ? <Badge tone="muted">Not modeled</Badge> : null}
+          </li>
+        ))}
+      </ol>
+      {explanation.tieBreakQuestion ? (
+        <div className="mt-3 rounded-[10px] border-[0.8px] border-info/25 bg-info/[.04] p-2.5">
+          <p className="text-[11px] uppercase tracking-[0.06em] text-muted">Tie-break question</p>
+          <p className="mt-1 text-[13px] text-fg">{explanation.tieBreakQuestion.text}</p>
+          {explanation.resolution ? (
+            <p className="mt-1 text-[12px] text-ok">Answered: {formatAccessPoint(explanation.resolution.outcome)}</p>
+          ) : (
+            <p className="mt-1 text-[12px] text-info">Asked, waiting for an answer</p>
+          )}
+        </div>
+      ) : explanation.tieBreakAction ? (
+        <p className="mt-3 text-[12px] text-info">
+          Tie-break question for {participantName(state, explanation.tieBreakAction.participant_id)} at {locationLabel(pack, explanation.tieBreakAction.location_id)}: {probeLabel(pack, explanation.tieBreakAction.probe_id)}.
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+function explanationSentence(code: string, explanation: ReconciliationExplanation, pack?: SitePack) {
+  if (code === "different_access_points") {
+    const context = explanation.contexts[0];
+    if (context?.accessPoints[0] && context.accessPoints[1]) {
+      const affectedIndex = Math.max(0, context.accessPoints.indexOf("AP_2A"));
+      const affectedAccessPoint = context.accessPoints[affectedIndex] ?? context.accessPoints[0]!;
+      return `Both can be right: ${locationLabel(pack, context.locationIds[0])} is served by ${formatAccessPoint(context.accessPoints[0])} and ${locationLabel(pack, context.locationIds[1])} by ${formatAccessPoint(context.accessPoints[1])}. If ${formatAccessPoint(affectedAccessPoint)} is down, only ${locationLabel(pack, context.locationIds[affectedIndex])} loses Wi-Fi.`;
+    }
+    return "Both can be right if the people were connected to different access points.";
+  }
+  if (code === "observer_mistake") return "At least one person may have misread what they saw.";
+  if (code === "world_changed") return "The situation may have changed between answers; changes over time are not modeled.";
+  return code.replace(/_/g, " ");
+}
+
+function formatAccessPoint(value: string) {
+  return value.replace(/^AP_/, "access point ").replace(/_/g, " ");
 }
 
 /* ---------- Approvals ---------- */

@@ -112,6 +112,20 @@ the report text or the id (case-insensitive; `%` and `_` are literal). Each item
 | `approvals[]` | Approval cards: action, target, risk, reversibility, rationale and status |
 | `ground_truth` | After the reveal: the fault, `commitment_verified`, and whether the decision was `correct` |
 
+The console's presence and reconciliation panels are folded from the event log. A location check
+shows the challenged person, location and status (`Asked`, `Passed` or `Not confirmed`). Location-
+bound observations show `Presence check asked · reduced weight` while pending,
+`Presence verified` after a pass, or `Presence not confirmed · reduced
+weight` after failure. A failed check is explained neutrally and the planner can ask another
+person. The console never receives the expected label characters.
+
+For `ContradictionExplained`, the console pairs the referenced observations, ranks the language-
+independent explanation families by posterior mass, and renders reviewed English templates from
+the event codes and pack contexts. The tie-break question appears while pending; its recorded
+outcome appears after `ContradictionResolved`. Replay shows the same event-backed details at the
+point they occurred. Existing investigations load prior events on open, then follow server-sent
+events with polling as the fallback.
+
 ### Live updates
 
 Poll `GET /v1/investigations/{id}/events?after_seq=N`. It returns new events in order, and
@@ -151,7 +165,9 @@ digits through the same text or voice answer route as other questions. The respo
 `ChallengeAnswerResult` with `passed`, neutral `message` and updated `state`; it contains no
 recognised code or observation. A failed check leaves that person's evidence at the documented
 unverified-presence weight and the planner can ask someone else. A challenge is not reissued to
-the same person at the same location.
+the same person at the same location. The participant page uses a labeled, uppercase monospace
+field with a text keyboard for short codes. The simulator decides whether a label is visible; the
+page does not synthesize or cache it. Failure text follows the participant's selected language.
 
 The simulator also exposes `POST /sim/v1/scenarios/{sid}/presence/verify` for core-to-simulator
 use. It requires `X-Operator-Key` and accepts `{participant_id, token_id, answer}`. Its only result

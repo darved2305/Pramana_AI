@@ -558,9 +558,16 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
                   id="ans"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder={q.kind === "challenge" ? "Type the label, for example K 7 Q" : "Or type your answer"}
+                  placeholder={q.kind === "challenge" ? "Enter label" : "Or type your answer"}
+                  type="text"
+                  inputMode={q.kind === "challenge" ? "text" : undefined}
                   autoCapitalize={q.kind === "challenge" ? "characters" : "sentences"}
-                  className="h-[52px] min-w-0 flex-1 border-[0.8px] border-cream/40 bg-transparent px-4 text-[16px] outline-none transition-[border-radius] duration-500 placeholder:text-cream/40 focus:rounded-[26px] focus:border-cream"
+                  autoComplete={q.kind === "challenge" ? "off" : undefined}
+                  spellCheck={q.kind === "challenge" ? false : undefined}
+                  className={clsx(
+                    "h-[52px] min-w-0 flex-1 border-[0.8px] border-cream/40 bg-transparent px-4 text-[16px] outline-none transition-[border-radius] duration-500 placeholder:text-cream/40 focus:rounded-[26px] focus:border-cream",
+                    q.kind === "challenge" && "font-mono uppercase tracking-[0.12em]",
+                  )}
                 />
                 <button type="submit" className="btn-line" disabled={!text.trim() || phase !== "idle"}>
                   Send

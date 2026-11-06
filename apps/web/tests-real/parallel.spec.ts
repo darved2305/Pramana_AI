@@ -5,11 +5,13 @@
  * same time, and the engine still reaches the right decision for S1 (breaker CB_C2_7 tripped).
  */
 import { expect, test, type Page } from "@playwright/test";
-import { answerTruthfully, api, openParticipant, seedDirectory, signIn } from "./helpers";
+import { answerPresenceChallenge, answerTruthfully, api, openParticipant, seedDirectory, signIn } from "./helpers";
 
 interface Q {
   id: string;
   text: string;
+  kind?: string;
+  language: "en" | "hi" | "mr" | "hi-en";
   action: { participant_id: string; probe_id: string };
 }
 interface State {
@@ -47,7 +49,8 @@ test("parallel: three people asked at once reach the S1 decision", async ({ page
   await page.getByRole("textbox", { name: "Failure mode" }).fill("tripped");
   await next();
   await expect(page.getByText("up to 3 people at once")).toBeVisible();
-  await page.getByRole("checkbox", { name: /agreed to be contacted/ }).check({ force: true });
+  await page.getByText("These people have agreed to be contacted", { exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: /agreed to be contacted/ })).toBeChecked();
   await page.getByRole("button", { name: "Start investigation" }).click();
   await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9a-f]+$/);
   const invId = page.url().split("/").pop() as string;
@@ -81,7 +84,11 @@ test("parallel: three people asked at once reach the S1 decision", async ({ page
     const before = state.questions_asked;
     const asked = new Set(state.pending_questions.map((q) => q.id));
     const results = await Promise.allSettled(
-      state.pending_questions.map((q) => answerTruthfully(people[q.action.participant_id], q.text, label(q.action.probe_id), false)),
+      state.pending_questions.map((q) =>
+        q.kind === "challenge"
+          ? answerPresenceChallenge(people[q.action.participant_id], q.text, q.language)
+          : answerTruthfully(people[q.action.participant_id], q.text, label(q.action.probe_id), false),
+      ),
     );
     // A question can be withdrawn while its person is answering; the others must succeed.
     expect(results.some((r) => r.status === "fulfilled")).toBe(true);
@@ -105,10 +112,11 @@ test("parallel: three people asked at once reach the S1 decision", async ({ page
   expect(mostAtOnce).toBeGreaterThanOrEqual(2);
   await expect(page.getByText("Decided").first()).toBeVisible();
 
-  const events = await api<{ type: string; payload: { question_id?: string } }[]>(request, "GET", `/v1/investigations/${invId}/events`);
+  const events = await api<{ type: string; payload: { question_id?: string; result?: string } }[]>(request, "GET", `/v1/investigations/${invId}/events`);
   const asked = events.filter((e) => e.type === "QuestionAsked").length;
   const withdrawn = events.filter((e) => e.type === "QuestionWithdrawn").length;
-  const answered = events.filter((e) => e.type === "ObservationRecorded").length - 1; // minus the report
+  const answered = events.filter((e) => e.type === "ObservationRecorded").length - 1
+    + events.filter((e) => e.type === "ChallengeResult" && e.payload.result !== "withdrawn").length; // minus the report
   expect(answered + withdrawn).toBe(asked);
   const replay = await api<{ identical: boolean }>(request, "GET", `/v1/investigations/${invId}/replay`);
   expect(replay.identical).toBe(true);

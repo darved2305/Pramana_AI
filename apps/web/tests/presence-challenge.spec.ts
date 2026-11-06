@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 test.use({ launchOptions: { args: ["--use-fake-device-for-media-stream"] } });
 
@@ -65,6 +66,7 @@ test("participant can move to a presence challenge and submit the visible label"
 
   await page.goto("/join/eyJpIjoiaW52X3ByZXNlbmNlIiwicCI6InBfZ3VhcmQiLCJzIjoic2NlbmFyaW9fcHJlc2VuY2UiLCJ0IjoidG9rZW4ifQ");
   await expect(page.getByRole("heading", { name: /white switch label/i })).toBeVisible();
+  await expect(page.getByText("White switch label: K7Q")).toHaveCount(0);
   await page.getByRole("button", { name: "I am there now" }).click();
   await expect(page.getByText("White switch label: K7Q")).toBeVisible();
   await expect(page.getByRole("button", { name: "green" })).toHaveCount(0);
@@ -134,6 +136,69 @@ test("participant already at the challenge location can read the visible label",
   await page.getByLabel("Type your answer").fill("K seven Q");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.getByRole("status")).toContainText("Location confirmed.");
+});
+
+test("challenge code input is mobile friendly and failure copy follows the participant language", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const question = {
+    id: "q_challenge",
+    action: { participant_id: "p_guard", probe_id: "switch_leds", location_id: "IDF2", requires_move: false },
+    language: "mr",
+    text: "स्विचवरील लेबल वाचा.",
+    outcomes: [],
+    status: "asked",
+    asked_at: "2026-11-06T00:00:00Z",
+    kind: "challenge",
+    presence_token_id: "idf2_switch_label",
+  };
+  const pending = {
+    id: "inv_presence",
+    status: "investigating",
+    participants: [
+      { id: "p_guard", display_name: "Mahesh", location_id: "IDF2", languages: { template_language: "mr" } },
+    ],
+    pending_question: question,
+    pending_questions: [question],
+    approvals: [],
+    report: { reporter_id: "p_guard" },
+  };
+  await page.route("**/api/core/v1/investigations/inv_presence", (route) => route.fulfill({ json: pending }));
+  await page.route("**/api/sim/sim/v1/scenarios/scenario_presence/view", (route) =>
+    route.fulfill({
+      json: {
+        location_id: "IDF2",
+        location_label: "IDF-2",
+        items: [],
+        reachable_locations: [],
+        presence_tokens: [{ token_id: "idf2_switch_label", display_texts: { mr: "पांढऱ्या स्विचवरील लेबल: K7Q" } }],
+      },
+    }),
+  );
+  await page.route("**/api/core/v1/investigations/inv_presence/answers", (route) =>
+    route.fulfill({
+      json: {
+        passed: false,
+        message: "मी जागेची खात्री करू शकलो नाही; मी दुसऱ्या व्यक्तीला विचारेन.",
+        state: { ...pending, pending_question: null, pending_questions: [] },
+      },
+    }),
+  );
+
+  await page.goto("/join/eyJpIjoiaW52X3ByZXNlbmNlIiwicCI6InBfZ3VhcmQiLCJzIjoic2NlbmFyaW9fcHJlc2VuY2UiLCJ0IjoidG9rZW4ifQ");
+  const input = page.getByLabel("Type your answer");
+  await expect(input).toHaveAttribute("autocapitalize", "characters");
+  await expect(input).toHaveAttribute("inputmode", "text");
+  await expect(input).toHaveAttribute("placeholder", "Enter label");
+  await expect(input).toHaveClass(/font-mono/);
+  await expect(page.getByText("पांढऱ्या स्विचवरील लेबल: K7Q")).toBeVisible();
+  const axe = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(axe.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious").map((violation) => `${violation.id}: ${violation.help}`)).toEqual([]);
+  await input.fill("K 2 Q");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByRole("status")).toHaveText("मी जागेची खात्री करू शकलो नाही; मी दुसऱ्या व्यक्तीला विचारेन.");
+  await expect(page.getByRole("status")).not.toContainText("K7Q");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
 });
 
 test("participant can answer a presence challenge by live voice", async ({ page }) => {

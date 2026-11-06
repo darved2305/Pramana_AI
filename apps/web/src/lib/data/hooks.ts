@@ -283,6 +283,23 @@ export function useInvestigation(id: string, source?: EventFeedSource): Investig
     };
   }, [id, isPreview, refresh, hydrated]);
 
+  // Load the existing log once so event-backed panels also work after reloads and on
+  // investigations that have already settled. The live feed below continues from its seq.
+  useEffect(() => {
+    if (!hydrated || isPreview) return;
+    let alive = true;
+    const ctrl = new AbortController();
+    core.events(id, 0, ctrl.signal).then((history) => {
+      if (!alive) return;
+      if (history.length) seqRef.current = Math.max(seqRef.current, history[history.length - 1].seq);
+      setEvents((current) => mergeEvents(current, history));
+    }).catch(() => undefined);
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
+  }, [id, isPreview, hydrated]);
+
   // Poll the event log while the investigation can still change.
   const settled = state ? SETTLED.includes(state.status) && !state.pending_question : false;
   const live = !isPreview && status === "ready" && !settled;
@@ -298,8 +315,8 @@ export function useInvestigation(id: string, source?: EventFeedSource): Investig
         // Drop anything already seen: a reconnecting source may resend from an older seq.
         const fresh = batch.filter((e) => e.seq > seqRef.current);
         if (!fresh.length) return;
-        seqRef.current = fresh[fresh.length - 1].seq;
-        setEvents((prev) => [...prev, ...fresh]);
+        seqRef.current = Math.max(seqRef.current, fresh[fresh.length - 1].seq);
+        setEvents((prev) => mergeEvents(prev, fresh));
         void refresh();
       },
       () => {
@@ -322,6 +339,13 @@ export function useInvestigation(id: string, source?: EventFeedSource): Investig
     refresh,
     apply: (s) => setState(s),
   };
+}
+
+function mergeEvents(current: EventEnvelope[], incoming: EventEnvelope[]): EventEnvelope[] {
+  if (!incoming.length) return current;
+  const bySeq = new Map(current.map((event) => [event.seq, event]));
+  for (const event of incoming) bySeq.set(event.seq, event);
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
 }
 
 /** Full event log, for replay. */

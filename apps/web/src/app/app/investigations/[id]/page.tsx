@@ -208,14 +208,14 @@ function CommandCenter({
 
       {/* Row 2: conversation + reasoning */}
       <div className="grid gap-4 xl:grid-cols-2">
-        <ConversationPanel state={s} pack={pack} readOnly={readOnly} onState={feed.apply} onLinks={onLinks} />
+        <ConversationPanel state={s} pack={pack} events={feed.events} readOnly={readOnly} onState={feed.apply} onLinks={onLinks} />
         <ReasoningPanel state={s} pack={pack} />
       </div>
 
-      <EvidenceLedger state={s} pack={pack} />
+      <EvidenceLedger state={s} pack={pack} events={feed.events} />
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <ContradictionPanel items={contradictions} state={s} pack={pack} />
+        <ContradictionPanel items={contradictions} state={s} pack={pack} events={feed.events} />
         <ApprovalPanel state={s} pack={pack} readOnly={readOnly} onState={feed.apply} />
         <DiagnosisPanel state={s} pack={pack} contradictions={contradictions.length} />
       </div>

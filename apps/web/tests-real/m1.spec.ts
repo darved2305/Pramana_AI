@@ -9,13 +9,13 @@
  * Participants answer truthfully from what their simulated surroundings card shows.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { answerTruthfully, api, openParticipant, seedDirectory, signIn } from "./helpers";
+import { answerPresenceChallenge, answerTruthfully, api, openParticipant, seedDirectory, signIn } from "./helpers";
 
 interface State {
   id: string;
   status: string;
   questions_asked: number;
-  pending_question: { id: string; text: string; action: { participant_id: string; probe_id: string; requires_move: boolean } } | null;
+  pending_question: { id: string; text: string; language: "en" | "hi" | "mr" | "hi-en"; kind?: string; action: { participant_id: string; probe_id: string; requires_move: boolean } } | null;
   plan: { decision_class?: string | null };
   belief: { repair?: { fixed_probability: number } | null };
   approvals: { id: string; status: string; approver_id?: string | null }[];
@@ -50,7 +50,8 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   await page.getByRole("textbox", { name: "Component ID" }).fill("CB_C2_7");
   await page.getByRole("textbox", { name: "Failure mode" }).fill("tripped");
   await next();
-  await page.getByRole("checkbox", { name: /agreed to be contacted/ }).check({ force: true });
+  await page.getByText("These people have agreed to be contacted", { exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: /agreed to be contacted/ })).toBeChecked();
   await page.getByRole("button", { name: "Start investigation" }).click();
   await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9a-f]+$/);
   const invId = page.url().split("/").pop() as string;
@@ -79,11 +80,21 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   let state = await api<State>(request, "GET", `/v1/investigations/${invId}`);
   let answered = 0;
   while (state.pending_question && answered < 8) {
-    const { participant_id, probe_id } = state.pending_question.action;
+    const question = state.pending_question;
+    const { participant_id, probe_id } = question.action;
     const before = state.questions_asked;
-    await answerTruthfully(people[participant_id], state.pending_question.text, label(probe_id), answered === 0);
+    if (question.kind === "challenge") {
+      await answerPresenceChallenge(people[participant_id], question.text, question.language);
+    } else {
+      await answerTruthfully(people[participant_id], question.text, label(probe_id), answered === 0);
+    }
     answered++;
-    await expect.poll(async () => (state = await api<State>(request, "GET", `/v1/investigations/${invId}`)).questions_asked > before || !state.pending_question).toBe(true);
+    await expect
+      .poll(async () => {
+        state = await api<State>(request, "GET", `/v1/investigations/${invId}`);
+        return state.questions_asked > before || state.pending_question?.id !== question.id;
+      })
+      .toBe(true);
   }
   expect(state.status).toBe("decided");
   expect(state.plan.decision_class).toBe("DISPATCH_ELECTRICIAN_DB_C2");

@@ -1,4 +1,4 @@
-# DEMO.md — Setup, storyboard, participant roles, recording, publishing
+# DEMO.md - Setup, storyboard, participant roles, recording, publishing
 
 > **Non-negotiables**
 > - Real people speaking in real time, and real AI reasoning.
@@ -18,7 +18,7 @@
 | Riya (student) | Volunteer A or teammate | Hinglish | Phone (Chrome) + wired earphones | Room 304, Floor 3 | Observe |
 | Mahesh (security guard) | Volunteer B (native Marathi) | Marathi | Phone + earphones | Guard desk, ground floor; has closet keys | Observe (closets) |
 | Imran (electrician) | Volunteer C (native Hindi) or Nikhil | Hindi | Phone + earphones | Maintenance room | Observe panels; repair with approval |
-| Engine monitor | Nikhil | — | Laptop (`/dev/metrics`, logs) | — | — |
+| Engine monitor | Nikhil | - | Laptop (`/dev/metrics`, logs) | - | - |
 
 - **Names.** Use synthetic display names only. Volunteers sign a one-paragraph consent covering voice recording for the demo video.
 - **Rooms.** Put each participant in a separate room, or at least out of earshot of the others. Calls are 1:1, so nobody should hear another participant's answers.
@@ -42,16 +42,16 @@ Format and scene timing:
 | Time | Visual | Audio | On-screen text |
 |---|---|---|---|
 | 0:00–0:03 | Black screen, then the console fades in with a dimmed floor-stack of the hostel | Hostel ambience | **"This AI can't see the building."** · small: *Simulated building · real voices · real-time AI* |
-| 0:03–0:06 | Seal badge pulses: `Hidden fault sealed · #a91f…` | — | **"It can only talk to the people inside."** |
+| 0:03–0:06 | Seal badge pulses: `Hidden fault sealed · #a91f…` | - | **"It can only talk to the people inside."** |
 | 0:06–0:10 | Riya's phone: she speaks; Floor 3 turns red; 12 hypothesis bars appear | Riya (Hinglish, real): "Floor 3 pe WiFi bilkul nahi chal raha…" | Subtitle EN |
 | 0:10–0:15 | Two call cards light up together (Riya, Mahesh). A popover opens on Mahesh's card | AI (Timbre, Marathi): "तुम्ही IDF-2 खोलीत जाऊन स्विचवरचे दिवे दिसतात का ते सांगाल का?" | **"It decides who should look at what."** · popover: *+0.7 bits · guard has keys* |
 | 0:15–0:19 | ⏩ Mahesh walks (sim); answers; bars split roughly evenly between "switch dead" and "closet power" | Mahesh (Marathi): "एकही दिवा चालू नाही." | Subtitle EN: "Not a single light is on." |
 | 0:19–0:27 | **The twist.** AI asks about the CCTV. Popover explains why. Mahesh answers. Bars snap: "Breaker C2-7 tripped" dominant; decision bar fills | AI: "त्याच खोलीतला CCTV चा स्क्रीन चालू आहे की बंद?" · Mahesh: "तो पण बंद आहे." | **"Why ask about CCTV to fix Wi-Fi? It shares the closet's power."** then **"It stops asking once the action is certain."** |
-| 0:27–0:34 | Console approval drawer: *Reset breaker 7 · reversible · electrician only* → Approve (role check ✓). Imran's card opens | AI (Hindi): "Imran ji, approval mil gaya hai — DB-C2 mein breaker 7 reset kar dijiye." · Imran: "Trip tha… reset kar diya." | **"Nothing physical happens without an authorized human."** |
+| 0:27–0:34 | Console approval drawer: *Reset breaker 7 · reversible · electrician only* → Approve (role check ✓). Imran's card opens | AI (Hindi): "Imran ji, approval mil gaya hai - DB-C2 mein breaker 7 reset kar dijiye." · Imran: "Trip tha… reset kar diya." | **"Nothing physical happens without an authorized human."** |
 | 0:34–0:44 | Verification card: *Held-out prediction: the CCTV must be rebooting* → asks Mahesh; Riya's phone shows Wi-Fi back | AI (Marathi): "आता CCTV स्क्रीनवर काय दिसतंय?" · Mahesh: "सुरू होतोय, लोगो आलाय." · Riya: "WiFi aa gaya!" | **"It doesn't trust 'fixed'. It tests a prediction it hasn't used."** → ✓ VERIFIED |
-| 0:44–0:50 | Reveal: the hash expands into `CB_C2_7 tripped` ✓ *matches* | — | Chips: *4 questions · 3 people · 3 languages · 3m 12s real time* (actual values from the take) |
-| 0:50–0:57 | Benchmark card: a single line from `summary.json`, **only if it is true and significant**; otherwise use the fallback text | — | e.g., "Across N simulated outages: fewer questions than a checklist and a frontier-LLM policy, with fewer confident mistakes." Fallback: "Benchmarked against a checklist and a frontier-LLM policy, results in repo." |
-| 0:57–1:00 | End card | — | **"Not a voice bot. An investigator."** · *Built on Gnani Prisma v3.0 + Timbre* · #GnaniAI #GreatIndianAIInternshipChallenge |
+| 0:44–0:50 | Reveal: the hash expands into `CB_C2_7 tripped` ✓ *matches* | - | Chips: *4 questions · 3 people · 3 languages · 3m 12s real time* (actual values from the take) |
+| 0:50–0:57 | Benchmark card: a single line from `summary.json`, **only if it is true and significant**; otherwise use the fallback text | - | e.g., "Across N simulated outages: fewer questions than a checklist and a frontier-LLM policy, with fewer confident mistakes." Fallback: "Benchmarked against a checklist and a frontier-LLM policy, results in repo." |
+| 0:57–1:00 | End card | - | **"Not a voice bot. An investigator."** · *Built on Gnani Prisma v3.0 + Timbre* · #GnaniAI #GreatIndianAIInternshipChallenge |
 
 **Script rule.** Lines shown in this table are *what we expect*. The real take uses whatever people actually said. If an answer differs, the plan will differ too; keep that take if it is clean, because it proves nothing is scripted.
 
@@ -69,11 +69,15 @@ Format and scene timing:
 - **S2:** Use the built-in preset. The event stream records ranked reconciliation codes and
   posterior masses, then shows the Wi-Fi access-point check the planner asks to separate the
   different-room explanation from an incorrect answer. The event carries language-independent
-  codes and access-point contexts for the console to render from templates and pack labels.
+  codes and access-point contexts for the console to render from templates and pack labels. The
+  contradiction panel keeps both reports side by side, shows their explanation probabilities, and
+  records the tie-break question and its outcome. Replay renders each detail when its event occurs.
 - **S7:** Use the built-in preset with the fictional guard. A challenge asks for the last three
   characters on the IDF-2 label. The simulator displays that card only after a participant really
-  moves to IDF-2. A failed check uses neutral copy and sends the next question to another person;
-  neither the event stream nor the verification response contains the expected characters.
+  moves to IDF-2. The console identifies who was challenged, where, and whether the check is asked,
+  passed or not confirmed. A failed check uses neutral copy and sends the next question to another
+  person; the evidence ledger marks that person's location-bound observations as reduced weight.
+  Neither the event stream nor the verification response contains the expected characters.
 
 ## 5. Live demo protocol (interviews and judges)
 

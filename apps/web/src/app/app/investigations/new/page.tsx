@@ -165,8 +165,8 @@ export default function NewInvestigationPage() {
             <div className="max-w-xl">
               <h2 className="font-serif text-[22px] tracking-[0.02em]">Try a scenario</h2>
               <p className="mt-1 text-[13px] text-muted">
-                Start S2 to follow a Wi-Fi contradiction, or S7 to test a restricted-location check.
-                These scenarios use fictional participants and a sealed simulated fault.
+                Simulated scenarios: start S2 to follow a Wi-Fi reconciliation, or S7 to test a restricted-location check.
+                Both use fictional participants and a sealed simulated fault.
               </p>
               {presetError ? (
                 <p className="mt-2 text-[13px] text-bad" role="alert">{describeError(presetError)}</p>

@@ -83,6 +83,38 @@ export async function answerTruthfully(p: Page, questionText: string, probeLabel
   return value;
 }
 
+export async function visiblePresenceCode(p: Page, questionText: string) {
+  await expect(p.getByRole("heading", { level: 1 })).toHaveText(questionText, { timeout: 20_000 });
+  const there = p.getByRole("button", { name: "I am there now" });
+  if (await there.isVisible()) await there.click();
+
+  const card = p.locator("details", { hasText: "What you can see here (simulation)" });
+  await expect(card).toBeVisible();
+  const labelRow = card.locator("div", { has: p.locator("dt", { hasText: "Location label" }) }).last();
+  await expect(labelRow).toBeVisible({ timeout: 15_000 });
+  const displayed = (await labelRow.locator("dd").innerText()).trim();
+  const match = displayed.match(/([A-Z2-9]{3})[^A-Z0-9]*$/i);
+  expect(match, "the simulator shows a short label after the participant arrives").toBeTruthy();
+  return (match?.[1] as string).toUpperCase();
+}
+
+export async function answerPresenceChallenge(
+  p: Page,
+  questionText: string,
+  language: "en" | "hi" | "mr" | "hi-en",
+) {
+  const code = await visiblePresenceCode(p, questionText);
+  const successCopy = {
+    en: "Location confirmed.",
+    hi: "जगह की पुष्टि हो गई।",
+    mr: "जागेची खात्री झाली.",
+    "hi-en": "Location confirm ho gayi.",
+  };
+  await p.getByLabel("Type your answer").fill(code.split("").join(" "));
+  await p.getByRole("button", { name: "Send" }).click();
+  await expect(p.getByRole("status")).toContainText(successCopy[language]);
+}
+
 // How someone might say each outcome (Hinglish and Marathi on purpose); the core must extract it.
 export const PHRASES: Record<string, string> = {
   yes: "haan, khul rahi hai",
