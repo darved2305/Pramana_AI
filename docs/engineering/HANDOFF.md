@@ -142,12 +142,13 @@ to hold three calls for ten minutes; check no dropped sockets, the governor's st
 and that replay stays identical. Emulation first (free), one live run at the end (budget guard is
 Rs 150/day).
 
-### 8. Fresh blind extraction set (plan N09; needs a human author)
-The extractor (`language/extraction.py`) has been tuned on every labelled set. A new set must be
-written by someone who has not seen the rules or failures (80 lines, 20 per language, same format
-as `eval/data/extraction_blind_2026-11-05.jsonl`), committed **before** scoring with
-`uv run python -m pramana_eval.extraction_eval --set <file> --provider none --out eval/reports/<name>`.
-If you write it yourself, say so in its NOTES.md.
+### 8. Extraction review (plan N09)
+Two new AI-written sets were committed before scoring main's rules-only extractor. Their blind
+baseline scores and the tuned, no-longer-blind results are in
+`eval/reports/extraction-blind-main-2026-11-06/` and
+`eval/reports/extraction-after-attribution-2026-11-06/`. Neither set was written by a human or a
+native speaker. Native-speaker review remains pending. Any future headline blind score needs a new
+set authored by someone who has not seen the rules or failures.
 
 ### 9. Decide on `E-ask_more` (calibration)
 `eval/reports/calibration-2026-11-05/NOTES.md`: significant +2.7 points success for +0.37

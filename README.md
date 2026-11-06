@@ -93,9 +93,15 @@ From generated reports only; nothing below is typed by hand.
 - **Stopping-rule calibration** (`eval/reports/calibration-2026-11-05/`): abstaining more is not
   possible without losing accuracy; valuing people's time at half would raise success by 2.7
   points (significant) for 0.37 more questions. Not adopted yet.
-- **Extraction** (`eval/reports/extraction-blind-2026-11-05/`): on a fresh blind set the rules got
-  60 of 80 fully right, with no wrong outcomes and 2 invented answers (both since fixed). That set
-  has since been tuned on, so a new blind set is needed before quoting accuracy.
+- **Extraction.** Before attribution tuning, main's rules-only extractor scored 47/80 on the first
+  fresh set and 26/40 on a second fresh set. The first had 7 invented, 20 missed and 1 wrong
+  outcome; the second had 2 invented, 7 missed and 2 wrong outcomes. These are main's blind
+  baseline scores in `eval/reports/extraction-blind-main-2026-11-06/`. Both sets were written by AI
+  models outside the repo, not people; the second was independently reviewed by another AI model.
+  Native-speaker review is pending. After attribution tuning, both sets are no longer blind:
+  53/80 with 0 invented, 19 missed and 0 wrong on the first, and 27/40 with 0 invented, 10 missed
+  and 0 wrong on the second. All post-tuning results are in
+  `eval/reports/extraction-after-attribution-2026-11-06/`.
 - **LLM policy comparison**: in progress on the free tier (22 of 100 LLM episodes so far); too
   few to report yet.
 
@@ -156,4 +162,5 @@ docs/                product docs, docs/engineering, docs/adr
   is not yet shown to be flat.
 - No hosted deployment yet: the stack runs on a laptop, and phones reach it over a Cloudflare
   quick tunnel (which carries no server-sent events, so the console polls).
-- The extractor is rule lists plus an LLM fallback; it needs a fresh blind evaluation.
+- The extractor is rule lists plus an LLM fallback. The two new synthetic sets were written by AI
+  models, not human participants, and are now tuned on. Native-speaker review remains pending.
