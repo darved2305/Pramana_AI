@@ -307,9 +307,14 @@ class RestartPolicy:
             raise ValueError("stable_after_s must be non-negative")
 
     def delay_for(self, failure_count: int) -> float:
-        if failure_count <= 0:
+        if failure_count <= 0 or self.initial_delay_s == 0:
             return 0.0
-        return float(min(self.initial_delay_s * (2 ** (failure_count - 1)), self.max_delay_s))
+        delay = self.initial_delay_s
+        for _ in range(failure_count - 1):
+            if delay >= self.max_delay_s:
+                return float(self.max_delay_s)
+            delay = min(delay * 2, self.max_delay_s)
+        return float(delay)
 
 
 @dataclass(frozen=True)

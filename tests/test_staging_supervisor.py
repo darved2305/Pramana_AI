@@ -33,6 +33,7 @@ def test_restart_policy_caps_exponential_backoff() -> None:
     policy = staging.RestartPolicy(initial_delay_s=1, max_delay_s=30)
 
     assert [policy.delay_for(n) for n in range(1, 8)] == [1, 2, 4, 8, 16, 30, 30]
+    assert staging.RestartPolicy().delay_for(1026) == 30
 
 
 def test_production_environment_forces_secure_auth_and_isolates_web_secrets() -> None:
