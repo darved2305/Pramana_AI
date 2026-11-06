@@ -505,8 +505,10 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "it's charging",
         "charge ho raha",
         "charge hone laga",
+        "charge hone lagta",
         "charging shuru",
         "चार्ज होने लगा",
+        "चार्ज होने लगता",
         "चार्ज हो रहा",
         "चार्ज होतोय",
         "चार्ज होत आहे",
@@ -548,6 +550,8 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "charge nahi ho raha",
         "चार्ज नहीं",
         "चार्ज नहीं हो रहा",
+        "चार्ज नहीं होता",
+        "charge nahi hota",
         "चार्ज होत नाही",
         "चार्ज होत नाहीये",
         "नहीं जला",
@@ -678,9 +682,13 @@ def _polar(question: str | None, outcomes: Sequence[str]) -> str | None:
     key = tuple(sorted(outcomes))
     if question is None or key not in POLAR:
         return None
+    return POLAR[key] if len(named_outcomes(question, outcomes)) <= 1 else None
+
+
+def named_outcomes(question: str, outcomes: Sequence[str]) -> set[str]:
+    """The outcomes a question names as possible answers ("on or off?" names both)."""
     q = tokenize(question)
-    named = {o for o in outcomes if _find(q, OUTCOME_LEXICON.get(o, []), o)}
-    return POLAR[key] if len(named) <= 1 else None
+    return {o for o in outcomes if _find(q, OUTCOME_LEXICON.get(o, []), o)}
 
 
 @dataclass(frozen=True)
@@ -733,11 +741,19 @@ class RuleExtractor:
     ) -> Extraction:
         tokens = tokenize(text)
         taken = [False] * len(tokens)
+        candidates = [m for o in outcomes for m in _find(tokens, OUTCOME_LEXICON.get(o, []), o)]
+        # "lagta hai" is "it seems" unless it ends an answer phrase that started earlier:
+        # "charge hone lagta hai" is "it starts charging", not a hedge.
+        probable = [
+            h
+            for h in _find(tokens, PROBABLE, "probable")
+            if not any(c.start < h.start < c.end for c in candidates)
+        ]
         meta = _claim(
             _find(tokens, INJECTION, "injection")
             + _find(tokens, STOP, "stop")
             + _find(tokens, UNSURE, "unsure")
-            + _find(tokens, PROBABLE, "probable")
+            + probable
             + _find(tokens, HEARSAY, "hearsay")
             + _find(tokens, ASSUMPTION, "assumption")
             + ([] if "no_network" in outcomes else _find(tokens, NOT_OBSERVED, "not_observed"))
@@ -750,7 +766,6 @@ class RuleExtractor:
         evidence = [f"{m.label}:" + " ".join(tokens[m.start : m.end]) for m in meta]
 
         allowed = set(outcomes)
-        candidates = [m for o in outcomes for m in _find(tokens, OUTCOME_LEXICON.get(o, []), o)]
         # "Opens the answer": the first word not already read as a hedge, a report or a
         # filler ("kadachit ho, chalu aahe"), or the start of a new clause.
         first = next((i for i, t in enumerate(tokens) if not taken[i] and t not in FILLER), 0)

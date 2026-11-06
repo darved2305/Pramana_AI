@@ -11,18 +11,18 @@ version: 0.1.0
 title: Hostel Block C (simulated)
 
 locations:
-  - { id: GUARD_DESK,  floor: 1, kind: desk,     label: { en: "the guard desk", hi: "guard desk", mr: "गार्ड डेस्क" }, wifi_coverage: [AP_1A] }
-  - { id: MAINT_ROOM,  floor: 1, kind: room,     label: { en: "the maintenance room", hi: "maintenance room", mr: "मेंटेनन्स रूम" }, wifi_coverage: [AP_1A] }
-  - { id: F1_LOBBY,    floor: 1, kind: corridor, label: { en: "the ground-floor lobby", hi: "ground floor lobby", mr: "तळमजल्याची लॉबी" }, wifi_coverage: [AP_1A] }
-  - { id: IDF1,        floor: 1, kind: closet,   label: { en: "network closet IDF-1", hi: "network closet IDF-1", mr: "नेटवर्क खोली IDF-1" }, restricted: true, access_roles: [guard, it_tech, electrician], wifi_coverage: [AP_1A] }
-  - { id: F2_CORRIDOR, floor: 2, kind: corridor, label: { en: "the second-floor corridor", hi: "second floor corridor", mr: "दुसऱ्या मजल्याचा कॉरिडॉर" }, wifi_coverage: [AP_2A, AP_2B] }
-  - { id: F2_R205,     floor: 2, kind: room,     label: { en: "room 205", hi: "room 205", mr: "खोली 205" }, wifi_coverage: [AP_2B, AP_2A] }
-  - { id: F2_R210,     floor: 2, kind: room,     label: { en: "room 210", hi: "room 210", mr: "खोली 210" }, wifi_coverage: [AP_2A] }
-  - { id: IDF2,        floor: 2, kind: closet,   label: { en: "network closet IDF-2", hi: "network closet IDF-2", mr: "नेटवर्क खोली IDF-2" }, restricted: true, access_roles: [guard, it_tech, electrician], wifi_coverage: [AP_2A] }
-  - { id: DB_C2_PANEL, floor: 2, kind: panel,    label: { en: "distribution board DB-C2", hi: "distribution board DB-C2", mr: "डिस्ट्रिब्युशन बोर्ड DB-C2" }, restricted: true, access_roles: [electrician, guard], wifi_coverage: [AP_2A] }
-  - { id: F3_CORRIDOR, floor: 3, kind: corridor, label: { en: "the third-floor corridor", hi: "third floor corridor", mr: "तिसऱ्या मजल्याचा कॉरिडॉर" }, wifi_coverage: [AP_3A, AP_3B] }
-  - { id: F3_R304,     floor: 3, kind: room,     label: { en: "room 304", hi: "room 304", mr: "खोली 304" }, wifi_coverage: [AP_3A, AP_3B] }
-  - { id: F3_R310,     floor: 3, kind: room,     label: { en: "room 310", hi: "room 310", mr: "खोली 310" }, wifi_coverage: [AP_3B] }
+  - { id: GUARD_DESK,  floor: 1, kind: desk,     label: { en: "the guard desk", hi: "गार्ड डेस्क", hi-en: "guard desk", mr: "गार्ड डेस्क" }, wifi_coverage: [AP_1A] }
+  - { id: MAINT_ROOM,  floor: 1, kind: room,     label: { en: "the maintenance room", hi: "मेंटेनेंस रूम", hi-en: "maintenance room", mr: "मेंटेनन्स रूम" }, wifi_coverage: [AP_1A] }
+  - { id: F1_LOBBY,    floor: 1, kind: corridor, label: { en: "the ground-floor lobby", hi: "ग्राउंड फ़्लोर की लॉबी", hi-en: "ground floor lobby", mr: "तळमजल्याची लॉबी" }, wifi_coverage: [AP_1A] }
+  - { id: IDF1,        floor: 1, kind: closet,   label: { en: "network closet IDF-1", hi: "नेटवर्क क्लोज़ेट IDF-1", hi-en: "network closet IDF-1", mr: "नेटवर्क खोली IDF-1" }, restricted: true, access_roles: [guard, it_tech, electrician], wifi_coverage: [AP_1A] }
+  - { id: F2_CORRIDOR, floor: 2, kind: corridor, label: { en: "the second-floor corridor", hi: "दूसरी मंज़िल का कॉरिडोर", hi-en: "second floor corridor", mr: "दुसऱ्या मजल्याचा कॉरिडॉर" }, wifi_coverage: [AP_2A, AP_2B] }
+  - { id: F2_R205,     floor: 2, kind: room,     label: { en: "room 205", hi: "रूम 205", hi-en: "room 205", mr: "खोली 205" }, wifi_coverage: [AP_2B, AP_2A] }
+  - { id: F2_R210,     floor: 2, kind: room,     label: { en: "room 210", hi: "रूम 210", hi-en: "room 210", mr: "खोली 210" }, wifi_coverage: [AP_2A] }
+  - { id: IDF2,        floor: 2, kind: closet,   label: { en: "network closet IDF-2", hi: "नेटवर्क क्लोज़ेट IDF-2", hi-en: "network closet IDF-2", mr: "नेटवर्क खोली IDF-2" }, restricted: true, access_roles: [guard, it_tech, electrician], wifi_coverage: [AP_2A] }
+  - { id: DB_C2_PANEL, floor: 2, kind: panel,    label: { en: "distribution board DB-C2", hi: "डिस्ट्रीब्यूशन बोर्ड DB-C2", hi-en: "distribution board DB-C2", mr: "डिस्ट्रिब्युशन बोर्ड DB-C2" }, restricted: true, access_roles: [electrician, guard], wifi_coverage: [AP_2A] }
+  - { id: F3_CORRIDOR, floor: 3, kind: corridor, label: { en: "the third-floor corridor", hi: "तीसरी मंज़िल का कॉरिडोर", hi-en: "third floor corridor", mr: "तिसऱ्या मजल्याचा कॉरिडॉर" }, wifi_coverage: [AP_3A, AP_3B] }
+  - { id: F3_R304,     floor: 3, kind: room,     label: { en: "room 304", hi: "रूम 304", hi-en: "room 304", mr: "खोली 304" }, wifi_coverage: [AP_3A, AP_3B] }
+  - { id: F3_R310,     floor: 3, kind: room,     label: { en: "room 310", hi: "रूम 310", hi-en: "room 310", mr: "खोली 310" }, wifi_coverage: [AP_3B] }
 
 # Walking times in seconds (undirected). Only staff roles are asked to walk.
 walks:

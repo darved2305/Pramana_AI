@@ -21,6 +21,7 @@ from pramana_domain import DomainPack
 
 from ..errors import ApiError
 from ..language.extraction import OUTCOME_LEXICON
+from ..language.speakable import speakable
 from .gnani import GnaniClient
 
 TTS_LANGUAGE: dict[TemplateLanguage, str] = {
@@ -132,7 +133,9 @@ class QuestionAudioCache:
 async def speak_question(
     gnani: GnaniClient, cache: QuestionAudioCache, text: str, language: TemplateLanguage
 ) -> tuple[bytes, bool]:
-    """Return (WAV, served_from_cache). Cached audio costs no credits."""
+    """Return (WAV, served_from_cache). Cached audio costs no credits. ``text`` is the text
+    shown on screen; what is synthesised is its speakable form (codes read as people say them)."""
+    text = speakable(text, language)
     tts_lang = TTS_LANGUAGE[language]
     model = "timbre-v2.5" if tts_lang == "hi-en" else "timbre-v3.0"
     key = cache.key(text, tts_lang, model, None)
@@ -196,6 +199,7 @@ class QuestionAudio:
     async def _run(
         self, gnani: GnaniClient, cache: QuestionAudioCache, text: str, language: TemplateLanguage
     ) -> None:
+        text = speakable(text, language)
         tts_lang = TTS_LANGUAGE[language]
         model = "timbre-v2.5" if tts_lang == "hi-en" else "timbre-v3.0"
         key = cache.key(text, tts_lang, model, None)

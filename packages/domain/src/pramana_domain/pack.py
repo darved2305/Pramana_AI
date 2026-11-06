@@ -83,10 +83,13 @@ class LocalizedText(PackModel):
     en: StrictStr
     hi: StrictStr
     mr: StrictStr
+    hi_en: StrictStr | None = Field(default=None, alias="hi-en")
+    """Latin-script Hinglish. Without it, Hinglish uses ``hi`` if that is Latin, else ``en``."""
 
     def get(self, lang: TemplateLanguage) -> str:
-        # Hinglish speakers read Latin-script Hindi; location labels are shared with English.
         if lang == "hi-en":
+            if self.hi_en is not None:
+                return self.hi_en
             return self.hi if self.hi.isascii() else self.en
         return str(getattr(self, lang))
 

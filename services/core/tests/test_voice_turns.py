@@ -17,6 +17,7 @@ from core_testkit import body, core_settings, truncate_all
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from pramana_core.language.speakable import speakable
 from pramana_core.main import create_app
 from pramana_core.voice.conversation import QuestionAudioCache, answer_keyterms
 from pramana_domain import load_pack
@@ -111,7 +112,8 @@ def test_question_audio_is_spoken_in_the_participants_language_and_cached(
     assert first.content[:4] == b"RIFF"
     assert first.headers["X-Audio-Cached"] == "false"
     tts_body = json.loads(fake.calls[-1][1].content)
-    assert tts_body["text"] == q["text"]
+    # What is synthesised is the speakable form of the text on screen (codes read aloud).
+    assert tts_body["text"] == speakable(q["text"], "hi-en") != q["text"]
     assert (tts_body["language"], tts_body["model"]) == ("hi-en", "timbre-v2.5")  # Riya: Hinglish
     second = client.get(url)
     assert second.headers["X-Audio-Cached"] == "true"
