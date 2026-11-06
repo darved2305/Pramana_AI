@@ -115,6 +115,15 @@ INJECTION = _phrases(
     "suchna",
     "vishara",
     "visra",
+    "नियम छोड़ो",
+    "नियम छोड़ दो",
+    "नियम सोड",
+    "नियम सोडा",
+    "नियम बाजूला ठेव",
+    "नियम बाजूला ठेवा",
+    "rules chhodo",
+    "rules chhod do",
+    "rules side me rakho",
 )
 STOP = _phrases(
     "baad mein",
@@ -183,6 +192,8 @@ UNSURE = _phrases(
     "मालूम नहीं",
     "नहीं मालूम",
     "मुझे नहीं मालूम",
+    "मुझे नहीं पता",
+    "mujhe nahi pata",
     "पता नहीं",
     "माहीत नाही",
     "माहित नाही",
@@ -219,6 +230,26 @@ NOT_OBSERVED = _phrases(
     "दिसत नाही",
     "can't see",
     "cannot see",
+    "can't make out",
+    "cannot make out",
+    "couldn't make out",
+    "can't read",
+    "cannot read",
+    "couldn't read",
+    "can't find",
+    "cannot find",
+    "couldn't find",
+    "could not find",
+    "mil nahi raha",
+    "mil nahi rahi",
+    "mil hi nahi raha",
+    "mil hi nahi rahi",
+    "mera phone abhi mere paas nahi hai",
+    "mera फोन अभी मेरे पास नहीं है",
+    "मेरा फोन अभी मेरे पास नहीं है",
+    "मेरा फ़ोन अभी मेरे पास नहीं है",
+    "my phone is not with me",
+    "my phone isn't with me",
     "not visible from here",
 )
 """"I can't see it" means no observation was made. It must never become "off". (For the Wi-Fi
@@ -242,6 +273,26 @@ DID_NOT_CHECK = _phrases(
     "haven't checked",
     "have not checked",
     "not checked",
+    "check nahi ki",
+    "check nahin ki",
+    "website check nahi ki",
+    "website check nahin ki",
+    "website test nahi ki",
+    "website test nahin ki",
+    "have not tested",
+    "haven't tested",
+    "did not test",
+    "didn't test",
+    "haven't looked at mine",
+    "have not looked at mine",
+    "didn't look at mine",
+    "did not look at mine",
+    "haven't checked mine",
+    "have not checked mine",
+    "didn't check mine",
+    "did not check mine",
+    "haven't checked my phone",
+    "have not checked my phone",
 )
 """"I didn't check (myself)" is a statement that no observation was made, for every probe,
 including the Wi-Fi list. Its negation must not become "no" (a live recording, 2026-11-05)."""
@@ -439,6 +490,9 @@ ASSUMPTION = _phrases(
     "probably broken",
     "i guess the",
 )
+ASSUMPTION_CONNECTORS = frozenset(
+    tokenize("so therefore hence because isliye तभी तो toh म्हणून mhanun")
+)
 
 # Outcome lexicon. Phrases that already contain a negation ("dikh nahi raha") are matched as a
 # whole before single words, so their negation is not applied twice.
@@ -621,6 +675,19 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "काहीच दिसत नाहीये",
         "nothing on it",
         "nothing on the screen",
+        "charge icon did not appear",
+        "charging icon did not appear",
+        "charging symbol did not appear",
+        "charge icon didn't appear",
+        "charging icon didn't appear",
+        "charging ka nishaan nahi aaya",
+        "charging ka nishan nahi aaya",
+        "charge ka nishaan nahi aaya",
+        "charge ka icon nahi aaya",
+        "चार्जिंग का निशान नहीं आया",
+        "चार्जिंग का चिन्ह नहीं आया",
+        "चार्जिंगचं चिन्ह नाही आलं",
+        "चार्जिंग चिन्ह आलं नाही",
         "not charging",
         "isn't charging",
         "is not charging",
@@ -844,6 +911,515 @@ def _claim(matches: list[_Match], taken: list[bool]) -> list[_Match]:
     return sorted(kept, key=lambda m: m.start)
 
 
+_INDICATOR_NOUNS = frozenset(
+    tokenize(
+        "light lights lamp lamps indicator indicators led leds bulb bulbs "
+        "लाइट लाइटें लाइट्स बत्ती बत्तियां बत्तियाँ इंडिकेटर इंडिकेटर्स बल्ब "
+        "दिवा दिवे दिव्याचा दिव्याची दिव्याचे दिव्याचं दिव्याला दिव्यावरचा "
+        "दिव्यावरची दिव्यावरचे रोशनी दीप"
+    )
+)
+_INDICATOR_STEMS = ("दिव", "बत्त", "लाइट", "इंडिकेटर", "बल्ब", "दीप")
+_OTHER_INDICATOR_CUES = frozenset(
+    tokenize(
+        "other another neighboring neighbour adjacent beside separate different "
+        "दूसरी दूसरा दूसरे दुसरी दुसरा दुसरे वेगळा वेगळी वेगळे शेजारचा शेजारची"
+    )
+)
+_INDICATOR_REFERENCE_RELATIONS = frozenset(
+    tokenize(
+        "above below over under beside besides near nearby next between behind infront "
+        "front outside inside across around away from दूर पास ऊपर नीचे बगल बाजूला जवळ "
+        "मध्ये मागे समोर पुढे केपास केबगल upar neeche paas bagal samne piche aage "
+        "my your his her their our mera meri mere maza mazi maze माझा माझी माझे माझ्या "
+        "मेरा मेरी मेरे bahar baher बाहर बाहेर बाहेरचा बाहेरची बाहेरचे"
+    )
+)
+_NON_INDICATOR_LABEL_NOUNS = frozenset(
+    tokenize(
+        "label labels sticker stickers tag tags marking markings inscription writing "
+        "लेबल स्टिकर टैग नाम लिखा लिखी लिखे लेबल्स नाव लिहिले लिहिली लिहिलेले टॅग"
+    )
+)
+_INDICATOR_LABEL_STOP = (
+    frozenset(
+        tokenize(
+            "the a an of in at on to for from is are was were be been being its it this that "
+            "all every each both entire whole "
+            "my your his her their our and or but while whereas as if then there here "
+            "marked labelled labeled called named written says "
+            "की का के को चा ची चे चं च्या मध्ये और या तथा क्या कौन कहाँ सब सभी सारी सारे हर प्रत्येक "
+            "some any कोई कोईसा कोईसी koi "
+            "i think probably maybe perhaps shayad "
+            "सगळे सगळ्या सगळी सर्व दोन्ही "
+            "आणि किंवा है हैं था थी थे में पर वाला वाली वाले "
+            "लिखा लिखी लिखे असं असा अशी आहे आहेत aur ya lekin hai hain ho gaya wali wale wala "
+            "sab sabhi saari saare har "
+            "small smaller smallest little tiny big large pitch solid steady stable "
+            "छोटा छोटी छोटे लहान लहानसा लहानशी लहानसे वरचा वरची वरचे छतावरच्या डब्यावरचा "
+            "पोर्टचे पोर्टचा पोर्टची "
+            "छोटा छोटा सा छोटी छोटी सी छोटे छोटे से "
+            "छोटा सा छोटी सी उस उसे उसका उसकी इसके इससे यह वहां वहाँ "
+            "दिसतोय दिसतायत दिसतात दिसतो दिसते दिसताय "
+        )
+    )
+    | {"one"}
+    | NEGATIONS
+    | FILLER
+    | frozenset(word for phrase in (*PROBABLE, *UNSURE, *ASSUMPTION) for word in phrase)
+)
+_INDICATOR_LABEL_BREAKS = frozenset(
+    tokenize("and or but while whereas aur lekin और तथा लेकिन परंतु आणि पण")
+)
+_INDICATOR_REFERENCE_MARKERS = frozenset(tokenize("wali wala wale वाली वाला वाले वालीं"))
+_INDICATOR_WORDS = frozenset(
+    token for token in _INDICATOR_NOUNS if token not in _INDICATOR_LABEL_STOP
+)
+_INDICATOR_STATE_OUTCOMES = frozenset({"green", "red", "amber", "off", "on", "up", "tripped"})
+_INDICATOR_STATE_WORDS = frozenset(
+    word
+    for outcome in _INDICATOR_STATE_OUTCOMES
+    for phrase in OUTCOME_LEXICON.get(outcome, [])
+    for word in phrase
+)
+_LABEL_CONTEXT_SKIP = (
+    _INDICATOR_LABEL_STOP | _INDICATOR_STATE_WORDS | _INDICATOR_WORDS | _NON_INDICATOR_LABEL_NOUNS
+)
+_EXPLICIT_LABEL = re.compile(r"(?:[A-Z]{2,}|[A-Z0-9]*\d+[A-Z0-9]*)\Z")
+_CONTEXT_TARGET_GROUPS = frozenset({"corridor", "screen"})
+
+
+@dataclass(frozen=True)
+class _IndicatorReference:
+    position: int
+    labels: frozenset[str]
+    marked_other: bool = False
+    non_indicator: bool = False
+
+
+def _is_indicator_noun(token: str) -> bool:
+    return token in _INDICATOR_NOUNS or token.startswith(_INDICATOR_STEMS)
+
+
+def _raw_tokens(text: str) -> list[str]:
+    """Keep original casing so uppercase and alphanumeric labels stay detectable."""
+    return _PUNCT.sub(" ", text).split()
+
+
+def _clause_bounds(index: int, tokens: Sequence[str], breaks: set[int]) -> tuple[int, int]:
+    start = max((boundary for boundary in breaks if boundary <= index), default=0)
+    end = min((boundary for boundary in breaks if boundary > index), default=len(tokens))
+    return start, end
+
+
+def _context_label_group(tokens: Sequence[str], index: int, start: int, end: int) -> frozenset[str]:
+    """Read a nearby noun phrase as an arbitrary label, stopping at clause conjunctions."""
+    labels: set[str] = set()
+    for indices in (
+        reversed(range(max(start, index - 5), index)),
+        range(index + 1, min(end, index + 6)),
+    ):
+        for current in indices:
+            token = tokens[current]
+            if (
+                token in _INDICATOR_LABEL_BREAKS | _INDICATOR_REFERENCE_RELATIONS
+                or _is_indicator_noun(token)
+            ):
+                break
+            if current > index and any(
+                _is_indicator_noun(tokens[following])
+                for following in range(current + 1, min(end, current + 4))
+            ):
+                break
+            if token not in _LABEL_CONTEXT_SKIP:
+                labels.add(token)
+    return frozenset(labels)
+
+
+def _indicator_label_group(
+    tokens: Sequence[str], raw: Sequence[str], index: int, start: int, end: int
+) -> frozenset[str]:
+    candidate_ids = [
+        (abs(current - index), current, tokens[current])
+        for current in range(max(start, index - 5), min(end, index + 6))
+        if current != index
+        and abs(current - index) <= 3
+        and _EXPLICIT_LABEL.fullmatch(raw[current])
+        and tokens[current] not in _INDICATOR_STATE_WORDS
+        and not _is_indicator_noun(tokens[current])
+        and not any(
+            tokens[between] in _INDICATOR_REFERENCE_RELATIONS
+            for between in range(min(index, current) + 1, max(index, current))
+        )
+    ]
+    nearby_ids = []
+    for distance, current, label in candidate_ids:
+        if current > index and any(
+            _is_indicator_noun(tokens[following])
+            for following in range(current + 1, min(end, current + 4))
+        ):
+            continue
+        nearby_ids.append((distance, label))
+    if nearby_ids:
+        distance = min(item[0] for item in nearby_ids)
+        return frozenset(
+            label for label_distance, label in nearby_ids if label_distance == distance
+        )
+    if candidate_ids:
+        # An identifier immediately followed by another indicator belongs to that later
+        # indicator. Do not let a broad context window attach it to the preceding one too.
+        return frozenset()
+    return _context_label_group(tokens, index, start, end)
+
+
+def _descriptive_label_group(
+    tokens: Sequence[str], index: int, start: int, end: int
+) -> frozenset[str]:
+    return frozenset(
+        token
+        for current in range(max(start, index - 5), min(end, index + 6))
+        if current != index
+        for token in (tokens[current],)
+        if token not in _LABEL_CONTEXT_SKIP and not _is_indicator_noun(token)
+    )
+
+
+def _question_indicator_label_groups(question: str) -> list[frozenset[str]]:
+    tokens = tokenize(question)
+    raw = _raw_tokens(question)
+    breaks = clause_breaks(question)
+    groups = []
+    for index, token in enumerate(tokens):
+        if not _is_indicator_noun(token):
+            continue
+        start, end = _clause_bounds(index, tokens, breaks)
+        labels = _indicator_label_group(tokens, raw, index, start, end)
+        if labels:
+            groups.append(labels)
+    if groups:
+        # Main's object groups already carry cross-language aliases for these shared contexts.
+        # Expand only non-code context labels so a Hindi question about corridor lights matches
+        # a Hinglish answer that names the corridor, without equating arbitrary device labels.
+        expanded = list(groups)
+        for group in groups:
+            explicit = any(
+                _EXPLICIT_LABEL.fullmatch(original)
+                for token, original in zip(tokens, raw, strict=True)
+                if token in group
+            )
+            if explicit:
+                continue
+            for context in _groups(list(group)) & _CONTEXT_TARGET_GROUPS:
+                expanded.extend(frozenset(alias) for alias in OBJECTS[context])
+        return list(dict.fromkeys(expanded))
+    # A visual description can name the target without repeating "light", as in
+    # "the blue one on the left". Keep the complete descriptor so siblings stay distinct.
+    for index, token in enumerate(tokens):
+        if token != "one":
+            continue
+        start, end = _clause_bounds(index, tokens, breaks)
+        labels = _descriptive_label_group(tokens, index, start, end)
+        if labels:
+            groups.append(labels)
+    if groups:
+        return groups
+    # Some probes name an indicator label directly without saying "light" or "indicator".
+    raw = _raw_tokens(question)
+    explicit_labels = {
+        token
+        for token, original in zip(tokens, raw, strict=True)
+        if _EXPLICIT_LABEL.fullmatch(original)
+        and token not in _INDICATOR_STATE_WORDS
+        and not _is_indicator_noun(token)
+    }
+    return [frozenset({label}) for label in explicit_labels]
+
+
+def _same_target_reference(labels: frozenset[str], targets: Sequence[frozenset[str]]) -> bool:
+    return bool(labels) and any(target and target.issubset(labels) for target in targets)
+
+
+def _indicator_references(
+    text: str, tokens: Sequence[str], breaks: set[int]
+) -> list[_IndicatorReference]:
+    raw = _raw_tokens(text)
+    cue_references: list[_IndicatorReference] = []
+    cue_windows: list[tuple[int, int, frozenset[str]]] = []
+    for index, token in enumerate(tokens):
+        if _is_indicator_noun(token):
+            start, end = _clause_bounds(index, tokens, breaks)
+            labels = _indicator_label_group(tokens, raw, index, start, end)
+            cue_windows.append((max(start, index - 5), min(end, index + 6), labels))
+            marked_other = bool(labels & _OTHER_INDICATOR_CUES)
+            cue_references.append(_IndicatorReference(index, labels, marked_other))
+        elif token in _INDICATOR_REFERENCE_MARKERS:
+            start, end = _clause_bounds(index, tokens, breaks)
+            labels = _context_label_group(tokens, index, start, end)
+            if labels:
+                cue_windows.append((max(start, index - 5), min(end, index + 6), labels))
+                non_indicator = any(
+                    tokens[current] in _NON_INDICATOR_LABEL_NOUNS
+                    for current in range(max(start, index - 3), min(end, index + 4))
+                )
+                cue_references.append(
+                    _IndicatorReference(index, labels, non_indicator=non_indicator)
+                )
+    references: list[_IndicatorReference] = []
+    for reference in sorted(cue_references, key=lambda item: item.position):
+        if references:
+            previous = references[-1]
+            between = tokens[previous.position + 1 : reference.position]
+            is_same_phrase = (
+                _clause_bounds(previous.position, tokens, breaks)
+                == _clause_bounds(reference.position, tokens, breaks)
+                and reference.position - previous.position <= 3
+                and previous.labels == reference.labels
+                and previous.marked_other == reference.marked_other
+                and not any(token in _INDICATOR_LABEL_BREAKS for token in between)
+                and all(
+                    token in _INDICATOR_LABEL_STOP
+                    or token in reference.labels
+                    or _is_indicator_noun(token)
+                    for token in between
+                )
+            )
+            if is_same_phrase:
+                continue
+        references.append(reference)
+    for index, (token, original) in enumerate(zip(tokens, raw, strict=True)):
+        if not _EXPLICIT_LABEL.fullmatch(original) or _is_indicator_noun(token):
+            continue
+        if any(start <= index < end and token in labels for start, end, labels in cue_windows):
+            continue
+        start, end = _clause_bounds(index, tokens, breaks)
+        non_indicator = any(
+            tokens[current] in _NON_INDICATOR_LABEL_NOUNS
+            for current in range(max(start, index - 2), min(end, index + 3))
+        )
+        references.append(
+            _IndicatorReference(index, frozenset({token}), non_indicator=non_indicator)
+        )
+    references.extend(
+        _IndicatorReference(index, frozenset(), non_indicator=True)
+        for index, token in enumerate(tokens)
+        if token in _NON_INDICATOR_LABEL_NOUNS
+    )
+    # Also recognize descriptions such as "blue one on the left" if the answer omits "light".
+    if not any(_is_indicator_noun(token) for token in tokens):
+        for index, token in enumerate(tokens):
+            if token != "one":
+                continue
+            start, end = _clause_bounds(index, tokens, breaks)
+            labels = _descriptive_label_group(tokens, index, start, end)
+            if labels:
+                references.append(_IndicatorReference(index, labels))
+    return references
+
+
+def _reference_kind(reference: _IndicatorReference, targets: Sequence[frozenset[str]]) -> str:
+    if reference.non_indicator:
+        return "other"
+    if _same_target_reference(reference.labels, targets):
+        return "target"
+    if reference.marked_other or reference.labels:
+        return "other"
+    return "generic"
+
+
+def _candidate_reference(
+    match: _Match,
+    references: Sequence[_IndicatorReference],
+    targets: Sequence[frozenset[str]],
+    tokens: Sequence[str],
+    breaks: set[int],
+) -> str:
+    clause = _clause_bounds(match.start, tokens, breaks)
+    local = [
+        reference
+        for reference in references
+        if _clause_bounds(reference.position, tokens, breaks) == clause
+    ]
+    nearby: list[tuple[int, str]] = []
+    reference_labels = {label for reference in local for label in reference.labels} | {
+        label for target in targets for label in target
+    }
+
+    def add_reference_options(index: int, distance: int) -> bool:
+        associated = [
+            reference
+            for reference in local
+            if reference.position == index
+            or (tokens[index] in reference.labels and abs(reference.position - index) <= 5)
+        ]
+        if not associated:
+            return False
+        nearby.extend((distance, _reference_kind(reference, targets)) for reference in associated)
+        return True
+
+    # Bind each state to its nearest nearby referent. Any content word beside a state can be an
+    # object, even when it is not in a hand-maintained noun list. This prevents a target named in
+    # another clause from donating its identity to the color.
+    for indices in (
+        range(match.start - 1, max(clause[0] - 1, match.start - 6), -1),
+        range(match.end, min(clause[1], match.end + 5)),
+    ):
+        for index in indices:
+            distance = min(abs(index - match.start), abs(index - (match.end - 1)))
+            if add_reference_options(index, distance):
+                break
+            token = tokens[index]
+            if token in _REFERENT_CONTEXT_SKIP or _is_indicator_noun(token):
+                continue
+            if token in reference_labels:
+                continue
+            nearby.append((distance, "other"))
+            break
+
+    if nearby:
+        nearest = min(distance for distance, _ in nearby)
+        kinds = {kind for distance, kind in nearby if distance == nearest}
+        if kinds == {"target"}:
+            return "target"
+        if kinds == {"other"}:
+            return "other"
+        if kinds == {"generic"} and len(references) == 1:
+            return "target"
+        return "ambiguous"
+    if not references:
+        return "target"
+    kinds = {_reference_kind(reference, targets) for reference in references}
+    if kinds == {"target"}:
+        return "target"
+    if kinds == {"generic"} and len(references) == 1:
+        return "target"
+    return "ambiguous"
+
+
+def _filter_other_indicators(
+    candidates: list[_Match],
+    tokens: Sequence[str],
+    question: str,
+    text: str,
+    breaks: set[int],
+) -> tuple[list[_Match], dict[_Match, str], bool, list[str]]:
+    """Attribute each state to a proven referent; leave unbound states unknown."""
+    targets = _question_indicator_label_groups(question)
+    references = _indicator_references(text, tokens, breaks)
+    kept: list[_Match] = []
+    bindings: dict[_Match, str] = {}
+    ambiguous = False
+    evidence: list[str] = []
+    for match in candidates:
+        binding = _candidate_reference(match, references, targets, tokens, breaks)
+        if binding == "target":
+            kept.append(match)
+            bindings[match] = "target"
+        elif binding == "ambiguous":
+            ambiguous = True
+            evidence.append("unbound:" + " ".join(tokens[match.start : match.end]))
+        else:
+            evidence.append("other_indicator:" + " ".join(tokens[match.start : match.end]))
+    return kept, bindings, ambiguous, evidence
+
+
+def _is_indicator_question(question: str, outcomes: Sequence[str]) -> bool:
+    tokens = tokenize(question)
+    if any(_is_indicator_noun(token) for token in tokens):
+        return True
+    if any(token in _INDICATOR_REFERENCE_MARKERS or token == "one" for token in tokens):
+        return True
+    return bool(set(outcomes) & {"green", "red", "amber"})
+
+
+_CORRECTION_CUES = frozenset(tokenize("actually wait sorry rather matlab meant म्हणजे असल वास्तव"))
+_CORRECTION_NEGATIONS = frozenset(tokenize("no nahi nahin नहीं नही नाही"))
+_NON_CORRECTION_AFTER_NEGATION = frozenset(tokenize("other another else बाकी दूसरे दूसरी दुसरा"))
+_REFERENT_CONTEXT_SKIP = frozenset(
+    _INDICATOR_LABEL_STOP
+    | _INDICATOR_STATE_WORDS
+    | _INDICATOR_REFERENCE_RELATIONS
+    | _OTHER_INDICATOR_CUES
+    | _CORRECTION_CUES
+    | _CORRECTION_NEGATIONS
+    | _NON_CORRECTION_AFTER_NEGATION
+    | NEGATIONS
+    | AFFIRM
+    | DENY
+    | frozenset(
+        tokenize(
+            "i me myself you he she it we they them him her us this that these those there here "
+            "now today yes yeah no nope please well very really just also too only "
+            "looks look appear appears seemed seems seem feel feels felt sounds sound "
+            "show shows showing marked called labelled labeled written say says "
+            "broken faulty damaged bad dim faded faint weak bright blinking flashing "
+            "pitch solid steady stable small smaller smallest little tiny big large "
+            "si see probably maybe perhaps shayad maybe perhaps "
+            "orange lag lagta lagti lagti लग लगता लगती लगते लग "
+            "distoay distoy disat diste दिसतोय दिसतायत दिसतात दिसतो दिसते दिसताय "
+            "lagto lagte lagla laglay lagta lagti लागतो लागते लागला लागलाय लागले "
+            "व्यवस्थित "
+            "chhota chhoti chhote chhoti si chhota sa "
+            "छोटा छोटी छोटे लहान वरचा वरची वरचे छतावरच्या डब्यावरचा पोर्टचे पोर्टचा पोर्टची "
+            "bahar baher बाहर बाहेर बाहेरचा बाहेरची बाहेरचे "
+            "koi कोई some any theyre "
+            "meri mera mere maza mazi maze माझा माझी माझे माझ्या मेरा मेरी मेरे "
+            "खराब खराबी टूटा टूटी हुआ हुई दिसता दिसते दिसतो दिसली दिसला दिसले "
+            "वाटतो वाटते होता होती होते आहे आहेत असतो असते असतात "
+        )
+    )
+    | FILLER
+    | frozenset(word for phrase in (*PROBABLE, *UNSURE, *ASSUMPTION) for word in phrase)
+)
+
+
+def _correction_cue_indices(tokens: Sequence[str], breaks: set[int]) -> list[int]:
+    cues = []
+    for index, token in enumerate(tokens):
+        if token in _CORRECTION_CUES or tokens[index : index + 2] == ["i", "mean"]:
+            cues.append(index)
+            continue
+        clause_start = max((boundary for boundary in breaks if boundary <= index), default=0)
+        if (
+            token in _CORRECTION_NEGATIONS
+            and index == clause_start
+            and index + 1 < len(tokens)
+            and tokens[index + 1] not in _NON_CORRECTION_AFTER_NEGATION
+        ):
+            cues.append(index)
+    return cues
+
+
+def _remove_self_corrected(
+    candidates: list[_Match],
+    tokens: Sequence[str],
+    breaks: set[int],
+    all_candidates: Sequence[_Match],
+    bindings: dict[_Match, str],
+) -> tuple[list[_Match], list[_Match]]:
+    """Remove a prior value only when the correction resolves to the same referent."""
+    ordered = sorted(candidates, key=lambda match: (match.start, match.end))
+    cues = _correction_cue_indices(tokens, breaks)
+
+    def corrects(earlier: _Match, later: _Match) -> bool:
+        if bindings.get(earlier) != bindings.get(later) or bindings.get(later) != "target":
+            return False
+        if later.start < earlier.end or later.start - earlier.end > 16:
+            return False
+        for cue in cues:
+            if not earlier.end <= cue <= later.start:
+                continue
+            next_values = [match for match in all_candidates if cue <= match.start <= later.start]
+            if next_values and min(next_values, key=lambda match: match.start).start == later.start:
+                return True
+        return False
+
+    corrected = [
+        earlier for earlier in ordered if any(corrects(earlier, later) for later in ordered)
+    ]
+    corrected_set = set(corrected)
+    return [match for match in candidates if match not in corrected_set], corrected
+
+
 class Extractor(Protocol):
     async def extract(
         self, text: str, outcomes: Sequence[str], *, question: str | None = None
@@ -893,7 +1469,8 @@ class RuleExtractor:
         # "Opens the answer": the first word not already read as a hedge, a report or a
         # filler ("kadachit ho, chalu aahe"), or the start of a new clause.
         first = next((i for i, t in enumerate(tokens) if not taken[i] and t not in FILLER), 0)
-        starts = clause_breaks(text) | {first}
+        breaks = clause_breaks(text)
+        starts = breaks | {first}
         candidates = [
             m
             for m in candidates
@@ -906,15 +1483,30 @@ class RuleExtractor:
             kept = [m for m in matches if not _bare_polar(tokens, m)]
             evidence += [f"presence_talk:{tokens[m.start]}" for m in matches if m not in kept]
             matches = kept
+        indicator_question = question is not None and _is_indicator_question(question, outcomes)
+        indicator_ambiguous = False
         if question is not None:
-            matches, dropped = _about_the_question(text, tokens, matches, question)
-            evidence += dropped
+            if indicator_question:
+                matches, dropped = _about_the_question(text, tokens, matches, question)
+                evidence += dropped
+                all_candidates = matches.copy()
+                matches, bindings, indicator_ambiguous, attribution_evidence = (
+                    _filter_other_indicators(matches, tokens, question, text, breaks)
+                )
+                evidence += attribution_evidence
+                matches, corrected = _remove_self_corrected(
+                    matches, tokens, breaks, all_candidates, bindings
+                )
+                evidence.extend("corrected:" + " ".join(tokens[m.start : m.end]) for m in corrected)
+            else:
+                matches, dropped = _about_the_question(text, tokens, matches, question)
+                evidence += dropped
 
         found: set[str] = set()
-        breaks = clause_breaks(text)
         for m in matches:
             if (
-                m.end in breaks
+                not indicator_question
+                and m.end in breaks
                 and m.end < len(tokens)
                 and tokens[m.end] in NEGATIONS
                 and any(o.start > m.end for o in matches)
@@ -959,7 +1551,25 @@ class RuleExtractor:
                 evidence.append(f"{FLIP[polar]}<-polar no")
 
         injection = "injection" in labels
-        blocked = injection or "not_observed" in labels or "stale" in labels
+        assumption_same_clause = any(
+            max((b for b in breaks if b <= assumption.start), default=0)
+            == max((b for b in breaks if b <= match.start), default=0)
+            for assumption in _find(tokens, ASSUMPTION, "assumption")
+            for match in matches
+        )
+        assumption_blocks = (
+            "assumption" in labels
+            and bool(found)
+            and (assumption_same_clause or any(token in ASSUMPTION_CONNECTORS for token in tokens))
+        )
+        blocked = (
+            injection
+            or "stop" in labels
+            or "not_observed" in labels
+            or "stale" in labels
+            or assumption_blocks
+        )
+        blocked = blocked or indicator_ambiguous
         outcome = found.pop() if len(found) == 1 and not blocked else UNKNOWN_OUTCOME
         if "unsure" in labels:
             hedge = Hedge.UNSURE
