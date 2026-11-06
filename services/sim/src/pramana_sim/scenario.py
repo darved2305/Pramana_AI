@@ -11,8 +11,10 @@ import hashlib
 import json
 import random
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 from pramana_contracts import (
     ActResult,
@@ -128,6 +130,100 @@ class Scenario:
             return cls(sid, pack, fault, salt, commitment_for(sid, fault, salt), people)
         except ValueError as exc:  # World rejects faults the pack cannot represent
             raise ScenarioError(422, "UNKNOWN_FAULT", str(exc)) from exc
+
+    def to_snapshot(self) -> dict[str, object]:
+        """Serialize the complete sealed world for local staging recovery."""
+        return {
+            "id": self.id,
+            "pack_id": self.pack.pack,
+            "fault_spec": self.fault_spec.model_dump(mode="json"),
+            "salt": self.salt,
+            "commitment": self.commitment,
+            "people": {
+                participant_id: {
+                    "roles": sorted(person.roles),
+                    "location_id": person.location_id,
+                }
+                for participant_id, person in self.people.items()
+            },
+            "status": self.status.value,
+            "used_capabilities": sorted(self.used_capabilities),
+            "interventions": [list(item) for item in self.interventions],
+            "active_faults": [list(item) for item in sorted(self._active_faults)],
+            "presence_values": dict(sorted(self.presence_values.items())),
+            "presence_attempts": [
+                [participant_id, token_id, attempts]
+                for (participant_id, token_id), attempts in sorted(
+                    self.presence_attempts.items()
+                )
+            ],
+        }
+
+    @classmethod
+    def from_snapshot(cls, pack: DomainPack, snapshot: Mapping[str, Any]) -> Scenario:
+        """Restore and validate a local snapshot, including mutable world state."""
+        scenario_id = _snapshot_string(snapshot, "id")
+        fault = FaultSpec.model_validate(snapshot.get("fault_spec"))
+        salt = _snapshot_string(snapshot, "salt")
+        commitment = _snapshot_string(snapshot, "commitment")
+        if commitment_for(scenario_id, fault, salt) != commitment:
+            raise ValueError("stored scenario commitment does not match its fault")
+
+        raw_people = snapshot.get("people")
+        if not isinstance(raw_people, dict):
+            raise ValueError("stored scenario participants are invalid")
+        people: dict[str, _Person] = {}
+        for participant_id, raw_person in raw_people.items():
+            if not isinstance(participant_id, str) or not isinstance(raw_person, dict):
+                raise ValueError("stored scenario participant is invalid")
+            roles = raw_person.get("roles")
+            location_id = raw_person.get("location_id")
+            if (
+                not isinstance(roles, list)
+                or not roles
+                or any(not isinstance(role, str) for role in roles)
+                or not isinstance(location_id, str)
+                or location_id not in pack.location_by_id
+            ):
+                raise ValueError("stored scenario participant state is invalid")
+            people[participant_id] = _Person(frozenset(roles), location_id)
+
+        try:
+            status = ScenarioStatus(_snapshot_string(snapshot, "status"))
+        except ValueError as exc:
+            raise ValueError("stored scenario status is invalid") from exc
+        used_capabilities = _snapshot_string_list(snapshot.get("used_capabilities"))
+        interventions = _snapshot_triplets(snapshot.get("interventions"))
+        active_faults = _snapshot_pairs(snapshot.get("active_faults"))
+        original_faults = {(item.component_id, item.mode) for item in fault.faults}
+        if not set(active_faults).issubset(original_faults):
+            raise ValueError("stored active faults do not match the original fault set")
+
+        raw_presence_values = snapshot.get("presence_values")
+        if raw_presence_values is None:
+            presence_values: dict[str, str] = {}
+        else:
+            presence_values = _snapshot_presence_values(pack, raw_presence_values)
+        presence_attempts = _snapshot_presence_attempts(
+            snapshot.get("presence_attempts", []), people, presence_values, pack
+        )
+
+        scenario = cls(
+            scenario_id,
+            pack,
+            fault,
+            salt,
+            commitment,
+            people,
+            status=status,
+            presence_values=presence_values,
+            presence_attempts=presence_attempts,
+        )
+        scenario.used_capabilities = set(used_capabilities)
+        scenario.interventions = interventions
+        scenario._active_faults = set(active_faults)
+        scenario.world = World(pack, frozenset(scenario._active_faults))
+        return scenario
 
     # -- participant-facing --------------------------------------------------------------------
 
@@ -276,3 +372,94 @@ class Scenario:
             commitment_verified=commitment_for(self.id, self.fault_spec, self.salt)
             == self.commitment,
         )
+
+
+def _snapshot_string(snapshot: Mapping[str, Any], key: str) -> str:
+    value = snapshot.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"stored scenario {key} is invalid")
+    return value
+
+
+def _snapshot_string_list(value: object) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError("stored scenario capabilities are invalid")
+    return value
+
+
+def _snapshot_pairs(value: object) -> list[tuple[str, str]]:
+    if not isinstance(value, list):
+        raise ValueError("stored scenario faults are invalid")
+    pairs: list[tuple[str, str]] = []
+    for item in value:
+        if (
+            not isinstance(item, list)
+            or len(item) != 2
+            or not all(isinstance(part, str) for part in item)
+        ):
+            raise ValueError("stored scenario fault is invalid")
+        pairs.append((item[0], item[1]))
+    return pairs
+
+
+def _snapshot_triplets(value: object) -> list[tuple[str, str, str]]:
+    if not isinstance(value, list):
+        raise ValueError("stored scenario interventions are invalid")
+    triplets: list[tuple[str, str, str]] = []
+    for item in value:
+        if (
+            not isinstance(item, list)
+            or len(item) != 3
+            or not all(isinstance(part, str) for part in item)
+        ):
+            raise ValueError("stored scenario intervention is invalid")
+        triplets.append((item[0], item[1], item[2]))
+    return triplets
+
+
+def _snapshot_presence_values(pack: DomainPack, value: object) -> dict[str, str]:
+    if not isinstance(value, dict) or any(
+        not isinstance(token_id, str) or not isinstance(reading, str)
+        for token_id, reading in value.items()
+    ):
+        raise ValueError("stored presence values are invalid")
+    expected = {token.id for token in pack.presence_tokens}
+    if set(value) != expected or any(
+        len(reading) != PRESENCE_LENGTH or set(reading) - set(PRESENCE_ALPHABET)
+        for reading in value.values()
+    ):
+        raise ValueError("stored presence values do not match the pack")
+    return value
+
+
+def _snapshot_presence_attempts(
+    value: object,
+    people: Mapping[str, _Person],
+    presence_values: Mapping[str, str],
+    pack: DomainPack,
+) -> dict[tuple[str, str], int]:
+    if not isinstance(value, list):
+        raise ValueError("stored presence attempts are invalid")
+    attempts: dict[tuple[str, str], int] = {}
+    for item in value:
+        if (
+            not isinstance(item, list)
+            or len(item) != 3
+            or not isinstance(item[0], str)
+            or not isinstance(item[1], str)
+            or not isinstance(item[2], int)
+            or isinstance(item[2], bool)
+        ):
+            raise ValueError("stored presence attempt is invalid")
+        participant_id, token_id, count = item
+        if (
+            participant_id not in people
+            or token_id not in presence_values
+            or not 1 <= count <= PRESENCE_ATTEMPTS
+            or (participant_id, token_id) in attempts
+        ):
+            raise ValueError("stored presence attempt state is invalid")
+        attempts[(participant_id, token_id)] = count
+    if not presence_values and pack.presence_tokens:
+        return {}
+    return attempts
