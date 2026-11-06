@@ -13,7 +13,7 @@ import pytest
 
 from pramana_core.llm import LlmClient, LlmError, ProviderLimits, _duration_s
 from pramana_domain import DomainPack, load_pack
-from pramana_engine import CompiledModel, compile_pack
+from pramana_engine import CompiledModel, Engine, EngineConfig, compile_pack
 from pramana_eval.llm_policy import LlmPolicy, render_site
 from pramana_eval.policies import Checklist, Conclusion, Ours, RandomFeasible, greedy_entropy
 from pramana_eval.runner import paired_difference, run_episode, summarize
@@ -52,6 +52,73 @@ def test_answers_use_common_random_numbers(pack: DomainPack, model: CompiledMode
     assert first == b.ask(who.id, "wifi_status", who.location_id)  # same question, same answer
     a.ask(who.id, "wifi_status", who.location_id)  # asking again draws a fresh answer
     assert a._asked[(who.id, "wifi_status", who.location_id)] == 2
+
+
+def test_false_presence_adversary_is_seeded_and_uses_the_configured_rate(
+    pack: DomainPack, model: CompiledModel
+) -> None:
+    scenario = next(
+        generate(pack, model, seed, false_presence_rate=1.0)
+        for seed in range(30)
+        if generate(pack, model, seed, false_presence_rate=1.0).presence_adversary_id
+    )
+    assert scenario.presence_adversary_id is not None
+    answers = Answers(pack, scenario)
+    evidence = answers.ask(scenario.presence_adversary_id, "nvr_screen", "IDF2")
+    truth = answers.world.observe(pack.probe_by_id["nvr_screen"], "IDF2")
+    assert answers.last_false_presence(scenario.presence_adversary_id, "nvr_screen", "IDF2")
+    assert evidence.outcome != truth
+
+
+def test_presence_challenge_ablation_never_resolves_presence(
+    pack: DomainPack, model: CompiledModel
+) -> None:
+    with_challenges = Ours()
+    without_challenges = Ours(
+        "E-no_presence_challenges", EngineConfig(presence_challenges_enabled=False)
+    )
+    adversarial = [generate(pack, model, seed, false_presence_rate=1.0) for seed in range(30)]
+    adversarial = [scenario for scenario in adversarial if scenario.presence_adversary_id]
+    enabled = [run_episode(pack, model, scenario, with_challenges) for scenario in adversarial]
+    disabled = [run_episode(pack, model, scenario, without_challenges) for scenario in adversarial]
+    assert any(episode.presence_challenges for episode in enabled)
+    assert all(episode.presence_challenges == 0 for episode in disabled)
+
+
+def test_runner_marks_failed_presence_challenges(
+    pack: DomainPack, model: CompiledModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failures: list[tuple[str, str]] = []
+    original = Engine.set_presence
+
+    def record_presence(
+        engine: Engine,
+        participant_id: str,
+        location_id: str,
+        verified: bool,
+        *,
+        challenge_failed: bool = False,
+    ) -> None:
+        if challenge_failed:
+            failures.append((participant_id, location_id))
+        original(
+            engine,
+            participant_id,
+            location_id,
+            verified,
+            challenge_failed=challenge_failed,
+        )
+
+    monkeypatch.setattr("pramana_eval.runner.Engine.set_presence", record_presence)
+    challenges = 0
+    for seed in range(30):
+        scenario = generate(pack, model, seed, false_presence_rate=1.0)
+        if scenario.presence_adversary_id is None:
+            continue
+        episode = run_episode(pack, model, scenario, Ours())
+        challenges += episode.presence_challenges
+    assert challenges > 0
+    assert failures, "the runner did not pass failed challenge state into the engine"
 
 
 def test_participants_err_at_their_own_rate(pack: DomainPack, model: CompiledModel) -> None:

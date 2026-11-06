@@ -81,6 +81,15 @@ def main() -> None:
     ap.add_argument("--seed-start", type=int, default=0)
     ap.add_argument("--policies", default="E,A,C,D,E-no_decision_focus,E-no_cost")
     ap.add_argument("--out", required=True)
+    ap.add_argument(
+        "--false-presence-rate",
+        type=float,
+        default=0.0,
+        help=(
+            "per restricted or moved question chance that the simulated guard "
+            "falsely claims to be on site"
+        ),
+    )
     ap.add_argument("--llm-provider", default="groq", choices=["groq", "gemini"])
     ap.add_argument("--llm-model", default=None)
     ap.add_argument(
@@ -104,7 +113,9 @@ def main() -> None:
         args.policies.split(","), args.llm_provider, args.llm_model, args.llm_rpd
     )
     seeds = range(args.seed_start, args.seed_start + args.n)
-    scenarios = [generate(pack, model, s) for s in seeds]
+    scenarios = [
+        generate(pack, model, s, false_presence_rate=args.false_presence_rate) for s in seeds
+    ]
     results: dict[str, list[Episode]] = {}
     start = time.perf_counter()
     for policy in policies:
@@ -122,6 +133,10 @@ def main() -> None:
             k: sum(1 for s in scenarios if s.kind == k)
             for k in ("single", "pair", "no_fault", "access_limited")
         },
+        "presence_adversary_scenarios": sum(
+            1 for scenario in scenarios if scenario.presence_adversary_id is not None
+        ),
+        "false_presence_rate": args.false_presence_rate,
         "policies": {name: summarize(eps) for name, eps in results.items()},
         "paired_vs_E": {},
     }
@@ -157,11 +172,13 @@ def render(summary: dict[str, Any]) -> str:
         "",
         f"Commit `{summary['git_sha']}`, seeds {summary['seeds'][0]}-{summary['seeds'][1]}, "
         f"scenario mix {summary['scenario_mix']}.",
+        f"False-presence rate {summary['false_presence_rate']:.2f}; "
+        f"scenarios with an adversary: {summary['presence_adversary_scenarios']}.",
         "",
         "| Policy | Success | Accuracy (decided) | Accuracy (identifiable) | False confidence "
-        "| Abstention recall (unidentifiable) | Pair accuracy | Probes (mean) | Effort s (mean) "
-        "| People | Time to conclusion s (mean) | Withdrawn (mean) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Abstention recall (unidentifiable) | Pair accuracy | Probes (mean) | Presence checks "
+        "(mean) | Effort s (mean) | People | Time to conclusion s (mean) | Withdrawn (mean) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, m in summary["policies"].items():
         lines.append(
@@ -169,7 +186,8 @@ def render(summary: dict[str, Any]) -> str:
             f"| {_fmt(m['accuracy_on_identifiable'], True)} "
             f"| {_fmt(m['false_confidence_rate'], True)} | {_fmt(m['abstention_recall'], True)} "
             f"| {_fmt(m['pair_accuracy'], True)} "
-            f"| {_fmt(m['probes_mean'])} | {_fmt(m['effort_s_mean'])} | {_fmt(m['people_mean'])} "
+            f"| {_fmt(m['probes_mean'])} | {_fmt(m['presence_challenges_mean'])} "
+            f"| {_fmt(m['effort_s_mean'])} | {_fmt(m['people_mean'])} "
             f"| {_fmt(m.get('wall_s_mean'))} | {_fmt(m.get('withdrawn_mean'))} |"
         )
     lines += ["", "Paired differences, E minus each policy (bootstrap 95% CI):", ""]

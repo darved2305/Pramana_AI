@@ -41,6 +41,7 @@ class Episode:
     effort one after another; parallel ones overlap."""
     withdrawn: int = 0
     """Questions withdrawn in flight because another answer made them pointless."""
+    presence_challenges: int = 0
 
 
 def run_episode(
@@ -55,6 +56,7 @@ def run_episode(
     policy.start(scenario, report)
     history: History = []
     effort = 0.0
+    presence_challenges = 0
     conclusion: Conclusion | None = None
     for _ in range(MAX_STEPS):
         step = policy.next(engine, history)
@@ -67,10 +69,23 @@ def run_episode(
             history.append((step, Evidence(*key, "refused")))
             continue
         effort += costs[key]
-        engine.record_question(step.participant_id)
+        engine.record_question(step.participant_id, step.probe_id, step.location_id)
         ev = answers.ask(*key)
-        engine.observe(ev)
+        observed = engine.observe(ev)
         history.append((step, ev))
+        if observed.presence_challenge_needed:
+            engine.record_presence_challenge(step.participant_id, step.location_id, step.probe_id)
+            engine.record_question(step.participant_id, step.probe_id, step.location_id)
+            presence_challenges += 1
+            passed = not answers.last_false_presence(*key)
+            engine.set_presence(
+                step.participant_id,
+                step.location_id,
+                passed,
+                challenge_failed=not passed,
+            )
+            if not passed:
+                engine.set_available(step.participant_id, False)
     hit_limit = conclusion is None
     if conclusion is None:
         snap = engine.snapshot()
@@ -89,12 +104,13 @@ def run_episode(
         confidence=conclusion.confidence,
         correct=correct,
         success=correct or (not decided and abstain_ok),
-        probes=len(asked),
+        probes=len(asked) + presence_challenges,
         effort_s=effort,
         people=len({a.participant_id for a, _ in asked}),
         hit_step_limit=hit_limit,
         failed=conclusion.failed,
         wall_s=effort,
+        presence_challenges=presence_challenges,
     )
 
 
@@ -111,6 +127,7 @@ def run_parallel_episode(
     inflight: list[tuple[float, int, ProbeAction, float]] = []  # (done at, order, action, asked)
     asked: list[ProbeAction] = []
     withdrawn = 0
+    presence_challenges = 0
     order = 0
     conclusion: Conclusion | None = None
 
@@ -118,7 +135,7 @@ def run_parallel_episode(
         nonlocal order
         costs = {(a.participant_id, a.probe_id, a.location_id): c for a, c in engine.menu()}
         cost = costs[(action.participant_id, action.probe_id, action.location_id)]
-        engine.record_question(action.participant_id)
+        engine.record_question(action.participant_id, action.probe_id, action.location_id)
         inflight.append((now + cost, order, action, now))
         order += 1
 
@@ -147,7 +164,24 @@ def run_parallel_episode(
         done_at, _, action, t_ask = inflight.pop(0)
         now = done_at
         effort += done_at - t_ask
-        engine.observe(answers.ask(action.participant_id, action.probe_id, action.location_id))
+        evidence = answers.ask(action.participant_id, action.probe_id, action.location_id)
+        observed = engine.observe(evidence)
+        key = (action.participant_id, action.probe_id, action.location_id)
+        if observed.presence_challenge_needed:
+            engine.record_presence_challenge(
+                action.participant_id, action.location_id, action.probe_id
+            )
+            engine.record_question(action.participant_id, action.probe_id, action.location_id)
+            presence_challenges += 1
+            passed = not answers.last_false_presence(*key)
+            engine.set_presence(
+                action.participant_id,
+                action.location_id,
+                passed,
+                challenge_failed=not passed,
+            )
+            if not passed:
+                engine.set_available(action.participant_id, False)
         asked.append(action)
     hit_limit = conclusion is None
     if conclusion is None:
@@ -165,12 +199,13 @@ def run_parallel_episode(
         confidence=conclusion.confidence,
         correct=correct,
         success=correct or (not decided and abstain_ok),
-        probes=len(asked),
+        probes=len(asked) + presence_challenges,
         effort_s=effort,
         people=len({a.participant_id for a in asked}),
         hit_step_limit=hit_limit,
         wall_s=now,
         withdrawn=withdrawn,
+        presence_challenges=presence_challenges,
     )
 
 
@@ -215,6 +250,9 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
         "hit_step_limit": sum(e.hit_step_limit for e in episodes),
         "wall_s_mean": statistics.fmean(e.wall_s for e in episodes) if n else None,
         "withdrawn_mean": statistics.fmean(e.withdrawn for e in episodes) if n else None,
+        "presence_challenges_mean": (
+            statistics.fmean(e.presence_challenges for e in episodes) if n else None
+        ),
     }
 
 

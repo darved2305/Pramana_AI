@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from pramana_contracts import Directness, Hedge, ParticipantSpec
@@ -55,6 +55,7 @@ class Person:
     reliability: dict[str, float]
     hedge_p: float
     hearsay_p: float
+    false_presence_p: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -68,13 +69,22 @@ class Scenario:
     identifiable: bool | None
     """Whether the people present can, in principle, tell the true decision apart from every
     other decision. ``None`` for two-fault worlds (outside the model by design)."""
+    presence_adversary_id: str | None = None
 
     @property
     def specs(self) -> list[ParticipantSpec]:
         return [p.spec for p in self.people]
 
 
-def _person(pid: str, role: str, skill: str, loc: str, lang: str, rng: random.Random) -> Person:
+def _person(
+    pid: str,
+    role: str,
+    skill: str,
+    loc: str,
+    lang: str,
+    rng: random.Random,
+    false_presence_p: float = 0.0,
+) -> Person:
     spec = ParticipantSpec.model_validate(
         {
             "id": pid,
@@ -86,10 +96,20 @@ def _person(pid: str, role: str, skill: str, loc: str, lang: str, rng: random.Ra
         }
     )
     rel = {cls: rng.betavariate(*ab) for cls, ab in TRUE_RELIABILITY[skill].items()}
-    return Person(spec, rel, hedge_p=0.2, hearsay_p=0.1 if skill == "lay" else 0.0)
+    return Person(
+        spec,
+        rel,
+        hedge_p=0.2,
+        hearsay_p=0.1 if skill == "lay" else 0.0,
+        false_presence_p=false_presence_p,
+    )
 
 
-def generate(pack: DomainPack, model: CompiledModel, seed: int) -> Scenario:
+def generate(
+    pack: DomainPack, model: CompiledModel, seed: int, *, false_presence_rate: float = 0.0
+) -> Scenario:
+    if not 0.0 <= false_presence_rate <= 1.0:
+        raise ValueError("false_presence_rate must be between 0 and 1")
     rng = random.Random(seed)
     kind = rng.choices([k for k, _ in KIND_MIX], weights=[w for _, w in KIND_MIX])[0]
     catalogue = [(c, m) for c, m, _ in pack.fault_hypotheses()]
@@ -123,6 +143,17 @@ def generate(pack: DomainPack, model: CompiledModel, seed: int) -> Scenario:
             )
         if rng.random() < 0.4:
             people.append(_person("p_it", "it_tech", "technician", "MAINT_ROOM", "en", rng))
+    presence_adversary_id: str | None = None
+    if false_presence_rate > 0 and kind != "access_limited":
+        guard_index = next(
+            (i for i, person in enumerate(people) if "guard" in person.spec.roles), None
+        )
+        if guard_index is None:
+            people.append(_person("p_guard", "guard", "access", "GUARD_DESK", "mr", rng))
+            guard_index = len(people) - 1
+        person = people[guard_index]
+        people[guard_index] = replace(person, false_presence_p=false_presence_rate)
+        presence_adversary_id = person.spec.id
     hyp_ids = [f"{c}.{m}" for c, m in faults] or [NO_FAULT]
     needed = {pack.decision_of[h] for h in hyp_ids}
     if len(needed) > 1:
@@ -131,7 +162,16 @@ def generate(pack: DomainPack, model: CompiledModel, seed: int) -> Scenario:
     identifiable = (
         None if kind == "pair" else _identifiable(model, [p.spec for p in people], hyp_ids[0])
     )
-    return Scenario(seed, kind, faults, tuple(people), "p_reporter", true_decisions, identifiable)
+    return Scenario(
+        seed,
+        kind,
+        faults,
+        tuple(people),
+        "p_reporter",
+        true_decisions,
+        identifiable,
+        presence_adversary_id,
+    )
 
 
 def _identifiable(model: CompiledModel, specs: list[ParticipantSpec], true_hyp: str) -> bool:
@@ -158,6 +198,7 @@ class Answers:
         self.world = World(pack, frozenset(scenario.faults))
         self.people = {p.spec.id: p for p in scenario.people}
         self._asked: dict[tuple[str, str, str], int] = {}
+        self._false_presence: dict[tuple[str, str, str], bool] = {}
 
     def ask(self, participant_id: str, probe_id: str, location_id: str) -> Evidence:
         key = (participant_id, probe_id, location_id)
@@ -167,7 +208,20 @@ class Answers:
         probe = self.pack.probe_by_id[probe_id]
         rng = _stable_random(self.scenario.seed, participant_id, probe_id, location_id, k)
         truth = self.world.observe(probe, location_id)
-        if rng.random() < person.reliability[probe.probe_class]:
+        location = self.pack.location_by_id[location_id]
+        presence_required = location.restricted or location_id != person.spec.location_id
+        false_presence = (
+            presence_required
+            and person.false_presence_p > 0
+            and _stable_random(
+                self.scenario.seed, participant_id, probe_id, location_id, k, "presence"
+            ).random()
+            < person.false_presence_p
+        )
+        self._false_presence[key] = false_presence
+        if false_presence:
+            said = rng.choice([outcome for outcome in probe.outcomes if outcome != truth])
+        elif rng.random() < person.reliability[probe.probe_class]:
             said = truth
         else:
             said = rng.choice([o for o in probe.outcomes if o != truth])
@@ -176,6 +230,10 @@ class Answers:
             hedge = Hedge.UNSURE if rng.random() < 0.25 else Hedge.PROBABLE
         directness = Directness.HEARSAY if rng.random() < person.hearsay_p else Directness.DIRECT
         return Evidence(participant_id, probe_id, location_id, said, hedge, directness)
+
+    def last_false_presence(self, participant_id: str, probe_id: str, location_id: str) -> bool:
+        """Whether the latest answer for this site came from a false location claim."""
+        return self._false_presence.get((participant_id, probe_id, location_id), False)
 
     def report(self) -> Evidence:
         """The reporter's initial complaint, as an answer to the intake probe."""

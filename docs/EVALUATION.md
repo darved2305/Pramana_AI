@@ -37,12 +37,12 @@
 | ID | Hidden truth | Participants | What it tests | Expected good behaviour |
 |---|---|---|---|---|
 | S1 | Breaker CB_C2_7 tripped (SW_C2 and NVR_C2 lose power) | Riya (F3, Hinglish), Mahesh (guard, Marathi, closet keys), Imran (electrician, Hindi) | Cross-domain inference; routing; verification | Ask about the CCTV/NVR; decide to dispatch the electrician; verify with the NVR boot screen |
-| S2 | AP_2A dead; Aarav on AP_2B, Neha on AP_2A | Aarav, Neha (F2 students), Mahesh | Contradiction and reconciliation | Tie-break question on AP identity; decide REPLACE_AP_2A |
+| S2 | AP_2A dead; Aarav on AP_2B, Neha on AP_2A | Aarav and Neha (F2 students) | Contradiction and reconciliation | Tie-break question on AP identity; decide IT_REPLACE_AP_2A |
 | S3 | DNS_A down | Riya, Aarav | Similar symptoms with different causes (DNS vs uplink vs ISP) | IP-bookmark probe separates DNS from routing |
 | S4 | SW_C2 dead **or** closet power (sampled); only Riya available, no closet access | Riya | Unidentifiable with the people available | Abstain, stating "needs IDF-2 access" |
 | S5 | CB_C2_7 trips; someone resets it 3 min into the run | Riya, Mahesh, Imran | Changing world | Surprise detected; refresh probe; no false contradiction |
 | S6 (P2) | AP_3B actually wired to SW_C; SW_C2 dead | Riya, Mahesh | Map drift | Drift hypothesis rises above the double-fault explanation |
-| S7 | SW_C2 dead; "Vikram" falsely claims to be at IDF-2 and reports green LEDs | Vikram (adversary), Mahesh, Riya | Adversarial testimony; presence challenge | Challenge failed; weight lowered; correct decision |
+| S7 | CB_C2_7 tripped; Aarav reports no Wi-Fi in room 205; Mahesh falsely claims to be at IDF-2 and reports green switch lights | Aarav, Mahesh (adversary at guard desk), Suresh (guard and electrician) | Adversarial testimony; presence challenge | Reject Mahesh's off-site challenge, ask Suresh to verify, dispatch the electrician to DB-C2 |
 | S8 | ISP down **and** AP_3A dead | Riya, Aarav, Mahesh | Multiple simultaneous faults | Pair hypothesis; two decisions |
 | S9 | Unmodelled AP reboot loop (LED cycling) | Riya, Mahesh | Open world | P(OPEN_WORLD) rises; abstain with recommended checks |
 | S10 | DHCP pool exhausted (connected devices fine, new devices fail) | Riya (reconnects), Aarav (already connected) | Time- and context-dependent symptoms | Reconciliation by device state; decide FIX_DHCP |
@@ -75,13 +75,17 @@
   | access | Beta(19, 1) | Beta(12, 2) | n/a |
   | technician | Beta(38, 2) | Beta(30, 2) | Beta(48, 2) |
 
-  With 10% probability per scenario, one adversary is added (r ≈ 0.3, plus false presence claims).
+  When `--false-presence-rate` is nonzero, eligible scenarios include a guard designated as the
+  adversary, and the configured rate applies to each restricted or moved-location question.
 - **Behaviours:**
   - hedge probability 0.2 (higher when the participant's sampled r is low);
   - hearsay 0.1 for lay participants;
   - unavailability 0.1;
   - mid-call drop 0.05;
   - "later" 0.05.
+- `--false-presence-rate` sets the per-question chance that a guard falsely claims to be at a
+  restricted or moved location. The harness adds that guard to eligible scenarios and records the
+  number of scenarios that include the adversary.
 - **Time model:**
   - call setup 15 s;
   - probe execution ~ lognormal with median `exec_s` and σ 0.4;
@@ -139,7 +143,8 @@ All policies use the same `PolicyEnv`: the same feasible action menu, the same s
 5. − hedge/hearsay mixing
 6. − confirmation arbiter (audio level, internal)
 7. − question-conditioned ASR (audio level, internal; EULA)
-8. − presence challenges (S7 family)
+8. - presence challenges (S7 family). Without challenges, location-bound evidence stays at the
+   0.2 unverified-presence weight and no challenge cost is charged.
 9. − verification (catch rate drops to the symptom check)
 10. − OPEN_WORLD hypothesis (abstention behaviour)
 
