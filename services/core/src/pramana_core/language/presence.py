@@ -108,10 +108,9 @@ def normalize_presence_answer(text: str, expected_length: int = 3) -> str | None
         return None
 
     if (
-        len(normalized) == expected_length
+        expected_length > 1
+        and len(normalized) == expected_length
         and re.fullmatch(r"[a-z0-9]+", normalized)
-        and normalized not in _LETTER_NAMES
-        and normalized not in _DIGIT_NAMES
     ):
         return normalized.upper()
 
