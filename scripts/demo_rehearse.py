@@ -241,8 +241,11 @@ def run_rehearsal(
             raise RehearsalError(f"S1 repair verification ended as {verification_status}")
         emit(f"verification result: {verification_status}")
 
-    if name == "S2" and not state.get("disagreements"):
-        raise RehearsalError("S2 did not produce a disagreement explanation")
+    if name == "S2":
+        if not state.get("disagreements"):
+            raise RehearsalError("S2 did not produce a disagreement explanation")
+        for disagreement in state["disagreements"]:
+            emit(f"disagreement: {disagreement['explanation']}")
     if name == "S7":
         expected = "failed" if variant == "adversary" else "passed"
         checks = [item["status"] for item in state.get("presence_checks", [])]

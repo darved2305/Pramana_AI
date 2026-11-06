@@ -161,6 +161,7 @@ def test_s2_rehearsal_uses_main_scenario_and_reveals_disagreement(core: TestClie
     assert state["presence_checks_enabled"] is False
     assert state["disagreements"]
     assert state["disagreements"][-1]["reconciling_hypothesis"] == "AP_2A.dead"
+    assert state["disagreements"][-1]["explanation"] in timeline.getvalue()
     assert result["reveal"]["ground_truth"]["correct"] is True
     assert result["replay"]["identical"] is True
     assert "replay identical" in timeline.getvalue()

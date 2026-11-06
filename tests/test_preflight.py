@@ -126,6 +126,16 @@ def test_live_preflight_runs_one_timbre_and_prisma_round_trip(tmp_path: Path) ->
     assert "accuracy" not in output
 
 
+def test_live_preflight_rejects_null_transcript() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/tts"):
+            return httpx.Response(200, content=b"RIFFfake-wav")
+        return httpx.Response(200, json={"transcript": None})
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        assert not preflight._live_voice_check(client, "https://core.test", "key").passed
+
+
 def test_missing_keys_and_failed_dependencies_are_reported_as_failures(tmp_path: Path) -> None:
     client = httpx.Client(
         transport=httpx.MockTransport(lambda _request: httpx.Response(503, json={"status": "down"}))

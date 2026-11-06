@@ -162,7 +162,8 @@ def _live_voice_check(client: httpx.Client, base_url: str, key: str) -> Check:
         if stt.status_code != 200:
             return Check("Gnani STT/TTS round trip", False, "Prisma transcription failed")
         result = stt.json()
-        passed = isinstance(result, dict) and bool(str(result.get("transcript", "")).strip())
+        transcript = result.get("transcript") if isinstance(result, dict) else None
+        passed = isinstance(transcript, str) and bool(transcript.strip())
     except (httpx.HTTPError, ValueError, TypeError):
         passed = False
     return Check(
