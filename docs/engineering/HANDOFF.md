@@ -162,9 +162,12 @@ honesty checklist in `docs/DEMO.md` §7. Recording is Nov 8; posts and submissio
 
 ## How to run
 
-- Stack: `uv run python scripts/dev.py --web` (PostgreSQL :5433, migrations, simulator :8100,
-  core :8000, console :3002). **On this laptop port 8000 is taken by another project's app**:
-  use `--core-port 8010 --sim-port 8110` (the console's sidebar shows the core address it uses).
+- Stack: on Windows run `.\.venv\Scripts\python.exe scripts\dev.py --web`; on POSIX use
+  `uv run python scripts/dev.py --web` (PostgreSQL :5433, migrations, simulator :8100, core :8000,
+  console :3002). Run Python directly on Windows because `uv run` can return Ctrl-Break status
+  `0xC000013A` even after `dev.py` has stopped its children. **On this laptop port 8000 is taken by
+  another project's app**: use `--core-port 8010 --sim-port 8110` (the console's sidebar shows the
+  core address it uses).
 - Accounts: `uv run python -m pramana_core.auth.bootstrap --email <e> --name <n> --roles operator`
   and another with `--roles approver` (password from `PRAMANA_NEW_USER_PASSWORD` or a prompt).
   An operator cannot approve their own repair; only an operator can reveal. In one browser, signing

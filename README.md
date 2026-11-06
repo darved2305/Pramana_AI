@@ -108,13 +108,26 @@ Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), Node 20+, and a native 
 
 ```bash
 uv run python scripts/dev_env.py                # once: .env with fresh keys (add GNANI_API_KEY for voice)
-uv run python scripts/dev.py --web              # PostgreSQL :5433, migrations, simulator :8100, core :8000, console :3002
 uv run python -m pramana_core.auth.bootstrap --email you@example.com --name You --roles operator
 uv run python -m pramana_core.auth.bootstrap --email approver@example.com --name Approver --roles approver
 ```
 
+Start the stack with the project Python directly on Windows. `uv run` can report its own
+Ctrl-Break status `0xC000013A` after the services have stopped:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\dev.py --web --core-port 8010 --sim-port 8110
+```
+
+On macOS or Linux, use:
+
+```bash
+uv run python scripts/dev.py --web
+```
+
 Use `--core-port`, `--sim-port` and `--web-port` if a port is taken. With `make`: `make setup`,
-`make dev`, `make dev-web`, `make check`, `make e2e`.
+`make dev`, `make dev-web`, `make check`, `make e2e`. The `make dev` and `make dev-web` targets
+select the direct project Python on Windows and `uv run` on POSIX.
 
 Then open http://localhost:3002, sign in, and create an investigation (choose "People asked at
 once" for parallel calls). Open each participant's link from **Participant links** and answer from
