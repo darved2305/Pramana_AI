@@ -152,11 +152,15 @@ _AMBIGUOUS = {
 
 def read_code(text: str, length: int = 3) -> str:
     """The characters a person read out, or an empty string if they read none."""
-    raw = _TOKEN.findall(text)
+    raw: list[str] = _TOKEN.findall(text)
     pieces: list[tuple[str, bool]] = []  # (characters, sure it is part of the code)
+    if len(raw) == 1 and len(raw[0]) == length and raw[0].isascii() and raw[0].isalnum():
+        return raw[0].upper()  # typed on its own, in any case: "kqx"
     for tok in raw:
         low = tok.casefold()
-        if low in ("i", "a"):
+        if len(tok) > 1 and tok.isascii() and tok.isalnum() and tok.isupper():
+            pieces.append((tok, True))  # transcribed in capitals: the code itself, even "KAY"
+        elif low in ("i", "a"):
             pieces.append((tok.upper(), False))  # English words unless next to a code
         elif low in _NAMES:
             pieces.append((_NAMES[low], low not in _AMBIGUOUS))
@@ -172,6 +176,7 @@ def read_code(text: str, length: int = 3) -> str:
             pieces.append(("", False))  # an ordinary word breaks a run of code characters
     # Keep each unbroken run of code characters that has at least one certain piece in it.
     out: list[str] = []
+    unsure: list[str] = []
     run: list[tuple[str, bool]] = []
     for chars, sure in [*pieces, ("", False)]:
         if chars:
@@ -179,5 +184,11 @@ def read_code(text: str, length: int = 3) -> str:
             continue
         if any(s for _, s in run):
             out += [c for c, _ in run]
+        elif len("".join(c for c, _ in run)) >= length:
+            unsure.append("".join(c for c, _ in run))
         run = []
+    if not out and unsure:
+        # Nothing certain anywhere: a whole run of names that are also words ("el em are",
+        # "a a a") is still a reading. Next to a certain code it would not be.
+        out = [unsure[-1]]
     return "".join(out)[-length:] if out else ""

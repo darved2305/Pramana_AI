@@ -63,3 +63,25 @@ def test_a_value_spoken_by_our_own_speech_text_reads_back(value: str) -> None:
     person repeating the speech form ("के सात क्यू") passes."""
     for lang in ("hi", "mr", "en", "hi-en"):
         assert read_code(speakable(value, lang)) == value, (lang, speakable(value, lang))
+
+
+ALPHABET = "AFHKLMQRXY345679"
+_EN = {"A": "ay", "F": "eff", "H": "aitch", "K": "kay", "L": "el", "M": "em", "Q": "cue"}
+_EN |= {"R": "are", "X": "ex", "Y": "why", "3": "three", "4": "four", "5": "five"}
+_EN |= {"6": "six", "7": "seven", "9": "nine"}
+
+
+@given(st.text(alphabet=ALPHABET, min_size=3, max_size=3))
+def test_every_code_reads_back_however_it_is_typed_or_said(value: str) -> None:
+    """Typed in small letters on a phone, read out with spaces, said as English letter names
+    (including codes made only of names that are also words, like "el em are"), or transcribed
+    in capitals that happen to spell a letter name ("KAY"): an honest reading passes."""
+    for text in (
+        value,
+        value.lower(),
+        " ".join(value),
+        " ".join(value.lower()),
+        " ".join(_EN[c] for c in value),
+        f"the label says {' '.join(value)}",
+    ):
+        assert read_code(text) == value, text
