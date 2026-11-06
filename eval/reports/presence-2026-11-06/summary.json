@@ -1,0 +1,88 @@
+{
+  "git_sha": "05637d9",
+  "python": "3.13.14",
+  "seeds": [
+    20000,
+    20199
+  ],
+  "scenario_mix": {
+    "single": 123,
+    "pair": 35,
+    "no_fault": 11,
+    "access_limited": 31
+  },
+  "presence_adversary_scenarios": 169,
+  "false_presence_rate": 0.3,
+  "policies": {
+    "E_ours": {
+      "n": 200,
+      "failed_runs": 0,
+      "success_rate": 0.775,
+      "decision_accuracy": 0.9296875,
+      "decided": 128,
+      "accuracy_on_identifiable": 0.676923076923077,
+      "false_confidence_rate": 0.025,
+      "abstention_recall": 0.7142857142857143,
+      "accuracy_when_unidentifiable_but_decided": 0.8,
+      "pair_accuracy": 0.6571428571428571,
+      "abstention_precision": 0.5,
+      "probes_mean": 6.435,
+      "probes_median": 6.0,
+      "effort_s_mean": 206.08,
+      "people_mean": 2.62,
+      "hit_step_limit": 0,
+      "wall_s_mean": 206.08,
+      "withdrawn_mean": 0.0,
+      "presence_challenges_mean": 0.85
+    },
+    "E-no_presence_challenges": {
+      "n": 200,
+      "failed_runs": 0,
+      "success_rate": 0.585,
+      "decision_accuracy": 0.9054054054054054,
+      "decided": 74,
+      "accuracy_on_identifiable": 0.38461538461538464,
+      "false_confidence_rate": 0.025,
+      "abstention_recall": 0.7142857142857143,
+      "accuracy_when_unidentifiable_but_decided": 0.8,
+      "pair_accuracy": 0.2571428571428571,
+      "abstention_precision": 0.3968253968253968,
+      "probes_mean": 7.51,
+      "probes_median": 7.0,
+      "effort_s_mean": 272.405,
+      "people_mean": 2.92,
+      "hit_step_limit": 0,
+      "wall_s_mean": 272.405,
+      "withdrawn_mean": 0.0,
+      "presence_challenges_mean": 0.0
+    }
+  },
+  "paired_vs_E": {
+    "E-no_presence_challenges": {
+      "success": {
+        "mean": 0.19,
+        "ci95_low": 0.135,
+        "ci95_high": 0.245,
+        "n": 200.0
+      },
+      "probes": {
+        "mean": -1.075,
+        "ci95_low": -1.345,
+        "ci95_high": -0.815,
+        "n": 200.0
+      },
+      "effort_s": {
+        "mean": -66.325,
+        "ci95_low": -79.485375,
+        "ci95_high": -53.705,
+        "n": 200.0
+      },
+      "wall_s": {
+        "mean": -66.325,
+        "ci95_low": -79.485375,
+        "ci95_high": -53.705,
+        "n": 200.0
+      }
+    }
+  }
+}
