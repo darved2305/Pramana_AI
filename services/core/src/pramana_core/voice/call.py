@@ -121,6 +121,8 @@ class ParticipantCall:
     async def run(self) -> None:
         await self.ws.accept()
         code, jti, reason = 1000, None, "ended"
+        disconnected = False
+        socket_close_reason = ""
         try:
             start = await self._receive("start", START_TIMEOUT_S)
             try:
@@ -145,23 +147,34 @@ class ParticipantCall:
             reason = "silent" if exc.code == 4408 else "error"
             if exc.code == 4408:
                 await self._release("no answer during the call")
-        except WebSocketDisconnect:
+        except WebSocketDisconnect as exc:
+            code = exc.code
+            reason = "participant disconnected"
+            socket_close_reason = exc.reason or ""
+            disconnected = True
             if self.call.can(CallEvent.DISCONNECTED):
                 self.call.fire(CallEvent.DISCONNECTED)
-            return
         finally:
             if jti is not None:
                 self.active.jtis.discard(jti)
+        call_end_sent = False
+        if not disconnected:
+            with contextlib.suppress(Exception):
+                await self.send({"type": "call_end", "reason": reason})
+                call_end_sent = True
+                await self.ws.close(code=code)
         log.info(
             "call_ended",
             investigation_id=self.inv_id,
             participant_id=self.participant_id,
             reason=reason,
             questions=self.questions,
+            call_session_id=self.call.call_id,
+            socket_close_code=code,
+            socket_close_reason=socket_close_reason,
+            socket_close_initiator="participant" if disconnected else "server",
+            call_end_sent=call_end_sent,
         )
-        with contextlib.suppress(Exception):
-            await self.send({"type": "call_end", "reason": reason})
-            await self.ws.close(code=code)
 
     async def _converse(self, language: TemplateLanguage) -> str:
         await self.send(
@@ -194,6 +207,10 @@ class ParticipantCall:
         while True:
             q = await self._next_question()
             if q is None:
+                if self.call.state == CallState.CLOSING:
+                    await self.fire(CallEvent.CLOSED)
+                    await self._release("said later")
+                    return "later"
                 if self.call.state == CallState.PREEMPTING:
                     await self.fire(CallEvent.NO_QUESTION)
                 else:
@@ -250,11 +267,43 @@ class ParticipantCall:
                     None,
                 )
                 if pq is not None:
-                    return await self.svc.pending_question(self.inv_id, pq.id, self.participant_id)
+                    try:
+                        return await self.svc.pending_question(
+                            self.inv_id, pq.id, self.participant_id
+                        )
+                    except ApiError as exc:
+                        if exc.code != "QUESTION_NOT_PENDING":
+                            raise
+                        # Another call may answer after our state read but before this fetch.
+                        await self.send({"type": "question_withdrawn", "question_id": pq.id})
+                        continue
                 left = deadline - time.monotonic()
                 if left <= 0 or self.call.state == CallState.PREEMPTING:
                     return None
-                await sub.wait(min(left, 5.0, HEARTBEAT_S))
+                receive = asyncio.create_task(self.ws.receive())
+                wake = asyncio.create_task(sub.wait(min(left, 5.0, HEARTBEAT_S)))
+                try:
+                    done, _ = await asyncio.wait(
+                        (receive, wake), return_when=asyncio.FIRST_COMPLETED
+                    )
+                    if receive in done:
+                        message = receive.result()
+                        if message["type"] == "websocket.disconnect":
+                            raise WebSocketDisconnect(
+                                message.get("code", 1000), message.get("reason", "")
+                            )
+                        raw = message.get("text")
+                        if raw:
+                            with contextlib.suppress(json.JSONDecodeError):
+                                control = json.loads(raw)
+                                if isinstance(control, dict) and control.get("type") == "stop":
+                                    await self.fire(CallEvent.LATER)
+                                    return None
+                finally:
+                    for task in (receive, wake):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(receive, wake, return_exceptions=True)
 
     # -- helpers ----------------------------------------------------------------------------
 

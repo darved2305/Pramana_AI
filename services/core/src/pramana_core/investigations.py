@@ -17,6 +17,8 @@ import asyncio
 import hashlib
 import json
 import secrets
+import weakref
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -137,6 +139,8 @@ def _not_pending(status: str) -> str:
 
 
 class InvestigationService:
+    ENGINE_CACHE_MAX = 32
+
     def __init__(
         self,
         db: Database,
@@ -153,8 +157,10 @@ class InvestigationService:
         self._signing_key = private_key_from_b64(signing_key_b64)
         self._engine_config = engine_config or EngineConfig()
         self._models: dict[str, CompiledModel] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
-        self._cache: dict[str, tuple[int, Engine]] = {}
+        # Active callers hold strong references to their lock. Once nobody is using an
+        # investigation, its lock can be collected instead of accumulating for process life.
+        self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+        self._cache: OrderedDict[str, tuple[int, Engine]] = OrderedDict()
 
     # -- helpers ---------------------------------------------------------------------------------
 
@@ -171,6 +177,12 @@ class InvestigationService:
 
     def _lock(self, inv_id: str) -> asyncio.Lock:
         return self._locks.setdefault(inv_id, asyncio.Lock())
+
+    def _cache_engine(self, inv_id: str, version: int, engine: Engine) -> None:
+        self._cache.pop(inv_id, None)
+        self._cache[inv_id] = (version, engine)
+        while len(self._cache) > self.ENGINE_CACHE_MAX:
+            self._cache.popitem(last=False)
 
     @staticmethod
     def _event(
@@ -203,9 +215,10 @@ class InvestigationService:
     async def _engine(self, session: AsyncSession, row: InvestigationRow) -> Engine:
         cached = self._cache.get(row.id)
         if cached is not None and cached[0] == row.version:
+            self._cache.move_to_end(row.id)
             return cached[1]
         engine, _ = await self._rebuild(session, row)
-        self._cache[row.id] = (row.version, engine)
+        self._cache_engine(row.id, row.version, engine)
         return engine
 
     async def _rebuild(self, session: AsyncSession, row: InvestigationRow) -> tuple[Engine, int]:
@@ -813,7 +826,7 @@ class InvestigationService:
             await self._intake(session, row, engine, req)
             await self._schedule(session, row, engine)
             row.version = 1
-        self._cache[inv_id] = (row.version, engine)
+        self._cache_engine(inv_id, row.version, engine)
         log.info("investigation_created", investigation_id=inv_id, status=row.status)
         return await self.get(inv_id)
 
@@ -1004,7 +1017,7 @@ class InvestigationService:
             except BaseException:
                 self._cache.pop(inv_id, None)  # the engine may have been mutated
                 raise
-            self._cache[inv_id] = (version, engine)
+            self._cache_engine(inv_id, version, engine)
         return AnswerResult(observation=obs, extraction=extraction, state=await self.get(inv_id))
 
     async def reveal(self, inv_id: str) -> InvestigationState:
@@ -1409,7 +1422,7 @@ class InvestigationService:
             except BaseException:
                 self._cache.pop(inv_id, None)
                 raise
-            self._cache[inv_id] = (version, engine)
+            self._cache_engine(inv_id, version, engine)
         return await self.get(inv_id)
 
     async def participant_token(self, inv_id: str, participant_id: str) -> dict[str, str]:
@@ -1517,7 +1530,7 @@ class InvestigationService:
             except BaseException:
                 self._cache.pop(inv_id, None)
                 raise
-            self._cache[inv_id] = (version, engine)
+            self._cache_engine(inv_id, version, engine)
         log.info(
             "consent_recorded",
             investigation_id=inv_id,
@@ -1577,7 +1590,7 @@ class InvestigationService:
                 )
             ).scalar_one_or_none()
             if warm_cache:
-                self._cache[inv_id] = (row.version, engine)
+                self._cache_engine(inv_id, row.version, engine)
         replayed = engine.snapshot().model_dump(mode="json")
         return ReplayCheck(
             investigation_id=inv_id,

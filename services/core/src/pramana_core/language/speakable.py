@@ -27,6 +27,7 @@ import re
 from pramana_contracts import TemplateLanguage
 
 _CODE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?![A-Za-z0-9])")
+_IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?!\w|\.\d)")
 _RUNS = re.compile(r"[A-Z]+|[a-z]+|[0-9]+")
 
 _DEVANAGARI = ("hi", "mr")
@@ -185,8 +186,15 @@ def _rewrite(match: re.Match[str], language: TemplateLanguage) -> str:
     return " ".join(spoken)
 
 
+def _speak_ipv4(match: re.Match[str], language: TemplateLanguage) -> str:
+    dot = "डॉट" if language in _DEVANAGARI else "dot"
+    octets = [" ".join(_digits(octet, language)) for octet in match.group(0).split(".")]
+    return f" {dot} ".join(octets)
+
+
 def speakable(text: str, language: TemplateLanguage) -> str:
     """The text to send to speech synthesis for ``text`` shown in ``language``."""
+    text = _IPV4.sub(lambda m: _speak_ipv4(m, language), text)
     return _CODE.sub(lambda m: _rewrite(m, language), text)
 
 
