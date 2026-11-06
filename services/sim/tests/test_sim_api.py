@@ -545,6 +545,30 @@ def test_invalid_snapshot_fails_simulator_startup_closed(tmp_path: Path) -> None
         create_app(_persistent_settings(state_file))
 
 
+def test_legacy_snapshot_without_presence_state_migrates_on_load(tmp_path: Path) -> None:
+    state_file = tmp_path / "scenarios.json"
+    settings = _persistent_settings(state_file)
+    with TestClient(create_app(settings)) as first:
+        sid = scenario(first, CB7)
+        _label(first, sid)
+
+    snapshot = json.loads(state_file.read_text(encoding="utf-8"))
+    snapshot["version"] = 1
+    snapshot["scenarios"][0].pop("presence_values")
+    snapshot["scenarios"][0].pop("presence_attempts")
+    state_file.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    with TestClient(create_app(settings)) as restarted:
+        view = restarted.get(
+            f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_mahesh", sid)
+        )
+        assert view.status_code == 200
+        assert view.json()["location_id"] == "IDF2"
+        (label,) = view.json()["labels"]
+        assert label["token_id"] == "idf2_switch_label"
+        assert len(label["value"]) == 3
+
+
 def test_failed_snapshot_write_rolls_back_participant_move(tmp_path: Path) -> None:
     state_file = tmp_path / "scenarios.json"
     settings = _persistent_settings(state_file)
