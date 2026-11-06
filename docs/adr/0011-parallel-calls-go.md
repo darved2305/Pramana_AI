@@ -76,6 +76,20 @@ points, 95% CI [-1.7, +4.3]); time to conclusion falls by 70 s [61, 79]; the pri
 more questions and 89 s more total participant effort. Parallel calls buy speed with people's
 time; the console default stays one at a time.
 
+### A withdrawn walk (added 2026-11-06)
+
+Someone asked to walk somewhere may already be on the way when that question is withdrawn.
+`schedule` now tells the engine (`Engine.question_withdrawn`) before it chooses anything new.
+Until that person next answers at a place, the engine plans as if they could be at either
+place: it asks them no phone checks, since the answer would describe a place we cannot name, and
+it treats every place, including the one they started from, as a walk from the farther of the
+two. `QuestionWithdrawn` now records `probe_id`, `location_id` and `requires_move`, and
+replay applies them. Logs written earlier have no place recorded and replay as they ran. Tests:
+`test_parallel.py::test_a_walk_withdrawn_midway_*`, `test_parallel_calls.py::test_a_withdrawn_walk_*`.
+The benchmark above is unchanged by this: re-run before and after (`--policies E,P2,P3`, seeds
+10000 to 10299), `episodes.csv` is identical, with no episode's questions or outcome changed.
+The change guards live calls and does not move any reported number.
+
 ## What is not yet proven
 
 - Sustained load (3 calls for 10 minutes) has not been run; it is the Nov 7 load test (D21).

@@ -2,8 +2,8 @@
 
 The single-question planner (``Engine.plan``) assumes nothing is pending. With several people
 on calls at once (docs/adr/0011, at most 3 per investigation), the investigation service asks
-this module after every change of belief. It is pure, so the service, replay and the benchmark
-use the same rule:
+this module after every change of belief. It has no I/O, so the service, replay and the
+benchmark use the same rule:
 
 1. Nothing in flight: plan as usual (ask the best question, or conclude). If the plan asks,
    add questions for other people whose *conditional* gain, given the answers already on their
@@ -13,6 +13,11 @@ use the same rule:
 3. Otherwise withdraw the questions whose answer no longer matters (``Engine.moot``) and fill
    free slots with questions that add information given what is still in flight. The
    investigation never concludes while a question that still matters is unanswered.
+
+Every withdrawal is also told to the engine (``Engine.question_withdrawn``) before anything
+new is chosen: someone whose walk was withdrawn may already be there, so they are no longer
+planned as standing where they started. The service records the place in ``QuestionWithdrawn``
+and replay applies it the same way.
 """
 
 from __future__ import annotations
@@ -62,6 +67,8 @@ def schedule(engine: Engine, pending: Sequence[ProbeAction], max_parallel: int) 
             extras = engine.parallel_questions([plan.action], max_parallel)
         return Schedule([], extras, plan)
     if _conclusive(plan):
+        for a in pending:
+            engine.question_withdrawn(a)
         return Schedule(list(range(len(pending))), [], plan)
     moot = engine.moot(pending)
     if all(moot) and plan.kind == PlanKind.ASK and plan.action is not None:
@@ -71,6 +78,10 @@ def schedule(engine: Engine, pending: Sequence[ProbeAction], max_parallel: int) 
                 moot[i] = False
     keep = [a for a, m in zip(pending, moot, strict=True) if not m]
     withdraw = [i for i, m in enumerate(moot) if m]
+    # Someone whose walk is withdrawn may be at either place now: plan with that.
+    moved = [engine.question_withdrawn(pending[i]) for i in withdraw]
+    if any(moved):
+        plan = engine.plan()
     if not keep:
         extras = []
         if plan.kind == PlanKind.ASK and plan.action is not None and max_parallel > 1:

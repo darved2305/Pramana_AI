@@ -196,3 +196,42 @@ def test_declining_a_call_keeps_the_other_questions(core: TestClient) -> None:
     gone = {e["payload"]["question_id"] for e in log if e["type"] == "QuestionWithdrawn"}
     assert {q["id"] for q in rest} <= left | gone  # the others are kept unless now pointless
     assert all(q["action"]["participant_id"] != pid for q in after["pending_questions"])
+
+
+def test_a_withdrawn_walk_leaves_the_person_somewhere_between_also_after_a_rebuild(
+    core: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Someone asked to walk may already be on their way when the question is withdrawn. The
+    event says where they were sent, and the engine rebuilt from the log plans them the same
+    way as the live one: possibly at either place."""
+    from pramana_engine import Engine
+
+    sim = TestClient(core.sim_app)  # type: ignore[attr-defined]
+    svc = core.app.state.investigations  # type: ignore[attr-defined]
+    inv = create(core, 3)
+    walking = [q for q in inv["pending_questions"] if q["action"]["requires_move"]]
+    assert walking, "S1 with three at once sends someone to walk"
+    walk = walking[0]
+    other = next(q for q in inv["pending_questions"] if q["id"] != walk["id"])
+    pid, place = walk["action"]["participant_id"], walk["action"]["location_id"]
+    monkeypatch.setattr(
+        Engine,
+        "moot",
+        lambda self, pending: [a.participant_id == pid and a.requires_move for a in pending],
+    )
+    answer(core, sim, inv["id"], other)
+    monkeypatch.undo()
+    gone = [e["payload"] for e in events(core, inv["id"]) if e["type"] == "QuestionWithdrawn"]
+    assert [(g["question_id"], g["location_id"], g["requires_move"]) for g in gone] == [
+        (walk["id"], place, True)
+    ]
+    live = svc._cache[inv["id"]][1].participants[pid]
+    assert live.may_be_at == {place}
+    svc.evict(inv["id"])
+    state = core.get(f"/v1/investigations/{inv['id']}").json()
+    rebuilt = svc._cache[inv["id"]][1].participants[pid]
+    assert (rebuilt.location_id, rebuilt.may_be_at) == (live.location_id, {place})
+    for q in state["pending_questions"]:
+        if q["action"]["participant_id"] == pid:
+            assert q["action"]["requires_move"], "no question to them assumes where they stand"
+    assert core.get(f"/v1/investigations/{inv['id']}/replay").json()["identical"]

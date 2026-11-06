@@ -314,3 +314,78 @@ def test_no_parallel_questions_while_verifying_a_repair(
     assert eng.parallel_questions([first], 3) == []
     assert eng.moot([first]) == [False]
     assert np.isclose(eng.posterior().sum(), 1.0)
+
+
+def _walk_for(eng: Engine, pid: str) -> ProbeAction:
+    return next(a for a, _ in eng.menu() if a.participant_id == pid and a.requires_move)
+
+
+def test_a_walk_withdrawn_midway_leaves_the_person_somewhere_between(
+    campus_model: CompiledModel, s1_people: list[ParticipantSpec]
+) -> None:
+    """Withdrawn while walking, they may be at either place: no phone check is asked of them
+    (its answer would describe a place we cannot name), and going anywhere counts as a walk."""
+    eng = _s1(campus_model, s1_people)
+    home = eng.participants["p_mahesh"].location_id
+    before = [a for a, _ in eng.menu() if a.participant_id == "p_mahesh"]
+    assert any(a.location_id == home and not a.requires_move for a in before)
+    walk = _walk_for(eng, "p_mahesh")
+    eng.record_question("p_mahesh")
+    eng.question_withdrawn(walk)
+    after = {
+        (a.probe_id, a.location_id): (a, c) for a, c in eng.menu() if a.participant_id == "p_mahesh"
+    }
+    probes = eng.model.pack.probe_by_id
+    assert after, "they can still be asked to go somewhere"
+    assert not [
+        k for k in after if probes[k[0]].kind in {"internet_works", "wifi_status", "web_by_ip"}
+    ]
+    assert all(a.requires_move for a, _ in after.values())
+    back = [c for (pr, loc), (_, c) in after.items() if loc == home]
+    assert back
+    assert min(back) > 0, "going back to where they started is a walk too"
+
+
+def test_answering_at_a_place_settles_where_they_are(
+    campus_model: CompiledModel, s1_people: list[ParticipantSpec]
+) -> None:
+    eng = _s1(campus_model, s1_people)
+    walk = _walk_for(eng, "p_mahesh")
+    eng.record_question("p_mahesh")
+    eng.question_withdrawn(walk)
+    eng.observe(Evidence("p_mahesh", walk.probe_id, walk.location_id, "unknown"))
+    assert eng.participants["p_mahesh"].location_id == walk.location_id
+    mine = [a for a, _ in eng.menu() if a.participant_id == "p_mahesh"]
+    assert any(a.location_id == walk.location_id and not a.requires_move for a in mine)
+
+
+def test_withdrawing_a_question_asked_where_they_stand_changes_nothing(
+    campus_model: CompiledModel, s1_people: list[ParticipantSpec]
+) -> None:
+    eng = _s1(campus_model, s1_people)
+    here = next(a for a, _ in eng.menu() if a.participant_id == "p_mahesh" and not a.requires_move)
+    menu_before = eng.menu()
+    eng.question_withdrawn(here)
+    assert eng.menu() == menu_before
+
+
+def test_the_scheduler_plans_after_telling_the_engine_about_a_withdrawn_walk(
+    campus_model: CompiledModel, s1_people: list[ParticipantSpec], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The questions chosen in the same step as a withdrawal already know the person may have
+    walked: none of them is a phone check where they started."""
+    eng = _s1(campus_model, s1_people)
+    walk = _walk_for(eng, "p_mahesh")
+    eng.record_question("p_mahesh")
+    monkeypatch.setattr(Engine, "moot", lambda self, pending: [True for _ in pending])
+    step = schedule(eng, [walk], 3)
+    assert step.withdraw == [0]
+    assert eng.participants["p_mahesh"].may_be_at == {walk.location_id}
+    chosen = [c.action for c in step.ask]
+    if step.plan is not None and step.plan.action is not None:
+        chosen.append(step.plan.action)
+    probes = eng.model.pack.probe_by_id
+    for a in chosen:
+        if a.participant_id == "p_mahesh":
+            assert a.requires_move
+            assert probes[a.probe_id].kind not in {"internet_works", "wifi_status", "web_by_ip"}

@@ -249,6 +249,16 @@ class InvestigationService:
                 )
             elif type_ == "ParticipantUnavailable":
                 engine.set_available(payload["participant_id"], False)
+            elif type_ == "QuestionWithdrawn" and "location_id" in payload:
+                # Logs written before withdrawals carried the place replay as they ran then.
+                engine.question_withdrawn(
+                    ProbeAction(
+                        participant_id=payload["participant_id"],
+                        probe_id=payload["probe_id"],
+                        location_id=payload["location_id"],
+                        requires_move=bool(payload["requires_move"]),
+                    )
+                )
             elif type_ == "ObservationConfirmed" and payload.get("agreed") is not None:
                 engine.confirm(
                     payload["participant_id"],
@@ -445,7 +455,7 @@ class InvestigationService:
         conclusive = step.plan is not None and step.plan.kind != PlanKind.ASK
         for i in step.withdraw:
             q = pending[i]
-            q.status = QuestionStatus.WITHDRAWN.value
+            q.status = QuestionStatus.WITHDRAWN.value  # schedule() told the engine
             self._event(
                 session,
                 row.id,
@@ -453,6 +463,9 @@ class InvestigationService:
                 {
                     "question_id": q.id,
                     "participant_id": q.participant_id,
+                    "probe_id": q.probe_id,
+                    "location_id": q.location_id,
+                    "requires_move": q.requires_move,
                     "reason": "the investigation reached a conclusion"
                     if conclusive
                     else "another answer made this question pointless",

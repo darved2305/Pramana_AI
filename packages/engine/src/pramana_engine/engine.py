@@ -86,6 +86,14 @@ class ParticipantState:
     location_id: str
     questions_asked: int = 0
     available: bool = True
+    may_be_at: set[str] = field(default_factory=set)
+    """Other places they may be instead of ``location_id``: a question that asked them to walk
+    there was withdrawn, and they may have gone anyway. Cleared when they next answer at a
+    place."""
+
+    def settle(self, location_id: str) -> None:
+        self.location_id = location_id
+        self.may_be_at.clear()
 
     @property
     def roles(self) -> set[str]:
@@ -308,7 +316,7 @@ class Engine:
         ps = self.participants[ev.participant_id]
         probe = self.model.pack.probe_by_id[ev.probe_id]
         if probe.kind not in DEVICE_KINDS:
-            ps.location_id = ev.location_id  # they went there to look
+            ps.settle(ev.location_id)  # they went there to look
         if ev.outcome == UNKNOWN_OUTCOME:
             return ObserveResult(False, "outcome unknown", False, [], None)
         if ev.directness == Directness.ASSUMPTION:
@@ -405,8 +413,10 @@ class Engine:
         if location_id not in self.model.pack.location_by_id:
             raise EvidenceError(f"unknown location {location_id}")
         self._presence[(participant_id, location_id)] = state
-        if state == "failed" and ps.location_id == location_id:
-            ps.location_id = ps.spec.location_id
+        if state == "failed":
+            ps.may_be_at.discard(location_id)
+            if ps.location_id == location_id:
+                ps.location_id = ps.spec.location_id
         self._changed()
 
     def presence(self, participant_id: str, location_id: str) -> Presence | None:
@@ -499,7 +509,7 @@ class Engine:
             raise EvidenceError(f"{action_id} cannot target {target}")
         repaired = (target, action.fixes)
         if participant_id is not None and comp.location is not None:
-            self.participants[participant_id].location_id = comp.location  # they were there
+            self.participants[participant_id].settle(comp.location)  # they were there
         p_fail = self.cfg.repair_failure_prior
         rows: list[npt.NDArray[np.int64]] = []
         logw: list[float] = []
@@ -557,6 +567,23 @@ class Engine:
 
     def record_question(self, participant_id: str) -> None:
         self.participants[participant_id].questions_asked += 1
+
+    def question_withdrawn(self, action: ProbeAction) -> bool:
+        """A question in flight was withdrawn. If it asked them to walk, they may already be on
+        their way or there, so until they next answer at a place they are planned as being at
+        either: no phone check (its answer would describe a place we cannot name), and every
+        place counts as a walk from the farther of the two. ``schedule`` calls this for every
+        question it withdraws. Returns whether where they may be changed."""
+        ps = self.participants.get(action.participant_id)
+        if ps is None:
+            raise EvidenceError(f"unknown participant {action.participant_id}")
+        if action.location_id not in self.model.pack.location_by_id:
+            raise EvidenceError(f"unknown location {action.location_id}")
+        if not action.requires_move or action.location_id in {ps.location_id, *ps.may_be_at}:
+            return False
+        ps.may_be_at.add(action.location_id)
+        self._changed()
+        return True
 
     def set_available(self, participant_id: str, available: bool) -> None:
         self.participants[participant_id].available = available
@@ -658,17 +685,25 @@ class Engine:
                         f"needs role {'/'.join(r for r in probe.roles if r != ANY_ROLE)}"
                     )
                 walk = 0
-                if loc_id != ps.location_id:
+                move = False
+                unsure = bool(ps.may_be_at - {ps.location_id})
+                if unsure and probe.kind in DEVICE_KINDS:
+                    reasons.append("not known where the person is now")
+                elif loc_id != ps.location_id or unsure:
                     if probe.kind in DEVICE_KINDS:
                         reasons.append("phone checks are only asked where the person is")
                     elif not set(ps.roles) & {r.value for r in pack.walking_roles}:
                         reasons.append("not asked to walk")
                     else:
-                        w = pack.walk_seconds(ps.location_id, loc_id)
-                        if w is None:
+                        walks = [
+                            pack.walk_seconds(src, loc_id)
+                            for src in sorted({ps.location_id, *ps.may_be_at})
+                        ]
+                        if any(w is None for w in walks):
                             reasons.append("location unreachable")
                         else:
-                            walk = w
+                            walk = max(int(w or 0) for w in walks)
+                            move = True
                 if loc.restricted and not set(ps.roles) & {r.value for r in loc.access_roles}:
                     reasons.append(f"no access to {loc_id}")
                 if (pid, probe_id, loc_id) in answered_keys:
@@ -692,7 +727,7 @@ class Engine:
                         site,
                         probe_id,
                         loc_id,
-                        walk > 0,
+                        move,
                         cost,
                         likelihood_matrix(model, site, reff[group], 1.0),
                     )
