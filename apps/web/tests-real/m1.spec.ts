@@ -50,7 +50,10 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   await page.getByRole("textbox", { name: "Component ID" }).fill("CB_C2_7");
   await page.getByRole("textbox", { name: "Failure mode" }).fill("tripped");
   await next();
-  await page.getByRole("checkbox", { name: /agreed to be contacted/ }).check({ force: true });
+  // Click the visible label, as a person would: a forced click on the hidden input can land
+  // while the page is still scrolling to this step.
+  await page.getByText("These people have agreed to be contacted").click();
+  await expect(page.getByRole("checkbox", { name: /agreed to be contacted/ })).toBeChecked();
   await page.getByRole("button", { name: "Start investigation" }).click();
   await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9a-f]+$/);
   const invId = page.url().split("/").pop() as string;
