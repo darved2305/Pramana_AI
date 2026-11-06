@@ -91,6 +91,47 @@ async def test_tts_over_the_per_minute_cap_is_refused_locally() -> None:
     await g.aclose()
 
 
+async def test_racing_stream_reservations_refuse_at_the_cap() -> None:
+    class WaitingLedger(MemoryLedger):
+        def __init__(self) -> None:
+            super().__init__()
+            self.read_started = asyncio.Event()
+            self.allow_read = asyncio.Event()
+
+        async def spent_today(self) -> float:
+            self.read_started.set()
+            await self.allow_read.wait()
+            return 0.0
+
+    ledger = WaitingLedger()
+    governor = VoiceGovernor(GovernorLimits(max_streams=1), ledger)
+    held = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hold_slot() -> None:
+        async with governor.stream_slot():
+            held.set()
+            await release.wait()
+
+    first = asyncio.create_task(hold_slot())
+    await ledger.read_started.wait()
+    second = asyncio.create_task(hold_slot())
+    await asyncio.sleep(0)
+    ledger.allow_read.set()
+    await held.wait()
+    try:
+        with pytest.raises(ApiError) as exc:
+            await asyncio.wait_for(second, 0.1)
+        assert exc.value.code == "VOICE_TOO_MANY_STREAMS"
+    finally:
+        release.set()
+        await first
+        if not second.done():
+            second.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await second
+
+
 async def test_budget_is_checked_before_sending() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         raise AssertionError("must not call Gnani when over budget")

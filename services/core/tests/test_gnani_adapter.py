@@ -283,6 +283,29 @@ async def test_session_limit_close_is_surfaced() -> None:
     fake.stop()
 
 
+async def test_client_close_logs_provider_code_and_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries: list[dict[str, Any]] = []
+
+    class CaptureLog:
+        def info(self, event: str, **fields: Any) -> None:
+            entries.append({"event": event, **fields})
+
+    monkeypatch.setattr(gmod, "log", CaptureLog())
+    fake = FakeGnani().start()
+    g = GnaniClient("k", fake.base_url, 5)
+    try:
+        stream = await g.open_stream(["hi-IN"])
+        await stream.aclose()
+        await asyncio.gather(*tuple(gmod._CLOSING))
+
+        assert entries == [{"event": "gnani_ws_closed", "code": 1000, "reason": ""}]
+    finally:
+        await g.aclose()
+        fake.stop()
+
+
 def test_browser_stream_relay_end_to_end(fake: FakeGnani, migrated_db: str) -> None:
     app = create_app(core_settings(migrated_db, GNANI_API_KEY="k", GNANI_BASE_URL=fake.base_url))
     with TestClient(app) as c, c.websocket_connect("/v1/voice/stream") as ws:
