@@ -475,9 +475,12 @@ def test_repaired_world_and_used_capability_survive_simulator_restart(tmp_path: 
     with TestClient(create_app(settings)) as first:
         sid = electrician_scenario(first)
         electrician = bearer("p_imran", sid)
-        assert first.post(
-            f"/sim/v1/scenarios/{sid}/move", json={"to": "DB_C2_PANEL"}, headers=electrician
-        ).status_code == 200
+        assert (
+            first.post(
+                f"/sim/v1/scenarios/{sid}/move", json={"to": "DB_C2_PANEL"}, headers=electrician
+            ).status_code
+            == 200
+        )
         cap = capability(sid)
         assert act(first, sid, "p_imran", cap).status_code == 200
 
@@ -488,9 +491,7 @@ def test_repaired_world_and_used_capability_survive_simulator_restart(tmp_path: 
     assert saved["interventions"] == [["p_imran", "reset_breaker", "CB_C2_7"]]
 
     with TestClient(create_app(settings)) as restarted:
-        view = restarted.get(
-            f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_imran", sid)
-        )
+        view = restarted.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_imran", sid))
         assert view.json()["location_id"] == "DB_C2_PANEL"
         seen = restarted.post(
             f"/sim/v1/scenarios/{sid}/observe",
@@ -521,15 +522,11 @@ def test_closed_scenario_stays_closed_and_revealable_after_restart(tmp_path: Pat
     settings = _persistent_settings(tmp_path / "scenarios.json")
     with TestClient(create_app(settings)) as first:
         sid = scenario(first, CB7)
-        commitment = first.post(
-            f"/sim/v1/scenarios/{sid}/close", headers=OPERATOR
-        ).status_code
+        commitment = first.post(f"/sim/v1/scenarios/{sid}/close", headers=OPERATOR).status_code
         assert commitment == 204
 
     with TestClient(create_app(settings)) as restarted:
-        view = restarted.get(
-            f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_riya", sid)
-        )
+        view = restarted.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_riya", sid))
         assert view.status_code == 409
         assert view.json()["error"]["code"] == "SCENARIO_CLOSED"
         reveal = restarted.post(f"/sim/v1/scenarios/{sid}/reveal", headers=OPERATOR)
@@ -559,9 +556,7 @@ def test_legacy_snapshot_without_presence_state_migrates_on_load(tmp_path: Path)
     state_file.write_text(json.dumps(snapshot), encoding="utf-8")
 
     with TestClient(create_app(settings)) as restarted:
-        view = restarted.get(
-            f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_mahesh", sid)
-        )
+        view = restarted.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_mahesh", sid))
         assert view.status_code == 200
         assert view.json()["location_id"] == "IDF2"
         (label,) = view.json()["labels"]
@@ -583,9 +578,7 @@ def test_failed_snapshot_write_rolls_back_participant_move(tmp_path: Path) -> No
             headers=bearer("p_mahesh", sid),
         )
         assert moved.status_code == 500
-        restored = client.get(
-            f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_mahesh", sid)
-        )
+        restored = client.get(f"/sim/v1/scenarios/{sid}/view", headers=bearer("p_mahesh", sid))
         assert restored.status_code == 200
         assert restored.json()["location_id"] == "GUARD_DESK"
         assert list(tmp_path.glob("scenarios.json.*.tmp")) == []

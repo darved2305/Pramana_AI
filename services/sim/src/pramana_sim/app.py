@@ -14,14 +14,14 @@ Access model:
 # No ``from __future__ import annotations``: FastAPI must resolve the closure dependencies
 # referenced in ``Annotated[..., Depends(...)]`` at definition time.
 
+import contextlib
 import hmac
 import json
 import os
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated
-from typing import TypeVar
+from typing import Annotated, TypeVar
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -135,10 +135,8 @@ class ScenarioStore:
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
         finally:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 temporary.unlink()
-            except FileNotFoundError:
-                pass
 
     def _load(self) -> None:
         path = self._state_file
@@ -252,17 +250,13 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
             claims = verify_capability(public_key, req.capability)
         except TokenError as exc:
             raise HTTPException(403, str(exc)) from exc
-        return store.mutate(
-            sid, lambda scenario: scenario.act(who, req.action, req.target, claims)
-        )
+        return store.mutate(sid, lambda scenario: scenario.act(who, req.action, req.target, claims))
 
     @app.post("/sim/v1/scenarios/{sid}/presence/check", dependencies=[require_operator])
     async def check_presence(sid: str, req: PresenceCheck) -> PresenceCheckResult:
         return store.mutate(
             sid,
-            lambda scenario: scenario.check_presence(
-                req.participant_id, req.token_id, req.answer
-            ),
+            lambda scenario: scenario.check_presence(req.participant_id, req.token_id, req.answer),
         )
 
     @app.post("/sim/v1/scenarios/{sid}/close", status_code=204, dependencies=[require_operator])

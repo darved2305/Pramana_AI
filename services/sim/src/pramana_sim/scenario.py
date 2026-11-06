@@ -153,9 +153,7 @@ class Scenario:
             "presence_values": dict(sorted(self.presence_values.items())),
             "presence_attempts": [
                 [participant_id, token_id, attempts]
-                for (participant_id, token_id), attempts in sorted(
-                    self.presence_attempts.items()
-                )
+                for (participant_id, token_id), attempts in sorted(self.presence_attempts.items())
             ],
         }
 
