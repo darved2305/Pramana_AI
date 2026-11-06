@@ -51,6 +51,12 @@ def test_non_readings_give_no_three_character_code(text: str) -> None:
     assert len(read_code(text)) < 3
 
 
+def test_repeated_a_code_letters_are_speakable_and_readable() -> None:
+    spoken = speakable("AAA", "en")
+    assert spoken == "ay ay ay"
+    assert read_code(spoken) == "AAA"
+
+
 @given(st.text(alphabet="AFHKLMQRXY345679", min_size=3, max_size=3))
 def test_a_value_spoken_by_our_own_speech_text_reads_back(value: str) -> None:
     """What Timbre is given for a code in Hindi or Marathi reads back to the same code, so a

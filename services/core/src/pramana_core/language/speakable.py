@@ -133,7 +133,7 @@ def is_code(token: str) -> bool:
 def _letters(run: str, language: TemplateLanguage) -> list[str]:
     if language in _DEVANAGARI:
         return [_LETTERS[language][c] for c in run.upper()]
-    return list(run.upper())
+    return ["ay" if c == "A" else c for c in run.upper()]
 
 
 def _digits(run: str, language: TemplateLanguage) -> list[str]:

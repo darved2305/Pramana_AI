@@ -1,0 +1,24 @@
+{
+  "set": "main test_extraction_junk.py JUNK list",
+  "git_sha": "fddc502",
+  "generated_at": "2026-11-06 15:51 UTC",
+  "junk_phrases": 21,
+  "probes": 14,
+  "languages": [
+    "en",
+    "hi",
+    "mr",
+    "hi-en"
+  ],
+  "cases": 1176,
+  "expected_outcome": "unknown",
+  "non_unknown_outcomes": 0,
+  "unknown_outcomes": 1176,
+  "cases_by_language": {
+    "en": 294,
+    "hi": 294,
+    "hi-en": 294,
+    "mr": 294
+  },
+  "failures": []
+}
