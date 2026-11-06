@@ -67,3 +67,13 @@ app, then drives the console and the participant pages end to end (`tests-real/`
 Inter, Geist and Besley match the reference. Its display faces, PP Right Slab and FT Activica,
 are commercial: put licensed files in `public/fonts/` (see the README there) and they are used
 automatically. Until then Zilla Slab and Geist Pixel stand in.
+
+## Security notes
+
+The npm audit finding for `minimatch` comes through the development-only ESLint dependency chain.
+The installed `@typescript-eslint/typescript-estree` module imports and invokes it in an optional
+project matching path. The current dependency range selects an affected release, while
+`npm audit fix --force` would downgrade `eslint-config-next` to Next 15. The scoped override pins
+the transitive dependency under `@typescript-eslint/typescript-estree` to patched version
+11.0.1, preserving Next 16. Keep the override until the upstream dependency range includes a
+patched release.
