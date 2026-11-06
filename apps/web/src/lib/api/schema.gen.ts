@@ -159,6 +159,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/investigations/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Investigation Presets
+         * @description Requests the S2 and S7 scenarios use to create a reproducible investigation.
+         */
+        get: operations["list_investigation_presets_v1_investigations_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/investigations/{inv_id}": {
         parameters: {
             query?: never;
@@ -734,6 +754,17 @@ export interface components {
             /** Target */
             target: string;
         };
+        /**
+         * ChallengeAnswerResult
+         * @description Presence result with neutral copy and no transcript or expected token value.
+         */
+        ChallengeAnswerResult: {
+            /** Message */
+            message: string;
+            /** Passed */
+            passed: boolean;
+            state: components["schemas"]["InvestigationState"];
+        };
         /** CreateInvestigation */
         CreateInvestigation: {
             /**
@@ -922,6 +953,21 @@ export interface components {
             offset: number;
             /** Total */
             total: number;
+        };
+        /** InvestigationPreset */
+        InvestigationPreset: {
+            /** Adversarial Participant Id */
+            adversarial_participant_id?: string | null;
+            /** Description */
+            description: string;
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "S2" | "S7";
+            request: components["schemas"]["CreateInvestigation"];
+            /** Title */
+            title: string;
         };
         /** InvestigationState */
         InvestigationState: {
@@ -1163,7 +1209,7 @@ export interface components {
              * Rule
              * @enum {string}
              */
-            rule: "confident" | "positive_value" | "no_value_confident_enough" | "no_value_low_confidence" | "open_world" | "no_feasible_action" | "verification_confirmed" | "verification_failed" | "verification_inconclusive";
+            rule: "confident" | "positive_value" | "no_value_confident_enough" | "no_value_low_confidence" | "open_world" | "no_feasible_action" | "verification_confirmed" | "verification_failed" | "verification_inconclusive" | "presence_fallback";
         };
         /**
          * PlanKind
@@ -1196,7 +1242,7 @@ export interface components {
              * @default probe
              * @enum {string}
              */
-            kind?: "probe" | "confirm";
+            kind?: "probe" | "confirm" | "challenge";
             /**
              * Language
              * @enum {string}
@@ -1204,6 +1250,8 @@ export interface components {
             language: "en" | "hi" | "mr" | "hi-en";
             /** Outcomes */
             outcomes: string[];
+            /** Presence Token Id */
+            presence_token_id?: string | null;
             status: components["schemas"]["QuestionStatus"];
             /** Text */
             text: string;
@@ -1406,8 +1454,20 @@ export interface components {
          * @description A spoken answer: what Gnani heard, then the same result as a typed answer.
          */
         VoiceAnswerResult: {
-            result: components["schemas"]["AnswerResult"];
+            /** Result */
+            result: components["schemas"]["AnswerResult"] | components["schemas"]["ChallengeAnswerResult"];
             stt: components["schemas"]["SttResult"];
+        };
+        /**
+         * VoiceChallengeAnswerResult
+         * @description A voice challenge result deliberately omits the recognised characters.
+         */
+        VoiceChallengeAnswerResult: {
+            /** Message */
+            message: string;
+            /** Passed */
+            passed: boolean;
+            state: components["schemas"]["InvestigationState"];
         };
     };
     responses: never;
@@ -1649,6 +1709,26 @@ export interface operations {
             };
         };
     };
+    list_investigation_presets_v1_investigations_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvestigationPreset"][];
+                };
+            };
+        };
+    };
     get_investigation_v1_investigations__inv_id__get: {
         parameters: {
             query?: never;
@@ -1701,7 +1781,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnswerResult"];
+                    "application/json": components["schemas"]["AnswerResult"] | components["schemas"]["ChallengeAnswerResult"];
                 };
             };
             /** @description Validation Error */
@@ -1736,7 +1816,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VoiceAnswerResult"];
+                    "application/json": components["schemas"]["VoiceAnswerResult"] | components["schemas"]["VoiceChallengeAnswerResult"];
                 };
             };
             /** @description Validation Error */

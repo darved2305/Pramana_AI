@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import {
   Badge,
@@ -27,7 +27,7 @@ import { BuildingMap } from "@/components/app/BuildingMap";
 import { Avatar } from "@/components/app/Avatar";
 import { ParticipantForm, TEMPLATE_LANGS, langLabel, roleLabel } from "@/components/app/ParticipantForm";
 import { useDirectory, usePack, usePacks } from "@/lib/data/hooks";
-import { core, DEFAULT_PACK } from "@/lib/api/core";
+import { core, DEFAULT_PACK, type InvestigationPreset } from "@/lib/api/core";
 import { describeError } from "@/lib/api/http";
 import { usePreviewMode } from "@/lib/store/local";
 import type { CreateInvestigation, ParticipantSpec, TemplateLanguage } from "@/lib/api/types";
@@ -59,6 +59,17 @@ export default function NewInvestigationPage() {
   const [adding, setAdding] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
+  const [presets, setPresets] = useState<InvestigationPreset[]>([]);
+  const [presetError, setPresetError] = useState<unknown>(null);
+  const [startingPreset, setStartingPreset] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    core.investigationPresets(controller.signal).then(setPresets).catch((error: unknown) => {
+      if (!controller.signal.aborted) setPresetError(error);
+    });
+    return () => controller.abort();
+  }, []);
 
   const participants: ParticipantSpec[] = useMemo(
     () =>
@@ -124,6 +135,19 @@ export default function NewInvestigationPage() {
     }
   };
 
+  const startPreset = async (preset: InvestigationPreset) => {
+    if (preview) return;
+    setStartingPreset(preset.id);
+    setPresetError(null);
+    try {
+      const investigation = await core.createInvestigation(preset.request);
+      router.push(`/app/investigations/${investigation.id}`);
+    } catch (error) {
+      setPresetError(error);
+      setStartingPreset(null);
+    }
+  };
+
   const err = touched[step] ? errors[step] : null;
   const current: Step = STEPS[step];
 
@@ -134,6 +158,37 @@ export default function NewInvestigationPage() {
         eyebrow={preview ? <PreviewBadge /> : undefined}
         subtitle="Tell Pramana what is wrong and who can help. It will decide whom to ask, and what, one question at a time."
       />
+
+      {presets.length > 0 ? (
+        <Card className="p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="max-w-xl">
+              <h2 className="font-serif text-[22px] tracking-[0.02em]">Try a scenario</h2>
+              <p className="mt-1 text-[13px] text-muted">
+                Start S2 to follow a Wi-Fi contradiction, or S7 to test a restricted-location check.
+                These scenarios use fictional participants and a sealed simulated fault.
+              </p>
+              {presetError ? (
+                <p className="mt-2 text-[13px] text-bad" role="alert">{describeError(presetError)}</p>
+              ) : null}
+            </div>
+            <div className="grid w-full gap-2 sm:max-w-[360px] sm:grid-cols-2">
+              {presets.map((preset) => (
+                <Button
+                  key={preset.id}
+                  variant="secondary"
+                  onClick={() => startPreset(preset)}
+                  loading={startingPreset === preset.id}
+                  disabled={preview || startingPreset !== null}
+                  aria-label={`Start ${preset.id}: ${preset.title}`}
+                >
+                  Start {preset.id}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <nav aria-label="Steps" className="overflow-x-auto pb-1 [scrollbar-width:none]">
         <ol className="flex min-w-max items-center gap-1">

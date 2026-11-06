@@ -5,7 +5,7 @@
  */
 import { request, requestBlob, requestStream } from "./http";
 import type {
-  AnswerResult,
+  AnswerResponse,
   AuthSession,
   CapabilityGrant,
   CreateInvestigation,
@@ -23,7 +23,7 @@ import type {
   SitePack,
   SttResult,
   SubmitAnswer,
-  VoiceAnswerResult,
+  VoiceAnswerResponse,
   VoiceStatus,
 } from "./types";
 
@@ -34,6 +34,13 @@ export interface ListQuery {
   q?: string;
   limit?: number;
   offset?: number;
+}
+
+export interface InvestigationPreset {
+  id: "S2" | "S7";
+  title: string;
+  description: string;
+  request: CreateInvestigation;
 }
 
 function listParams(q: ListQuery): string {
@@ -62,6 +69,9 @@ export const core = {
   createInvestigation: (body: CreateInvestigation) =>
     request<InvestigationState>("core", "/v1/investigations", { method: "POST", json: body }),
 
+  investigationPresets: (signal?: AbortSignal) =>
+    request<InvestigationPreset[]>("core", "/v1/investigations/presets", { signal }),
+
   getInvestigation: (id: string, signal?: AbortSignal, token?: string) =>
     request<InvestigationState>("core", `/v1/investigations/${enc(id)}`, { signal, token }),
 
@@ -69,14 +79,14 @@ export const core = {
     request<EventEnvelope[]>("core", `/v1/investigations/${enc(id)}/events?after_seq=${afterSeq}`, { signal, token }),
 
   answer: (id: string, body: SubmitAnswer, token?: string) =>
-    request<AnswerResult>("core", `/v1/investigations/${enc(id)}/answers`, { method: "POST", json: body, token }),
+    request<AnswerResponse>("core", `/v1/investigations/${enc(id)}/answers`, { method: "POST", json: body, token }),
 
   answerByVoice: (id: string, questionId: string, participantId: string, audio: Blob, token?: string) => {
     const form = new FormData();
     form.set("question_id", questionId);
     form.set("participant_id", participantId);
     form.set("audio", audio, "answer.wav");
-    return request<VoiceAnswerResult>("core", `/v1/investigations/${enc(id)}/answers/voice`, {
+    return request<VoiceAnswerResponse>("core", `/v1/investigations/${enc(id)}/answers/voice`, {
       method: "POST",
       form,
       token,

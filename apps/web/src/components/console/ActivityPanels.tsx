@@ -60,6 +60,7 @@ export function ConversationPanel({
                 <span className="h-2 w-2 rounded-full bg-info pulse-dot" aria-hidden />
                 <span className="text-[13px] font-medium text-info">Waiting for {participantName(state, q.action.participant_id)}</span>
                 {q.kind === "confirm" ? <Badge tone="warn">Just checking</Badge> : null}
+                {q.kind === "challenge" ? <Badge tone="info">Location check</Badge> : null}
                 {q.action.requires_move ? <Badge>Walk to {locationLabel(pack, q.action.location_id)}</Badge> : null}
                 <span className="ml-auto text-[12px] text-muted">asked {clock(q.asked_at)}</span>
               </div>
@@ -67,8 +68,9 @@ export function ConversationPanel({
                 {q.text}
               </p>
               <p className="mt-2 text-[12px] text-muted">
-                In {langLabel(q.language)} · checks: {probeLabel(pack, q.action.probe_id)} · possible answers:{" "}
-                {q.outcomes.map(outcomeWord).join(", ")}
+                {q.kind === "challenge"
+                  ? `In ${langLabel(q.language)} · checks that they are at ${locationLabel(pack, q.action.location_id)}.`
+                  : `In ${langLabel(q.language)} · checks: ${probeLabel(pack, q.action.probe_id)} · possible answers: ${q.outcomes.map(outcomeWord).join(", ")}`}
               </p>
               {!readOnly ? <RecordAnswer key={q.id} state={state} question={q} onState={onState} /> : null}
             </div>
@@ -127,7 +129,7 @@ export function ConversationPanel({
 
 /** Lets the console record an answer someone gave by phone or in person. */
 function RecordAnswer({ state, question: q, onState }: { state: InvestigationState; question: Question; onState: (s: InvestigationState) => void }) {
-  const [mode, setMode] = useState<"tap" | "text">("tap");
+  const [mode, setMode] = useState<"tap" | "text">(q.kind === "challenge" ? "text" : "tap");
   const [text, setText] = useState("");
   const [outcome, setOutcome] = useState(q.outcomes[0] ?? "");
   const [busy, setBusy] = useState(false);
@@ -145,7 +147,9 @@ function RecordAnswer({ state, question: q, onState }: { state: InvestigationSta
         ...(mode === "tap" ? { outcome, modality: "tap" as const } : { text: text.trim(), modality: "text" as const }),
       });
       setUnderstood(
-        `Understood: ${outcomeWord(r.extraction.outcome)} (${r.extraction.hedge}, ${r.extraction.directness})${r.extraction.injection_suspected ? ". Flagged as a possible instruction injection." : ""}`,
+        "passed" in r
+          ? r.message
+          : `Understood: ${outcomeWord(r.extraction.outcome)} (${r.extraction.hedge}, ${r.extraction.directness})${r.extraction.injection_suspected ? ". Flagged as a possible instruction injection." : ""}`,
       );
       setText("");
       onState(r.state);
@@ -159,7 +163,7 @@ function RecordAnswer({ state, question: q, onState }: { state: InvestigationSta
   return (
     <details className="group mt-4 rounded-[12px] border-[0.8px] border-line bg-black/20">
       <summary className="cursor-pointer list-none px-3 py-2.5 text-[13px] text-fg-2 marker:hidden">
-        <span className="group-open:hidden">Record an answer given by phone or in person</span>
+          <span className="group-open:hidden">{q.kind === "challenge" ? "Record a location check answer" : "Record an answer given by phone or in person"}</span>
         <span className="hidden group-open:inline">Record an answer for {participantName(state, q.action.participant_id)}</span>
       </summary>
       <div className="flex flex-col gap-3 px-3 pb-3">
@@ -191,8 +195,11 @@ function RecordAnswer({ state, question: q, onState }: { state: InvestigationSta
             ))}
           </div>
         ) : (
-          <Field label="What they said" hint="Any language. Pramana extracts the answer and how sure they were.">
-            {(a) => <Input {...a} value={text} onChange={(e) => setText(e.target.value)} placeholder="Haan, lights green hain" />}
+          <Field
+            label={q.kind === "challenge" ? "Letters and digits they read" : "What they said"}
+            hint={q.kind === "challenge" ? "Enter only the label characters they report." : "Any language. Pramana extracts the answer and how sure they were."}
+          >
+            {(a) => <Input {...a} value={text} onChange={(e) => setText(e.target.value)} placeholder={q.kind === "challenge" ? "K 7 Q" : "Haan, lights green hain"} />}
           </Field>
         )}
         {err ? <p className="text-[13px] text-bad" role="alert">{err}</p> : null}

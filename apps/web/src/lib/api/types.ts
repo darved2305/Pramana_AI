@@ -27,7 +27,11 @@ export type Skill = S["Skill"];
 export type Report = S["Report"];
 export type EventEnvelope = S["EventEnvelope"];
 export type AnswerResult = S["AnswerResult"];
+export type ChallengeAnswerResult = S["ChallengeAnswerResult"];
+export type AnswerResponse = AnswerResult | ChallengeAnswerResult;
 export type VoiceAnswerResult = S["VoiceAnswerResult"];
+export type VoiceChallengeAnswerResult = S["VoiceChallengeAnswerResult"];
+export type VoiceAnswerResponse = VoiceAnswerResult | VoiceChallengeAnswerResult;
 export type Extraction = S["Extraction"];
 export type SttResult = S["SttResult"];
 export type CapabilityGrant = S["CapabilityGrant"];
@@ -48,7 +52,7 @@ export type EvaluationReportSummary = S["EvaluationReportSummary"];
 export type EvaluationReport = S["EvaluationReport"];
 
 export type SttLanguage = LanguageProfile["stt_candidates"][number];
-export type TemplateLanguage = LanguageProfile["template_language"];
+export type TemplateLanguage = NonNullable<LanguageProfile["template_language"]>;
 
 /** GET /v1/packs/{id}. The OpenAPI spec types this loosely, so the shape is declared here
  * from the observed response and the API guide (section 5). */
@@ -86,9 +90,14 @@ export interface ParticipantToken {
 
 /** GET {sim}/sim/v1/scenarios/{sid}/view */
 export interface ParticipantView {
+  location_id: string;
   location_label: string;
   items: { label: string; value: string }[];
   reachable_locations: string[] | { id: string; label?: string }[];
+  presence_tokens: {
+    token_id: string;
+    display_texts: Record<TemplateLanguage, string>;
+  }[];
 }
 
 /** GET /v1/voice/status */

@@ -39,7 +39,7 @@ test("a streamed question is decoded and scheduled as one gapless run", async ({
   });
   const inv = { ...previewInvestigation, id: "inv_stream1", pending_questions: [previewInvestigation.pending_question!] };
   await page.route("**/api/core/v1/investigations/inv_stream1", (r) => r.fulfill({ json: inv }));
-  await page.route("**/api/sim/**", (r) => r.fulfill({ json: { location_label: "the guard desk", items: [], reachable_locations: [] } }));
+  await page.route("**/api/sim/**", (r) => r.fulfill({ json: { location_id: "GUARD_DESK", location_label: "the guard desk", items: [], reachable_locations: [], presence_tokens: [] } }));
   let served = 0;
   await page.route("**/api/core/v1/investigations/inv_stream1/questions/*/audio", (r) => {
     served++;
