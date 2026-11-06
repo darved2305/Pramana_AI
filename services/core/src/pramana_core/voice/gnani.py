@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import contextlib
 import json
 import struct
 import time
@@ -182,8 +181,12 @@ CLOSE_TIMEOUT_S = 3.0
 
 
 async def _close_quietly(ws: ClientConnection) -> None:
-    with contextlib.suppress(Exception):
+    try:
         await asyncio.wait_for(ws.close(), CLOSE_TIMEOUT_S)
+    except Exception as exc:
+        log.warning("gnani_ws_close_failed", error=type(exc).__name__)
+    finally:
+        log.info("gnani_ws_closed", code=ws.close_code, reason=ws.close_reason or "")
 
 
 class GnaniClient:

@@ -477,12 +477,13 @@ def test_speaking_over_the_question_stops_playback(env: Env) -> None:
     tok = token(env, state["id"], q["action"]["participant_id"])
     with env.client.websocket_connect(url(state, q)) as ws:
         ws.send_text(json.dumps({"type": "start", "token": tok}))
-        before = until(ws, "tts_end")
-        ws.send_bytes(PCM)  # speech before playback_done: barge-in
+        until(ws, "ready")
+        ws.send_bytes(PCM)  # speak while the prompt is still being generated
         stop = until(ws, "stop_playback")
         ws.send_text(json.dumps({"type": "commit"}))
         msgs, _, code = drain(ws, calls=True)
-    utt = next(m for m in before if m["type"] == "tts_start")["utt_id"]
+    assert not [m for m in stop if m["type"] == "tts_end"]
+    utt = stop[-1]["utt_id"]
     assert stop[-1] == {"type": "stop_playback", "utt_id": utt}
     assert {"type": "call_state", "state": "LISTENING", "event": "barge_in", "utt_id": utt} in stop
     assert msgs[-1]["state"] == "ENDED"

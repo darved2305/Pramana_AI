@@ -20,84 +20,37 @@ withdrawn (``question_withdrawn``) while its bot is waiting or speaking.
 
 Usage: python scripts/voice_bot_run.py --clips <dir> [--core URL] [--sim URL] [--play]
        [--parallel N]
+       python scripts/voice_bot_run.py --synthetic --core URL --sim URL --parallel 3
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import contextlib
 import json
 import statistics
 import sys
 import time
-import wave
 from pathlib import Path
 from typing import Any
 
 import httpx
 import websockets
 from core_auth import automation_headers
-
-PEOPLE = [
-    {
-        "id": "p_riya",
-        "display_name": "Riya",
-        "roles": ["student"],
-        "skill": "lay",
-        "location_id": "F3_R304",
-        "languages": {
-            "stt_candidates": ["hi-IN", "en-IN"],
-            "template_language": "hi-en",
-            "codemix": True,
-        },
-    },
-    {
-        "id": "p_mahesh",
-        "display_name": "Mahesh",
-        "roles": ["guard"],
-        "skill": "access",
-        "location_id": "GUARD_DESK",
-        "languages": {"stt_candidates": ["mr-IN", "hi-IN"], "template_language": "mr"},
-    },
-    {
-        "id": "p_imran",
-        "display_name": "Imran",
-        "roles": ["electrician"],
-        "skill": "technician",
-        "location_id": "MAINT_ROOM",
-        "languages": {"stt_candidates": ["hi-IN"], "template_language": "hi"},
-    },
-]
-CLIP_LANG = {"hi-en": "hi", "hi": "hi", "mr": "mr", "en": "hi"}
-DONE = {"decided", "abstained", "verified", "not_verified", "closed"}
-FRAME = 1024  # bytes: 32 ms of 16 kHz PCM16
-
-
-def join_segment(payload: dict[str, str]) -> str:
-    """The participant page's link segment (apps/web/src/lib/join.ts ``encodeJoin``)."""
-    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-
-def pcm(path: Path) -> bytes:
-    with wave.open(str(path)) as w:
-        if (w.getframerate(), w.getnchannels(), w.getsampwidth()) != (16000, 1, 2):
-            sys.exit(f"{path.name}: clips must be 16 kHz mono PCM16")
-        return w.readframes(w.getnframes())
-
-
-def waiting(s: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every question in flight (one unless the investigation asks in parallel)."""
-    qs = s.get("pending_questions")
-    if qs:
-        return list(qs)
-    return [s["pending_question"]] if s.get("pending_question") else []
-
-
-def mine(s: dict[str, Any], pid: str) -> dict[str, Any] | None:
-    return next((q for q in waiting(s) if q["action"]["participant_id"] == pid), None)
+from voice_bot_common import (
+    CLIP_LANG,
+    DONE,
+    FRAME,
+    PEOPLE,
+    CallSocketMetrics,
+    encode_synthetic_pcm,
+    join_segment,
+    mine,
+    pcm,
+    transcript_for_value,
+    waiting,
+)
 
 
 class Run:
@@ -105,7 +58,7 @@ class Run:
         self.args = args
         self.core = httpx.AsyncClient(base_url=args.core, headers=automation_headers(), timeout=60)
         self.sim = httpx.AsyncClient(base_url=args.sim, timeout=30)
-        self.clips = Path(args.clips)
+        self.clips = Path(args.clips) if args.clips else None
         self.tokens: dict[str, dict[str, str]] = {}
         self.inv: dict[str, Any] = {}
         self.log: list[str] = []
@@ -119,9 +72,20 @@ class Run:
         self.next_ms: list[float] = []
         self.tasks: set[asyncio.Task[None]] = set()
         self.lock = asyncio.Lock()
-        self.last_clip: dict[str, Path] = {}
+        self.last_clip: dict[str, bytes] = {}
+        self.call_closes: list[dict[str, Any]] = []
+        self.call_metrics = CallSocketMetrics()
         self.withdrawn = 0
         self.most_at_once = 0
+        self.idle_heartbeats = 0
+        self.barge_ins = 0
+        self.silence_reprompts = 0
+        self.silent_pid: str | None = None
+        self.silent_used = False
+        self.delay_used = False
+        self.barge_in_pid: str | None = None
+        self.idle_probe_pid: str | None = None
+        self.idle_probe_complete = False
 
     async def state(self) -> dict[str, Any]:
         r = await self.core.get(f"/v1/investigations/{self.inv['id']}")
@@ -158,68 +122,127 @@ class Run:
                 if s["status"] == "decided":
                     return
                 continue
-            if mine(s, pid) is None:
-                await asyncio.sleep(1)
-                continue
-            await self.call(pid, lang)
+            if mine(s, pid) is None and not self.args.keep_calls_open:
+                if (
+                    not self.args.idle_probe
+                    or self.idle_probe_complete
+                    or self.idle_probe_pid not in (None, pid)
+                    or pid == self.silent_pid
+                ):
+                    await asyncio.sleep(1)
+                    continue
+                self.idle_probe_pid = pid
+            reason = await self.call(pid, lang)
+            if reason == "silent":
+                return
 
-    async def call(self, pid: str, lang: str) -> None:
+    async def call(self, pid: str, lang: str) -> str | None:
         url = (
             self.args.core.replace("http", "ws", 1)
             + f"/v1/investigations/{self.inv['id']}/participants/{pid}/call"
         )
         # No client pings: the core does not answer them while a call waits between questions
         # (browsers never send any); the call's own heartbeat frames keep the line alive.
-        async with websockets.connect(url, max_size=2**23, ping_interval=None) as ws:
-            await ws.send(
-                json.dumps(
-                    {"type": "start", "token": self.tokens[pid]["token"], "play": self.args.play}
-                )
-            )
-            async for raw in ws:
-                if isinstance(raw, bytes):
-                    continue  # question audio: a real phone would play it
-                m = json.loads(raw)
-                kind = m["type"]
-                if kind == "ringing":
-                    await ws.send(json.dumps({"type": "accept"}))
-                elif kind == "consent_request":
-                    await ws.send(json.dumps({"type": "consent", "answer": "yes"}))
-                elif kind == "ready":
-                    # Speak in a task, so frames are read (and timed) while the bot talks.
-                    task = asyncio.create_task(self.turn(ws, pid, lang, m))
-                    self.tasks.add(task)
-                    task.add_done_callback(self.tasks.discard)
-                elif kind == "tts_end":
-                    if pid in self.t_answer:
-                        self.next_ms.append((time.monotonic() - self.t_answer.pop(pid)) * 1000)
-                    await ws.send(json.dumps({"type": "playback_done"}))
-                elif kind == "transcript":
-                    if pid in self.t_eos:
-                        self.stt_ms.append((time.monotonic() - self.t_eos[pid]) * 1000)
-                    self.log.append(f"  {pid} said, Prisma heard: {m['text']}")
-                elif kind == "question_withdrawn":
-                    self.withdrawn += 1
-                    self.log.append(f"  {pid}: question withdrawn, another answer settled it")
-                elif kind == "answer":
-                    now = time.monotonic()
-                    if pid in self.t_eos:
-                        self.answer_ms.append((now - self.t_eos.pop(pid)) * 1000)
-                    self.t_answer[pid] = now
-                    self.voice_answers += 1
-                    obs = m["result"]["observation"]
-                    self.log.append(
-                        f"  -> recorded {obs['probe_id']}={obs['outcome']} ({obs['modality']})"
+        call_reason: str | None = None
+        ws: Any = None
+        call_open = False
+        try:
+            async with websockets.connect(url, max_size=2**23, ping_interval=None) as ws:
+                self.call_metrics.opened(pid)
+                call_open = True
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "start",
+                            "token": self.tokens[pid]["token"],
+                            "play": self.args.play,
+                        }
                     )
-                elif kind == "empty_transcript":
-                    self.log.append(f"  {pid}: nothing recognised, speaking again")
-                    if pid in self.last_clip:
-                        await self.speak(ws, pid, self.last_clip[pid])
-                elif kind == "error" and m.get("fatal"):
-                    self.log.append(f"  {pid}: error {m['code']}: {m['message']}")
-                elif kind == "call_end":
-                    self.log.append(f"  call with {pid} ended: {m['reason']}")
-                    return
+                )
+                async for raw in ws:
+                    if isinstance(raw, bytes):
+                        continue  # question audio: a real phone would play it
+                    m = json.loads(raw)
+                    kind = m["type"]
+                    if kind == "ringing":
+                        await ws.send(json.dumps({"type": "accept"}))
+                    elif kind == "consent_request":
+                        await ws.send(json.dumps({"type": "consent", "answer": "yes"}))
+                    elif kind == "ready":
+                        if pid == self.silent_pid and not self.silent_used:
+                            self.silent_used = True
+                            self.log.append(f"  {pid}: intentionally silent for the load check")
+                            continue
+                        if self.args.barge_in_first and self.barge_in_pid is None:
+                            self.barge_in_pid = pid
+                            await ws.send(b"\x00\x00" * 256)
+                            self.log.append(f"  {pid}: sent an early synthetic speech frame")
+                        # Read frames and timers while the bot prepares and speaks its answer.
+                        task = asyncio.create_task(self.turn(ws, pid, lang, m))
+                        self.tasks.add(task)
+                        task.add_done_callback(self.tasks.discard)
+                    elif kind == "tts_end":
+                        if pid in self.t_answer:
+                            self.next_ms.append((time.monotonic() - self.t_answer.pop(pid)) * 1000)
+                        await ws.send(json.dumps({"type": "playback_done"}))
+                    elif kind == "speech_start":
+                        self.log.append(f"  {pid}: speech reached the core")
+                    elif kind == "transcript":
+                        if pid in self.t_eos:
+                            self.stt_ms.append((time.monotonic() - self.t_eos[pid]) * 1000)
+                        self.log.append(f"  {pid} said, emulated STT heard: {m['text']}")
+                    elif kind == "question_withdrawn":
+                        self.withdrawn += 1
+                        self.log.append(f"  {pid}: question withdrawn, another answer settled it")
+                    elif kind == "answer":
+                        now = time.monotonic()
+                        if pid in self.t_eos:
+                            self.answer_ms.append((now - self.t_eos.pop(pid)) * 1000)
+                        self.t_answer[pid] = now
+                        self.voice_answers += 1
+                        obs = m["result"]["observation"]
+                        self.log.append(
+                            f"  -> recorded {obs['probe_id']}={obs['outcome']} ({obs['modality']})"
+                        )
+                    elif kind == "empty_transcript":
+                        self.log.append(f"  {pid}: nothing recognised, speaking again")
+                        if pid in self.last_clip:
+                            await self.speak(ws, pid, self.last_clip[pid])
+                    elif kind == "reprompt":
+                        self.silence_reprompts += 1
+                    elif kind == "idle":
+                        self.idle_heartbeats += 1
+                        if pid == self.idle_probe_pid:
+                            self.log.append(
+                                f"  {pid}: idle heartbeat received; ending the probe call"
+                            )
+                            self.idle_probe_complete = True
+                            call_reason = "idle_probe_complete"
+                            break
+                    elif kind == "stop_playback":
+                        self.barge_ins += 1
+                        self.log.append(f"  {pid}: prompt playback stopped for barge-in")
+                    elif kind == "error" and m.get("fatal"):
+                        self.log.append(f"  {pid}: error {m['code']}: {m['message']}")
+                    elif kind == "call_end":
+                        call_reason = str(m["reason"])
+                        self.log.append(f"  call with {pid} ended: {call_reason}")
+                        break
+        except websockets.ConnectionClosed as exc:
+            call_reason = "socket closed without call_end"
+            self.log.append(f"  {pid}: call socket closed: {exc.code} {exc.reason}")
+        finally:
+            if ws is not None:
+                if call_open:
+                    self.call_metrics.closed(pid)
+                self.call_closes.append(
+                    {
+                        "participant_id": pid,
+                        "code": ws.close_code,
+                        "reason": ws.close_reason or "",
+                    }
+                )
+        return call_reason
 
     async def turn(self, ws: Any, pid: str, lang: str, ready: dict[str, Any]) -> None:
         s = await self.state()
@@ -227,9 +250,15 @@ class Run:
         if q is None:
             return
         value = await self.observe(pid, q["action"])
-        clip = self.clips / f"{lang}__{value}.wav"
-        if not clip.exists():
-            sys.exit(f"missing clip {clip.name}")
+        if self.args.synthetic:
+            clip = encode_synthetic_pcm(transcript_for_value(value))
+        else:
+            if self.clips is None:
+                sys.exit("--clips is required unless --synthetic is set")
+            clip_path = self.clips / f"{lang}__{value}.wav"
+            if not clip_path.exists():
+                sys.exit(f"missing clip {clip_path.name}")
+            clip = pcm(clip_path)
         a = q["action"]
         self.log.append(
             f"Q{s['questions_asked']} to {pid} [{a['probe_id']}@{a['location_id']}]"
@@ -237,13 +266,18 @@ class Run:
             f" {ready['text']!r}  (sim shows: {value})"
         )
         self.last_clip[pid] = clip
-        await asyncio.sleep(0.3)
+        barge_in = pid == self.barge_in_pid
+        delay = 0.0 if barge_in else 0.3
+        if self.args.delay_first_answer > 0 and not self.delay_used:
+            delay += self.args.delay_first_answer
+            self.delay_used = True
+        await asyncio.sleep(delay)
         # The call can end while this bot is talking (e.g. its question was withdrawn).
         with contextlib.suppress(websockets.ConnectionClosed):
-            await self.speak(ws, pid, clip)
+            await self.speak(ws, pid, clip, leading_silence=not barge_in)
 
-    async def speak(self, ws: Any, pid: str, clip: Path) -> None:
-        voice = b"\x00\x00" * 4800 + pcm(clip)  # lead-in, then the answer
+    async def speak(self, ws: Any, pid: str, clip: bytes, *, leading_silence: bool = True) -> None:
+        voice = (b"\x00\x00" * 4800 if leading_silence else b"") + clip
         audio = voice + b"\x00\x00" * 16000  # then a second of silence
         for i in range(0, len(audio), FRAME):
             await ws.send(audio[i : i + FRAME])
@@ -330,6 +364,9 @@ class Run:
             )
         r.raise_for_status()
         self.inv = r.json()
+        if self.args.silent_first:
+            first = waiting(self.inv)
+            self.silent_pid = first[0]["action"]["participant_id"] if first else None
         for p in PEOPLE:
             t = await self.core.post(
                 f"/v1/investigations/{self.inv['id']}/participants/{p['id']}/token"
@@ -359,12 +396,21 @@ class Run:
         print("\n".join(self.log))
         gt = reveal.get("ground_truth") or {}
         sealed = (gt.get("reveal") or {}).get("commitment_verified", gt.get("commitment_verified"))
+        replay_identical = bool(
+            replay.get("identical")
+            and replay.get("replayed_sha256") == replay.get("recorded_sha256")
+        )
 
         def med(xs: list[float]) -> str:
             return f"{statistics.median(xs):.0f} ms (n={len(xs)})" if xs else "-"
 
+        label = (
+            "EMULATED LATENCY (local test provider)"
+            if self.args.synthetic
+            else "LATENCY (private, Gnani EULA: do not publish)"
+        )
         print(
-            "\nLATENCY (private, Gnani EULA: do not publish)\n"
+            f"\n{label}\n"
             f"  end of speech -> transcript:            {med(self.stt_ms)}\n"
             f"  end of speech -> answer recorded:       {med(self.answer_ms)}\n"
             f"  answer recorded -> next question audio: {med(self.next_ms)}"
@@ -375,10 +421,44 @@ class Run:
             f"{self.most_at_once} | withdrawn: {self.withdrawn}\n"
             f"reveal: decision correct = {gt.get('correct')}, commitment verified = "
             f"{sealed}\n"
-            f"replay identical: {replay.get('identical')}\n"
+            f"replay byte-identical: {replay_identical}\n"
             f"voice spend for this run: Rs {after - before:.2f}"
         )
-        return 0 if s["status"] == "verified" and replay.get("identical") else 1
+        result = {
+            "investigation_id": self.inv["id"],
+            "status": s["status"],
+            "decision": s["belief"]["map_decision"],
+            "questions_asked": s["questions_asked"],
+            "voice_answers": self.voice_answers,
+            "revealed_correct": gt.get("correct"),
+            "commitment_verified": sealed,
+            "replay_identical": replay_identical,
+            "replay_replayed_sha256": replay.get("replayed_sha256"),
+            "replay_recorded_sha256": replay.get("recorded_sha256"),
+            "emulated_eos_to_transcript_ms": self.stt_ms,
+            "emulated_eos_to_answer_ms": self.answer_ms,
+            "withdrawn_questions": self.withdrawn,
+            "idle_heartbeats": self.idle_heartbeats,
+            "barge_ins": self.barge_ins,
+            "silence_reprompts": self.silence_reprompts,
+            "silent_participant_released": any(
+                close["code"] == 4408 and close["participant_id"] == self.silent_pid
+                for close in self.call_closes
+            ),
+            "call_socket_closes": self.call_closes,
+            "call_socket_metrics": self.call_metrics.snapshot(),
+            "max_questions_in_flight": self.most_at_once,
+        }
+        if self.args.synthetic:
+            print("LOAD_RESULT_JSON=" + json.dumps(result, separators=(",", ":")), flush=True)
+        return (
+            0
+            if s["status"] == "verified"
+            and gt.get("correct") is True
+            and sealed is True
+            and replay_identical
+            else 1
+        )
 
 
 def main() -> None:
@@ -387,7 +467,27 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--core", default="http://127.0.0.1:8000")
     ap.add_argument("--sim", default="http://127.0.0.1:8100")
-    ap.add_argument("--clips", required=True)
+    ap.add_argument("--clips")
+    ap.add_argument(
+        "--synthetic", action="store_true", help="encode deterministic local test audio"
+    )
+    ap.add_argument(
+        "--keep-calls-open", action="store_true", help="connect all bots before they are asked"
+    )
+    ap.add_argument(
+        "--idle-probe",
+        action="store_true",
+        help="open one otherwise-idle call until it receives a heartbeat",
+    )
+    ap.add_argument(
+        "--silent-first", action="store_true", help="leave the first assigned call silent"
+    )
+    ap.add_argument("--delay-first-answer", type=float, default=0.0)
+    ap.add_argument(
+        "--barge-in-first",
+        action="store_true",
+        help="keep question playback active until the first answer begins",
+    )
     ap.add_argument("--play", action="store_true", help="have Timbre speak each question")
     ap.add_argument("--timeout", type=float, default=900.0)
     ap.add_argument("--human", help="participant id answered by a person on their phone")
@@ -396,7 +496,10 @@ def main() -> None:
     ap.add_argument(
         "--parallel", type=int, default=1, choices=[1, 2, 3], help="people asked at once"
     )
-    sys.exit(asyncio.run(Run(ap.parse_args()).main()))
+    args = ap.parse_args()
+    if not args.synthetic and not args.clips:
+        ap.error("--clips is required unless --synthetic is set")
+    sys.exit(asyncio.run(Run(args).main()))
 
 
 if __name__ == "__main__":

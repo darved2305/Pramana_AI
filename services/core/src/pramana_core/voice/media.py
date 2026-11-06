@@ -151,6 +151,7 @@ class MediaSession:
         self.answer_audio = bytearray()
         self.submitting = False
         self.done = asyncio.Event()
+        self.barge_in = asyncio.Event()
         self._send_lock = send_lock or asyncio.Lock()
 
     # -- sending ---------------------------------------------------------------------------
@@ -289,8 +290,35 @@ class MediaSession:
                     await self.fire(CallEvent.ACCEPTED)
                     await self.fire(CallEvent.CONSENT_YES)  # -> ASKING
                 t1 = time.perf_counter()
-                if audio is not None:
-                    await self._speak(audio)
+                if audio is None:
+                    await self.fire(CallEvent.TTS_DONE)  # nothing to play: listen now
+                    await self._pump(q, upstream)
+                else:
+                    pump = asyncio.create_task(self._pump(q, upstream), name="media-pump")
+                    speak = asyncio.create_task(self._speak(audio), name="question-audio")
+                    try:
+                        done, _ = await asyncio.wait(
+                            (pump, speak), return_when=asyncio.FIRST_COMPLETED
+                        )
+                        if pump in done:
+                            await pump
+                            if not speak.done():
+                                self.barge_in.set()
+                                audio.cancel()
+                                speak.cancel()
+                                await asyncio.gather(speak, return_exceptions=True)
+                            else:
+                                await speak
+                        else:
+                            await speak
+                            if self.played_until is None:
+                                await self.fire(CallEvent.TTS_DONE)
+                            await pump
+                    finally:
+                        for task in (pump, speak):
+                            if not task.done():
+                                task.cancel()
+                        await asyncio.gather(pump, speak, return_exceptions=True)
                 log.info(
                     "turn_setup",
                     investigation_id=self.inv_id,
@@ -298,9 +326,6 @@ class MediaSession:
                     stream_open_ms=stream_ms,
                     question_audio_ms=round((time.perf_counter() - t1) * 1000),
                 )
-                if self.played_until is None:
-                    await self.fire(CallEvent.TTS_DONE)  # nothing to play: listen now
-                await self._pump(q, upstream)
         except ApiError as exc:  # no stream slot, over budget, not configured, Gnani refused
             await self.fail(exc)
         finally:
@@ -313,7 +338,9 @@ class MediaSession:
         Cached (or REST) audio goes as one WAV. Streamed audio goes as PCM16 pieces as soon as
         Timbre produces them (``format: pcm_s16le``), so playback starts before synthesis ends.
         """
-        first = await audio.chunks.get()
+        first = await self._next_audio_chunk(audio)
+        if self.barge_in.is_set():
+            return
         if first is None:
             if audio.wav is not None:
                 await self._send_audio(audio.wav, audio.cached)
@@ -337,15 +364,21 @@ class MediaSession:
         pending = bytearray(first)
         chunk: bytes | None = first
         while chunk is not None:
+            if self.barge_in.is_set():
+                return
             if len(pending) >= PCM_FLUSH:
                 await self.send_bytes(bytes(pending))
                 sent += len(pending)
                 pending.clear()
                 self.played_until = started + sent / (2 * STREAM_SAMPLE_RATE) + PLAYBACK_GRACE_S
-            chunk = await audio.chunks.get()
+            chunk = await self._next_audio_chunk(audio)
+            if self.barge_in.is_set():
+                return
             if chunk is not None:
                 pending += chunk
         if pending:
+            if self.barge_in.is_set():
+                return
             await self.send_bytes(bytes(pending))
             sent += len(pending)
         self.played_until = started + sent / (2 * STREAM_SAMPLE_RATE) + PLAYBACK_GRACE_S
@@ -355,6 +388,8 @@ class MediaSession:
             await self.fail(audio.error, fatal=False)
 
     async def _send_audio(self, audio: bytes, cached: bool) -> None:
+        if self.barge_in.is_set():
+            return
         self.spoken = audio
         utt = self.call.utterance
         self.played_until = time.monotonic() + _wav_seconds(audio) + PLAYBACK_GRACE_S
@@ -368,8 +403,26 @@ class MediaSession:
             }
         )
         for i in range(0, len(audio), TTS_CHUNK):
+            if self.barge_in.is_set():
+                return
             await self.send_bytes(audio[i : i + TTS_CHUNK])
+        if self.barge_in.is_set():
+            return
         await self.send({"type": "tts_end", "utt_id": utt})
+
+    async def _next_audio_chunk(self, audio: QuestionAudio) -> bytes | None:
+        if self.barge_in.is_set():
+            return None
+        chunk = asyncio.create_task(audio.chunks.get())
+        stopped = asyncio.create_task(self.barge_in.wait())
+        try:
+            done, _ = await asyncio.wait((chunk, stopped), return_when=asyncio.FIRST_COMPLETED)
+            return None if stopped in done else chunk.result()
+        finally:
+            for task in (chunk, stopped):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(chunk, stopped, return_exceptions=True)
 
     # -- the answer ----------------------------------------------------------------------------
 
@@ -472,6 +525,7 @@ class MediaSession:
         if self.call.state == CallState.ASKING:
             utt = self.call.utterance
             await self.fire(CallEvent.BARGE_IN)
+            self.barge_in.set()
             await self.send({"type": "stop_playback", "utt_id": utt})
         self.call.heard_speech()
 
@@ -488,6 +542,7 @@ class MediaSession:
             due = self.call.due()
             if due == CallEvent.SILENCE_REPROMPT:
                 await self.fire(due)  # -> ASKING, a new utterance
+                self.barge_in.clear()
                 await self.send({"type": "reprompt", "utt_id": self.call.utterance, "text": q.text})
                 if self.spoken is not None:
                     await self._send_audio(self.spoken, True)  # already paid for once
@@ -547,10 +602,14 @@ class MediaSession:
                 second_decode=unbiased_decode if text is not None else None,
             )
         except ApiError as exc:
-            if exc.code == "QUESTION_NOT_PENDING" and self.in_call:
+            if self.in_call and exc.code in {
+                "QUESTION_NOT_PENDING",
+                "INVESTIGATION_NOT_ACTIVE",
+            }:
                 # Withdrawn (or answered elsewhere) while this answer was on its way: in a
-                # call that ends this turn, exactly as when ``_watch`` notices it first. The
-                # answer was not used, so the turn is incomplete before it is preempted.
+                # call that ends this turn, exactly as when ``_watch`` notices it first. A
+                # different call may also have decided the investigation while this answer
+                # was being submitted. The answer was not used, so preempt this turn cleanly.
                 await self.fire(CallEvent.INCOMPLETE)
                 if self.call.can(CallEvent.PREEMPT):
                     await self.fire(CallEvent.PREEMPT)

@@ -172,8 +172,8 @@ class VoiceGovernor:
         self.ledger = ledger
         self.stt_rest = RateWindow("stt_rest", limits.stt_rest_per_min)
         self.tts = RateWindow("tts", limits.tts_per_min)
-        self._streams = asyncio.Semaphore(limits.max_streams)
         self._open_streams = 0
+        self._peak_streams = 0
         self._inflight = asyncio.Semaphore(limits.rest_max_inflight)
         self._budget_lock = asyncio.Lock()
         self._reserved = 0.0
@@ -232,26 +232,33 @@ class VoiceGovernor:
         A session that reached Gnani is charged at least the STT minimum even if it failed or
         carried no audio (failed sessions appear as billed requests on the dashboard).
         """
-        if self._streams.locked():
+        # Check and reserve before the first await. Otherwise concurrent callers can all pass
+        # the check while the budget ledger is being read, then queue on the semaphore instead
+        # of being refused at the configured provider limit.
+        if self._open_streams >= self.limits.max_streams:
             raise ApiError(
                 429,
                 "VOICE_TOO_MANY_STREAMS",
                 f"{self.limits.max_streams} realtime sessions already open",
             )
-        worst = stt_cost(self.limits.max_stream_s)
-        await self._reserve(worst)
-        await self._streams.acquire()
         self._open_streams += 1
+        self._peak_streams = max(self._peak_streams, self._open_streams)
+        worst = stt_cost(self.limits.max_stream_s)
         usage = [0.0, 0.0]
+        reserved = False
         try:
+            await self._reserve(worst)
+            reserved = True
             yield usage
         finally:
             self._open_streams -= 1
-            self._streams.release()
-            seconds, attempted = usage[0], usage[1] > 0
-            cost = stt_cost(seconds) if seconds > 0 else (STT_MIN_CHARGE_INR if attempted else 0)
-            billable = max(seconds, 1e-3) if attempted else seconds
-            await self._settle(worst, "stt_stream", billable, cost)
+            if reserved:
+                seconds, attempted = usage[0], usage[1] > 0
+                cost = stt_cost(seconds) if seconds > 0 else 0
+                if seconds <= 0 and attempted:
+                    cost = STT_MIN_CHARGE_INR
+                billable = max(seconds, 1e-3) if attempted else seconds
+                await self._settle(worst, "stt_stream", billable, cost)
 
     def status(self) -> dict[str, object]:
         return {
@@ -264,4 +271,5 @@ class VoiceGovernor:
             },
             "window_used": {"stt_rest": self.stt_rest.used(), "tts": self.tts.used()},
             "open_streams": self._open_streams,
+            "peak_streams": self._peak_streams,
         }
