@@ -45,3 +45,9 @@ choice (more questions for more accuracy) and changes S1's question path, so it 
 and a re-run of the M1 and voice checks. Recommended: adopt it after the demo recording, or
 before if the team prefers accuracy over the shortest S1. The claim "abstains more without
 losing accuracy" is **not supported** and must not be made.
+
+**Decided 2026-11-06 (Nikhil): keep the default, `E-ask_more` is not adopted.**
+`lambda_min_per_s` stays 1/60 in `packages/engine/src/pramana_engine/config.py`, so S1's
+question path, the M1 tests and the demo stay as recorded. The +2.7 point result above stands as
+a measured option; it may be reconsidered after the demo recording, which would need the M1
+tests, the S1 question count and the voice bots re-run.
