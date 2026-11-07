@@ -67,6 +67,7 @@ from pramana_contracts import (
 )
 from pramana_contracts.tokens import (
     ParticipantClaims,
+    capability_live,
     mint,
     mint_capability,
     private_key_from_b64,
@@ -1355,8 +1356,14 @@ class InvestigationService:
                 raise ApiError(409, "NOT_APPROVED", f"approval is {approval.status}")
             if approval.participant_id != participant_id:
                 raise ApiError(403, "WRONG_PARTICIPANT", "approved for someone else")
+            # At most one live capability per approval. Collecting again (a reloaded phone
+            # page) returns the same one; once it has expired, a fresh one replaces it, so a
+            # slow walk to the panel is not a dead end. Single use is the simulator's ledger.
+            live: tuple[str, int] | None = None
             if approval.capability_jti is not None:
-                raise ApiError(409, "CAPABILITY_ISSUED", "the capability was already issued")
+                exp = await self._capability_expiry(session, inv_id, approval.capability_jti)
+                if exp is not None and capability_live(exp):
+                    live = (approval.capability_jti, exp)
             token, claims = mint_capability(
                 self._signing_key,
                 scenario_id=row.scenario_id,
@@ -1364,18 +1371,18 @@ class InvestigationService:
                 participant_id=participant_id,
                 action=approval.action,
                 target=approval.target,
+                reissue=live,
             )
-            approval.capability_jti = claims.jti
-            self._event(
-                session,
-                inv_id,
-                "CapabilityIssued",
-                {
+            if live is None:
+                issued: dict[str, Any] = {
                     "approval_id": approval_id,
                     "jti": claims.jti,
                     "expires": claims.exp,
-                },
-            )
+                }
+                if approval.capability_jti is not None:
+                    issued["replaces"] = approval.capability_jti
+                approval.capability_jti = claims.jti
+                self._event(session, inv_id, "CapabilityIssued", issued)
             pack = self.pack(row.pack_id)
             action = next(a for a in pack.actions if a.id == approval.action)
             person = next(p for p in self._request(row).participants if p.id == participant_id)
@@ -1394,6 +1401,18 @@ class InvestigationService:
             .replace("{place}", place),
             location_id=comp.location if action.at_target_location else None,
         )
+
+    @staticmethod
+    async def _capability_expiry(session: AsyncSession, inv_id: str, jti: str) -> int | None:
+        payloads = await session.execute(
+            select(EventRow.payload).where(
+                EventRow.investigation_id == inv_id, EventRow.type == "CapabilityIssued"
+            )
+        )
+        for payload in payloads.scalars():
+            if payload.get("jti") == jti:
+                return int(payload["expires"])
+        return None
 
     async def report_intervention(
         self, inv_id: str, report: ReportIntervention

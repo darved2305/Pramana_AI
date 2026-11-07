@@ -162,20 +162,32 @@ def mint_capability(
     target: str,
     ttl_s: int = CAPABILITY_TTL_S,
     now: float | None = None,
+    reissue: tuple[str, int] | None = None,
 ) -> tuple[str, CapabilityClaims]:
+    """``reissue=(jti, exp)`` signs an already issued capability again. Signing is
+    deterministic, so the token is byte-identical and stays single use at the simulator."""
     if ttl_s > CAPABILITY_TTL_S:
         raise ValueError(f"capabilities live at most {CAPABILITY_TTL_S} s")
+    jti, exp = reissue or (
+        secrets.token_hex(12),
+        int((now if now is not None else time.time()) + ttl_s),
+    )
     claims = CapabilityClaims(
-        jti=secrets.token_hex(12),
+        jti=jti,
         scn=scenario_id,
         inv=investigation_id,
         sub=participant_id,
         act=action,
         tgt=target,
-        exp=int((now if now is not None else time.time()) + ttl_s),
+        exp=exp,
     )
     token = _sign(key, {"typ": "capability", "aud": "sim", **claims.__dict__})
     return token, claims
+
+
+def capability_live(exp: int, now: float | None = None) -> bool:
+    """Whether a capability expiring at ``exp`` would still be accepted (strict expiry)."""
+    return exp >= (now if now is not None else time.time())
 
 
 def verify_capability(

@@ -104,7 +104,8 @@ def approve_and_repair(
     ttl = datetime.fromisoformat(g["expires_at"]).timestamp() - time.time()
     assert 240 < ttl <= 301  # five minutes
     again = core.post(f"{url}/{aid}/capability", params={"participant_id": "p_imran"})
-    assert again.status_code == 409  # issued once
+    assert again.status_code == 200, again.text  # a reload gets the same, still single-use
+    assert again.json()["capability"] == g["capability"]
 
     sid, imran = token(core, inv["id"], "p_imran")
     act = f"/sim/v1/scenarios/{sid}/act"

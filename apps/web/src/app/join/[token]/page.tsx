@@ -672,10 +672,22 @@ function Repair({
               setBusy(true);
               setErr(null);
               try {
-                await sim.act(payload.s, payload.t, { action: approval.action, target: approval.target, capability: cap.capability });
+                try {
+                  await sim.act(payload.s, payload.t, { action: approval.action, target: approval.target, capability: cap.capability });
+                } catch (e) {
+                  // This very permission was already used (the report was lost, or the page
+                  // reloaded after the reset): the action happened, so report it.
+                  if (!(e instanceof ApiError && e.code === "CAPABILITY_USED")) throw e;
+                }
                 onState(await core.reportIntervention(state.id, { approval_id: approval.id, participant_id: payload.p }, payload.t));
               } catch (e) {
-                setErr(describeError(e));
+                if (e instanceof ApiError && e.status === 403 && /expired/i.test(e.message)) {
+                  setCap(null);
+                  setThere(false);
+                  setErr("Your permission expired before it was used. Collect it again.");
+                } else {
+                  setErr(describeError(e));
+                }
               } finally {
                 setBusy(false);
               }

@@ -161,7 +161,7 @@ def test_approval_rules(core: TestClient) -> None:
         == 200
     )
     again = core.post(f"{url}/{aid}/capability", params={"participant_id": "p_imran"})
-    assert again.status_code == 409  # one capability per approval
+    assert again.status_code == 200  # the same capability again, not a second one
 
 
 def test_denied_approval_returns_to_the_decision(core: TestClient) -> None:
@@ -205,3 +205,74 @@ def test_verification_survives_an_engine_rebuild(core: TestClient) -> None:
     core.app.state.investigations.evict(inv["id"])  # type: ignore[attr-defined]
     rebuilt = core.get(f"/v1/investigations/{inv['id']}").json()
     assert rebuilt["belief"] == live["belief"]
+
+
+def _collect(core: TestClient, inv_id: str, aid: str) -> Any:
+    return core.post(
+        f"/v1/investigations/{inv_id}/approvals/{aid}/capability",
+        params={"participant_id": "p_imran"},
+    )
+
+
+def _act(core: TestClient, sim: TestClient, inv_id: str, capability: str) -> Any:
+    tok = core.post(f"/v1/investigations/{inv_id}/participants/p_imran/token").json()
+    h = {"Authorization": f"Bearer {tok['token']}"}
+    sim.post(f"/sim/v1/scenarios/{tok['scenario_id']}/move", json={"to": "DB_C2_PANEL"}, headers=h)
+    return sim.post(
+        f"/sim/v1/scenarios/{tok['scenario_id']}/act",
+        headers=h,
+        json={"action": "reset_breaker", "target": "CB_C2_7", "capability": capability},
+    )
+
+
+def test_collecting_again_returns_the_same_single_use_capability(core: TestClient) -> None:
+    """A reloaded phone page collects again: it gets the capability it already had, not a
+    dead end and not a second live permission."""
+    sim = TestClient(core.sim_app)  # type: ignore[attr-defined]
+    inv = decided(core, sim, "CB_C2_7.tripped")
+    _, aid = approve(core, inv)
+    first = _collect(core, inv["id"], aid)
+    second = _collect(core, inv["id"], aid)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert second.json()["capability"] == first.json()["capability"]
+    assert second.json()["expires_at"] == first.json()["expires_at"]
+    assert _act(core, sim, inv["id"], first.json()["capability"]).status_code == 200
+    reused = _act(core, sim, inv["id"], second.json()["capability"])
+    assert reused.status_code == 409  # still single use at the simulator
+    issued = [
+        e
+        for e in core.get(f"/v1/investigations/{inv['id']}/events").json()
+        if e["type"] == "CapabilityIssued"
+    ]
+    assert len(issued) == 1
+
+
+def test_an_expired_unused_capability_can_be_collected_afresh(
+    core: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An electrician who took longer than five minutes to reach the panel is not stuck in
+    "acting" for ever: after expiry a new capability replaces the dead one."""
+    import pramana_contracts.tokens as tokens
+
+    sim = TestClient(core.sim_app)  # type: ignore[attr-defined]
+    inv = decided(core, sim, "CB_C2_7.tripped")
+    _, aid = approve(core, inv)
+    old = _collect(core, inv["id"], aid).json()
+    real = tokens.time.time
+    monkeypatch.setattr(tokens.time, "time", lambda: real() + tokens.CAPABILITY_TTL_S + 5)
+    assert _act(core, sim, inv["id"], old["capability"]).status_code == 403
+    fresh = _collect(core, inv["id"], aid)
+    assert fresh.status_code == 200, fresh.text
+    assert fresh.json()["capability"] != old["capability"]
+    assert _act(core, sim, inv["id"], fresh.json()["capability"]).status_code == 200
+    events = core.get(f"/v1/investigations/{inv['id']}/events").json()
+    issued = [e["payload"] for e in events if e["type"] == "CapabilityIssued"]
+    assert len(issued) == 2
+    assert issued[1]["replaces"] == issued[0]["jti"]
+    r = core.post(
+        f"/v1/investigations/{inv['id']}/interventions",
+        json={"approval_id": aid, "participant_id": "p_imran"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "verifying"

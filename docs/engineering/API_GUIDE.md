@@ -163,7 +163,7 @@ someone else.
 |---|---|---|
 | Request | console, after `decided` | `POST /v1/investigations/{id}/approvals {action:"reset_breaker", target:"CB_C2_7", participant_id:"p_imran"}` |
 | Decide | approver | `POST .../approvals/{aid}/decision {decision:"approve"\|"deny", approver_id}` |
-| Collect | electrician page | `POST .../approvals/{aid}/capability?participant_id=p_imran` returns `{capability, expires_at, instructions}`. Issued once; expires after 5 minutes |
+| Collect | electrician page | `POST .../approvals/{aid}/capability?participant_id=p_imran` returns `{capability, expires_at, instructions}`. Expires after 5 minutes. Collecting again returns the same single-use capability while it is live, and a new one only after it has expired (`CapabilityIssued.replaces`) |
 | Act | electrician page | `POST {sim_url}/sim/v1/scenarios/{sid}/act {action, target, capability}` with the participant token, standing at the panel |
 | Report | electrician page | `POST /v1/investigations/{id}/interventions {approval_id, participant_id}`. Verification questions follow as normal pending questions |
 

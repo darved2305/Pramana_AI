@@ -136,7 +136,8 @@ class ApprovalRow(Base):
     approver_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     capability_jti: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
-    """Only one capability is ever minted per approval."""
+    """The approval's current capability. At most one is live: a new one replaces it only
+    after it has expired."""
 
 
 class VoiceUsageRow(Base):
