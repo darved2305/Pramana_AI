@@ -1248,6 +1248,7 @@ class InvestigationService:
             reversible=action.reversible,
             rationale=a.rationale,
             requested_at=a.requested_at,
+            requested_by=a.requested_by,
             approver_id=a.approver_id,
             decided_at=a.decided_at,
         )
@@ -1289,6 +1290,7 @@ class InvestigationService:
                 status=ApprovalStatus.PENDING.value,
                 rationale=f"{decision} at P = {probability:.3f}: {why}",
                 requested_at=_now(),
+                requested_by=requested_by,
             )
             session.add(approval)
             row.status = InvestigationStatus.AWAITING_APPROVAL.value
@@ -1329,26 +1331,12 @@ class InvestigationService:
                 raise not_found("approval")
             if approval.status != ApprovalStatus.PENDING.value:
                 raise ApiError(409, "APPROVAL_DECIDED", f"approval is {approval.status}")
-            if approver_account is not None:
-                asked = await session.execute(
-                    select(EventRow.payload).where(
-                        EventRow.investigation_id == inv_id, EventRow.type == "ApprovalRequested"
-                    )
+            if approver_account is not None and approval.requested_by == approver_account:
+                raise ApiError(
+                    403,
+                    "SELF_APPROVAL",
+                    "the person who asked for this action cannot approve it",
                 )
-                requester = next(
-                    (
-                        p.get("requested_by")
-                        for p in asked.scalars()
-                        if p["approval_id"] == approval_id
-                    ),
-                    None,
-                )
-                if requester == approver_account:
-                    raise ApiError(
-                        403,
-                        "SELF_APPROVAL",
-                        "the person who asked for this action cannot approve it",
-                    )
             approve = decision.decision == "approve"
             approval.status = (ApprovalStatus.APPROVED if approve else ApprovalStatus.DENIED).value
             approval.approver_id, approval.decided_at = approver, _now()

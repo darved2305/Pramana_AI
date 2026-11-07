@@ -133,6 +133,8 @@ class ApprovalRow(Base):
     status: Mapped[str] = mapped_column(String(16))
     rationale: Mapped[str] = mapped_column(Text)
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    requested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """The signed-in account that asked; ``None`` for automation and open mode."""
     approver_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     capability_jti: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)

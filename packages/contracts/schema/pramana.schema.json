@@ -76,6 +76,18 @@
           "title": "Requested At",
           "type": "string"
         },
+        "requested_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested By"
+        },
         "reversible": {
           "title": "Reversible",
           "type": "boolean"

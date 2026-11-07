@@ -356,6 +356,8 @@ def test_an_account_with_both_roles_cannot_approve_its_own_request(
     events = c.get(f"/v1/investigations/{inv['id']}/events").json()
     asked = next(e for e in events if e["type"] == "ApprovalRequested")["payload"]
     assert asked["requested_by"] == c.user_ids["both"]  # type: ignore[attr-defined]
+    shown = c.get(f"/v1/investigations/{inv['id']}").json()["approvals"][0]
+    assert shown["requested_by"] == c.user_ids["both"]  # type: ignore[attr-defined]
     for decision in ("approve", "deny"):
         own = c.post(f"{url}/{aid}/decision", json={"decision": decision}, headers=CSRF)
         assert own.status_code == 403, own.text

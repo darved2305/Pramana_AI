@@ -594,6 +594,8 @@ export interface components {
              * Format: date-time
              */
             requested_at: string;
+            /** Requested By */
+            requested_by?: string | null;
             /** Reversible */
             reversible: boolean;
             /**

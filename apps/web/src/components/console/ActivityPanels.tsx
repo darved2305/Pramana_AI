@@ -511,7 +511,9 @@ function ApprovalCard({
   onState: (s: InvestigationState) => void;
 }) {
   const me = useCurrentUser();
-  const canApprove = me ? hasRole(me, "approver") : true; // unknown: the core decides
+  const askedByMe = Boolean(me && a.requested_by && a.requested_by === me.userId);
+  // Unknown user: the core decides. Whoever asked cannot decide (the core refuses it too).
+  const canApprove = me ? hasRole(me, "approver") && !askedByMe : true;
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"approve" | "deny" | null>(null);
@@ -570,9 +572,11 @@ function ApprovalCard({
             <p className="text-muted">
               {!me
                 ? "Your sign-in will be recorded as the approver."
-                : canApprove
-                  ? `Deciding as ${me.displayName}. Your account is recorded on the approval.`
-                  : "Only an approver can decide. Ask someone with the approver role."}
+                : askedByMe
+                  ? "You asked for this repair, so another approver must decide it."
+                  : canApprove
+                    ? `Deciding as ${me.displayName}. Your account is recorded on the approval.`
+                    : "Only an approver can decide. Ask someone with the approver role."}
             </p>
             {err ? (
               <p role="alert" className="mt-1 text-bad">

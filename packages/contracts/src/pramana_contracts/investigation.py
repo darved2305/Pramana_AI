@@ -76,6 +76,8 @@ class Approval(StrictModel):
     rationale: str
     """The decision and its probability at the time of the request."""
     requested_at: datetime
+    requested_by: str | None = None
+    """The signed-in account that asked. It cannot decide this approval (ADR 0010)."""
     approver_id: str | None = None
     decided_at: datetime | None = None
 
