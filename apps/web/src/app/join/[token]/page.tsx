@@ -8,6 +8,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { Wordmark } from "@/components/brand/Wordmark";
 import { VoiceField } from "@/components/voice/VoiceField";
+import { DeviceCheck } from "@/components/join/DeviceCheck";
 import { IconMic, IconPlay } from "@/components/ui/icons";
 import { core } from "@/lib/api/core";
 import { sim } from "@/lib/api/sim";
@@ -552,6 +553,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         <section className="mt-6 text-center" aria-live="polite">
           <h1 className="display-slab text-[38px]">Nothing to answer right now</h1>
           <p className="mx-auto mt-3 max-w-[32ch] text-[15px] text-cream/70">Keep this page open. A question will appear here if Pramana needs your help.</p>
+          <DeviceCheck audioCtxRef={audioCtxRef} />
         </section>
       )}
 
