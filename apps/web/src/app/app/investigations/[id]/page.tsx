@@ -170,7 +170,7 @@ function CommandCenter({
       ) : null}
 
       {/* Row 1: environment + belief */}
-      <div className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <Card className="p-4" aria-labelledby="env-title">
           <CardHeader
             id="env-title"
@@ -207,7 +207,7 @@ function CommandCenter({
       </div>
 
       {/* Row 2: conversation + reasoning */}
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <ConversationPanel state={s} pack={pack} readOnly={readOnly} onState={feed.apply} onLinks={onLinks} />
         <ReasoningPanel state={s} pack={pack} />
       </div>
@@ -216,7 +216,7 @@ function CommandCenter({
 
       <TestimonyPanel state={s} pack={pack} />
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <ContradictionPanel items={contradictions} state={s} pack={pack} />
         <ApprovalPanel state={s} pack={pack} readOnly={readOnly} onState={feed.apply} />
         <DiagnosisPanel state={s} pack={pack} contradictions={contradictions.length} />
@@ -274,7 +274,7 @@ function LoadingCenter() {
       <Skeleton className="h-5 w-32" />
       <Skeleton className="h-12 w-[60%]" />
       <Skeleton className="h-10" />
-      <div className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <Skeleton className="h-[440px] rounded-[16px]" />
         <Skeleton className="h-[440px] rounded-[16px]" />
       </div>

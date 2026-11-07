@@ -28,3 +28,19 @@ for (const c of [
     await expect(integrity).toContainText(c.text);
   });
 }
+
+test("the replay page fits a phone screen without sideways scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/core/v1/auth/session", (r) => r.fulfill({ json: session }));
+  await page.route("**/api/core/v1/investigations/inv_seal1/events**", (r) =>
+    r.fulfill({ json: r.request().url().includes("after_seq=0") ? previewEvents : [] }),
+  );
+  await page.route("**/api/core/v1/investigations/inv_seal1/replay", (r) => r.fulfill({ status: 404, json: {} }));
+  await page.goto("/app/investigations/inv_seal1/replay");
+  await expect(page.getByRole("slider", { name: "Event position" })).toBeVisible();
+  for (let step = 0; step < 4; step++) {
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(width).toBeLessThanOrEqual(390);
+    await page.getByRole("slider", { name: "Event position" }).press("ArrowRight");
+  }
+});

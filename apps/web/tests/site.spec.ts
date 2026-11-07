@@ -307,3 +307,18 @@ test("direct refresh works on nested routes", async ({ page }) => {
     expect(res?.status(), path).toBe(200);
   }
 });
+
+test("every console page fits a phone screen without sideways scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/preview/app");
+  await expect(page).toHaveURL(/\/app$/);
+  for (const path of [
+    "/app", "/app/investigations", "/app/investigations/new", "/app/investigations/preview-0001",
+    "/app/investigations/preview-0001/replay", "/app/participants", "/app/sites", "/app/evaluation",
+    "/app/settings", "/app/account", "/join/preview?p=p_mahesh",
+  ]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading").first()).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth), { message: path }).toBeLessThanOrEqual(390);
+  }
+});

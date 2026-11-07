@@ -128,7 +128,7 @@ function Player({ events }: { events: EventEnvelope[] }) {
           <IconButton label="Last event" onClick={() => setI(last)} disabled={i === last}>
             <IconSkipFwd />
           </IconButton>
-          <div className="ml-2 min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-full sm:ml-2 sm:basis-0">
             <label htmlFor="scrub" className="sr-only">
               Event position
             </label>
@@ -154,7 +154,7 @@ function Player({ events }: { events: EventEnvelope[] }) {
         </div>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <Card className="p-4">
           <CardHeader title="Belief at this point" subtitle={belief ? `${belief.observations_used} observations used` : "Before the first belief update"} />
           {belief ? (
@@ -179,7 +179,7 @@ function Player({ events }: { events: EventEnvelope[] }) {
           )}
         </Card>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <Card className="p-4" aria-live="polite">
             <CardHeader title={EVENT_LABEL[ev.type] ?? ev.type} subtitle={`seq ${ev.seq} · ${new Date(ev.ts).toLocaleString()}`} />
             <EventBody ev={ev} />
