@@ -205,6 +205,17 @@ Local availability is not guaranteed on a fresh clone or another laptop. The aud
 the saved rehearsal video and three console screenshots existed here. Recheck before referencing
 them. Committed JSON/Markdown travels with git; ignored caches/recordings do not.
 
+### Older remote branches (checked Nov 7)
+
+`origin/nikhil/{load-test,presence-challenges,realizer-lint,voice-live-runs}` (Nov 6) hold 25
+commits whose subjects are not in main. Their work was re-landed into main through the Nov 6
+`land-nov6` merges under new messages (presence checks, voice race fixes, load and staging
+work), and main built its own ADR 0014, `scripts/load_test.py` and template lint. **Do not
+merge these branches:** their migration `0007_add_presence_token_to_question` collides with
+main's `0007_add_approval_requester`, and they duplicate ADR 0014. The one piece ported is
+`scripts/generate_language_review.py` (now with presence checks), which writes
+`docs/engineering/LANGUAGE_REVIEW.md` for the native-speaker review.
+
 ## 10. Source and test map for the shipped changes
 
 | Change | Source | Verification |
