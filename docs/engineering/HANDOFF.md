@@ -13,6 +13,17 @@ The building is simulated. Language models handle language, the deterministic Ba
 decides, and humans approve physical actions. Voice bots are synthetic participants, even when
 Prisma and Timbre are live. That distinction must survive into the recording and submission.
 
+## Update, Sat Nov 7 afternoon
+
+A second session ran the "Day 5" list a day early (system date Nov 7). Read the "Second session"
+part of [STATUS_2026-11-07.md](STATUS_2026-11-07.md) first: repair recovery after a reload or
+lost report, provider labelling (live Gnani versus emulator), an authenticity audit test, the
+self-approval refusal, an adversarial state-machine test and the engine fix it found, a take-log
+script, a release-candidate benchmark and [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md).
+Human M2, native review, staging recovery, recording takes and the LLM batch are still
+**not run**. Use `scripts/take_log.py` after every take's reveal. Run preflight without
+`--allow-emulated-voice` before a live take: it now fails if the core points at an emulator.
+
 ## Verified starting point
 
 | Item | Audited state |

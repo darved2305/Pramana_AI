@@ -104,6 +104,7 @@ stale sustained-load note, without inventing a live preemption-latency measureme
 | Folder / table | Availability | What it supports |
 |---|---|---|
 | eval/reports/benchmark-2026-11-05/{episodes.csv,summary.json,report.md,NOTES.md} | Committed | 300 simulated scenarios; E/A/C/D and decision-focus/cost ablations |
+| eval/reports/benchmark-2026-11-07-rc1/{episodes.csv,summary.json,report.md,NOTES.md} | Committed | Same 300 seeds on the clean release candidate commit; reproduces the Nov 5 success rates |
 | eval/reports/calibration-2026-11-05/{episodes.csv,summary.json,report.md,NOTES.md} | Committed | Stopping-rule comparison; explicit Nov 6 decision keeps the default exchange rate |
 | eval/reports/llm-comparison/{episodes.csv,summary.json,report.md,NOTES.md} | Local, ignored; deliberately not committed | 32 completed / 68 excluded LLM episodes; below 50 threshold, no public comparison |
 | eval/reports/final_gemma/{episodes.csv,summary.json,report.md} | Local, ignored experiment | Provenance/model comparability not approved for this handoff; do not promote it to the headline benchmark or merge its cache |
@@ -176,6 +177,7 @@ needs an electrician. Neither is evidence of a verified repair or a confident sw
 | eval/reports/load-2026-11-06/ | NOTES, report and summary for the original ten-minute emulated run; memory flatness was unresolved |
 | eval/reports/load-2026-11-07/ | NOTES, report and summary for forty minutes on f660b62; 160/160 verified/correct/replay-identical, zero call errors, sessions closed, memory gate passed |
 | eval/reports/staging-2026-11-07/public-check.json | Timestamped public home/readiness 502 results; does not diagnose the failed hosting layer |
+| eval/reports/staging-2026-11-07/public-check-2.json | 05:00 UTC re-probe: still 502, body from the Worker itself, so the failure is behind it (VPC service, tunnel or host) |
 | eval/reports/verification-2026-11-07/{checks.json,report.md} | Sequential full local check results on f7a490b, added in 5102c16; 3,453 Python / 35 UI / 19 real-stack passes |
 
 The load test emulates Gnani, not the simulator/core/database/call lifecycle. Its memory gate
@@ -216,6 +218,13 @@ them. Committed JSON/Markdown travels with git; ignored caches/recordings do not
 | Concurrent guaranteed teardown | apps/web/tests-real/m1.spec.ts | Two clean full real-stack runs plus final 19-test suite |
 | Report denominators | eval/src/pramana_eval/__main__.py | eval/tests/test_benchmark.py report_discloses test |
 | Expanded CI | .github/workflows/ci.yml | Successful implementation run with all three jobs |
+| Repair recovery (reload, expiry, lost report) | investigations.py capability_for; apps/web/src/app/join/[token]/page.tsx | test_closing_loop.py; tests/e2e/test_m1.py; apps/web/tests-real/repair-recovery.spec.ts |
+| Voice provider labelling | voice/gnani.py provider_of; api/voice.py; scripts/preflight.py; scripts/voice_bot_run.py | test_gnani_adapter.py; tests/test_preflight.py |
+| Authenticity audit | (checks only) | tests/test_authenticity.py |
+| Self-approval refusal | api/investigations.py; investigations.py decide_approval | test_auth.py; test_adversarial_state.py |
+| Location after a non-first-hand walk answer | packages/engine/src/pramana_engine/engine.py observe | packages/engine/tests/test_parallel.py; benchmark-2026-11-07-rc1 |
+| Adversarial state machine | (checks only) | services/core/tests/test_adversarial_state.py |
+| Take sheet | scripts/take_log.py (writes git-ignored .cache/takes/) | services/core/tests/test_take_log.py |
 
 For underlying completed features, use packages/engine/src/pramana_engine/, services/core/src/
 pramana_core/{calls,runtime,voice,language}/, services/sim/src/pramana_sim/, the pack YAML and

@@ -1,0 +1,19 @@
+{
+  "checks": [
+    {
+      "url": "https://pramana-staging.pramana-staging-worker.workers.dev/",
+      "checked_at": "2026-11-07T05:00:23Z",
+      "status": 502,
+      "body": "Staging origin unavailable",
+      "passed": false
+    },
+    {
+      "url": "https://pramana-staging.pramana-staging-worker.workers.dev/api/core/ready",
+      "checked_at": "2026-11-07T05:00:24Z",
+      "status": 502,
+      "body": "Staging origin unavailable",
+      "passed": false
+    }
+  ],
+  "layer": "The Worker answered; its ORIGIN binding fetch threw (infra/staging-worker/src/index.ts). The failure is behind the Worker: VPC service, tunnel connector or the host laptop. Not diagnosed further without host access."
+}
