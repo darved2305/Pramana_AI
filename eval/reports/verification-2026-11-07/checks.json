@@ -1,0 +1,127 @@
+{
+  "git_sha": "f7a490b3814017afa3f1ab8e2cf1bedc014badcb",
+  "checked_at": "2026-11-07T04:13:54.213449+00:00",
+  "execution": "sequential; full Python suite includes process-level e2e",
+  "passed": true,
+  "checks": [
+    {
+      "name": "ruff",
+      "command": "uv run ruff check .",
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "name": "format",
+      "command": "uv run ruff format --check .",
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "name": "mypy",
+      "command": "uv run mypy packages/contracts/src packages/domain/src packages/engine/src services/sim/src services/core/src eval/src",
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "name": "imports",
+      "command": "uv run lint-imports",
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "name": "contracts",
+      "command": "uv run python -m pramana_contracts.export --check",
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "name": "openapi",
+      "command": "uv run python -m pramana_core.openapi_export --check",
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "name": "python-tests",
+      "command": "uv run pytest",
+      "cwd": ".",
+      "exit_code": 0,
+      "result": "3453 passed in 481.80s (0:08:01)"
+    },
+    {
+      "name": "npm-ci",
+      "command": "npm ci",
+      "cwd": "apps\\web",
+      "exit_code": 0
+    },
+    {
+      "name": "web-types",
+      "command": "npm run typecheck",
+      "cwd": "apps\\web",
+      "exit_code": 0
+    },
+    {
+      "name": "web-lint",
+      "command": "npm run lint",
+      "cwd": "apps\\web",
+      "exit_code": 0
+    },
+    {
+      "name": "copy",
+      "command": "npm run check:copy",
+      "cwd": "apps\\web",
+      "exit_code": 0
+    },
+    {
+      "name": "worklet",
+      "command": "npm run check:worklet",
+      "cwd": "apps\\web",
+      "exit_code": 0
+    },
+    {
+      "name": "api-generation",
+      "command": "npm run gen:api",
+      "cwd": "apps\\web",
+      "exit_code": 0
+    },
+    {
+      "name": "api-drift",
+      "command": "git diff --exit-code -- src/lib/api/schema.gen.ts",
+      "cwd": "apps\\web",
+      "exit_code": 0
+    },
+    {
+      "name": "ui-browser",
+      "command": "npx playwright test",
+      "cwd": "apps\\web",
+      "exit_code": 0,
+      "result": "35 passed (1.1m)"
+    },
+    {
+      "name": "real-browser",
+      "command": "npm run test:e2e:real",
+      "cwd": "apps\\web",
+      "exit_code": 0,
+      "result": "19 passed (2.3m)"
+    },
+    {
+      "name": "dependency-audit",
+      "command": "npm audit --registry=https://registry.npmjs.org",
+      "cwd": "apps\\web",
+      "exit_code": 0,
+      "result": "found 0 vulnerabilities"
+    },
+    {
+      "name": "diff-check",
+      "command": "git diff --check",
+      "cwd": ".",
+      "exit_code": 0
+    },
+    {
+      "name": "browser-secrets",
+      "command": "scan .next/static with the CI secret patterns",
+      "cwd": "apps/web",
+      "exit_code": 0
+    }
+  ],
+  "private_logs": ".cache/final-checks/ (not committed)"
+}
