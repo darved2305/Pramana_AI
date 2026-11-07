@@ -221,7 +221,8 @@ export interface paths {
         put?: never;
         /**
          * Request Approval
-         * @description Ask a human approver for a consequential action the decision calls for.
+         * @description Ask a human approver for a consequential action the decision calls for. The signed-in
+         *     account that asks is recorded; it cannot approve its own request.
          */
         post: operations["request_approval_v1_investigations__inv_id__approvals_post"];
         delete?: never;

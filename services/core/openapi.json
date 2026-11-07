@@ -3003,7 +3003,7 @@
   },
   "/v1/investigations/{inv_id}/approvals": {
    "post": {
-    "description": "Ask a human approver for a consequential action the decision calls for.",
+    "description": "Ask a human approver for a consequential action the decision calls for. The signed-in\naccount that asks is recorded; it cannot approve its own request.",
     "operationId": "request_approval_v1_investigations__inv_id__approvals_post",
     "parameters": [
      {
