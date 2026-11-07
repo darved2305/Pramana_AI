@@ -53,6 +53,7 @@ def test_a_verified_take_is_logged_from_the_core(core: TestClient, tmp_path: Pat
     assert row["correct_on_reveal"] is True
     assert row["commitment_verified"] is True
     assert row["replay_identical"] is True
+    assert row["log_intact"] is True
     assert row["commitment"] == inv["sealed_commitment"]
     assert row["voice_provider"].startswith("gnani")
     sheet = tmp_path / "take-sheet.csv"

@@ -19,7 +19,7 @@ import json
 import secrets
 import weakref
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
@@ -1068,7 +1068,24 @@ class InvestigationService:
                 row.ground_truth = cmp.model_dump(mode="json")
                 row.status = InvestigationStatus.CLOSED.value
                 row.version += 1
-                self._event(session, inv_id, "GroundTruthRevealed", row.ground_truth)
+                # Seal the log: a digest of every event before the reveal, in order. Replay
+                # recomputes it, so a later edit to any of them shows (docs/adr/0003).
+                sealed = (
+                    await session.execute(
+                        select(EventRow.type, EventRow.payload)
+                        .where(EventRow.investigation_id == inv_id)
+                        .order_by(EventRow.seq)
+                    )
+                ).all()
+                self._event(
+                    session,
+                    inv_id,
+                    "GroundTruthRevealed",
+                    {
+                        **row.ground_truth,
+                        "log": {"sha256": log_digest(sealed), "events": len(sealed)},
+                    },
+                )
         return await self.get(inv_id)
 
     # -- queries ---------------------------------------------------------------------------------
@@ -1639,6 +1656,15 @@ class InvestigationService:
             ).scalar_one_or_none()
             if warm_cache:
                 self._cache_engine(inv_id, row.version, engine)
+            log = (
+                await session.execute(
+                    select(EventRow.type, EventRow.payload)
+                    .where(EventRow.investigation_id == inv_id)
+                    .order_by(EventRow.seq)
+                )
+            ).all()
+        seal_at = next((i for i, (t, _) in enumerate(log) if t == "GroundTruthRevealed"), None)
+        seal = log[seal_at][1].get("log") if seal_at is not None else None
         replayed = engine.snapshot().model_dump(mode="json")
         return ReplayCheck(
             investigation_id=inv_id,
@@ -1648,6 +1674,10 @@ class InvestigationService:
             recorded=recorded,
             # Logs written before the version was recorded came from model "1".
             recorded_model_version=str((created or {}).get("engine_model_version", "1")),
+            log_sealed=seal is not None,
+            log_intact=None
+            if seal is None or seal_at is None
+            else seal == {"sha256": log_digest(log[:seal_at]), "events": seal_at},
         )
 
     async def open_investigations(self, limit: int = 1000) -> list[str]:
@@ -1671,6 +1701,16 @@ def canonical_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
+def log_digest(events: Sequence[tuple[str, dict[str, Any]]]) -> str:
+    """A hash chain over ``(type, payload)`` in log order: changing, removing, inserting or
+    reordering any event changes it."""
+    digest = hashlib.sha256(b"pramana-log-v1").digest()
+    for type_, payload in events:
+        item = canonical_json({"type": type_, "payload": payload})
+        digest = hashlib.sha256(digest + hashlib.sha256(item).digest()).digest()
+    return digest.hex()
+
+
 @dataclass(frozen=True)
 class ReplayCheck:
     investigation_id: str
@@ -1680,6 +1720,8 @@ class ReplayCheck:
     recorded: dict[str, Any] | None
     recorded_model_version: str = MODEL_VERSION
     current_model_version: str = MODEL_VERSION
+    log_sealed: bool = False
+    log_intact: bool | None = None
 
     @property
     def engine_changed(self) -> bool:

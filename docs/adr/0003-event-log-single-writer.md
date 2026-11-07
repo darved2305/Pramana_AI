@@ -22,3 +22,11 @@ differently by design, so startup recovery and `GET /v1/investigations/{id}/repl
 `engine_changed`, not as a corrupted log, and append no `EngineError`. Bump `MODEL_VERSION`
 whenever the same evidence would produce a different belief
 (`test_recovery.py::test_a_log_from_an_older_engine_is_an_upgrade_not_corruption`).
+
+**Sealed at reveal.** Replay shows the belief follows from the log, but not that the log was
+left alone afterwards. `GroundTruthRevealed` records `log.sha256`, a hash chain over the
+`(type, payload)` of every earlier event in order, and `log.events`. `GET .../replay` returns
+`log_sealed` and `log_intact`; an edited, deleted, inserted or reordered event makes
+`log_intact` false even when the replayed belief is unchanged (`test_log_seal.py`). This
+detects edits after the reveal; the digest itself lives in the same database, so it does not
+protect against someone rewriting the whole log and the digest together.

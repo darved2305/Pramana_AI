@@ -2048,6 +2048,21 @@
       "title": "Investigation Id",
       "type": "string"
      },
+     "log_intact": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Log Intact"
+     },
+     "log_sealed": {
+      "title": "Log Sealed",
+      "type": "boolean"
+     },
      "recorded_belief": {
       "anyOf": [
        {
@@ -2095,7 +2110,9 @@
      "recorded_belief",
      "recorded_model_version",
      "current_model_version",
-     "engine_changed"
+     "engine_changed",
+     "log_sealed",
+     "log_intact"
     ],
     "title": "ReplayResult",
     "type": "object"

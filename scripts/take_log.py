@@ -45,6 +45,7 @@ COLUMNS = [
     "correct_on_reveal",
     "commitment_verified",
     "replay_identical",
+    "log_intact",
     "questions_asked",
     "recording",
     "selected",
@@ -114,6 +115,7 @@ def take_row(
         "correct_on_reveal": gt.get("correct"),
         "commitment_verified": gt["reveal"]["commitment_verified"],
         "replay_identical": replay["identical"],
+        "log_intact": replay.get("log_intact"),
         "questions_asked": state.get("questions_asked"),
         "recording": args.recording or "",
         "selected": "",
@@ -166,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
         "correct_on_reveal",
         "commitment_verified",
         "replay_identical",
+        "log_intact",
     ):
         print(f"  {k}: {row[k]}")
     return 0

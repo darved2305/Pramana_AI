@@ -1332,6 +1332,10 @@ export interface components {
             identical: boolean;
             /** Investigation Id */
             investigation_id: string;
+            /** Log Intact */
+            log_intact: boolean | null;
+            /** Log Sealed */
+            log_sealed: boolean;
             /** Recorded Belief */
             recorded_belief: {
                 [key: string]: unknown;

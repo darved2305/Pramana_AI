@@ -33,6 +33,10 @@ class ReplayResult(BaseModel):
     current_model_version: str
     engine_changed: bool
     """True when the two differ: a mismatch is then an engine upgrade, not corruption."""
+    log_sealed: bool
+    """The reveal recorded a digest of every event before it."""
+    log_intact: bool | None
+    """Those events still hash to that digest. ``None`` until the investigation is revealed."""
 
 
 @router.get(
@@ -104,4 +108,6 @@ async def replay_check(inv_id: str, request: Request) -> ReplayResult:
         recorded_model_version=check.recorded_model_version,
         current_model_version=check.current_model_version,
         engine_changed=check.engine_changed,
+        log_sealed=check.log_sealed,
+        log_intact=check.log_intact,
     )
