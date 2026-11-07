@@ -7,6 +7,7 @@ explicit reason when it is unreachable, never silently passed.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -58,6 +59,10 @@ def _alembic(action: str) -> None:
 def migrated_db() -> str:
     if not asyncio.run(_reachable()):
         pytest.skip("PostgreSQL test database unreachable; run `python scripts/dev_db.py start`")
+    # Rows left by an earlier run (a status like "awaiting_approval") would not fit the older,
+    # narrower columns the downgrade passes through.
+    with contextlib.suppress(Exception):  # a fresh database has no tables yet
+        asyncio.run(truncate_all(TEST_DB_URL))
     _alembic("downgrade")
     _alembic("upgrade")
     return TEST_DB_URL
