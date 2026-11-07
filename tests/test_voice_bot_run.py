@@ -102,6 +102,49 @@ async def test_bot_failure_cancels_speakers_and_closes_http_clients(tmp_path: Pa
         await run.sim.aclose()
 
 
+async def test_english_turn_synthesizes_an_english_answer(tmp_path: Path) -> None:
+    run = make_run(tmp_path)
+    question = {
+        "id": "q_english",
+        "kind": "probe",
+        "language": "en",
+        "text": "Does the website open?",
+        "action": {
+            "participant_id": "p_neha",
+            "probe_id": "internet_works",
+            "location_id": "F2_R210",
+            "requires_move": False,
+        },
+    }
+    run.state = AsyncMock(return_value={"pending_questions": [question], "questions_asked": 1})
+    run.observe = AsyncMock(return_value="yes")
+    run.synthesize_answer = AsyncMock(return_value=b"pcm")
+    run.speak = AsyncMock()
+    try:
+        await run.turn(
+            object(), "p_neha", "hi", {"question_id": question["id"], "text": question["text"]}
+        )
+        run.synthesize_answer.assert_awaited_once_with("yes, it works", "en")
+    finally:
+        await run.core.aclose()
+        await run.sim.aclose()
+
+
+def test_english_answer_phrases_preserve_each_probe_outcome() -> None:
+    from text_investigation import NATIVE
+
+    from pramana_core.language.extraction import RuleExtractor
+    from pramana_domain import load_pack
+
+    extractor = RuleExtractor()
+    for probe in load_pack("campus_block_c").probes:
+        for outcome in probe.outcomes:
+            assert (
+                extractor.extract_sync(NATIVE["en"][outcome], list(probe.outcomes)).outcome
+                == outcome
+            )
+
+
 @pytest.mark.parametrize(
     ("probe", "expected"),
     [

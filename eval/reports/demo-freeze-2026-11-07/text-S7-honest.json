@@ -1,0 +1,24 @@
+{
+  "scenario": "S7",
+  "variant": "honest",
+  "investigation_id": "inv_9f723e510f28",
+  "questions_asked": 6,
+  "parallelism": 1,
+  "max_parallel_observed": 1,
+  "verification_status": null,
+  "status_before_reveal": "abstained",
+  "presence_checks": [
+    {
+      "question_id": "q_95c9df2937b3",
+      "observation_id": "obs_a3f5860ccc53",
+      "participant_id": "p_mahesh",
+      "location_id": "IDF2",
+      "token_id": "idf2_switch_label",
+      "status": "passed"
+    }
+  ],
+  "commitment_verified": true,
+  "commitment_matches": true,
+  "correct": null,
+  "replay_identical": true
+}

@@ -1,0 +1,19 @@
+{
+  "scenario": "S7",
+  "variant": "adversary",
+  "participants": "synthetic voice bots",
+  "investigation_id": "inv_b594c7c65a99",
+  "status": "abstained",
+  "voice_answers": 4,
+  "most_in_flight": 1,
+  "correct": null,
+  "commitment_verified": true,
+  "replay_identical": true,
+  "passed": false,
+  "presence_checks": [],
+  "disagreement_count": 1,
+  "call_errors": [
+    "p_mahesh: KeyError: 'nvr_screen'",
+    "p_mahesh: PARTICIPANT_SILENT: no answer was heard; ask again later"
+  ]
+}

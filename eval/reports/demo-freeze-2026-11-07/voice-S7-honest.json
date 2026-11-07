@@ -1,0 +1,25 @@
+{
+  "scenario": "S7",
+  "variant": "honest",
+  "participants": "synthetic voice bots",
+  "investigation_id": "inv_2c7ed9f98b03",
+  "status": "abstained",
+  "voice_answers": 6,
+  "most_in_flight": 1,
+  "correct": null,
+  "commitment_verified": true,
+  "replay_identical": true,
+  "passed": true,
+  "presence_checks": [
+    {
+      "question_id": "q_d1980a1d84d8",
+      "observation_id": "obs_adb69403bb59",
+      "participant_id": "p_mahesh",
+      "location_id": "IDF2",
+      "token_id": "idf2_switch_label",
+      "status": "passed"
+    }
+  ],
+  "disagreement_count": 1,
+  "call_errors": []
+}

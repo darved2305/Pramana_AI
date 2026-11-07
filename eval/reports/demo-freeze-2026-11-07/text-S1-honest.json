@@ -1,0 +1,15 @@
+{
+  "scenario": "S1",
+  "variant": null,
+  "investigation_id": "inv_4e5f74cf9552",
+  "questions_asked": 8,
+  "parallelism": 3,
+  "max_parallel_observed": 3,
+  "verification_status": "verified",
+  "status_before_reveal": "verified",
+  "presence_checks": [],
+  "commitment_verified": true,
+  "commitment_matches": true,
+  "correct": true,
+  "replay_identical": true
+}

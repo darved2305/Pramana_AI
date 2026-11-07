@@ -1,0 +1,16 @@
+{
+  "scenario": "S1",
+  "variant": "honest",
+  "participants": "synthetic voice bots",
+  "investigation_id": "inv_b5aa09cca4ee",
+  "status": "verified",
+  "voice_answers": 9,
+  "most_in_flight": 3,
+  "correct": true,
+  "commitment_verified": true,
+  "replay_identical": true,
+  "passed": true,
+  "presence_checks": [],
+  "disagreement_count": 2,
+  "call_errors": []
+}

@@ -42,6 +42,7 @@ import websockets
 from core_auth import automation_headers
 from demo_rehearse import scenario_request
 from gnani_live_check import to_16k_mono_pcm
+from text_investigation import NATIVE
 
 from pramana_core.language.speakable import speakable
 
@@ -395,9 +396,7 @@ class Run:
             return
         value = await self.observe(pid, q["action"])
         if q["language"] == "en":
-            from text_investigation import PHRASES
-
-            clip = await self.synthesize_answer(PHRASES[value], "en")
+            clip = await self.synthesize_answer(NATIVE["en"][value], "en")
         else:
             clip = self.pick_clip(lang, q["action"]["probe_id"], value)
         a = q["action"]

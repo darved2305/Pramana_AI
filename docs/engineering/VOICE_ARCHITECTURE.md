@@ -79,8 +79,11 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   audio in 16 KiB binary chunks, relays `speech_start`/`processing`/`transcript`, and submits
   the first non-empty transcript through the normal answer path. Empty transcripts record
   nothing; a question answered elsewhere ends the session with `409 QUESTION_NOT_PENDING`;
-  governor refusals arrive as typed error frames and close code 4429. Tested against the
-  protocol emulation only (`tests/test_media_ws.py`); not yet run against live Gnani.
+  governor refusals arrive as typed error frames and close code 4429. Protocol coverage is in
+  `tests/test_media_ws.py`. Nov 7 live-Gnani participant-call rehearsals exercise the same
+  per-question media implementation, including S7 label readings; participants were synthetic
+  bots (`eval/reports/demo-freeze-2026-11-07/NOTES.md`). Presence turns carry their question kind,
+  no probe answer choices and no probe vocabulary hints.
 - **Browser capture** (`apps/web/public/worklets/pcm16-capture.js`): an AudioWorklet that
   low-pass filters (63-tap windowed sinc) and resamples 48/44.1 kHz input to 16 kHz mono PCM16
   in 1,024-byte frames; `node apps/web/scripts/check-pcm-worklet.mjs` checks frame size, rate,
@@ -128,10 +131,11 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   (streamed then cached, fallback, streamed Listen endpoint), `apps/web/tests/streamed-audio.spec.ts`
   (decoded and scheduled gaplessly in Chrome).
 
-## Not yet implemented
+## Parallel calls and remaining validation
 
-- Preemption across parallel calls (ADR 0011): several people on calls at once, with a
-  question dropped when another answer makes it pointless. The per-call socket
-  (`voice/call.py`: ring, logged consent, question after question, release on decline or
-  silence) exists; the console does not yet start calls for several people at once.
+- Parallel calls and withdrawal are implemented (ADR 0011). The console's "People asked at
+  once" setting allows up to three. The Nov 7 live-Gnani S1 bot rehearsals passed three times
+  with three questions in flight, verified repairs and identical replay. These are integration
+  checks with synthetic voices, not the missing three-human M2 milestone.
+- Sustained emulated-load results and human/phone limitations are recorded in STATUS_2026-11-07.md.
 - Published latency figures. Measurements exist but stay private under the Gnani EULA.

@@ -6,7 +6,7 @@ Hindi, Marathi and Hinglish. **Language models handle language; deterministic Ba
 the decisions; humans authorise consequential actions.**
 
 Built for the Great Indian AI Internship Challenge 2026 (Gnani AI). Product spec: `docs/PRODUCT.md`.
-Engineering plan: `docs/PLAN.md`. Current status and evidence: `docs/engineering/DAY2_STATUS.md`.
+Engineering plan: `docs/PLAN.md`. Current status and evidence: `docs/engineering/STATUS_2026-11-07.md`.
 Next steps: `docs/engineering/HANDOFF.md`.
 
 ## What is real, what is simulated
@@ -68,16 +68,17 @@ only) is available only after a decision or abstention.
 | Text investigation end to end: decision, approval, repair, verification, reveal, byte-identical replay | `tests/e2e/test_m1.py` (real sim and core processes, including a hard crash mid-investigation), `apps/web/tests-real/m1.spec.ts` |
 | Console for operators and approvers: live events (with a polling fallback), causes, plan reasoning, evidence ledger, approvals, replay, participant directory, evaluation reports | `apps/web/tests-real/console.spec.ts` |
 | Participant page from a personal link: only their own question, simulated surroundings, tap, text or voice answers, incoming call with consent | `apps/web/tests-real/call.spec.ts`, `live-only.spec.ts` |
-| Parallel calls with withdrawal | `packages/engine/tests/test_parallel.py`, `services/core/tests/test_parallel_calls.py`, `apps/web/tests-real/parallel.spec.ts`; live run with three voice bots on Gnani (correct, verified, replay identical) |
+| Parallel calls with withdrawal | `packages/engine/tests/test_parallel.py`, `services/core/tests/test_parallel_calls.py`, `apps/web/tests-real/parallel.spec.ts`; three live-Gnani S1 bot rehearsals all verified, correct and replay-identical (`eval/reports/demo-freeze-2026-11-07/`) |
 | Voice on live Gnani: three open-source voice bots, and one real person on a phone over a free tunnel, each reached a verified, correct repair | `scripts/voice_bot_run.py`, `docs/engineering/STAGING.md` |
 | Streamed question audio (Timbre SSE), cached for reuse | `services/core/tests/test_media_ws.py`, `apps/web/tests/streamed-audio.spec.ts` |
 | Sign-in with server sessions, operator and approver roles, CSRF header, join tokens kept out of URLs | `docs/adr/0010-authentication.md`, `services/core/tests/test_auth*.py` |
-| Presence checks (S7): a decisive answer from a restricted place someone walked to is confirmed by reading a label only someone there can see; the core never learns the value | `docs/adr/0014-presence-checks-and-disagreements.md`, `services/core/tests/test_testimony_api.py` (honest people pass, liars fail and the decision stays right or the engine abstains) |
+| Presence checks (S7): a decisive answer from a restricted place someone walked to is confirmed by reading a label only someone there can see; the core never learns the expected value | ADR 0014, `services/core/tests/test_testimony_api.py`, `test_media_ws.py`; live-Gnani honest/adversary bot readings passed/failed as expected, both investigations abstained (`eval/reports/demo-freeze-2026-11-07/NOTES.md`) |
 | Disagreements explained (S2): how likely both people are right, who is likelier mistaken, and what only one of them depends on ("room 205 is also covered by Access point 2B") | `packages/engine/tests/test_testimony.py`, `apps/web/tests/testimony.spec.ts` |
 | Spoken questions read codes the way people say them ("IDF-2" as "I D F 2", "आई डी एफ़ टू" in Hindi); a linter checks every spoken text in all four languages | `services/core/tests/test_template_lint.py` |
 
-Tests: 1,563 Python tests (unit, property, protocol emulation, end to end), 31 browser UI tests
-and 16 browser tests against a real core, simulator and PostgreSQL. CI runs both stacks.
+Checks cover Python unit, property, protocol-emulation and process-level end-to-end tests,
+browser UI tests, and browser flows against a real core, simulator and PostgreSQL. Generated
+counts and exit codes: `eval/reports/verification-2026-11-07/report.md`. CI runs both stacks.
 
 ## Results so far (simulated building, logic mode)
 
@@ -102,7 +103,7 @@ From generated reports only; nothing below is typed by hand.
   53/80 with 0 invented, 19 missed and 0 wrong on the first, and 27/40 with 0 invented, 10 missed
   and 0 wrong on the second. All post-tuning results are in
   `eval/reports/extraction-after-attribution-2026-11-06/`.
-- **LLM policy comparison**: in progress on the free tier (22 of 100 LLM episodes so far); too
+- **LLM policy comparison**: in progress on the free tier (32 of 100 LLM episodes so far); too
   few to report yet.
 
 Under the Gnani EULA, measured speech-recognition accuracy and latency are kept private.
@@ -173,7 +174,9 @@ docs/                product docs, docs/engineering, docs/adr
 - Few real human testers so far. Three calls for ten minutes passed with Gnani emulated
   (`eval/reports/load-2026-11-06/`); not yet repeated on live Gnani, and memory over longer runs
   is not yet shown to be flat.
-- No hosted deployment yet: the stack runs on a laptop, and phones reach it over a Cloudflare
-  quick tunnel (which carries no server-sent events, so the console polls).
+- Staging is hosted from a laptop through Cloudflare Worker, VPC and Tunnel. Its public home
+  and readiness routes returned HTTP 502 on Nov 7; real-phone and reboot checks remain pending
+  (`docs/engineering/STAGING.md`). The quick-tunnel fallback carries no server-sent events, so
+  the console polls on that path.
 - The extractor is rule lists plus an LLM fallback. The two new synthetic sets were written by AI
   models, not human participants, and are now tuned on. Native-speaker review remains pending.

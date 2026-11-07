@@ -455,7 +455,15 @@ export function ApprovalPanel({
 }) {
   const approvals = state.approvals ?? [];
   const [requesting, setRequesting] = useState(false);
-  const canRequest = state.status === "decided" && !readOnly;
+  const breakerRepair = state.plan.decision_class === "DISPATCH_ELECTRICIAN_DB_C2" || state.plan.decision_class === "DISPATCH_ELECTRICIAN_MAIN";
+  const hasElectrician = state.participants.some((person) => person.roles.includes("electrician"));
+  const canRequest = state.status === "decided" && breakerRepair && hasElectrician && !readOnly;
+  let requestHint = "Repairs can be proposed once the investigation reaches a decision.";
+  if (state.status === "decided") {
+    if (!breakerRepair) requestHint = "No repair action is available here for this diagnosis. The console supports breaker resets only.";
+    else if (!hasElectrician) requestHint = "No electrician is available in this investigation. A breaker reset requires an electrician participant.";
+    else requestHint = readOnly ? "An operator can propose a breaker reset for an approver to review." : "The investigation has decided. Propose a repair to send it for approval.";
+  }
 
   return (
     <Card className="p-4" aria-labelledby="appr-title">
@@ -476,11 +484,7 @@ export function ApprovalPanel({
           className="py-8"
           icon={<IconShield />}
           title="No actions proposed"
-          body={
-            state.status === "decided"
-              ? "The investigation has decided. Propose a repair to send it for approval."
-              : "Repairs can be proposed once the investigation reaches a decision."
-          }
+          body={requestHint}
         />
       ) : (
         <ul className="mt-4 flex flex-col gap-3">

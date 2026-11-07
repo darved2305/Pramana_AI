@@ -24,6 +24,20 @@ PHRASES = {
 }
 
 NATIVE = {
+    "en": {
+        "yes": "yes, it works",
+        "no": "no, nothing opens",
+        "on": "it is on",
+        "off": "it is off",
+        "green": "the lights are green",
+        "amber": "the lights are amber",
+        "red": "the light is red",
+        "up": "the breaker is up",
+        "tripped": "the breaker is tripped",
+        "no_network": "NAVA-WiFi is not showing",
+        "stuck_connecting": "it is stuck connecting",
+        "connected": "it is connected",
+    },
     "mr": {
         "yes": "हो, उघडतं",
         "no": "नाही, उघडत नाही",

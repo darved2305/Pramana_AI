@@ -144,6 +144,23 @@ For live voice-bot checks, run non-live preflight first. This command spends Gna
 uv run python scripts/voice_bot_run.py --clips "$env:USERPROFILE\pramana-voice-samples\bot" --core http://127.0.0.1:8010 --sim http://127.0.0.1:8110 --parallel 3 --play
 ```
 
+The runner also supports `--scenario S2` and `--scenario S7 --variant honest|adversary`.
+S7 reads the label aloud from the participant's own simulator card. The adversary remains at
+the guard desk, makes scripted false claims about IDF-2, and cannot read its label. Dynamic
+label readings and S2's English answers are synthesised by Timbre; the participants are bots.
+Use `--summary <path>.json` for public integration facts. Standard output and `--report` contain
+private speech information and must not be committed.
+
+The checked S7 setup has only Riya and Mahesh. Both variants abstained in the Nov 7 rehearsal:
+the honest label passed and the adversary's failed, but the remaining useful panel question
+needed an electrician. Show that result honestly; a label check does not promise a diagnosis.
+Generated evidence and limits: `eval/reports/demo-freeze-2026-11-07/NOTES.md`.
+
+For an automated text/tap recording of the console, set `E2E_RECORD_VIDEO=1` and run the
+real-stack M1 browser test. Its operator-page video is written under `apps/web/test-results/`.
+Copy it outside that folder before another browser run overwrites the results. It is rehearsal
+material, not a human or live-voice take; never commit recordings.
+
 ## 6. Recording plan
 
 - **Capture.**

@@ -73,6 +73,19 @@ restart delay, child recovery, secure environment construction, build reuse, and
 command. Simulator restart tests cover repaired state, single-use capabilities, participant
 position, and closed scenarios remaining revealable. These tests do not prove the Cloudflare path.
 
+## Check on 2026-11-07
+
+Public HTTPS requests to both `/` and `/api/core/ready` returned **502**. Generated evidence:
+`eval/reports/staging-2026-11-07/public-check.json`. This does not identify whether the laptop,
+tunnel, VPC binding or web service is the cause. The staging supervisor and ONLOGON task are on
+Nikhil's laptop, which is not available from this checkout.
+
+Reboot recovery, a real phone's participant flow over SSE and WebSocket, and switching staging
+to live Gnani are **not run**. A successful local live-Gnani rehearsal is not evidence for the
+public Cloudflare path. Before recording remotely, restore staging, check readiness, perform
+the reboot check on the hosting laptop, then complete a real-phone voice answer. Keep the
+provider key server-side and verify that the emulator is disabled before describing voice as live.
+
 ## Limits and teardown
 
 The laptop, power, user login, sleep settings, Internet connection, local PostgreSQL cluster, and
