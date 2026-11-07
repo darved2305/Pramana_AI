@@ -21,6 +21,32 @@ No number in this document is a measured Pramana result unless it cites a genera
 
 ---
 
+## Review notes, 2026-11-07
+
+Checked on 2026-11-07 (evening, IST) against `main` at `e8194cb`, on the `production` branch.
+
+**Code claims (§1.4).** Every `file:line` cited in §1.4 still matches the tree: `api/directory.py:42,50,57,64`, `main.py:169`, `app/app/page.tsx:24-25`, `lib/api/core.ts:165`, `lib/store/local.ts:77`, `pack.py:344`, `speakable.py:10`, `investigations.py:132,362-366,791,883`, `auth/service.py:53,95`, `voice/governor.py:15`, `voice/media.py:117`, `auth/deps.py:60-67`, `login/page.tsx:204`, `lib/api/auth.ts:55-57`. The inventory holds: 29 HTTP paths, 7 migrations, 9 tables, an engine LRU of 32 (`ENGINE_CACHE_MAX`). No corrections were needed.
+
+**Research claims re-checked (primary sources, accessed 2026-11-07).**
+
+| Claim | Result | Change made |
+|---|---|---|
+| Google OIDC rules (§2.11, §5.2) | Confirmed [V]: validate the signature, `iss` (`accounts.google.com` or `https://accounts.google.com`), `aud` and `exp`; key users by `sub`; the email is authoritative only for `@gmail.com`, or with `email_verified` and `hd`; the `hd` request parameter is a UI hint, so check the claim; tokeninfo is not for production. Google's parameter table lists `nonce` as required, and the library verifiers do **not** check `nonce` or `hd`, so we check both ourselves. The discovery document lists `code_challenge_methods_supported: ["plain", "S256"]` [V] | §5.2 note added |
+| Cloud Run WebSockets and billing (§2.8) | Confirmed [V]: request timeout 5 minutes by default, 60 at most; affinity is best effort; up to 1,000 concurrent connections per instance; an open WebSocket makes the instance active and billed as instance-based. Correction: minimum instances are not strictly required for background work, but an idle instance stops within 15 minutes without one; instance-based billing needs at least 512 MiB of memory | §2.8 row updated |
+| IETF idempotency draft (§2.2) | Now **draft 08**, 22 Oct 2026, expires 25 Apr 2027, an active working-group draft [V]. The 400, 409 and 422 rules are unchanged (section 2.7) | §2.2 row updated |
+| Sarvam onboarding (§2.12) | Confirmed [C]: an organisation and default workspace at sign-up; Owner and Member plus Admin, Editor and Viewer; only owners invite; the last owner cannot be removed or demoted. Free credits are **₹100** for verified users and never expire; the ₹1,000 figure was not found in the docs | §2.12 row updated |
+| DPDP dates (§2.14) | Rules notified 13 Nov 2025; consent managers from **13 Nov 2026**; most obligations from **13 May 2027**; a 72-hour breach report [S: one law-firm note; MeitY's site returned 403]. Counsel and the Gazette text must still confirm | §2.14 row updated |
+
+**Consistency (§4.3, §6.2, §15), and what the plan missed.**
+
+1. **RLS cannot be tested with today's local role.** `scripts/dev_db.py` runs `initdb -U pramana`, so `pramana` is a superuser, and superusers bypass RLS even with `FORCE ROW LEVEL SECURITY`. R1 creates a non-superuser `pramana_app` role in the production databases and runs the app and tests as that role; `pramana` runs migrations only (§4.4).
+2. **Tables named in the text but missing from §4.3:** `join_requests` (ID-03), `participant_links` (§5.6), `api_keys` (§5.5), `rate_limits` (§3.9), `media_leases` (§3.4), `llm_cache` (§3.7), and `jobs` if an owned queue is chosen (§3.8). Listed under §4.3; each is designed in the slice that first needs it.
+3. **Checklist dismissal** (§7.11) had no column. It lives in `user_preferences.home_layout` with the pins and hides.
+4. **R1 exit criteria versus the matrix.** DA-02 (draft model banner), DA-03 and DA-04 (people and consent) and DA-08 (pinned versions) depend on R2 features, so they move to R2's exit. OR-07 (deletion with an export) needs the export job, so it moves to R3. ID-08 needs a one-time email link; the slice 5 email interface with a local outbox file is enough to test it. ID-15's shared limiter can live in PostgreSQL in R1.
+5. **Event idempotency scope** (§3.6 item 5, unique per investigation) was in no release. It joins R1 with the idempotency middleware.
+
+---
+
 ## Contents
 
 0. [One-screen summary](#0-one-screen-summary)
@@ -174,7 +200,7 @@ Each subsection gives the findings, then **Take**: what Pramana should adopt. Al
 | Stripe (Brandur Leach, 2017) [V] | Clients send `Idempotency-Key` on POSTs and retry with the same key, using exponential backoff with jitter. For a request that already completed, the server returns the cached result. Three failure cases: the connection fails before the server sees the request; the server fails midway (an ACID rollback makes a wholesale retry safe); the response is lost after success |
 | Brandur, "Implementing Stripe-like Idempotency Keys in Postgres" (2017) [V] | An `idempotency_keys` table unique per `(user_id, idempotency_key)`, holding `locked_at`, request parameters, `recovery_point` and the stored response. Work is split into "atomic phases" committed between foreign calls, and each foreign call has its own idempotency key. Returns 409 for a request in flight and for serialization failures. A "completer" pushes abandoned requests to the end, and a "reaper" deletes keys after about 72 hours (the post also mentions 24 hours) |
 | AWS Builders' Library, "Making retries safe with idempotent APIs" [S] | Use a caller-provided request token, record the token and the mutation atomically, and return a semantically equivalent response on a repeat |
-| IETF `draft-ietf-httpapi-idempotency-key-header-07` (Oct 2025) [V] | The header value is a structured-field String. It applies to POST and PATCH. Servers SHOULD return 400 for a missing key, 422 when a key is reused with a different payload, and 409 while the original request is still in flight. Scope keys per client and validate their format before any lookup. Draft 07 states it expires 18 April 2026, so check the datatracker for a newer revision |
+| IETF `draft-ietf-httpapi-idempotency-key-header-08` (22 Oct 2026; draft 07 was Oct 2025) [V, re-checked 2026-11-07] | The header value is a structured-field String. It applies to POST and PATCH. Servers SHOULD return 400 for a missing key, 422 when a key is reused with a different payload, and 409 while the original request is still in flight. Scope keys per client and validate their format before any lookup. Draft 08 expires 25 April 2027; the 400, 409 and 422 rules are unchanged from draft 07 |
 
 **Take.** §3.6 designs idempotency for every layer: browser, API, events, jobs, providers and webhooks.
 
@@ -235,8 +261,8 @@ AWS Builders' Library, "Timeouts, retries, and backoff with jitter" (Marc Brooke
 
 | Source | Finding |
 |---|---|
-| Cloud Run, "Using WebSockets" [V] | A WebSocket is an HTTP request bound by the request timeout: 5 minutes by default, 60 minutes at most. Clients must reconnect. Session affinity is best effort, so share state through Redis Pub/Sub or Firestore. Up to 1,000 concurrent connections per instance. An instance with an open WebSocket counts as active and is billed |
-| Cloud Run billing settings [S] | Background work needs instance-based billing (formerly "CPU always allocated") and at least one minimum instance |
+| Cloud Run, "Using WebSockets" [V] | A WebSocket is an HTTP request bound by the request timeout: 5 minutes by default, 60 minutes at most. Clients must reconnect. Session affinity is best effort, so share state through Redis Pub/Sub or Firestore. Up to 1,000 concurrent connections per instance. An instance with an open WebSocket counts as active and is billed (re-checked 2026-11-07) |
+| Cloud Run billing settings [V, 2026-11-07] | Background work needs instance-based billing (formerly "CPU always allocated"), which requires at least 512 MiB of memory. Minimum instances are not strictly required, but an idle instance stops within 15 minutes without one |
 | Pipecat [S] | WebSockets are fine server-to-server and for first versions. For production client audio, the project recommends WebRTC |
 | Exotel AgentStream [C] | The bidirectional Voicebot applet streams raw PCM about every 100 ms. Outgoing chunks must be multiples of 320 bytes. Events: `connected`, `start`, `media`, `dtmf`, `mark` and `stop`. Exotel advises running the server close to its India infrastructure. Its pages disagree on supported sample rates (8 kHz by default versus 8, 16 or 24 kHz) |
 
@@ -285,7 +311,7 @@ AWS Builders' Library, "Timeouts, retries, and backoff with jitter" (Marc Brooke
 
 | Product | What they do | Label |
 |---|---|---|
-| **Sarvam** | Creates "one organisation and one default workspace" automatically at sign-up, "so you can start calling the APIs straight away". Verified users get free credits that never expire (₹100 in the docs; a pricing page says ₹1,000, so the figure is inconsistent). A copy-paste quickstart in Python, JavaScript and cURL. Organization roles Owner and Member, plus per-workspace Admin, Editor and Viewer. Only owners invite, enforced by the API, and the last owner cannot be removed. One credit balance per organization with usage per workspace, a low-balance banner, auto-recharge, and limits that rise immediately after an upgrade. A "Building for India" guide, migration guides from other providers, `llms.txt` and an MCP server for coding agents | [C] |
+| **Sarvam** | Creates "one organisation and one default workspace" automatically at sign-up, "so you can start calling the APIs straight away". Verified users get ₹100 of free credits that never expire (docs re-checked 2026-11-07; an earlier ₹1,000 figure was not found in the docs). A copy-paste quickstart in Python, JavaScript and cURL. Organization roles Owner and Member, plus per-workspace Admin, Editor and Viewer. Only owners invite, enforced by the API, and the last owner cannot be removed or demoted. One credit balance per organization with usage per workspace, a low-balance banner, auto-recharge, and limits that rise immediately after an upgrade. A "Building for India" guide, migration guides from other providers, `llms.txt` and an MCP server for coding agents | [C] |
 | **Notion** | The first question is how you will use it (work, personal, school), and the answer picks the templates and starter workspace. Teardowns warn about template overload | [S] |
 | **Linear** | A short, opinionated flow that teaches the command menu early and ends with "press C to create your first issue" | [S] |
 | **Duolingo** (gradual engagement) | The lesson comes before sign-up. Luke Wroblewski reports a 29% lift in sign-ups from gradual engagement at Twitter | [S] |
@@ -313,7 +339,7 @@ AWS Builders' Library, "Timeouts, retries, and backoff with jitter" (Marc Brooke
 
 | Topic | Finding | Label |
 |---|---|---|
-| DPDP Rules 2025 | Notified on 13 or 14 November 2025. Consent-manager provisions apply after 12 months (about 13 November 2026). Most obligations (notice, security safeguards, breach notification, rights) apply after 18 months (about 13 May 2027). Breaches: notify the Board without undue delay, with a detailed report within 72 hours | [S] |
+| DPDP Rules 2025 | Notified by Gazette on 13 November 2025 (re-checked 2026-11-07). Consent-manager provisions (Rule 4) apply from 13 November 2026. Most obligations (Rules 3, 5 to 16, 22, 23: notice, security safeguards, breach notification, rights) apply from 13 May 2027. Breaches: notify the Board without undue delay, with a detailed report within 72 hours | [S] |
 | DPDP section 9, children | Under 18 requires verifiable parental consent. Tracking and behavioural monitoring of children are barred, subject to notified exemptions | [S] |
 | DPDP section 16, cross-border transfer | A negative list: transfer is allowed except to countries the government restricts. No list was notified as of the latest sources, and some say section 16 has not commenced | [S] |
 | CERT-In directions (28 April 2022, in force 27 June 2022) | Report cyber incidents within 6 hours. Keep ICT logs for a rolling 180 days, within India | [S] |
@@ -933,6 +959,8 @@ create table audit_log (
 );
 ```
 
+Also needed, each designed in the slice that first uses it (review, 2026-11-07): `join_requests` (ID-03), `participant_links` (§5.6), `api_keys` (§5.5), `rate_limits` (§3.9), `media_leases` (§3.4), `llm_cache` (§3.7), and `jobs` if an owned queue is chosen (§3.8). Checklist dismissal lives in `user_preferences.home_layout`.
+
 ### 4.4 Row-level security and database roles
 
 ```sql
@@ -957,6 +985,8 @@ revoke update, delete on events from pramana_app;
 | `pramana_migrator` | Own the tables, run Alembic | Be used by any service at runtime |
 | `pramana_sim` | Its own schema only | See core tables (keeps the sealed-truth separation) |
 | Support "break glass" | Time-boxed, audited access granted per ticket | Standing access |
+
+Locally, `scripts/dev_db.py` creates the cluster with `initdb -U pramana`, so `pramana` is a superuser and bypasses RLS even with `FORCE`. The production worktree's databases therefore get a non-superuser `pramana_app` login role for the app and the RLS tests; `pramana` runs migrations only.
 
 The API's organization check (does this user hold a role in this org?) is the first lock. RLS is the second, so a missing `WHERE org_id = ...` cannot leak data. Tests try every endpoint across tenants (§12.3).
 
@@ -1039,6 +1069,7 @@ Details:
 
 - `prompt=select_account` when the user asks to switch accounts or an invite mismatches. `login_hint` pre-selects the invited email. The `hd` request parameter is only a UI hint; access decisions use the `hd` claim (Google).
 - Ask for no Google API scopes beyond `openid email profile`. This keeps the app out of Google's sensitive-scope verification.
+- Check `nonce` and `hd` ourselves: Google's library verifiers check only the signature, `iss`, `aud` and `exp` [V, 2026-11-07]. Google's discovery document lists S256 among `code_challenge_methods_supported` [V].
 - In test mode the expected issuer can point at a mock OIDC server (§12.2). A production process refuses to start with a non-Google issuer, the same way preflight refuses an emulated voice provider today.
 
 ### 5.3 Creating and linking accounts (pre-hijacking defences)
@@ -1836,9 +1867,9 @@ Releases end with tests and measurements, not dates. Sizes assume the two of us 
 | Release | Scope | Exit criteria | Size |
 |---|---|---|---|
 | **R0 Baseline** | Write ADRs 0015-0026. Create the GCP project with Terraform. Deploy today's code, single instance, to `asia-south1` staging (replacing the laptop). CI builds images. Cloud SQL with point-in-time recovery. Logs retained 180 days | Public staging `/ready` returns 200 for 7 days; a restore drill passes; synthetic checks green | 1 week |
-| **R1 Accounts and tenants** | Google sign-in (§5), identities, hardened sessions. Organizations, memberships, invitations, domains. Onboarding state and the three questions. Org-scoped APIs with RLS. `/app/[org]` routes. Sandbox organization created automatically. Remove the `campus_block_c` defaults. Idempotency middleware | Every ID, OR and DA case in §6.2 automated and green; the tenant-leak generator covers 100% of routes; five usability sessions reach the sandbox reveal in under 3 minutes [T] | 3 to 4 weeks |
-| **R2 Your own site** | Versioned site models, builder, templates, CSV import, validation, health check (§8). People directory with encrypted personal data, consent records, role and language catalogues. Autosave and conflicts (§6.3). Audit log. Personal data moved out of events | Someone outside the team builds a three-floor model from a template in under 30 minutes [T]; the health check reproduces the benchmark's results on `campus_block_c`; erasure keeps replay identical (LC-03) | 4 weeks |
-| **R3 Real reach** | Short participant links (§5.6), WhatsApp, SMS, email, phone calls through Exotel at 8 kHz, quiet hours, work orders (§9.4), webhook inbox, outbox and jobs (§3.8), per-organization budgets and metering, live mode without the simulator | One consenting pilot site runs 10 live investigations with real staff; zero duplicate notifications under the retry chaos test; budget caps enforced | 4 to 6 weeks |
+| **R1 Accounts and tenants** | Google sign-in (§5), identities, hardened sessions. Organizations, memberships, invitations, domains. Onboarding state and the three questions. Org-scoped APIs with RLS. `/app/[org]` routes. Sandbox organization created automatically. Remove the `campus_block_c` defaults. Idempotency middleware; event idempotency keys unique per investigation | ID-01 to ID-17, OR-01 to OR-06, OR-08 to OR-11, DA-01 and DA-05 to DA-07 in §6.2 automated and green; the tenant-leak generator covers 100% of routes; five usability sessions reach the sandbox reveal in under 3 minutes [T] | 3 to 4 weeks |
+| **R2 Your own site** | Versioned site models, builder, templates, CSV import, validation, health check (§8). People directory with encrypted personal data, consent records, role and language catalogues. Autosave and conflicts (§6.3). Audit log. Personal data moved out of events. Matrix rows DA-02 to DA-04 and DA-08 | Someone outside the team builds a three-floor model from a template in under 30 minutes [T]; the health check reproduces the benchmark's results on `campus_block_c`; erasure keeps replay identical (LC-03) | 4 weeks |
+| **R3 Real reach** | Short participant links (§5.6), WhatsApp, SMS, email, phone calls through Exotel at 8 kHz, quiet hours, work orders (§9.4), webhook inbox, outbox and jobs (§3.8), per-organization budgets and metering, live mode without the simulator, organization deletion with an export (OR-07) | One consenting pilot site runs 10 live investigations with real staff; zero duplicate notifications under the retry chaos test; budget caps enforced | 4 to 6 weeks |
 | **R4 Scale and operations** | Several instances (NOTIFY wake-ups, provider slot leases, distributed throttles, leader-elected singletons), engine work off the event loop, OpenTelemetry, SLO dashboards and alerts, k6 and Toxiproxy suites, DR rehearsal, penetration test, CERT-In and DPDP runbooks | Two or more instances of each service in production; SLOs met for 30 days; restore drill and breach drill pass | 3 to 4 weeks, overlapping R3 |
 | **R5 Intelligence** | Machine participants (controllers, NetBox), AI-assisted site drafts, LLM gateway with paid providers and masking, review queue and online evals, a second speech provider, priors learned across incidents (with consent) | Each feature ships only after its evaluation gate in §10.4 | Ongoing |
 
