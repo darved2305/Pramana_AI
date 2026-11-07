@@ -37,6 +37,12 @@ def service(request: Request) -> InvestigationService:
 Svc = Annotated[InvestigationService, Depends(service)]
 Operator = Depends(require_staff(StaffRole.OPERATOR))
 Approver = Annotated[Principal, Depends(require_staff(StaffRole.APPROVER))]
+OperatorPrincipal = Annotated[Principal, Depends(require_staff(StaffRole.OPERATOR))]
+
+
+def _account(who: Principal) -> str | None:
+    """A signed-in person's account. Automation and open mode are not people (ADR 0010)."""
+    return who.id if who.kind == "user" else None
 
 
 @router.get("", dependencies=[Depends(require_staff())])
@@ -89,10 +95,13 @@ async def list_events(
     return await svc.events(inv_id, after_seq, limit)
 
 
-@router.post("/{inv_id}/approvals", status_code=201, dependencies=[Operator])
-async def request_approval(inv_id: str, body: RequestApproval, svc: Svc) -> InvestigationState:
-    """Ask a human approver for a consequential action the decision calls for."""
-    return await svc.request_approval(inv_id, body)
+@router.post("/{inv_id}/approvals", status_code=201)
+async def request_approval(
+    inv_id: str, body: RequestApproval, svc: Svc, who: OperatorPrincipal
+) -> InvestigationState:
+    """Ask a human approver for a consequential action the decision calls for. The signed-in
+    account that asks is recorded; it cannot approve its own request."""
+    return await svc.request_approval(inv_id, body, requested_by=_account(who))
 
 
 @router.post("/{inv_id}/approvals/{approval_id}/decision")
@@ -102,7 +111,9 @@ async def decide_approval(
     """Needs the approver role. The approval records the signed-in approver; a free-text
     ``approver_id`` is used only when sign-in is not enforced (tests)."""
     approver = (body.approver_id or who.id) if who.kind == "open" else who.id
-    return await svc.decide_approval(inv_id, approval_id, body, approver_id=approver)
+    return await svc.decide_approval(
+        inv_id, approval_id, body, approver_id=approver, approver_account=_account(who)
+    )
 
 
 @router.post("/{inv_id}/approvals/{approval_id}/capability")

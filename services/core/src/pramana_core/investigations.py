@@ -1252,8 +1252,11 @@ class InvestigationService:
             decided_at=a.decided_at,
         )
 
-    async def request_approval(self, inv_id: str, req: RequestApproval) -> InvestigationState:
-        """Ask a human to approve a consequential action that the decision calls for."""
+    async def request_approval(
+        self, inv_id: str, req: RequestApproval, requested_by: str | None = None
+    ) -> InvestigationState:
+        """Ask a human to approve a consequential action that the decision calls for.
+        ``requested_by`` is the signed-in account asking, recorded so it cannot approve."""
         async with self._lock(inv_id), self.db.transaction() as session:
             row = await self._load_row(session, inv_id, lock=True)
             if row.status != InvestigationStatus.DECIDED.value:
@@ -1301,6 +1304,7 @@ class InvestigationService:
                     "participant_id": person.id,
                     "risk": action.risk,
                     "reversible": action.reversible,
+                    **({"requested_by": requested_by} if requested_by else {}),
                 },
             )
         return await self.get(inv_id)
@@ -1311,8 +1315,10 @@ class InvestigationService:
         approval_id: str,
         decision: ApprovalDecision,
         approver_id: str | None = None,
+        approver_account: str | None = None,
     ) -> InvestigationState:
-        """``approver_id`` is the authenticated approver; it overrides any id in the body."""
+        """``approver_id`` is the authenticated approver; it overrides any id in the body.
+        ``approver_account`` (a signed-in person) may not be the account that asked."""
         approver = approver_id or decision.approver_id
         if approver is None:
             raise ApiError(422, "APPROVER_REQUIRED", "the approval needs an approver")
@@ -1323,6 +1329,26 @@ class InvestigationService:
                 raise not_found("approval")
             if approval.status != ApprovalStatus.PENDING.value:
                 raise ApiError(409, "APPROVAL_DECIDED", f"approval is {approval.status}")
+            if approver_account is not None:
+                asked = await session.execute(
+                    select(EventRow.payload).where(
+                        EventRow.investigation_id == inv_id, EventRow.type == "ApprovalRequested"
+                    )
+                )
+                requester = next(
+                    (
+                        p.get("requested_by")
+                        for p in asked.scalars()
+                        if p["approval_id"] == approval_id
+                    ),
+                    None,
+                )
+                if requester == approver_account:
+                    raise ApiError(
+                        403,
+                        "SELF_APPROVAL",
+                        "the person who asked for this action cannot approve it",
+                    )
             approve = decision.decision == "approve"
             approval.status = (ApprovalStatus.APPROVED if approve else ApprovalStatus.DENIED).value
             approval.approver_id, approval.decided_at = approver, _now()

@@ -331,3 +331,36 @@ def test_voice_stream_refuses_the_handshake_without_an_operator(secure_core: Tes
     with pytest.raises(WebSocketDisconnect) as exc, c.websocket_connect("/v1/voice/stream") as ws:
         ws.receive_text()
     assert exc.value.code == 4401
+
+
+def test_an_account_with_both_roles_cannot_approve_its_own_request(
+    secure_core: TestClient,
+) -> None:
+    """Separation of duties is by person, not only by role: whoever asked cannot decide."""
+    from test_closing_loop import decided
+
+    c = secure_core
+    sim = TestClient(c.sim_app)  # type: ignore[attr-defined]
+    c.headers.update(AUTO)
+    inv = decided(c, sim, "CB_C2_7.tripped")
+    del c.headers["X-Automation-Key"]
+    login(c, "both")
+    url = f"/v1/investigations/{inv['id']}/approvals"
+    r = c.post(
+        url,
+        json={"action": "reset_breaker", "target": "CB_C2_7", "participant_id": "p_imran"},
+        headers=CSRF,
+    )
+    assert r.status_code == 201, r.text
+    aid = r.json()["approvals"][0]["id"]
+    events = c.get(f"/v1/investigations/{inv['id']}/events").json()
+    asked = next(e for e in events if e["type"] == "ApprovalRequested")["payload"]
+    assert asked["requested_by"] == c.user_ids["both"]  # type: ignore[attr-defined]
+    for decision in ("approve", "deny"):
+        own = c.post(f"{url}/{aid}/decision", json={"decision": decision}, headers=CSRF)
+        assert own.status_code == 403, own.text
+        assert own.json()["error"]["code"] == "SELF_APPROVAL"
+    login(c, "approver")
+    other = c.post(f"{url}/{aid}/decision", json={"decision": "approve"}, headers=CSRF)
+    assert other.status_code == 200, other.text
+    assert other.json()["status"] == "acting"

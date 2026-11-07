@@ -42,8 +42,11 @@ clients, not a browser app on the same origin.
 4. **Roles.** `operator`: create investigations, manage the directory, request approvals,
    mint join links, reveal. `approver`: decide approvals. Either role may read investigations,
    the directory and evaluation reports. **The approval records the signed-in approver's id;
-   an `approver_id` in the request body is ignored.** Unauthenticated calls get
-   `401 AUTH_REQUIRED`; a missing role gets `403 ROLE_FORBIDDEN`.
+   an `approver_id` in the request body is ignored.** A signed-in account that asked for an
+   action cannot approve or deny it, even when it holds both roles (`403 SELF_APPROVAL`;
+   recorded as `ApprovalRequested.requested_by`). The automation key is not a person and is
+   exempt, which is why automated runs never count as independent approval. Unauthenticated
+   calls get `401 AUTH_REQUIRED`; a missing role gets `403 ROLE_FORBIDDEN`.
 5. **Participants** never sign in. The join link carries the Ed25519 participant token the core
    already mints for the simulator. Sent as `Authorization: Bearer`, the core verifies it with
    the public half of its own signing key and allows only that person's own actions in that
