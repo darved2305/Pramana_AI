@@ -11,6 +11,7 @@ import contextlib
 import json
 import time
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import (
     APIRouter,
@@ -57,6 +58,8 @@ async def voice_status(request: Request) -> dict[str, object]:
     g = _gnani(request)
     return {
         "configured": g.configured,
+        "provider": g.provider,
+        "provider_host": urlsplit(g.base_url).hostname,
         "stt_model": "prisma-v3.0",
         "tts_models": ["timbre-v3.0", "timbre-v2.5"],
         "base_url": g.base_url,

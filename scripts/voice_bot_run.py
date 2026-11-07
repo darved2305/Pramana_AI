@@ -158,6 +158,7 @@ class Run:
         self.clips = Path(args.clips)
         self.tokens: dict[str, dict[str, str]] = {}
         self.inv: dict[str, Any] = {}
+        self.provider = "unknown"
         self.log: list[str] = []
         self.voice_answers = 0
         # Latency as the caller experiences it (private: printed, never committed).
@@ -534,6 +535,9 @@ class Run:
 
     async def _main(self) -> int:
         before = (await self.core.get("/v1/voice/usage")).json().get("spent_today_inr", 0.0)
+        status = (await self.core.get("/v1/voice/status")).json()
+        self.provider = f"{status.get('provider', 'unknown')} ({status.get('provider_host')})"
+        print(f"voice provider: {self.provider}")
         if self.args.attach:  # continue an investigation already under way
             r = await self.core.get(f"/v1/investigations/{self.args.attach}")
         else:
@@ -629,6 +633,7 @@ class Run:
                 "scenario": scenario,
                 "variant": variant,
                 "participants": "synthetic voice bots",
+                "voice_provider": self.provider,
                 "investigation_id": self.inv["id"],
                 "status": s["status"],
                 "voice_answers": self.voice_answers,

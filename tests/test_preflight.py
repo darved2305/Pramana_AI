@@ -40,6 +40,10 @@ def fake_client() -> tuple[httpx.Client, list[httpx.Request]]:
                     "limits": {"daily_budget_inr": 150.0},
                 },
             )
+        if request.url.path == "/v1/voice/status":
+            return httpx.Response(
+                200, json={"provider": "gnani", "provider_host": "api.vachana.ai"}
+            )
         if request.url.path == "/v1/voice/tts":
             return httpx.Response(200, content=b"RIFFfake-wav")
         if request.url.path == "/v1/voice/stt":
@@ -215,3 +219,42 @@ def test_runbook_does_not_claim_automated_phone_or_latency_checks() -> None:
     )
     assert "mic permission on every phone" not in preflight_line
     assert "(< 2 s)" not in preflight_line
+
+
+def _status_client(status: dict[str, object] | None) -> httpx.Client:
+    base, _ = fake_client()
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/voice/status":
+            return httpx.Response(404) if status is None else httpx.Response(200, json=status)
+        return base._transport.handle_request(request)  # type: ignore[attr-defined]
+
+    return httpx.Client(transport=httpx.MockTransport(respond))
+
+
+def _provider(checks: list[Check]) -> Check:
+    return next(c for c in checks if c.name == "Voice provider")
+
+
+def test_an_emulated_voice_provider_fails_preflight(tmp_path: Path) -> None:
+    client = _status_client({"provider": "other", "provider_host": "127.0.0.1"})
+    check = _provider(collect(options(clips_dir=tmp_path), client))
+    assert not check.passed
+    assert "127.0.0.1" in check.detail
+
+
+def test_an_emulated_provider_passes_only_when_allowed_and_is_labelled(tmp_path: Path) -> None:
+    args = options(clips_dir=tmp_path)
+    args.allow_emulated_voice = True  # type: ignore[attr-defined]
+    check = _provider(
+        collect(args, _status_client({"provider": "other", "provider_host": "127.0.0.1"}))
+    )
+    assert check.passed
+    assert check.detail.startswith("EMULATED")
+
+
+def test_live_gnani_passes_and_an_unreported_provider_fails(tmp_path: Path) -> None:
+    live = _status_client({"provider": "gnani", "provider_host": "api.vachana.ai"})
+    assert _provider(collect(options(clips_dir=tmp_path), live)).passed
+    old_core = _status_client(None)
+    assert not _provider(collect(options(clips_dir=tmp_path), old_core)).passed

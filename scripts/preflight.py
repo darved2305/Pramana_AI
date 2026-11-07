@@ -141,6 +141,33 @@ def _budget_check(client: httpx.Client, base_url: str, key: str, authenticated: 
     )
 
 
+def _provider_check(
+    client: httpx.Client, base_url: str, key: str, authenticated: bool, allow_emulated: bool
+) -> Check:
+    """Which voice service the core actually calls. A key and a green readiness row do not say:
+    the staging and load-test emulators look healthy too."""
+    name = "Voice provider"
+    if not authenticated:
+        return Check(name, False, "unavailable because automation sign-in failed")
+    try:
+        response = client.get(
+            f"{base_url.rstrip('/')}/v1/voice/status",
+            headers={"X-Automation-Key": key},
+            follow_redirects=False,
+        )
+        status = response.json() if response.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        status = None
+    if not isinstance(status, dict) or "provider" not in status:
+        return Check(name, False, "the core does not report its voice provider")
+    host = status.get("provider_host") or "unknown host"
+    if status["provider"] == "gnani":
+        return Check(name, True, f"live Gnani ({host})")
+    if allow_emulated:
+        return Check(name, True, f"EMULATED, not Gnani ({host}); label any run as emulated")
+    return Check(name, False, f"not Gnani: the core calls {host} (an emulator?)")
+
+
 def _live_voice_check(client: httpx.Client, base_url: str, key: str) -> Check:
     headers = {"X-Automation-Key": key}
     try:
@@ -220,6 +247,11 @@ def collect_checks(
     auth_check, authenticated = _auth_check(client, args.url, key)
     checks.append(auth_check)
     checks.append(_budget_check(client, args.url, key, authenticated))
+    checks.append(
+        _provider_check(
+            client, args.url, key, authenticated, bool(getattr(args, "allow_emulated_voice", False))
+        )
+    )
     if args.live:
         if not authenticated:
             checks.append(
@@ -293,6 +325,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-clock-skew-s", type=float, default=5.0)
     parser.add_argument(
         "--live", action="store_true", help="spend a small amount for one Gnani round trip"
+    )
+    parser.add_argument(
+        "--allow-emulated-voice",
+        action="store_true",
+        help="pass when the core uses a Gnani emulator (rehearsals that are labelled emulated)",
     )
     return parser.parse_args(argv)
 

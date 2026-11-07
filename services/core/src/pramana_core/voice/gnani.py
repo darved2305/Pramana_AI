@@ -31,6 +31,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import websockets
@@ -186,6 +187,17 @@ async def _close_quietly(ws: ClientConnection) -> None:
         await asyncio.wait_for(ws.close(), CLOSE_TIMEOUT_S)
 
 
+GNANI_HOST = "api.vachana.ai"
+"""Gnani's own API host. Anything else (the staging and load-test emulators, a typo) is not
+the real provider, however healthy it looks."""
+
+
+def provider_of(base_url: str) -> str:
+    """``"gnani"`` only for HTTPS to Gnani's host; ``"other"`` for an emulator or anything else."""
+    parts = urlsplit(base_url)
+    return "gnani" if parts.scheme == "https" and parts.hostname == GNANI_HOST else "other"
+
+
 class GnaniClient:
     def __init__(
         self,
@@ -207,6 +219,10 @@ class GnaniClient:
     @property
     def configured(self) -> bool:
         return bool(self._key)
+
+    @property
+    def provider(self) -> str:
+        return provider_of(self.base_url)
 
     def _require_key(self) -> str:
         if not self._key:
