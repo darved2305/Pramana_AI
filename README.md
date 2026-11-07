@@ -75,6 +75,12 @@ only) is available only after a decision or abstention.
 | Presence checks (S7): a decisive answer from a restricted place someone walked to is confirmed by reading a label only someone there can see; the core never learns the expected value | ADR 0014, `services/core/tests/test_testimony_api.py`, `test_media_ws.py`; live-Gnani honest/adversary bot readings passed/failed as expected, both investigations abstained (`eval/reports/demo-freeze-2026-11-07/NOTES.md`) |
 | Disagreements explained (S2): how likely both people are right, who is likelier mistaken, and what only one of them depends on ("room 205 is also covered by Access point 2B") | `packages/engine/tests/test_testimony.py`, `apps/web/tests/testimony.spec.ts` |
 | Spoken questions read codes the way people say them ("IDF-2" as "I D F 2", "आई डी एफ़ टू" in Hindi); a linter checks every spoken text in all four languages | `services/core/tests/test_template_lint.py` |
+| Separation of duties by person: whoever asked for a repair cannot approve or deny it, even with both roles; the console says so | `services/core/tests/test_auth.py`, `apps/web/tests/repair-availability.spec.ts`, ADR 0010 |
+| A repair survives a reloaded phone, a slow walk past the 5-minute expiry, and a lost "done" report, without ever having two live capabilities | `services/core/tests/test_closing_loop.py`, `apps/web/tests-real/repair-recovery.spec.ts`, `apps/web/tests/repair-expiry.spec.ts` |
+| The reveal seals the event log; the replay page shows whether the belief replays identically and whether any event was edited since | `services/core/tests/test_log_seal.py`, ADR 0003, end of `apps/web/tests-real/m1.spec.ts` |
+| The core says which speech service it calls (live Gnani, an emulator, or none); preflight fails on an emulator; the Voice page shows provider, today's spend against the Rs 150 cap and live limits | `tests/test_preflight.py`, `apps/web/tests/voice-meter.spec.ts`, `apps/web/tests-real/console.spec.ts` |
+| Random orders of honest answers and attacks (stolen or cross-investigation tokens, stale questions, injections, role abuse, capability grabs, early reveals) never break a safeguard, in S1, parallel S1 and both S7 variants | `services/core/tests/test_adversarial_state.py` |
+| Nothing the product claims to compute is scripted: no building-specific answers in engine or core code, no route to the sealed truth, no sample data in product builds, README numbers match the generated report | `tests/test_authenticity.py` |
 
 Checks cover Python unit, property, protocol-emulation and process-level end-to-end tests,
 browser UI tests, and browser flows against a real core, simulator and PostgreSQL. Generated
@@ -84,7 +90,8 @@ counts and exit codes: `eval/reports/verification-2026-11-07/report.md`. CI runs
 
 From generated reports only; nothing below is typed by hand.
 
-- **Benchmark** (`eval/reports/benchmark-2026-11-05/`, 300 scenarios): our planner succeeds in
+- **Benchmark** (`eval/reports/benchmark-2026-11-05/`, 300 scenarios; reproduced exactly on the
+  release candidate in `eval/reports/benchmark-2026-11-07-rc1/`): our planner succeeds in
   84.7% of scenarios against 64.0% for a checklist and 56.3% for random questions, with about half
   as many questions (differences significant). It is **not** significantly better than greedy
   entropy (83.3%). Where nobody present can tell the causes apart it abstains 68% of the time.
