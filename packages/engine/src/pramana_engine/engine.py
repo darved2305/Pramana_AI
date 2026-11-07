@@ -88,8 +88,8 @@ class ParticipantState:
     available: bool = True
     may_be_at: set[str] = field(default_factory=set)
     """Other places they may be instead of ``location_id``: a question that asked them to walk
-    there was withdrawn, and they may have gone anyway. Cleared when they next answer at a
-    place."""
+    there was withdrawn, or was answered without a first-hand reading, and they may have gone
+    anyway. Cleared when they next report what they see at a place."""
 
     def settle(self, location_id: str) -> None:
         self.location_id = location_id
@@ -316,7 +316,13 @@ class Engine:
         ps = self.participants[ev.participant_id]
         probe = self.model.pack.probe_by_id[ev.probe_id]
         if probe.kind not in DEVICE_KINDS:
-            ps.settle(ev.location_id)  # they went there to look
+            if ev.outcome != UNKNOWN_OUTCOME and ev.directness == Directness.DIRECT:
+                ps.settle(ev.location_id)  # they went there to look
+            elif ev.location_id != ps.location_id:
+                # "I could not get there", noise, or what someone else said: they may or may
+                # not have gone, so they are planned as possibly at either place (as after a
+                # withdrawn walk) instead of having their phone's answers pinned there.
+                ps.may_be_at.add(ev.location_id)
         if ev.outcome == UNKNOWN_OUTCOME:
             return ObserveResult(False, "outcome unknown", False, [], None)
         if ev.directness == Directness.ASSUMPTION:

@@ -8,7 +8,7 @@ import math
 import numpy as np
 import pytest
 
-from pramana_contracts import ParticipantSpec, PlanKind, ProbeAction
+from pramana_contracts import Directness, ParticipantSpec, PlanKind, ProbeAction
 from pramana_domain.physics import predict
 from pramana_engine import CompiledModel, Engine, EngineConfig, Evidence, schedule
 
@@ -349,14 +349,47 @@ def test_a_walk_withdrawn_midway_leaves_the_person_somewhere_between(
 def test_answering_at_a_place_settles_where_they_are(
     campus_model: CompiledModel, s1_people: list[ParticipantSpec]
 ) -> None:
+    """Reporting what is there, first hand, means they went to look."""
     eng = _s1(campus_model, s1_people)
     walk = _walk_for(eng, "p_mahesh")
     eng.record_question("p_mahesh")
     eng.question_withdrawn(walk)
-    eng.observe(Evidence("p_mahesh", walk.probe_id, walk.location_id, "unknown"))
+    seen = campus_model.outcomes[walk.probe_id][0]
+    eng.observe(Evidence("p_mahesh", walk.probe_id, walk.location_id, seen))
     assert eng.participants["p_mahesh"].location_id == walk.location_id
+    assert eng.participants["p_mahesh"].may_be_at == set()
     mine = [a for a, _ in eng.menu() if a.participant_id == "p_mahesh"]
     assert any(a.location_id == walk.location_id and not a.requires_move for a in mine)
+
+
+@pytest.mark.parametrize(
+    ("outcome", "directness"),
+    [("unknown", Directness.DIRECT), (None, Directness.HEARSAY), (None, Directness.ASSUMPTION)],
+)
+def test_an_answer_that_is_not_a_first_hand_look_does_not_place_them_there(
+    campus_model: CompiledModel,
+    s1_people: list[ParticipantSpec],
+    outcome: str | None,
+    directness: Directness,
+) -> None:
+    """ "I could not get there", noise, or "someone told me": they may or may not have gone.
+    Planning them as there would skip the walk next time and pin their phone's answers to a
+    place they never reached (found by test_adversarial_state against the real simulator)."""
+    eng = _s1(campus_model, s1_people)
+    home = eng.participants["p_mahesh"].location_id
+    walk = _walk_for(eng, "p_mahesh")
+    eng.record_question("p_mahesh")
+    said = outcome or campus_model.outcomes[walk.probe_id][0]
+    eng.observe(Evidence("p_mahesh", walk.probe_id, walk.location_id, said, directness=directness))
+    ps = eng.participants["p_mahesh"]
+    assert ps.location_id == home
+    assert ps.may_be_at == {walk.location_id}
+    mine = [a for a, _ in eng.menu() if a.participant_id == "p_mahesh"]
+    probes = eng.model.pack.probe_by_id
+    assert not [
+        a for a in mine if probes[a.probe_id].kind in {"internet_works", "wifi_status", "web_by_ip"}
+    ]
+    assert all(a.requires_move for a in mine if a.location_id == walk.location_id)
 
 
 def test_withdrawing_a_question_asked_where_they_stand_changes_nothing(
