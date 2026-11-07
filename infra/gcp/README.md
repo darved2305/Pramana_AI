@@ -1,0 +1,43 @@
+# infra/gcp: Pramana on Google Cloud (asia-south1)
+
+Terraform for ADR 0025 and PRODUCTION.md §13.3. **Nothing here has been applied.** CI runs
+`terraform fmt -check` and `terraform validate` only.
+
+## What it creates
+
+| File | Resources |
+|---|---|
+| `main.tf` | Required APIs, Artifact Registry, one service account per process, Secret Manager secrets (empty), a KMS key for personal data |
+| `database.tf` | VPC, private service access, Cloud SQL PostgreSQL 16 (regional HA, PITR, backups in `asia-south2`, private IP, IAM database users) |
+| `run.tf` | Cloud Run services `web`, `api`, `media`, `worker`, `sim` and the `migrate` job |
+| `edge.tf` | Global HTTPS load balancer with serverless NEGs, path routing, Cloud Armor rate limit on sign-in; certificate only once `domain` is set |
+| `storage_logging.tf` | Audio bucket (90-day lifecycle), anchors bucket (versioned, 1-year retention lock), a log bucket in `asia-south1` (180 days minimum, CERT-In) |
+| `ci_identity.tf` | Workload identity federation for GitHub Actions and a deployer service account |
+
+## Before the first apply (needs the user's explicit go-ahead)
+
+1. Create the state bucket by hand: `gcloud storage buckets create gs://<project>-tfstate --location=asia-south1 --uniform-bucket-level-access`.
+2. `terraform init -backend-config="bucket=<project>-tfstate" -backend-config="prefix=staging"`.
+3. `terraform plan -var project_id=<project> -var environment=staging -out plan.bin` and show the
+   user the plan and the cost estimate below.
+4. Apply only after an explicit yes. Then add secret values in Secret Manager by hand, never in
+   Terraform.
+5. After the first migration, create the `pramana_app` role (non-superuser, no `BYPASSRLS`) and
+   grant it to the IAM database users (ADR 0015).
+
+## Expected fixed monthly cost (staging, rough) [I]
+
+List prices change; run the Google Cloud pricing calculator for `asia-south1` before applying.
+Rough order of magnitude with the defaults:
+
+| Item | Assumption | Rough US$ / month |
+|---|---|---|
+| Cloud SQL HA | `db-custom-2-7680`, regional (two zones), 20 GB SSD | 180 to 230 |
+| Cloud Run minimum instances | `api`, `media`, `worker` at 1 each, 1 vCPU, 1 GiB, instance-based billing | 130 to 170 |
+| Load balancer | One forwarding rule plus data processing at low traffic | 20 to 25 |
+| Cloud Armor | One policy, two rules | about 7 |
+| Logging, storage, KMS, Secret Manager, Artifact Registry | Low volume | under 15 |
+| **Total** | | **about 350 to 450** |
+
+Cheaper staging: `availability_type = "ZONAL"` and minimum instances of 0 for `media` and
+`worker` roughly halve this, at the cost of cold starts and no database failover.
