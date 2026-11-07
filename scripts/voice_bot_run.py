@@ -40,6 +40,10 @@ from typing import Any
 import httpx
 import websockets
 from core_auth import automation_headers
+from demo_rehearse import scenario_request
+from gnani_live_check import to_16k_mono_pcm
+
+from pramana_core.language.speakable import speakable
 
 PEOPLE = [
     {
@@ -74,6 +78,33 @@ PEOPLE = [
 CLIP_LANG = {"hi-en": "hi", "hi": "hi", "mr": "mr", "en": "hi"}
 DONE = {"decided", "abstained", "verified", "not_verified", "closed"}
 FRAME = 1024  # bytes: 32 ms of 16 kHz PCM16
+Audio = Path | bytes
+
+
+def clip_name(clip: Audio) -> str:
+    return clip.stem if isinstance(clip, Path) else "synthesized answer"
+
+
+def rehearsal_passed(
+    scenario: str,
+    variant: str,
+    state: dict[str, Any],
+    *,
+    correct: bool | None,
+    sealed: bool,
+    identical: bool,
+    call_errors: list[str],
+) -> bool:
+    if not sealed or not identical or call_errors:
+        return False
+    if scenario == "S1":
+        return state["status"] == "verified" and correct is True
+    if scenario == "S2":
+        return state["status"] == "decided" and correct is True and bool(state.get("disagreements"))
+    expected = "failed" if variant == "adversary" else "passed"
+    return any(c["status"] == expected for c in state.get("presence_checks", [])) and (
+        state["status"] == "abstained" or (state["status"] == "decided" and correct is True)
+    )
 
 
 def join_segment(payload: dict[str, str]) -> str:
@@ -117,7 +148,7 @@ class Run:
         self.silent_p = float(getattr(args, "silent_p", 0.0) or 0.0)
         self.said: dict[str, tuple[str, str, str]] = {}
         """Per participant, the last thing spoken: (kind, clip name, true value)."""
-        self.truth_clip: dict[str, Path] = {}
+        self.truth_clip: dict[str, Audio] = {}
         self.silent_turns: set[str] = set()
         self.outcomes: list[dict[str, str]] = []
         """Every recorded answer: what was said (junk or truth) and what the core recorded."""
@@ -137,7 +168,11 @@ class Run:
         self.next_ms: list[float] = []
         self.tasks: set[asyncio.Task[None]] = set()
         self.lock = asyncio.Lock()
-        self.last_clip: dict[str, Path] = {}
+        self.last_clip: dict[str, Audio] = {}
+        self.speakers: dict[str, asyncio.Task[None]] = {}
+        self.call_errors: list[str] = []
+        self.people = PEOPLE
+        self.question_kind: dict[str, str] = {}
         self.withdrawn = 0
         self.most_at_once = 0
 
@@ -149,6 +184,19 @@ class Run:
         return s
 
     async def observe(self, pid: str, action: dict[str, Any]) -> str:
+        if (
+            getattr(self.args, "scenario", "S1") == "S7"
+            and getattr(self.args, "variant", "honest") == "adversary"
+            and pid == "p_mahesh"
+            and action["location_id"] == "IDF2"
+        ):
+            # Scripted false claims from the guard desk; never peek at the remote card.
+            return {
+                "switch_leds": "green",
+                "nvr_screen": "off",
+                "closet_light": "off",
+                "room_socket": "off",
+            }[action["probe_id"]]
         tok = self.tokens[pid]
         h = {"Authorization": f"Bearer {tok['token']}"}
         sid = tok["scenario_id"]
@@ -171,6 +219,56 @@ class Run:
             )
         r.raise_for_status()
         return str(r.json()["value"])
+
+    def start_speaker(self, pid: str, coroutine: Any) -> None:
+        previous = self.speakers.get(pid)
+        if previous is not None:
+            previous.cancel()
+        task = asyncio.create_task(coroutine)
+        self.speakers[pid] = task
+        self.tasks.add(task)
+
+        def completed(task: asyncio.Task[None]) -> None:
+            self.tasks.discard(task)
+            if not task.cancelled() and (error := task.exception()) is not None:
+                self.call_errors.append(f"{pid}: {type(error).__name__}: {error}")
+
+        task.add_done_callback(completed)
+
+    async def synthesize_answer(self, phrase: str, language: str) -> bytes:
+        response = await self.core.post(
+            "/v1/voice/tts",
+            json={
+                "text": phrase,
+                "language": {"mr": "mr-IN", "hi": "hi-IN", "en": "en-IN", "hi-en": "hi-en"}[
+                    language
+                ],
+            },
+        )
+        response.raise_for_status()
+        return to_16k_mono_pcm(response.content)
+
+    async def presence_audio(self, pid: str, q: dict[str, Any]) -> bytes:
+        tok = self.tokens[pid]
+        response = await self.sim.get(
+            f"/sim/v1/scenarios/{tok['scenario_id']}/view",
+            headers={"Authorization": f"Bearer {tok['token']}"},
+        )
+        response.raise_for_status()
+        view = response.json()
+        labels = view.get("labels", []) if view["location_id"] == q["action"]["location_id"] else []
+        # The challenge never moves a person. Someone still at the desk cannot read the label.
+        phrase = (
+            speakable(" ".join(labels[0]["value"]), q["language"])
+            if labels
+            else {
+                "mr": "मला इथून लेबल दिसत नाही",
+                "hi": "मुझे यहाँ से लेबल नहीं दिखता",
+                "hi-en": "Mujhe yahan se label nahi dikhta",
+                "en": "I cannot see the label from here",
+            }[q["language"]]
+        )
+        return await self.synthesize_answer(phrase, q["language"])
 
     async def bot(self, person: dict[str, Any]) -> None:
         """Answer every call to this person until the investigation no longer needs them."""
@@ -214,9 +312,8 @@ class Run:
                     await ws.send(json.dumps({"type": "consent", "answer": "yes"}))
                 elif kind == "ready":
                     # Speak in a task, so frames are read (and timed) while the bot talks.
-                    task = asyncio.create_task(self.turn(ws, pid, lang, m))
-                    self.tasks.add(task)
-                    task.add_done_callback(self.tasks.discard)
+                    self.question_kind[pid] = m.get("kind", "probe")
+                    self.start_speaker(pid, self.turn(ws, pid, lang, m))
                 elif kind == "tts_end":
                     if pid in self.t_answer:
                         self.next_ms.append((time.monotonic() - self.t_answer.pop(pid)) * 1000)
@@ -226,6 +323,8 @@ class Run:
                         self.stt_ms.append((time.monotonic() - self.t_eos[pid]) * 1000)
                     self.log.append(f"  {pid} said, Prisma heard: {m['text']}")
                 elif kind == "question_withdrawn":
+                    if task := self.speakers.get(pid):
+                        task.cancel()
                     self.withdrawn += 1
                     self.log.append(f"  {pid}: question withdrawn, another answer settled it")
                 elif kind == "answer":
@@ -234,6 +333,9 @@ class Run:
                         self.answer_ms.append((now - self.t_eos.pop(pid)) * 1000)
                     self.t_answer[pid] = now
                     self.voice_answers += 1
+                    if self.question_kind.get(pid) == "challenge":
+                        self.log.append(f"  {pid}: presence reading submitted by voice")
+                        continue  # result.observation refers to the earlier claim, not this reading
                     obs = m["result"]["observation"]
                     self.log.append(
                         f"  -> recorded {obs['probe_id']}={obs['outcome']} ({obs['modality']})"
@@ -253,7 +355,11 @@ class Run:
                     self.log.append(f"  {pid}: nothing recognised, speaking again")
                     clip = self.truth_clip.get(pid) or self.last_clip.get(pid)
                     if clip is not None:
-                        self.said[pid] = ("truth", clip.stem, self.said.get(pid, ("", "", "?"))[2])
+                        self.said[pid] = (
+                            "truth",
+                            clip_name(clip),
+                            self.said.get(pid, ("", "", "?"))[2],
+                        )
                         await self.speak(ws, pid, clip)
                 elif kind == "reprompt":
                     self.reprompts += 1
@@ -261,13 +367,18 @@ class Run:
                     if pid in self.silent_turns and pid in self.truth_clip:
                         self.silent_turns.discard(pid)
                         clip = self.truth_clip[pid]
-                        self.said[pid] = ("truth", clip.stem, self.said.get(pid, ("", "", "?"))[2])
-                        task = asyncio.create_task(self.speak_after(ws, pid, clip, 1.0))
-                        self.tasks.add(task)
-                        task.add_done_callback(self.tasks.discard)
+                        self.said[pid] = (
+                            "truth",
+                            clip_name(clip),
+                            self.said.get(pid, ("", "", "?"))[2],
+                        )
+                        self.start_speaker(pid, self.speak_after(ws, pid, clip, 1.0))
                 elif kind == "error" and m.get("fatal"):
+                    self.call_errors.append(f"{pid}: {m['code']}: {m['message']}")
                     self.log.append(f"  {pid}: error {m['code']}: {m['message']}")
                 elif kind == "call_end":
+                    if task := self.speakers.get(pid):
+                        task.cancel()
                     self.log.append(f"  call with {pid} ended: {m['reason']}")
                     return
 
@@ -276,13 +387,24 @@ class Run:
         q = next((w for w in waiting(s) if w["id"] == ready["question_id"]), None)
         if q is None:
             return
+        if q.get("kind") == "challenge":
+            clip = await self.presence_audio(pid, q)
+            self.last_clip[pid] = self.truth_clip[pid] = clip
+            self.log.append(f"  {pid}: answering presence check from own simulator card")
+            await self.speak(ws, pid, clip)
+            return
         value = await self.observe(pid, q["action"])
-        clip = self.pick_clip(lang, q["action"]["probe_id"], value)
+        if q["language"] == "en":
+            from text_investigation import PHRASES
+
+            clip = await self.synthesize_answer(PHRASES[value], "en")
+        else:
+            clip = self.pick_clip(lang, q["action"]["probe_id"], value)
         a = q["action"]
         self.log.append(
             f"Q{s['questions_asked']} to {pid} [{a['probe_id']}@{a['location_id']}]"
             f"{f' ({len(waiting(s))} in flight)' if len(waiting(s)) > 1 else ''}"
-            f" {ready['text']!r}  (sim shows: {value}; says take {clip.stem})"
+            f" {ready['text']!r}  (answer: {value}; says take {clip_name(clip)})"
         )
         self.last_clip[pid] = clip
         self.truth_clip[pid] = clip
@@ -299,13 +421,13 @@ class Run:
             self.log.append(f"  {pid} says something irrelevant: {junk.stem}")
             clip = junk
         else:
-            self.said[pid] = ("truth", clip.stem, value)
+            self.said[pid] = ("truth", clip_name(clip), value)
         await asyncio.sleep(self.rng.uniform(*self.think))  # a person takes a moment
         # The call can end while this bot is talking (e.g. its question was withdrawn).
         with contextlib.suppress(websockets.ConnectionClosed):
             await self.speak(ws, pid, clip)
 
-    async def speak_after(self, ws: Any, pid: str, clip: Path, delay: float) -> None:
+    async def speak_after(self, ws: Any, pid: str, clip: Audio, delay: float) -> None:
         await asyncio.sleep(delay)
         with contextlib.suppress(websockets.ConnectionClosed):
             await self.speak(ws, pid, clip)
@@ -326,8 +448,8 @@ class Run:
             sys.exit(f"missing clip {base.name}")
         return base
 
-    async def speak(self, ws: Any, pid: str, clip: Path) -> None:
-        voice = b"\x00\x00" * 4800 + pcm(clip)  # lead-in, then the answer
+    async def speak(self, ws: Any, pid: str, clip: Audio) -> None:
+        voice = b"\x00\x00" * 4800 + (pcm(clip) if isinstance(clip, Path) else clip)
         audio = voice + b"\x00\x00" * 16000  # then a second of silence
         for i in range(0, len(audio), FRAME):
             await ws.send(audio[i : i + FRAME])
@@ -338,8 +460,15 @@ class Run:
 
     async def phase(self) -> None:
         """Bots play everyone except a human participant, who answers from their own phone."""
-        bots = [p for p in PEOPLE if p["id"] != self.args.human]
-        await asyncio.gather(*(self.bot(p) for p in bots), self.wait_for_human())
+        bots = [p for p in self.people if p["id"] != self.args.human]
+        tasks = [asyncio.create_task(self.bot(p)) for p in bots]
+        tasks.append(asyncio.create_task(self.wait_for_human()))
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def wait_for_human(self) -> None:
         """Return once nothing is pending for the human (the bots return on their own)."""
@@ -395,6 +524,16 @@ class Run:
         self.log.append("REPAIR approved, capability collected, breaker reset, reported")
 
     async def main(self) -> int:
+        try:
+            return await self._main()
+        finally:
+            for task in self.tasks:
+                task.cancel()
+            await asyncio.gather(*self.tasks, return_exceptions=True)
+            await self.core.aclose()
+            await self.sim.aclose()
+
+    async def _main(self) -> int:
         before = (await self.core.get("/v1/voice/usage")).json().get("spent_today_inr", 0.0)
         if self.args.attach:  # continue an investigation already under way
             r = await self.core.get(f"/v1/investigations/{self.args.attach}")
@@ -402,19 +541,14 @@ class Run:
             r = await self.core.post(
                 "/v1/investigations",
                 json={
-                    "pack_id": "campus_block_c",
-                    "participants": PEOPLE,
-                    "report": {"text": "Floor 3 pe WiFi nahi chal raha", "reporter_id": "p_riya"},
-                    "scenario": {
-                        "seed": 19,
-                        "fault": {"faults": [{"component_id": "CB_C2_7", "mode": "tripped"}]},
-                    },
+                    **scenario_request(getattr(self.args, "scenario", "S1"), seed=19),
                     "max_parallel_calls": self.args.parallel,
                 },
             )
         r.raise_for_status()
         self.inv = r.json()
-        for p in PEOPLE:
+        self.people = self.inv["participants"]
+        for p in self.people:
             t = await self.core.post(
                 f"/v1/investigations/{self.inv['id']}/participants/{p['id']}/token"
             )
@@ -437,12 +571,20 @@ class Run:
             await self.repair()
             await asyncio.wait_for(self.phase(), self.args.timeout)
         s = await self.state()
-        reveal = (await self.core.post(f"/v1/investigations/{self.inv['id']}/reveal")).json()
-        replay = (await self.core.get(f"/v1/investigations/{self.inv['id']}/replay")).json()
+        response = await self.core.post(f"/v1/investigations/{self.inv['id']}/reveal")
+        response.raise_for_status()
+        reveal = response.json()
+        response = await self.core.get(f"/v1/investigations/{self.inv['id']}/replay")
+        response.raise_for_status()
+        replay = response.json()
         after = (await self.core.get("/v1/voice/usage")).json().get("spent_today_inr", 0.0)
         print("\n".join(self.log))
         gt = reveal.get("ground_truth") or {}
         sealed = (gt.get("reveal") or {}).get("commitment_verified", gt.get("commitment_verified"))
+        sealed = (
+            sealed is True
+            and (gt.get("reveal") or {}).get("commitment") == self.inv["sealed_commitment"]
+        )
 
         def med(xs: list[float]) -> str:
             return f"{statistics.median(xs):.0f} ms (n={len(xs)})" if xs else "-"
@@ -471,6 +613,40 @@ class Run:
             f"{len(truth)} true answers, {len(misheard)} recorded wrong | "
             f"re-prompts after silence: {self.reprompts} | walked back: {self.walked_back}"
         )
+        scenario = getattr(self.args, "scenario", "S1")
+        variant = getattr(self.args, "variant", "honest")
+        passed = rehearsal_passed(
+            scenario,
+            variant,
+            s,
+            correct=gt.get("correct"),
+            sealed=sealed is True,
+            identical=replay.get("identical") is True,
+            call_errors=self.call_errors,
+        )
+        if getattr(self.args, "summary", None):
+            # Public integration facts only. No transcripts, label readings, or Gnani measurements.
+            summary = {
+                "scenario": scenario,
+                "variant": variant,
+                "participants": "synthetic voice bots",
+                "investigation_id": self.inv["id"],
+                "status": s["status"],
+                "voice_answers": self.voice_answers,
+                "most_in_flight": self.most_at_once,
+                "correct": gt.get("correct"),
+                "commitment_verified": sealed,
+                "replay_identical": replay.get("identical"),
+                "passed": passed,
+                "presence_checks": s.get("presence_checks", []),
+                "disagreement_count": len(s.get("disagreements", [])),
+                "call_errors": self.call_errors,
+            }
+            path = Path(self.args.summary)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
         if getattr(self.args, "report", None):
             Path(self.args.report).write_text(
                 json.dumps(
@@ -487,7 +663,7 @@ class Run:
                 ),
                 encoding="utf-8",
             )
-        return 0 if s["status"] == "verified" and replay.get("identical") else 1
+        return 0 if passed else 1
 
 
 def main() -> None:
@@ -501,6 +677,9 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=900.0)
     ap.add_argument("--human", help="participant id answered by a person on their phone")
     ap.add_argument("--attach", help="continue this investigation instead of creating one")
+    ap.add_argument("--scenario", choices=["S1", "S2", "S7"], default="S1")
+    ap.add_argument("--variant", choices=["honest", "adversary"], default="honest")
+    ap.add_argument("--summary", help="public integration summary, without speech measurements")
     ap.add_argument(
         "--variants",
         help="folder of other takes, <lang>__<probe>__<value>__<tag>.wav (e.g. MMS voices, "

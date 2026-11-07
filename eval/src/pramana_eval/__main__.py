@@ -158,14 +158,16 @@ def render(summary: dict[str, Any]) -> str:
         f"Commit `{summary['git_sha']}`, seeds {summary['seeds'][0]}-{summary['seeds'][1]}, "
         f"scenario mix {summary['scenario_mix']}.",
         "",
-        "| Policy | Success | Accuracy (decided) | Accuracy (identifiable) | False confidence "
+        "| Policy | Completed episodes | Excluded failed runs | Success | Accuracy (decided) "
+        "| Accuracy (identifiable) | False confidence "
         "| Abstention recall (unidentifiable) | Pair accuracy | Probes (mean) | Effort s (mean) "
         "| People | Time to conclusion s (mean) | Withdrawn (mean) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, m in summary["policies"].items():
         lines.append(
-            f"| {name} | {_fmt(m['success_rate'], True)} | {_fmt(m['decision_accuracy'], True)} "
+            f"| {name} | {m['n']} | {m['failed_runs']} | {_fmt(m['success_rate'], True)} "
+            f"| {_fmt(m['decision_accuracy'], True)} "
             f"| {_fmt(m['accuracy_on_identifiable'], True)} "
             f"| {_fmt(m['false_confidence_rate'], True)} | {_fmt(m['abstention_recall'], True)} "
             f"| {_fmt(m['pair_accuracy'], True)} "

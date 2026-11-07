@@ -11,6 +11,9 @@ from core_testkit import PEOPLE, body
 from fastapi.testclient import TestClient
 from participant_bot import PHRASES
 
+from pramana_contracts import InvestigationState
+from pramana_core.visibility import for_participant
+
 pytestmark = pytest.mark.db
 
 LIE = {
@@ -163,6 +166,9 @@ def test_s1_electrician_reading_is_checked_and_passes(core: TestClient) -> None:
     assert "पैनल" in challenge["text"]  # Imran is asked in Hindi
     assert len(labels) == 1
     assert _replay_identical(core, inv["id"])
+    full = InvestigationState.model_validate(inv)
+    assert for_participant(full, "p_riya").presence_checks == []
+    assert len(for_participant(full, "p_imran").presence_checks) == 1
 
 
 def test_lying_electrician_fails_the_check_and_is_not_believed(core: TestClient) -> None:
@@ -253,3 +259,8 @@ def test_s2_two_students_disagree_and_both_are_right(core: TestClient) -> None:
         assert "—" not in d["explanation"]
     assert inv["disagreements"][-1]["kind"] == "both_right"
     assert _replay_identical(core, inv["id"])
+    for person in S2_PEOPLE:
+        personal = for_participant(InvestigationState.model_validate(inv), person["id"])
+        assert (
+            personal.disagreements == []
+        )  # other people's evidence and inferred cause are staff-only

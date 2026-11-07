@@ -269,7 +269,9 @@ class MediaSession:
             async with self.gnani.stream(
                 langs,
                 codemix=codemix,
-                keyterms=answer_keyterms(q.pack, q.probe_id),
+                # A label reading has no probe vocabulary. Steering it toward colours or
+                # yes/no can turn the code into an answer to the preceding question.
+                keyterms=[] if q.kind == "challenge" else answer_keyterms(q.pack, q.probe_id),
                 min_segment_ms=100,
             ) as upstream:
                 stream_ms = round((time.perf_counter() - t0) * 1000)
@@ -280,7 +282,10 @@ class MediaSession:
                         "participant_id": q.participant.id,
                         "text": q.text,
                         "language": q.language,
-                        "outcomes": list(q.pack.probe_by_id[q.probe_id].outcomes),
+                        "kind": q.kind,
+                        "outcomes": []
+                        if q.kind == "challenge"
+                        else list(q.pack.probe_by_id[q.probe_id].outcomes),
                         "model_confirmed": upstream.model_confirmed,
                     }
                 )

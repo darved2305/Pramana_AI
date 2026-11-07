@@ -20,6 +20,23 @@ from pramana_eval.runner import paired_difference, run_episode, summarize
 from pramana_eval.scenarios import Answers, generate
 
 
+def test_report_discloses_completed_and_excluded_episodes_per_policy() -> None:
+    from pramana_eval.__main__ import render
+
+    report = render(
+        {
+            "git_sha": "test",
+            "seeds": [10000, 10099],
+            "scenario_mix": {},
+            "policies": {"B_llm": {**summarize([]), "n": 22, "failed_runs": 78}},
+            "paired_vs_E": {},
+        }
+    )
+    assert "Completed episodes" in report
+    assert "Excluded failed runs" in report
+    assert "| B_llm | 22 | 78 |" in report
+
+
 @pytest.fixture(scope="module")
 def pack() -> DomainPack:
     return load_pack("campus_block_c")

@@ -8,8 +8,27 @@
  *
  * Participants answer truthfully from what their simulated surroundings card shows.
  */
-import { expect, test, type Page } from "@playwright/test";
-import { answerTruthfully, api, openParticipant, seedDirectory, signIn } from "./helpers";
+import { expect, test as base, type BrowserContext, type Page } from "@playwright/test";
+import { answerTruthfully, api, seedDirectory, signIn } from "./helpers";
+
+// Fixture teardown has its own budget and runs even if an assertion fails. Start every close
+// together: four sequential closes once consumed the entire remaining investigation budget.
+const test = base.extend<{ sessionPage: (mobile?: boolean) => Promise<Page> }>({
+  sessionPage: [async ({ browser }, provideSession) => {
+    const contexts: BrowserContext[] = [];
+    try {
+      await provideSession(async (mobile = false) => {
+        const context = await browser.newContext(mobile ? { viewport: { width: 390, height: 844 } } : {});
+        contexts.push(context);
+        return context.newPage();
+      });
+    } finally {
+      await Promise.all(contexts.map((context) => context.close()));
+    }
+  }, { timeout: 60_000 }],
+});
+
+test.use({ video: process.env.E2E_RECORD_VIDEO === "1" ? "on" : "off" });
 
 interface State {
   id: string;
@@ -22,7 +41,7 @@ interface State {
   ground_truth?: { correct?: boolean | null; reveal?: { commitment_verified?: boolean } } | null;
 }
 
-test("M1: S1 from the console to a verified repair", async ({ page, browser, request }) => {
+test("M1: S1 from the console to a verified repair", async ({ page, sessionPage, request }) => {
   await seedDirectory(request);
   const pack = await api<{ probes: { id: string; label: string }[] }>(request, "GET", "/v1/packs/campus_block_c");
   const label = (probe: string) => pack.probes.find((x) => x.id === probe)?.label ?? probe;
@@ -69,7 +88,10 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   }
   await page.keyboard.press("Escape");
   const people: Record<string, Page> = {};
-  for (const [pid, url] of Object.entries(links)) people[pid] = await openParticipant(browser, url);
+  for (const [pid, url] of Object.entries(links)) {
+    people[pid] = await sessionPage(true);
+    await people[pid].goto(url);
+  }
 
   // A participant link is not a staff session: it cannot open the console.
   const peek = people.p_riya;
@@ -107,8 +129,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeDisabled();
 
   // 5. An approver approves in their own session; the approval records their account.
-  const approverCtx = await browser.newContext();
-  const approver = await approverCtx.newPage();
+  const approver = await sessionPage();
   await signIn(approver, "approver", `/app/investigations/${invId}`);
   // Revealing is for operators only: an approver is not offered the button.
   await expect(approver.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
@@ -150,6 +171,4 @@ test("M1: S1 from the console to a verified repair", async ({ page, browser, req
   expect(state.ground_truth?.correct).toBe(true);
   expect(state.ground_truth?.reveal?.commitment_verified).toBe(true);
 
-  await approverCtx.close();
-  for (const p of Object.values(people)) await p.context().close();
 });

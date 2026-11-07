@@ -28,7 +28,7 @@ jobs:
       - name: Lint
         run: uv run ruff check . && uv run ruff format --check .
       - name: Types
-        run: uv run mypy packages/contracts/src packages/domain/src packages/engine/src services/sim/src services/core/src
+        run: uv run mypy packages/contracts/src packages/domain/src packages/engine/src services/sim/src services/core/src eval/src
       - name: Truth isolation (import contracts)
         run: uv run lint-imports
       - name: Contract schema and OpenAPI drift
@@ -54,7 +54,7 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - name: Types, lint and copy rules
-        run: npm run typecheck && npm run lint && npm run check:copy
+        run: npm run typecheck && npm run lint && npm run check:copy && npm run check:worklet
       - name: API types match the core OpenAPI spec
         run: npm run gen:api && git diff --exit-code -- src/lib/api/schema.gen.ts
       - name: Build
@@ -66,3 +66,42 @@ jobs:
           fi
       - name: Playwright (installed Chrome, production build)
         run: npm run test:e2e
+
+  browser-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pramana
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: pramana_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pramana" --health-interval 5s --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: uv sync --frozen
+      - run: npm ci
+      - name: Playwright (real core, simulator and PostgreSQL)
+        run: npm run test:e2e:real
+      - name: Browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-real-failures
+          path: apps/web/test-results
+          retention-days: 7

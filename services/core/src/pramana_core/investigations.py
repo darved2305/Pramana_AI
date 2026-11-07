@@ -121,6 +121,7 @@ class PendingQuestion:
     participant: ParticipantSpec
     pack: DomainPack
     scenario_id: str = ""
+    kind: str = "probe"
 
 
 def _now() -> datetime:
@@ -1478,6 +1479,7 @@ class InvestigationService:
             participant=person,
             pack=self.pack(row.pack_id),
             scenario_id=row.scenario_id,
+            kind=q.kind,
         )
 
     async def record_consent(

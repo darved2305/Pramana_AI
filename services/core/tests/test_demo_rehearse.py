@@ -181,7 +181,7 @@ def test_s7_adversary_fails_label_check_from_guard_desk(core: TestClient) -> Non
     assert "failed" in timeline.getvalue().lower()
 
 
-def test_s7_honest_participant_reads_the_label_and_passes(core: TestClient) -> None:
+def test_s7_honest_participant_reads_the_label_and_passes(core: TestClient, tmp_path: Path) -> None:
     sim = TestClient(core.sim_app)  # type: ignore[attr-defined]
     timeline = io.StringIO()
 
@@ -192,3 +192,11 @@ def test_s7_honest_participant_reads_the_label_and_passes(core: TestClient) -> N
     assert [check["status"] for check in state["presence_checks"]] == ["passed"]
     assert result["replay"]["identical"] is True
     assert "label" in timeline.getvalue().lower()
+    from demo_rehearse import _write_report
+
+    assert result["status_before_reveal"] == "abstained"
+    report_path = tmp_path / "rehearsal.json"
+    _write_report(report_path, result)
+    assert (
+        json.loads(report_path.read_text(encoding="utf-8"))["status_before_reveal"] == "abstained"
+    )

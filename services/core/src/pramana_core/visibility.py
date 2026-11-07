@@ -56,6 +56,10 @@ def for_participant(state: InvestigationState, participant_id: str) -> Investiga
             "pending_question": mine[0] if mine else None,
             "pending_questions": mine,
             "observations": [o for o in state.observations if o.participant_id == participant_id],
+            "presence_checks": [
+                c for c in state.presence_checks if c.participant_id == participant_id
+            ],
+            "disagreements": [],
             "approvals": [a for a in state.approvals if a.participant_id == participant_id],
             "ground_truth": None,
         }

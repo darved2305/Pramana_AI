@@ -632,3 +632,71 @@ def test_listen_streams_an_uncached_question_then_serves_it_from_the_cache(env: 
     with wave.open(io.BytesIO(again.content)) as w:  # the cached copy is a valid, sized WAV
         assert (w.getframerate(), w.getnframes()) == (24000, len(STREAM_PCM) // 2)
     assert env.tts.sse_calls == 1
+
+
+@pytest.mark.parametrize("honest", [True, False])
+def test_presence_reading_over_media_has_no_probe_choices_or_asr_bias(
+    env: Env, honest: bool
+) -> None:
+    state = env.client.post(
+        "/v1/investigations", json={**body(fault="CB_C2_7.tripped"), "presence_checks": True}
+    ).json()
+    for _ in range(20):
+        q = state["pending_question"]
+        assert q is not None, state
+        if q["kind"] == "challenge":
+            break
+        a = q["action"]
+        tok = env.client.post(
+            f"/v1/investigations/{state['id']}/participants/{a['participant_id']}/token"
+        ).json()
+        headers = {"Authorization": f"Bearer {tok['token']}"}
+        if a["requires_move"]:
+            env.sim.post(
+                f"/sim/v1/scenarios/{tok['scenario_id']}/move",
+                json={"to": a["location_id"]},
+                headers=headers,
+            ).raise_for_status()
+        seen = env.sim.post(
+            f"/sim/v1/scenarios/{tok['scenario_id']}/observe",
+            json={"probe_id": a["probe_id"]},
+            headers=headers,
+        ).json()["value"]
+        response = env.client.post(
+            f"/v1/investigations/{state['id']}/answers",
+            json={
+                "question_id": q["id"],
+                "participant_id": a["participant_id"],
+                "text": PHRASES[seen],
+            },
+        )
+        response.raise_for_status()
+        state = response.json()["state"]
+    else:
+        pytest.fail("no presence question was issued")
+
+    pid = q["action"]["participant_id"]
+    tok = env.client.post(f"/v1/investigations/{state['id']}/participants/{pid}/token").json()
+    view = env.sim.get(
+        f"/sim/v1/scenarios/{tok['scenario_id']}/view",
+        headers={"Authorization": f"Bearer {tok['token']}"},
+    ).json()
+    reading = " ".join(view["labels"][0]["value"]) if honest else "I can't see any label"
+    env.fake.transcript = reading
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_json({"type": "start", "token": tok["token"], "play": False})
+        ready = text_frame(ws)
+        assert ready["type"] == "ready"
+        assert ready["outcomes"] == []
+        assert ready["kind"] == "challenge"
+        assert not json.loads(env.fake.seen_headers[-1].get("keyterms", "[]"))
+        ws.send_bytes(PCM)
+        ws.send_json({"type": "commit"})
+        messages, _, code = drain(ws)
+    assert code == 1000
+    result = next(m["result"] for m in messages if m["type"] == "answer")
+    assert any(m["type"] == "transcript" and m["text"] == reading for m in messages)
+    assert result["observation"]["question_id"] != q["id"]  # the check refers to earlier evidence
+    after = env.client.get(f"/v1/investigations/{state['id']}").json()
+    assert after["presence_checks"][0]["status"] == ("passed" if honest else "failed")
+    assert env.client.get(f"/v1/investigations/{state['id']}/replay").json()["identical"]
