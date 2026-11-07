@@ -119,7 +119,7 @@ jobs:
       - name: Python image (core, simulator, migrations)
         run: docker build -t pramana-py:ci .
       - name: Python image starts and loads the sandbox pack
-        run: docker run --rm pramana-py:ci python -c "from pramana_domain import load_pack; print(load_pack('campus_block_c').id)"
+        run: docker run --rm pramana-py:ci python -c "from pramana_domain import load_pack; print(load_pack('campus_block_c').version)"
       - name: Web image (Next.js standalone)
         run: docker build -t pramana-web:ci apps/web
       - name: Web image reads its upstreams at runtime
