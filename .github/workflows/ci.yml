@@ -35,9 +35,14 @@ jobs:
         run: |
           uv run python -m pramana_contracts.export --check
           uv run python -m pramana_core.openapi_export --check
+      - name: Runtime database role (not a superuser, so row-level security applies; ADR 0015)
+        run: >-
+          psql -h localhost -p 5433 -U pramana -d pramana_test -c
+          "create role pramana_app login nosuperuser nobypassrls nocreatedb nocreaterole"
       - name: Tests (PostgreSQL, simulator in-process, Gnani protocol emulation)
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://pramana@localhost:5433/pramana_test
+          PRAMANA_REQUIRE_APP_ROLE: "1"
         run: uv run pytest
 
   web:

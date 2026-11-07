@@ -22,6 +22,22 @@ submission at risk.
 
 ## 0. Ground rules (read before touching anything)
 
+### Resume checkpoint, 2026-11-07
+
+STOP 1 is answered: start now on `production` only, GCP `asia-south1`, product name Pramana,
+domain undecided. The user has the cloud project, Google OAuth client, Gnani, LLM and telephony
+keys. Ask for each by name only when its slice needs it; values go into the untracked `.env`.
+
+R0 definitions are committed in `3f0ebdc`; Terraform has never been applied. The tenancy expand
+schema and runtime-role tests are implemented. Organization-scoped routes, the route coverage
+generator and sandbox provisioning still need the later API slices. Read the dated production
+status report for the distinction between local checks, CI and deployment.
+
+Next is Slice 2: Google sign-in. Use `joserfc` for JWT/JWKS validation and `httpx` for discovery
+and code exchange, as chosen in the handoff. Follow with Slices 3 through 7. Real Google keys
+are needed only after the mock flow passes, for one real sign-in check. STOP 2 still requires
+explicit approval of a concrete Terraform plan and cost estimate before applying anything.
+
 1. **Branch and worktree.** All production work happens on a branch named `production` in its own
    worktree, never on `main`:
    `git worktree add "../gnani ai hackathon-production" -b production main`
@@ -165,7 +181,7 @@ checks enforce it).
     A's resources gets 404 or 403 and never data. It fails when a new route has no tenant test.
 
 **Slice 2: Google sign-in in the core (§5)**
-- Authlib with a configurable OIDC discovery URL. In test mode it points at a mock issuer:
+- `joserfc` for JWT/JWKS checks and `httpx` with a configurable OIDC discovery URL. In test mode it points at a mock issuer:
   - a small in-process fake for pytest (RSA key, JWKS, token endpoint via `httpx` mock transport, as
     the Gnani emulation already does);
   - `scripts/mock_oidc.py` (a FastAPI app issuing Google-shaped ID tokens with chosen `sub`, `email`,

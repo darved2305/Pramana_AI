@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Written | 2026-11-07 (system date), against `main` at `e8194cb`. Release candidate `v1.0-rc1` is `8b24d0d`. |
-| Status | Research and proposal. Nothing in this document is built yet. It does not change the submission scope (freeze Nov 7, 23:59 IST; deadline Nov 10). Implementation starts after submission. |
+| Status | Production implementation started on the isolated `production` branch with the user's approval on 2026-11-07. R0 code and infrastructure definitions are committed; no cloud resources have been applied. Submission scope and `main` remain frozen. See the dated production status report for implementation and verification evidence. |
 | Goal | Turn one simulated building served by one process into a multi-tenant product that campuses, hospitals, offices and hotels in India can sign up for, model their own buildings in, and run with real people, real calls and real repairs. |
 | Read with | `README.md`, `docs/PRODUCT.md`, `docs/PLAN.md`, `docs/engineering/ARCHITECTURE_REVIEW.md`, ADRs 0001 to 0014 |
 
@@ -24,6 +24,17 @@ No number in this document is a measured Pramana result unless it cites a genera
 ## Review notes, 2026-11-07
 
 Checked on 2026-11-07 (evening, IST) against `main` at `e8194cb`, on the `production` branch.
+
+**Implementation decisions confirmed by the user.** Start now on the branch only; use GCP
+`asia-south1`; the name is Pramana and the domain is undecided. Ask for credentials by name only
+when needed and have the user place values in the production worktree's untracked `.env`.
+
+**Tenancy implementation review.** The expand migration also isolates organization metadata,
+limits cross-organization membership visibility to reads, and uses composite site/model foreign
+keys to refuse cross-tenant references. Published and retired models cannot return to draft,
+change their spec or identity, or be deleted. The tenant-leak route generator and stored sandbox
+provisioning are still pending the organization API slices; schema tests alone do not establish
+application-level tenant isolation.
 
 **Code claims (§1.4).** Every `file:line` cited in §1.4 still matches the tree: `api/directory.py:42,50,57,64`, `main.py:169`, `app/app/page.tsx:24-25`, `lib/api/core.ts:165`, `lib/store/local.ts:77`, `pack.py:344`, `speakable.py:10`, `investigations.py:132,362-366,791,883`, `auth/service.py:53,95`, `voice/governor.py:15`, `voice/media.py:117`, `auth/deps.py:60-67`, `login/page.tsx:204`, `lib/api/auth.ts:55-57`. The inventory holds: 29 HTTP paths, 7 migrations, 9 tables, an engine LRU of 32 (`ENGINE_CACHE_MAX`). No corrections were needed.
 

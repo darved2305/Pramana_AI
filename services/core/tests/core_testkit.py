@@ -11,6 +11,8 @@ from pramana_core.settings import Settings
 
 SIGNING_KEY = generate_private_key_b64()
 OPERATOR_KEY = "test-operator-key"
+DEMO_ORG_ID = "019a5e00-0000-7000-8000-000000000001"
+"""Created by migration 0008; owns every row written without an organization context."""
 
 
 def core_settings(db_url: str, **overrides: object) -> Settings:
@@ -38,6 +40,15 @@ async def truncate_all(db_url: str) -> None:
             "sessions, users, directory_participants "
             "restart identity cascade"
         )
+        # The cascade through ``users`` also empties ``organizations`` (``created_by``). Rows
+        # written without an organization context belong to the demo organization: restore it.
+        has_orgs = await conn.exec_driver_sql("select to_regclass('organizations') is not null")
+        if has_orgs.scalar():
+            await conn.exec_driver_sql(
+                f"insert into organizations (id, slug, name, kind) values "
+                f"('{DEMO_ORG_ID}', 'pramana-demo', 'Pramana demo', 'campus') "
+                "on conflict (id) do nothing"
+            )
     await engine.dispose()
 
 

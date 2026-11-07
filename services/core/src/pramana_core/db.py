@@ -8,8 +8,10 @@ work and never shared between concurrent tasks.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+import uuid
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from datetime import date, datetime
 from typing import Any, ClassVar
 
@@ -22,11 +24,13 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -34,16 +38,61 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.schema import FetchedValue
 
 from .settings import Settings
+
+current_org: ContextVar[uuid.UUID | None] = ContextVar("current_org", default=None)
+"""The organization this unit of work acts for. Every transaction copies it into the
+transaction-local setting ``app.org_id``, which row-level security reads (ADR 0015). Unset means
+no tenant rows are visible to the runtime role."""
+
+current_user: ContextVar[str | None] = ContextVar("current_user", default=None)
+"""The signed-in user, copied into ``app.user_id``: lets a person read their own memberships
+across organizations, nothing else."""
+
+
+@contextmanager
+def acting_for(org_id: uuid.UUID | None, user_id: str | None = None) -> Iterator[None]:
+    """Run the enclosed work in an organization context (and optionally as a user)."""
+    org_token = current_org.set(org_id)
+    user_token = current_user.set(user_id) if user_id is not None else None
+    try:
+        yield
+    finally:
+        current_org.reset(org_token)
+        if user_token is not None:
+            current_user.reset(user_token)
+
+
+async def apply_context(session: AsyncSession) -> None:
+    """Copy the context into the current transaction (``set_config(..., true)``: transaction-local,
+    so a pooled connection never carries one request's organization into the next)."""
+    org, user = current_org.get(), current_user.get()
+    if org is None and user is None:
+        return
+    await session.execute(
+        text("select set_config('app.org_id', :org, true), set_config('app.user_id', :user, true)"),
+        {"org": str(org) if org else "", "user": user or ""},
+    )
 
 
 class Base(DeclarativeBase):
     type_annotation_map: ClassVar[dict[Any, Any]] = {dict[str, Any]: JSONB}
 
 
+def org_column() -> Mapped[uuid.UUID]:
+    """``org_id`` on a tenant table. The database fills it from the organization context (and,
+    during the expand step, falls back to the demo organization for the table owner only)."""
+    return mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), server_default=FetchedValue()
+    )
+
+
 class InvestigationRow(Base):
     __tablename__ = "investigations"
+
+    org_id: Mapped[uuid.UUID] = org_column()
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     pack_id: Mapped[str] = mapped_column(String(64))
@@ -67,6 +116,8 @@ class InvestigationRow(Base):
 class EventRow(Base):
     __tablename__ = "events"
 
+    org_id: Mapped[uuid.UUID] = org_column()
+
     seq: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     investigation_id: Mapped[str] = mapped_column(
         ForeignKey("investigations.id", ondelete="CASCADE")
@@ -81,6 +132,8 @@ class EventRow(Base):
 
 class QuestionRow(Base):
     __tablename__ = "questions"
+
+    org_id: Mapped[uuid.UUID] = org_column()
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     investigation_id: Mapped[str] = mapped_column(
@@ -100,6 +153,8 @@ class QuestionRow(Base):
 
 class ObservationRow(Base):
     __tablename__ = "observations"
+
+    org_id: Mapped[uuid.UUID] = org_column()
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     investigation_id: Mapped[str] = mapped_column(
@@ -122,6 +177,8 @@ class ObservationRow(Base):
 
 class ApprovalRow(Base):
     __tablename__ = "approvals"
+
+    org_id: Mapped[uuid.UUID] = org_column()
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     investigation_id: Mapped[str] = mapped_column(
@@ -186,11 +243,76 @@ class DirectoryParticipantRow(Base):
 
     __tablename__ = "directory_participants"
 
+    org_id: Mapped[uuid.UUID] = org_column()
+
     pack_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class OrganizationRow(Base):
+    """A customer: a campus, hospital, office or hotel group (ADR 0015)."""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(40), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(16))
+    timezone: Mapped[str] = mapped_column(String(64), server_default="Asia/Kolkata")
+    data_region: Mapped[str] = mapped_column(String(32), server_default="asia-south1")
+    plan: Mapped[str] = mapped_column(String(32), server_default="starter")
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MembershipRow(Base):
+    __tablename__ = "memberships"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    roles: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    status: Mapped[str] = mapped_column(String(16), server_default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SiteRow(Base):
+    __tablename__ = "sites"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(32))
+    mode: Mapped[str] = mapped_column(String(8), server_default="live")
+    timezone: Mapped[str] = mapped_column(String(64), server_default="Asia/Kolkata")
+    current_model_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SiteModelRow(Base):
+    """One version of a site model. Published versions are immutable (a database trigger)."""
+
+    __tablename__ = "site_models"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sites.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    spec_sha256: Mapped[bytes] = mapped_column(LargeBinary)
+    validation: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 def make_engine(settings: Settings) -> AsyncEngine:
@@ -220,6 +342,7 @@ class Database:
         """One session, one transaction: commits on success, rolls back on any exception."""
         async with self._sessions() as session:
             async with session.begin():
+                await apply_context(session)
                 yield session
                 await session.flush()
                 touched = {
@@ -234,6 +357,8 @@ class Database:
     @asynccontextmanager
     async def read(self) -> AsyncIterator[AsyncSession]:
         async with self._sessions() as session:
+            # The session begins a transaction on first use; the context lives until it ends.
+            await apply_context(session)
             yield session
 
     async def ping(self) -> None:
