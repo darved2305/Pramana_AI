@@ -84,6 +84,7 @@ def main() -> None:
             host="127.0.0.1",
             port=int(os.environ["SIM_PORT"]),
             log_level="warning",
+            timeout_keep_alive=65,  # see pramana_core.__main__
         )
         return
     if which != "core":
@@ -99,6 +100,7 @@ def main() -> None:
         host="127.0.0.1",
         port=int(os.environ.get("E2E_CORE_PORT", "8020")),
         log_level="warning",
+        timeout_keep_alive=65,  # see pramana_core.__main__
     )
 
 

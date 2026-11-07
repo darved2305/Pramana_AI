@@ -13,4 +13,7 @@ if __name__ == "__main__":
         ws_max_size=1 << 20,
         # Event streams stay open indefinitely; do not let them hold a restart hostage.
         timeout_graceful_shutdown=5,
+        # Longer than any client's pooled-connection idle time (Node keeps them ~5 s), so the
+        # server never closes a connection a proxy or test client is about to reuse.
+        timeout_keep_alive=65,
     )

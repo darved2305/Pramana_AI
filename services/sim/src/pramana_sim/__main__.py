@@ -10,4 +10,7 @@ if __name__ == "__main__":
         factory=True,
         host=os.environ.get("SIM_HOST", "127.0.0.1"),
         port=int(os.environ.get("SIM_PORT", "8100")),
+        # Longer than any client's pooled-connection idle time (Node keeps them ~5 s), so the
+        # server never closes a connection a proxy or test client is about to reuse.
+        timeout_keep_alive=65,
     )
