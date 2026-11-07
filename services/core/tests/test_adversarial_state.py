@@ -20,6 +20,7 @@ After every step, whatever happened:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import pytest
@@ -28,7 +29,13 @@ from core_testkit import PEOPLE, body
 from fastapi.testclient import TestClient
 from hypothesis import HealthCheck, settings
 from hypothesis import strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
+from hypothesis.stateful import (
+    RuleBasedStateMachine,
+    invariant,
+    precondition,
+    rule,
+    run_state_machine_as_test,
+)
 from participant_bot import PHRASES
 
 pytestmark = pytest.mark.db
@@ -76,22 +83,24 @@ class Adversary(RuleBasedStateMachine):
     main: TestClient
     staff: dict[str, TestClient]
     decoy_tokens: dict[str, dict[str, str]]
+    request: dict[str, Any]
+    max_parallel: int
+    liar: bool
 
     def __init__(self) -> None:
         super().__init__()
         self.sim = TestClient(self.app.state.sim_app_for_tests)
         self.anon = _client(self.main, None)
-        r = self.staff["operator"].post(
-            "/v1/investigations", json=body(fault="CB_C2_7.tripped"), headers=CSRF
-        )
+        r = self.staff["operator"].post("/v1/investigations", json=self.request, headers=CSRF)
         assert r.status_code == 201, r.text
         self.inv: dict[str, Any] = r.json()
         self.id = self.inv["id"]
+        self.pids = [p["id"] for p in self.request["participants"]]
         self.tokens = {
             pid: self.staff["operator"]
             .post(f"/v1/investigations/{self.id}/participants/{pid}/token", headers=CSRF)
             .json()
-            for pid in PIDS
+            for pid in self.pids
         }
         self.seen_questions: set[str] = set()
         self.requested_by: dict[str, str] = {}
@@ -147,6 +156,7 @@ class Adversary(RuleBasedStateMachine):
             view = self.sim.get(f"/sim/v1/scenarios/{sid}/view", headers=h).json()
             labels = view.get("labels") or []
             text = " ".join(labels[0]["value"]) if labels else "I cannot see the label"
+            REACHED.add("presence check answered")
         else:
             if a["requires_move"]:
                 self._log(
@@ -175,6 +185,8 @@ class Adversary(RuleBasedStateMachine):
         for _ in range(12):
             if not self._pending():
                 return
+            if self.liar:
+                self.the_guard_claims_to_be_in_the_closet()
             self.answer_truthfully(0)
 
     @rule(requester=st.sampled_from(["operator", "both"]))
@@ -195,6 +207,29 @@ class Adversary(RuleBasedStateMachine):
             self.others_grab_the_capability()
             self.collect_capability("p_imran")
             self.repair_and_report()
+        elif state["status"] in ("verified", "not_verified", "abstained"):
+            self.status = state["status"]
+            self.reveal()
+
+    @rule()
+    def the_guard_claims_to_be_in_the_closet(self) -> None:
+        """S7's adversary: answers about IDF-2 from the guard desk, without walking there."""
+        for q in self._pending():
+            a = q["action"]
+            if a["participant_id"] == "p_mahesh" and a["location_id"] == "IDF2":
+                if q.get("kind") == "challenge":
+                    text = "I cannot see the label"
+                else:
+                    text = PHRASES["green" if a["probe_id"] == "switch_leds" else "off"]
+                r = self.anon.post(
+                    f"/v1/investigations/{self.id}/answers",
+                    json={"question_id": q["id"], "participant_id": "p_mahesh", "text": text},
+                    headers=self._bearer("p_mahesh"),
+                )
+                self._log("guard lies", r)
+                assert r.status_code in (200, 409), r.text
+                REACHED.add("guard lied")
+                return
 
     @rule(pick=st.integers(0, 2), text=st.sampled_from(INJECTIONS))
     def attempt_injection(self, pick: int, text: str) -> None:
@@ -222,7 +257,9 @@ class Adversary(RuleBasedStateMachine):
             return
         q = pending[pick % len(pending)]
         owner = q["action"]["participant_id"]
-        thief = PIDS[(PIDS.index(owner) + other) % len(PIDS)]
+        thief = self.pids[(self.pids.index(owner) + other) % len(self.pids)]
+        if thief == owner:
+            return
         before = len(self._events())
         for claimed in (owner, thief):
             r = self.anon.post(
@@ -256,7 +293,12 @@ class Adversary(RuleBasedStateMachine):
         qid = data.draw(st.sampled_from(stale))
         events = self._events()
         asked = next(e for e in events if e["payload"].get("question_id") == qid)
-        pid = asked["payload"]["action"]["participant_id"]
+        payload = asked["payload"]  # QuestionAsked has an action; ChallengeIssued names the person
+        pid = (
+            payload["action"]["participant_id"]
+            if "action" in payload
+            else payload["participant_id"]
+        )
         r = self.anon.post(
             f"/v1/investigations/{self.id}/answers",
             json={"question_id": qid, "participant_id": pid, "outcome": "unknown"},
@@ -266,6 +308,8 @@ class Adversary(RuleBasedStateMachine):
 
     @rule(pid=st.sampled_from(PIDS))
     def participant_reaches_for_staff_routes(self, pid: str) -> None:
+        if pid not in self.tokens:
+            return
         h = self._bearer(pid)
         before = len(self._events())
         base = f"/v1/investigations/{self.id}"
@@ -291,7 +335,7 @@ class Adversary(RuleBasedStateMachine):
 
     @rule()
     def a_forged_token(self) -> None:
-        good = self.tokens["p_imran"]["token"]
+        good = self.tokens[self.pids[-1]]["token"]
         body_part, sig = good.split(".")
         forged = f"{body_part}.{sig[:-2]}{'AA' if sig[-2:] != 'AA' else 'BB'}"
         before = len(self._events())
@@ -367,6 +411,8 @@ class Adversary(RuleBasedStateMachine):
 
     @rule(pid=st.sampled_from(PIDS))
     def collect_capability(self, pid: str) -> None:
+        if pid not in self.tokens:
+            return
         state = self._state()
         approved = [a for a in state["approvals"] if a["status"] == "approved"]
         if not approved:
@@ -411,18 +457,22 @@ class Adversary(RuleBasedStateMachine):
         self._log("report", r)
         assert r.status_code == 200, r.text
 
+    @precondition(lambda self: self.status in ("verified", "not_verified", "abstained"))
     @rule()
     def reveal(self) -> None:
+        r = self.staff["operator"].post(f"/v1/investigations/{self.id}/reveal", headers=CSRF)
+        self._log("reveal", r)
+        assert r.status_code == 200, r.text
+        assert r.json()["ground_truth"]["reveal"]["commitment_verified"] is True
+
+    @rule()
+    def reveal_too_early(self) -> None:
         state = self._state()
+        if state["status"] in ("decided", "abstained", "verified", "not_verified", "closed"):
+            return
         before = len(self._events())
         r = self.staff["operator"].post(f"/v1/investigations/{self.id}/reveal", headers=CSRF)
-        if state["status"] in ("decided", "abstained", "verified", "not_verified", "closed"):
-            self._log("reveal", r)
-            assert r.status_code == 200, r.text
-            gt = r.json()["ground_truth"]
-            assert gt["reveal"]["commitment_verified"] is True
-        else:
-            self._refused(f"reveal while {state['status']}", r, before, 409)
+        self._refused("reveal before a conclusion", r, before, 409)
 
     # -- invariants ----------------------------------------------------------------------------
 
@@ -441,8 +491,17 @@ class Adversary(RuleBasedStateMachine):
         assert replay["identical"] is True, replay
 
     @invariant()
+    def parallel_calls_stay_within_their_limits(self) -> None:
+        pending = self._pending()
+        assert len(pending) <= self.max_parallel, pending
+        people = [q["action"]["participant_id"] for q in pending]
+        assert len(people) == len(set(people)), "two questions in flight to one person"
+        if len(pending) > 1:
+            REACHED.add("several questions in flight")
+
+    @invariant()
     def participants_see_only_their_own(self) -> None:
-        for pid in PIDS:
+        for pid in self.pids:
             r = self.anon.get(f"/v1/investigations/{self.id}", headers=self._bearer(pid))
             assert r.status_code == 200, r.text
             mine = r.json()
@@ -456,8 +515,43 @@ class Adversary(RuleBasedStateMachine):
             assert mine["ground_truth"] is None
 
 
-def test_random_command_orders_keep_every_safeguard(secure_core: TestClient) -> None:
+EXAMPLES = int(os.environ.get("PRAMANA_ADVERSARIAL_EXAMPLES", "8"))
+"""Examples per scenario. Each push runs 8; a deeper run sets e.g. 40 (about 25 minutes)."""
+S1_DEEP = {
+    "decided",
+    "awaiting_approval",
+    "acting",
+    "verifying",
+    "verified",
+    "closed",
+    "refused: both approves their own request",
+    "refused: operator decides",
+    "refused: p_riya collects Imran's capability",
+    "refused: answer a stale question",
+}
+S7 = {**body(fault="SW_C2.dead", people=PEOPLE[:2]), "presence_checks": True}
+SCENARIOS: dict[str, tuple[dict[str, Any], int, bool, set[str]]] = {
+    "S1": (
+        body(fault="CB_C2_7.tripped"),
+        1,
+        False,
+        S1_DEEP | {"refused: reveal before a conclusion"},
+    ),
+    "S1-parallel": (
+        {**body(fault="CB_C2_7.tripped"), "max_parallel_calls": 3},
+        3,
+        False,
+        {"several questions in flight", "acting", "verified", "closed"},
+    ),
+    "S7-honest": (S7, 1, False, {"presence check answered", "closed"}),
+    "S7-adversary": (S7, 1, True, {"guard lied", "closed"}),
+}
+
+
+@pytest.mark.parametrize("scenario", sorted(SCENARIOS))
+def test_random_command_orders_keep_every_safeguard(secure_core: TestClient, scenario: str) -> None:
     """Signed-in people only: the automation key holds both roles and is not a person."""
+    request, max_parallel, liar, deep = SCENARIOS[scenario]
     app = secure_core.app
     app.state.sim_app_for_tests = secure_core.sim_app  # type: ignore[attr-defined]
     staff = {who: _client(secure_core, who) for who in ("operator", "approver", "both")}
@@ -470,27 +564,16 @@ def test_random_command_orders_keep_every_safeguard(secure_core: TestClient) -> 
     }
     Adversary.app, Adversary.main = app, secure_core
     Adversary.staff, Adversary.decoy_tokens = staff, decoy_tokens
+    Adversary.request, Adversary.max_parallel, Adversary.liar = request, max_parallel, liar
     REACHED.clear()
     run_state_machine_as_test(
         Adversary,
         settings=settings(
-            max_examples=20,
-            stateful_step_count=40,
+            max_examples=EXAMPLES,
+            stateful_step_count=30,
             deadline=None,
             derandomize=True,
             suppress_health_check=list(HealthCheck),
         ),
     )
-    deep = {
-        "decided",
-        "awaiting_approval",
-        "acting",
-        "verifying",
-        "verified",
-        "closed",
-        "refused: both approves their own request",
-        "refused: operator decides",
-        "refused: p_riya collects Imran's capability",
-        "refused: answer a stale question",
-    }
     assert deep <= REACHED, f"never reached: {sorted(deep - REACHED)}"
