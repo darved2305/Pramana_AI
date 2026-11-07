@@ -99,9 +99,27 @@ export interface ParticipantView {
 /** GET /v1/voice/status */
 export interface VoiceStatus {
   configured: boolean;
+  /** "gnani" only for HTTPS to Gnani's own host; "other" for an emulator or anything else. */
+  provider?: "gnani" | "other";
+  provider_host?: string | null;
   stt_model?: string;
   tts_models?: string[];
   base_url?: string;
+}
+
+/** GET /v1/voice/usage: today's metered spend and the governor's live state. */
+export interface VoiceUsage {
+  spent_today_inr: number;
+  by_service: Record<string, { requests: number; units: number; cost_inr: number }>;
+  limits: {
+    stt_rest_per_min: number;
+    tts_per_min: number;
+    max_streams: number;
+    rest_max_inflight: number;
+    daily_budget_inr: number;
+  };
+  window_used: { stt_rest: number; tts: number };
+  open_streams: number;
 }
 
 /** Statuses after which an investigation will not ask anything more. */

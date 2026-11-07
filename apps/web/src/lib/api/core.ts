@@ -26,6 +26,7 @@ import type {
   SubmitAnswer,
   VoiceAnswerResult,
   VoiceStatus,
+  VoiceUsage,
 } from "./types";
 
 const enc = encodeURIComponent;
@@ -150,7 +151,7 @@ export const core = {
 
   /* ---------- voice ---------- */
   voiceStatus: (signal?: AbortSignal) => request<VoiceStatus>("core", "/v1/voice/status", { signal }),
-  voiceUsage: (signal?: AbortSignal) => request<Record<string, unknown>>("core", "/v1/voice/usage", { signal }),
+  voiceUsage: (signal?: AbortSignal) => request<VoiceUsage>("core", "/v1/voice/usage", { signal }),
   stt: (audio: Blob, languageCodes: string[], codemix: boolean) => {
     const form = new FormData();
     form.set("audio", audio, "clip.wav");

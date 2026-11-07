@@ -20,6 +20,7 @@ import {
   IconSettings,
   IconUser,
   IconUsers,
+  IconWave,
 } from "@/components/ui/icons";
 import { IconButton } from "@/components/ui";
 import { useCoreHealth } from "@/lib/data/hooks";
@@ -35,6 +36,7 @@ const NAV = [
   { href: "/app/participants", label: "Participants", icon: IconUsers },
   { href: "/app/sites", label: "Sites", icon: IconBuilding },
   { href: "/app/evaluation", label: "Evaluation", icon: IconChart },
+  { href: "/app/voice", label: "Voice", icon: IconWave },
 ];
 const NAV_2 = [
   { href: "/app/settings", label: "Settings", icon: IconSettings },

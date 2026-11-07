@@ -118,3 +118,13 @@ test.describe("console data comes from the core", () => {
     await expect(page.getByRole("link", { name: /Corridor lights off/ })).toBeVisible();
   });
 });
+
+test("the voice page reads the real core's provider and spend", async ({ page }) => {
+  await signIn(page, "operator", "/app/voice");
+  const provider = page.getByRole("region", { name: "Provider" });
+  // The test core has no Gnani key: it must say voice is off, not claim live Gnani.
+  await expect(provider).toContainText("Voice off (no key)");
+  await expect(provider).toContainText("api.vachana.ai");
+  await expect(page.getByRole("region", { name: "Spend today" })).toContainText("Rs 0.00");
+  await expect(page.getByRole("region", { name: "Limits now" })).toContainText("0 of");
+});
