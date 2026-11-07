@@ -186,6 +186,11 @@
       "title": "Email",
       "type": "string"
      },
+     "email_verified": {
+      "default": false,
+      "title": "Email Verified",
+      "type": "boolean"
+     },
      "expires_at": {
       "format": "date-time",
       "title": "Expires At",
@@ -2272,6 +2277,66 @@
     "title": "ScenarioRequest",
     "type": "object"
    },
+   "SessionDevice": {
+    "additionalProperties": false,
+    "description": "An opaque device reference, never the browser's session token.",
+    "properties": {
+     "absolute_expires_at": {
+      "format": "date-time",
+      "title": "Absolute Expires At",
+      "type": "string"
+     },
+     "auth_method": {
+      "title": "Auth Method",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "current": {
+      "title": "Current",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "idle_expires_at": {
+      "format": "date-time",
+      "title": "Idle Expires At",
+      "type": "string"
+     },
+     "last_seen_at": {
+      "format": "date-time",
+      "title": "Last Seen At",
+      "type": "string"
+     },
+     "user_agent": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Agent"
+     }
+    },
+    "required": [
+     "id",
+     "current",
+     "auth_method",
+     "created_at",
+     "last_seen_at",
+     "idle_expires_at",
+     "absolute_expires_at"
+    ],
+    "title": "SessionDevice",
+    "type": "object"
+   },
    "Skill": {
     "enum": [
      "lay",
@@ -2602,6 +2667,169 @@
      }
     },
     "summary": "Ready"
+   }
+  },
+  "/v1/auth/devices": {
+   "get": {
+    "operationId": "devices_v1_auth_devices_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SessionDevice"
+         },
+         "title": "Response Devices V1 Auth Devices Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Devices",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/v1/auth/devices/revoke-others": {
+   "post": {
+    "operationId": "revoke_other_devices_v1_auth_devices_revoke_others_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Revoke Other Devices",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/v1/auth/devices/{device_id}": {
+   "delete": {
+    "operationId": "revoke_device_v1_auth_devices__device_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "device_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[a-f0-9]{64}$",
+       "title": "Device Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Revoke Device",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/v1/auth/google/callback": {
+   "get": {
+    "operationId": "google_callback_v1_auth_google_callback_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Google Callback",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/v1/auth/google/start": {
+   "get": {
+    "operationId": "google_start_v1_auth_google_start_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "next",
+      "required": false,
+      "schema": {
+       "default": "/app",
+       "maxLength": 2048,
+       "title": "Next",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "login_hint",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 254,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Login Hint"
+      }
+     },
+     {
+      "in": "query",
+      "name": "switch_account",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Switch Account",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Google Start",
+    "tags": [
+     "auth"
+    ]
    }
   },
   "/v1/auth/login": {

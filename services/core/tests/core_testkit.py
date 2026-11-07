@@ -27,6 +27,8 @@ def core_settings(db_url: str, **overrides: object) -> Settings:
         "TTS_CACHE_DIR": "",  # each test counts its own synthesis
         "LOG_JSON": False,
         "LOG_LEVEL": "WARNING",
+        "GOOGLE_OAUTH_CLIENT_ID": "",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "",
     }
     values.update(overrides)
     return Settings(**values)  # type: ignore[arg-type]
@@ -49,6 +51,9 @@ async def truncate_all(db_url: str) -> None:
                 f"('{DEMO_ORG_ID}', 'pramana-demo', 'Pramana demo', 'campus') "
                 "on conflict (id) do nothing"
             )
+        has_limits = await conn.exec_driver_sql("select to_regclass('rate_limits') is not null")
+        if has_limits.scalar():
+            await conn.exec_driver_sql("truncate rate_limits")
     await engine.dispose()
 
 

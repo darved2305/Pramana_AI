@@ -22,8 +22,16 @@ Terraform for ADR 0025 and PRODUCTION.md §13.3. **Nothing here has been applied
    user the plan and the cost estimate below.
 4. Apply only after an explicit yes. Then add secret values in Secret Manager by hand, never in
    Terraform.
-5. After the first migration, create the `pramana_app` role (non-superuser, no `BYPASSRLS`) and
-   grant it to the IAM database users (ADR 0015).
+5. Before migrations, create `pramana_app` (non-superuser, no `BYPASSRLS`) so the migrations grant
+   it table privileges. Grant it only to runtime IAM users. The migrator owns the schema and is
+   never a runtime identity (ADR 0015).
+6. Use `database-url` for the runtime connection and `migration-database-url` for the migrator.
+   Runtime service accounts cannot read the migrator credential or `sim-oracle-key`. IAM database
+   connection/token-refresh wiring and a staging smoke test remain deployment work; Terraform
+   validation does not establish that runtime connectivity works.
+7. Production core processes receive `PRAMANA_MODE=production`. Configure the final domain so
+   `OIDC_REDIRECT_URL` is HTTPS; startup refuses the local HTTP default in production. Staging
+   uses demo mode. No domain has been chosen and no deployment has been run.
 
 ## Expected fixed monthly cost (staging, rough) [I]
 

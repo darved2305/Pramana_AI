@@ -22,6 +22,8 @@ from .api import stream as stream_api
 from .api import voice as voice_api
 from .api import voice_turns as voice_turns_api
 from .auth.deps import participant_public_key
+from .auth.google import GoogleSignIn
+from .auth.oidc import GoogleOidc
 from .auth.service import AuthService, LoginThrottle
 from .db import Database, make_engine
 from .directory import make_queries
@@ -66,6 +68,7 @@ def create_app(
     *,
     sim_transport: httpx.AsyncBaseTransport | None = None,
     gnani_transport: httpx.AsyncBaseTransport | None = None,
+    oidc_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     cfg = settings or get_settings()
     configure_logging(cfg.log_level, cfg.log_json)
@@ -73,6 +76,12 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db = Database(make_engine(cfg))
+        if cfg.mode == "production":
+            try:
+                await db.require_runtime_role()
+            except Exception:
+                await db.dispose()
+                raise
         sim = SimClient(
             cfg.sim_url,
             cfg.sim_operator_key.get_secret_value(),
@@ -111,8 +120,13 @@ def create_app(
             browser_sim_url=cfg.browser_sim_url,
         )
         app.state.auth = AuthService(
-            db, cfg.session_ttl_s, LoginThrottle(cfg.login_max_failures, cfg.login_lockout_s)
+            db,
+            cfg.session_ttl_s,
+            LoginThrottle(cfg.login_max_failures, cfg.login_lockout_s),
+            idle_s=cfg.session_idle_ttl_s,
         )
+        oidc = GoogleOidc(cfg, transport=oidc_transport)
+        app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)
         app.state.participant_public_key = participant_public_key(
             cfg.participant_signing_key.get_secret_value()
         )
@@ -134,6 +148,7 @@ def create_app(
             yield
         finally:
             broadcaster.close()
+            await oidc.aclose()
             await gnani.aclose()
             await sim.aclose()
             await db.dispose()

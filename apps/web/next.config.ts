@@ -16,6 +16,10 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // A self-contained server for the container image (apps/web/Dockerfile).
   output: "standalone",
+  // OAuth codes and state arrive in query strings; omit these routes from dev request logs.
+  logging: {
+    incomingRequests: { ignore: [/\/api\/core\/v1\/auth\/google\/(?:start|callback)/] },
+  },
   turbopack: {
     rules: {
       "*.css": {

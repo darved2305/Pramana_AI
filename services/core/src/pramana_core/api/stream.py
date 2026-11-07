@@ -61,7 +61,7 @@ async def stream_events(
 ) -> EventStreamResponse:
     """Push the investigation's events: backfill after ``after_seq`` (or the browser's
     ``Last-Event-ID``, whichever is later), then follow new events live."""
-    await require_staff()(request)  # the log holds everyone's answers: staff only
+    principal = await require_staff()(request)  # the log holds everyone's answers: staff only
     svc: InvestigationService = request.app.state.investigations
     broadcaster: EventBroadcaster = request.app.state.broadcaster
     cfg = request.app.state.settings
@@ -79,6 +79,12 @@ async def stream_events(
     async def head() -> int:
         return await svc.head_seq(inv_id)
 
+    async def authorized() -> bool:
+        if principal.kind != "user":
+            return True
+        token = request.cookies.get(cfg.session_cookie_name, "")
+        return await request.app.state.auth.resolve(token, touch=False) is not None
+
     body = event_stream(
         sub,
         start,
@@ -86,6 +92,7 @@ async def stream_events(
         head,
         heartbeat_s=cfg.event_stream_heartbeat_s,
         max_duration_s=cfg.event_stream_max_s,
+        authorized=authorized,
     )
     return EventStreamResponse(body, stall_s=cfg.event_stream_stall_s, on_close=sub.close)
 

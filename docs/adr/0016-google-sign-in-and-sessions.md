@@ -14,12 +14,16 @@ self-serve sign-up, and staff in India mostly have Google accounts (Gmail or Wor
 
 | Option | For | Against |
 |---|---|---|
-| **The core implements Google OIDC (Authlib), sessions in PostgreSQL** | One session authority for REST, SSE and both WebSocket kinds; roles live with the data; no extra party holds personal data | We own the flow, the linking rules and their tests |
+| **The core implements Google OIDC (`joserfc` and `httpx`), sessions in PostgreSQL** | One session authority for REST, SSE and both WebSocket kinds; roles live with the data; no extra party holds personal data | We own the flow, the linking rules and their tests |
 | Auth.js or Better Auth in Next.js | Mature UI | Two session authorities, or tokens passed between Next and the core |
 | Hosted identity (Clerk, WorkOS, Auth0) | SSO and SCIM later | A vendor in every request path; residency to check; per-user cost |
 | Supabase Auth or Firebase | Managed Google sign-in | Its own sessions and JWTs beside ours |
 
 **Decision.**
+- Use `joserfc` for JOSE validation and `httpx` for discovery and the code exchange, as chosen in
+  the production handoff. The HTTP layer owns the JWKS cache because `joserfc` has no HTTP client.
+  Key URLs come from trusted discovery, never from token headers. Primary implementation reference:
+  [joserfc JWT guide](https://jose.authlib.org/en/guide/jwt/) (read 2026-11-07).
 - Authorization code flow with PKCE (S256), `state` and `nonce`, scopes `openid email profile`
   only. In-flight sign-ins live in `auth_flows` (single use, 10 minutes, keyed by the hash of an
   opaque cookie). Google's discovery document advertises S256 (checked 2026-11-07).

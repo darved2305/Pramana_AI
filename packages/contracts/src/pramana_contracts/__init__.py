@@ -25,6 +25,7 @@ from .console import (
     LoginRequest,
     PackSummary,
     ParticipantPatch,
+    SessionDevice,
     StaffRole,
 )
 from .investigation import (
@@ -163,6 +164,7 @@ __all__ = [
     "Role",
     "ScenarioCreated",
     "ScenarioRequest",
+    "SessionDevice",
     "SimParticipant",
     "Skill",
     "StaffRole",

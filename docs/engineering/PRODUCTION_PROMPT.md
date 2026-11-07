@@ -28,15 +28,22 @@ STOP 1 is answered: start now on `production` only, GCP `asia-south1`, product n
 domain undecided. The user has the cloud project, Google OAuth client, Gnani, LLM and telephony
 keys. Ask for each by name only when its slice needs it; values go into the untracked `.env`.
 
-R0 definitions are committed in `3f0ebdc`; Terraform has never been applied. The tenancy expand
-schema and runtime-role tests are implemented. Organization-scoped routes, the route coverage
-generator and sandbox provisioning still need the later API slices. Read the dated production
-status report for the distinction between local checks, CI and deployment.
+Next is Slice 3: idempotency, `/v1/me`, onboarding state, and atomic organization/sandbox setup.
+Then continue with Slices 4 through 7. Notes are in `.cache/production-slice3-design.md` locally.
 
-Next is Slice 2: Google sign-in. Use `joserfc` for JWT/JWKS validation and `httpx` for discovery
-and code exchange, as chosen in the handoff. Follow with Slices 3 through 7. Real Google keys
-are needed only after the mock flow passes, for one real sign-in check. STOP 2 still requires
-explicit approval of a concrete Terraform plan and cost estimate before applying anything.
+R0 definitions are in `3f0ebdc`, tenancy in `5c9ecea`, and the image smoke correction in `56e5bca`.
+All five CI jobs passed on `56e5bca` (run 42383301031). Terraform has never been applied. Slice 2's
+`joserfc`/`httpx` core, migration 0009, mock issuer, linking rules, sessions, devices and shared
+limiter pass 3,625 Python, 48 UI and 23 real-browser tests locally. Read the status report for
+its CI result before treating it as CI green. Full ID rows with onboarding/team/UI prerequisites
+are still pending; test names alone are not their exit proof.
+
+Real Google validation is pending the user's client configuration. The production `.env` has
+client ID/secret fields and Google issuer/discovery plus the local callback prepared.
+Register `http://localhost:3102/api/core/v1/auth/google/callback`, then save the two OAuth values
+in `.env`. Browser/native control was disconnected, so the user was given those Google console
+steps. Confirm presence by name only and perform one real sign-in when ready. Do not overwrite
+values they add. STOP 2 still requires explicit approval of a concrete plan and costs before apply.
 
 1. **Branch and worktree.** All production work happens on a branch named `production` in its own
    worktree, never on `main`:
@@ -252,7 +259,7 @@ Keep the existing visual identity: ink and cream theme, display-slab type, `Blur
   core.
 
 **Slice 7: the edge-case suite**
-- Every ID, OR and DA row of §6.2 automated: pytest for API rows; Playwright for browser rows, using
+- Every R1-scoped ID, OR and DA row of §6.2 automated (see the review notes and §15 for R2/R3 rows): pytest for API rows; Playwright for browser rows, using
   setup projects with one `storageState` per user state (new, invited, returning with one
   organization, returning with several, removed member, approver-only, viewer) and one account per
   parallel worker.

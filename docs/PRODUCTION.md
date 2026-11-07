@@ -1047,7 +1047,7 @@ A single PostgreSQL primary handles both comfortably. Plan in this order: indexe
 
 | Option | For | Against | Verdict |
 |---|---|---|---|
-| **The core implements Google OIDC (Authlib), with sessions in PostgreSQL** | Keeps ADR 0010's model. One session authority for REST, SSE and both WebSocket kinds. Roles stay where the data is. No extra party holds personal data, and the data stays in India | We maintain the flow, the linking rules and their tests | **Chosen [R]** |
+| **The core implements Google OIDC (`joserfc` for JOSE and `httpx` for the flow), with sessions in PostgreSQL** | Keeps ADR 0010's model. One session authority for REST, SSE and both WebSocket kinds. Roles stay where the data is. No extra party holds personal data, and the data stays in India | We maintain the flow, the linking rules and their tests | **Chosen [R], confirmed in the handoff** |
 | Auth.js or Better Auth inside Next.js | Mature UI flows | Two session authorities (Next and the core), or tokens passed between them; WebSocket and SSE checks still happen in the core | No |
 | Hosted identity (Clerk, WorkOS AuthKit, Auth0) | Fast, with SSO and SCIM available | A vendor in the critical path for every call; data residency to check; cost per user | Later, for enterprise SSO (WorkOS-style SAML and SCIM) when the first customer asks |
 | Supabase Auth or Firebase Identity Platform | Managed Google sign-in | Its own sessions and JWTs beside ours | No |
@@ -1082,6 +1082,14 @@ Details:
 - Ask for no Google API scopes beyond `openid email profile`. This keeps the app out of Google's sensitive-scope verification.
 - Check `nonce` and `hd` ourselves: Google's library verifiers check only the signature, `iss`, `aud` and `exp` [V, 2026-11-07]. Google's discovery document lists S256 among `code_challenge_methods_supported` [V].
 - In test mode the expected issuer can point at a mock OIDC server (§12.2). A production process refuses to start with a non-Google issuer, the same way preflight refuses an emulated voice provider today.
+
+Implementation note, 2026-11-07: `joserfc` checks JWT signatures/claims; our `httpx` client owns
+discovery, code exchange and a JWKS cache honoring `Cache-Control` and `Age`. It never follows
+token-supplied key URLs. A verified existing account links only when the same valid session was
+present at both flow start and callback, and that session belongs to the matching user. Linking
+revokes older sessions. The email verification marker is conservative: a custom-domain Google
+email without `hd` needs a one-time email link before email-based invitations or
+domain joins. Global staff roles are never granted to a new Google user.
 
 ### 5.3 Creating and linking accounts (pre-hijacking defences)
 

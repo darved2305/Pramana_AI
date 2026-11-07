@@ -190,6 +190,11 @@
           "title": "Email",
           "type": "string"
         },
+        "email_verified": {
+          "default": false,
+          "title": "Email Verified",
+          "type": "boolean"
+        },
         "expires_at": {
           "format": "date-time",
           "title": "Expires At",
@@ -2350,6 +2355,67 @@
       "title": "ScenarioRequest",
       "type": "object"
     },
+    "SessionDevice": {
+      "additionalProperties": false,
+      "description": "An opaque device reference, never the browser's session token.",
+      "properties": {
+        "absolute_expires_at": {
+          "format": "date-time",
+          "title": "Absolute Expires At",
+          "type": "string"
+        },
+        "auth_method": {
+          "title": "Auth Method",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "current": {
+          "title": "Current",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "idle_expires_at": {
+          "format": "date-time",
+          "title": "Idle Expires At",
+          "type": "string"
+        },
+        "last_seen_at": {
+          "format": "date-time",
+          "title": "Last Seen At",
+          "type": "string"
+        },
+        "user_agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Agent"
+        }
+      },
+      "required": [
+        "id",
+        "current",
+        "auth_method",
+        "created_at",
+        "last_seen_at",
+        "idle_expires_at",
+        "absolute_expires_at"
+      ],
+      "title": "SessionDevice",
+      "type": "object"
+    },
     "Skill": {
       "enum": [
         "lay",
@@ -2714,6 +2780,9 @@
     },
     "RevealResult": {
       "$ref": "#/$defs/RevealResult"
+    },
+    "SessionDevice": {
+      "$ref": "#/$defs/SessionDevice"
     },
     "SttResult": {
       "$ref": "#/$defs/SttResult"

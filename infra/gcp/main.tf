@@ -9,6 +9,7 @@ locals {
   # Secrets created empty here; values are added by hand in Secret Manager, never in Terraform state.
   secret_names = [
     "database-url",
+    "migration-database-url",
     "gnani-api-key",
     "participant-signing-key",
     "sim-operator-key",
@@ -17,6 +18,9 @@ locals {
     "google-oauth-client-secret",
     "email-api-key",
   ]
+  runtime_secret_names = setsubtract(toset(local.secret_names), toset([
+    "sim-oracle-key", "migration-database-url",
+  ]))
 }
 
 resource "google_project_service" "apis" {
@@ -76,12 +80,18 @@ resource "google_secret_manager_secret" "s" {
 
 resource "google_secret_manager_secret_iam_member" "core_reads" {
   for_each = {
-    for pair in setproduct(["api", "media", "worker", "migrate"], local.secret_names) :
+    for pair in setproduct(["api", "media", "worker"], local.runtime_secret_names) :
     "${pair[0]}-${pair[1]}" => { sa = pair[0], secret = pair[1] }
   }
   secret_id = google_secret_manager_secret.s[each.value.secret].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.svc[each.value.sa].email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "migrator_reads" {
+  secret_id = google_secret_manager_secret.s["migration-database-url"].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.svc["migrate"].email}"
 }
 
 resource "google_secret_manager_secret_iam_member" "sim_reads" {

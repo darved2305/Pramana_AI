@@ -64,6 +64,27 @@ resource "google_cloud_run_v2_service" "svc" {
       }
 
       dynamic "env" {
+        for_each = contains(["api", "media", "worker"], each.key) ? {
+          PRAMANA_MODE = var.environment == "production" ? "production" : "demo"
+        } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
+        for_each = contains(["api", "media", "worker"], each.key) && var.domain != "" ? {
+          OIDC_REDIRECT_URL = "https://${var.domain}/api/core/v1/auth/google/callback"
+          CORS_ORIGINS      = jsonencode(["https://${var.domain}"])
+        } : {}
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
         for_each = contains(["api", "media", "worker"], each.key) ? toset(["database-url", "gnani-api-key", "participant-signing-key", "sim-operator-key", "google-oauth-client-id", "google-oauth-client-secret"]) : toset([])
         content {
           name = upper(replace(env.value, "-", "_"))
@@ -164,7 +185,7 @@ resource "google_cloud_run_v2_job" "migrate" {
           name = "DATABASE_URL"
           value_source {
             secret_key_ref {
-              secret  = google_secret_manager_secret.s["database-url"].secret_id
+              secret  = google_secret_manager_secret.s["migration-database-url"].secret_id
               version = "latest"
             }
           }

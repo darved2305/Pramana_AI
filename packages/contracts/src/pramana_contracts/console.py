@@ -36,6 +36,20 @@ class AuthSession(StrictModel):
     expires_at: datetime
     method: str = "session"
     """``session`` (browser cookie) or ``automation`` (scripts holding the automation key)."""
+    email_verified: bool = False
+
+
+class SessionDevice(StrictModel):
+    """An opaque device reference, never the browser's session token."""
+
+    id: str
+    current: bool
+    auth_method: str
+    created_at: datetime
+    last_seen_at: datetime
+    idle_expires_at: datetime
+    absolute_expires_at: datetime
+    user_agent: str | None = None
 
 
 class DirectoryParticipant(StrictModel):

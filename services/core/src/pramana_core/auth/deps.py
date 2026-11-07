@@ -78,7 +78,7 @@ async def _identify(request: HTTPConnection) -> Principal:
             participant_id=claims.sub,
             scenario_id=claims.scn,
         )
-    token = request.cookies.get(SESSION_COOKIE)
+    token = request.cookies.get(cfg.session_cookie_name)
     if token:
         auth: AuthService = request.app.state.auth
         principal = await auth.resolve(token)

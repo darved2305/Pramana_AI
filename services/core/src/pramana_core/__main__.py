@@ -11,6 +11,9 @@ if __name__ == "__main__":
         host=os.environ.get("CORE_HOST", "127.0.0.1"),
         port=int(os.environ.get("CORE_PORT", "8000")),
         ws_max_size=1 << 20,
+        # RequestContextMiddleware logs paths without query strings. Raw access logs would
+        # retain OAuth callback codes and state values.
+        access_log=False,
         # Event streams stay open indefinitely; do not let them hold a restart hostage.
         timeout_graceful_shutdown=5,
         # Longer than any client's pooled-connection idle time (Node keeps them ~5 s), so the

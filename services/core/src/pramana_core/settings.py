@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True
+    )
 
-    mode: Literal["dev", "test", "demo"] = Field(default="dev", alias="PRAMANA_MODE")
+    mode: Literal["dev", "test", "demo", "production"] = Field(default="dev", alias="PRAMANA_MODE")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_json: bool = Field(default=True, alias="LOG_JSON")
 
@@ -74,19 +77,62 @@ class Settings(BaseSettings):
     automation_key: SecretStr | None = Field(default=None, alias="CORE_AUTOMATION_KEY")
     """Shared secret for scripts and bots (``X-Automation-Key``): acts as operator and approver.
     Never sent to the browser."""
-    session_ttl_s: int = Field(default=12 * 3600, ge=60, le=7 * 24 * 3600, alias="SESSION_TTL_S")
+    oidc_issuer: str = Field(default="https://accounts.google.com", alias="OIDC_ISSUER")
+    oidc_discovery_url: str = Field(
+        default="https://accounts.google.com/.well-known/openid-configuration",
+        alias="OIDC_DISCOVERY_URL",
+    )
+    google_oauth_client_id: str = Field(default="", alias="GOOGLE_OAUTH_CLIENT_ID")
+    google_oauth_client_secret: SecretStr | None = Field(
+        default=None, alias="GOOGLE_OAUTH_CLIENT_SECRET"
+    )
+    oidc_redirect_url: str = Field(
+        default="http://localhost:3102/api/core/v1/auth/google/callback", alias="OIDC_REDIRECT_URL"
+    )
+    session_ttl_s: int = Field(default=12 * 3600, ge=60, le=12 * 3600, alias="SESSION_TTL_S")
+    session_idle_ttl_s: int = Field(default=3600, ge=60, le=3600, alias="SESSION_IDLE_TTL_S")
     session_cookie_secure: bool | None = Field(default=None, alias="SESSION_COOKIE_SECURE")
-    """Mark the session cookie ``Secure``. Unset means: only in ``PRAMANA_MODE=demo`` (HTTPS)."""
+    """Mark cookies ``Secure`` in demo and production. Production cannot turn this off."""
     login_max_failures: int = Field(default=5, ge=1, le=100, alias="LOGIN_MAX_FAILURES")
     login_lockout_s: float = Field(default=300.0, gt=0, alias="LOGIN_LOCKOUT_S")
     eval_reports_dir: str = Field(default="eval/reports", alias="EVAL_REPORTS_DIR")
 
     @field_validator(
-        "gnani_api_key", "gemini_api_key", "groq_api_key", "automation_key", mode="before"
+        "gnani_api_key",
+        "gemini_api_key",
+        "groq_api_key",
+        "automation_key",
+        "google_oauth_client_secret",
+        mode="before",
     )
     @classmethod
     def _empty_is_none(cls, v: object) -> object:
         return None if v in ("", None) else v
+
+    @model_validator(mode="after")
+    def _production_auth(self) -> Self:
+        if self.mode == "production":
+            if self.oidc_issuer != "https://accounts.google.com" or self.oidc_discovery_url != (
+                "https://accounts.google.com/.well-known/openid-configuration"
+            ):
+                raise ValueError("production requires the Google issuer and discovery URL")
+            if self.automation_key is not None:
+                raise ValueError("CORE_AUTOMATION_KEY is forbidden in production")
+            if self.auth_required is False or self.session_cookie_secure is False:
+                raise ValueError("production requires authentication and Secure cookies")
+            redirect = urlsplit(self.oidc_redirect_url)
+            if (
+                redirect.scheme != "https"
+                or not redirect.hostname
+                or redirect.username
+                or redirect.password
+                or redirect.query
+                or redirect.fragment
+            ):
+                raise ValueError(
+                    "production requires an HTTPS OIDC_REDIRECT_URL without query or fragment"
+                )
+        return self
 
     @property
     def enforce_auth(self) -> bool:
@@ -95,10 +141,18 @@ class Settings(BaseSettings):
     @property
     def secure_cookies(self) -> bool:
         return (
-            self.mode == "demo"
+            self.mode in {"demo", "production"}
             if self.session_cookie_secure is None
             else self.session_cookie_secure
         )
+
+    @property
+    def session_cookie_name(self) -> str:
+        return "__Host-pramana_session" if self.secure_cookies else "pramana_session"
+
+    @property
+    def auth_flow_cookie_name(self) -> str:
+        return "__Host-pramana_auth" if self.secure_cookies else "pramana_auth"
 
     @property
     def browser_sim_url(self) -> str:

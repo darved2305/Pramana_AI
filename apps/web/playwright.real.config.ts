@@ -9,6 +9,7 @@ import { defineConfig, devices } from "@playwright/test";
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 3022);
 const CORE_PORT = Number(process.env.E2E_CORE_PORT ?? 8020);
 const SIM_PORT = Number(process.env.E2E_SIM_PORT ?? 8120);
+const OIDC_PORT = Number(process.env.E2E_OIDC_PORT ?? 8420);
 
 // Workers re-evaluate this file; keys are generated once in the main process and inherited.
 if (!process.env.E2E_SIGNING_KEY) {
@@ -44,6 +45,12 @@ export default defineConfig({
   },
   webServer: [
     {
+      command: `uv run python ../../scripts/mock_oidc.py --port ${OIDC_PORT} --client-id pramana-e2e`,
+      url: `http://127.0.0.1:${OIDC_PORT}/.well-known/openid-configuration`,
+      timeout: 120_000,
+      reuseExistingServer: false,
+    },
+    {
       command: "uv run python tests-real/backend.py sim",
       url: `http://127.0.0.1:${SIM_PORT}/health`,
       timeout: 120_000,
@@ -75,6 +82,11 @@ export default defineConfig({
         GNANI_API_KEY: "",
         LLM_EXTRACTOR_PROVIDER: "none",
         EVAL_REPORTS_DIR: "apps/web/tests-real/fixtures/reports",
+        OIDC_ISSUER: `http://localhost:${OIDC_PORT}`,
+        OIDC_DISCOVERY_URL: `http://localhost:${OIDC_PORT}/.well-known/openid-configuration`,
+        GOOGLE_OAUTH_CLIENT_ID: "pramana-e2e",
+        GOOGLE_OAUTH_CLIENT_SECRET: "local-only",
+        OIDC_REDIRECT_URL: `http://localhost:${WEB_PORT}/api/core/v1/auth/google/callback`,
       },
     },
     {

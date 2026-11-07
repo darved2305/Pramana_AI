@@ -221,7 +221,10 @@ class UserRow(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True)
     """Stored lower-cased; compared case-insensitively."""
     display_name: Mapped[str] = mapped_column(String(80))
-    password_hash: Mapped[str] = mapped_column(String(256))
+    password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     roles: Mapped[list[str]] = mapped_column(JSONB)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -236,6 +239,71 @@ class SessionRow(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    auth_method: Mapped[str] = mapped_column(String(16), server_default="password")
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    idle_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now() + interval '60 minutes'")
+    )
+    absolute_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now() + interval '12 hours'")
+    )
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class UserIdentityRow(Base):
+    __tablename__ = "user_identities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    provider: Mapped[str] = mapped_column(String(16))
+    subject: Mapped[str] = mapped_column(String(255))
+    email_at_link: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    hosted_domain: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuthFlowRow(Base):
+    __tablename__ = "auth_flows"
+
+    id_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[str] = mapped_column(String(128))
+    nonce: Mapped[str] = mapped_column(String(128))
+    pkce_verifier: Mapped[str] = mapped_column(String(128))
+    next_path: Mapped[str] = mapped_column(String(2048))
+    link_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    link_session_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RateLimitRow(Base):
+    __tablename__ = "rate_limits"
+
+    scope: Mapped[str] = mapped_column(String(32), primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    failures: Mapped[list[float]] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLogRow(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
+    )
+    actor_kind: Mapped[str] = mapped_column(String(32))
+    actor_id: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(80))
+    target_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class DirectoryParticipantRow(Base):
@@ -364,6 +432,20 @@ class Database:
     async def ping(self) -> None:
         async with self.engine.connect() as conn:
             await conn.exec_driver_sql("select 1")
+
+    async def require_runtime_role(self) -> None:
+        async with self.engine.connect() as conn:
+            privileged = (
+                await conn.execute(
+                    text(
+                        "select rolsuper or rolbypassrls from pg_roles where rolname = current_user"
+                    )
+                )
+            ).scalar_one()
+        if privileged:
+            raise RuntimeError(
+                "production must use a non-superuser database role without BYPASSRLS"
+            )
 
     async def dispose(self) -> None:
         await self.engine.dispose()
