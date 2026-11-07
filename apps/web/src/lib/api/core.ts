@@ -17,6 +17,7 @@ import type {
   InvestigationState,
   InvestigationStatus,
   PackSummary,
+  ReplayResult,
   ParticipantPatch,
   ParticipantSpec,
   ParticipantToken,
@@ -64,6 +65,10 @@ export const core = {
 
   getInvestigation: (id: string, signal?: AbortSignal, token?: string) =>
     request<InvestigationState>("core", `/v1/investigations/${enc(id)}`, { signal, token }),
+
+  /** Rebuild from the log and compare; also whether the log still matches its seal. */
+  replayCheck: (id: string, signal?: AbortSignal) =>
+    request<ReplayResult>("core", `/v1/investigations/${enc(id)}/replay`, { signal }),
 
   events: (id: string, afterSeq: number, signal?: AbortSignal, token?: string) =>
     request<EventEnvelope[]>("core", `/v1/investigations/${enc(id)}/events?after_seq=${afterSeq}`, { signal, token }),

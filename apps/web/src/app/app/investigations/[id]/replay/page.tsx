@@ -9,7 +9,8 @@ import { Badge, Card, CardHeader, EmptyState, ErrorState, IconButton, PageHeader
 import { IconArrowLeft, IconPause, IconPlay, IconSkipBack, IconSkipFwd } from "@/components/ui/icons";
 import { useEventLog } from "@/lib/data/hooks";
 import { EVENT_LABEL, clock, foldEvents, outcomeWord, pct } from "@/lib/data/derive";
-import type { BeliefSnapshot, EventEnvelope } from "@/lib/api/types";
+import type { BeliefSnapshot, EventEnvelope, ReplayResult } from "@/lib/api/types";
+import { core } from "@/lib/api/core";
 import { usePrefersReducedMotion } from "@/lib/hooks/useReducedMotion";
 
 export default function ReplayPage() {
@@ -36,8 +37,46 @@ export default function ReplayPage() {
           <EmptyState title="No events yet" body="This investigation has not recorded any events." />
         </Card>
       ) : (
-        <Player events={log.data} />
+        <>
+          {log.source === "preview" ? null : <Integrity id={id} />}
+          <Player events={log.data} />
+        </>
       )}
+    </div>
+  );
+}
+
+/** The core's own check: the belief rebuilt from the log, and the log against its seal. */
+function Integrity({ id }: { id: string }) {
+  const [check, setCheck] = useState<ReplayResult | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    core.replayCheck(id, ctrl.signal).then(setCheck, (e: unknown) => {
+      if ((e as Error).name !== "AbortError") setFailed(true);
+    });
+    return () => ctrl.abort();
+  }, [id]);
+  if (failed) return <p className="text-[13px] text-muted">The replay check could not be run.</p>;
+  if (!check) return null;
+  const replay = check.engine_changed
+    ? { tone: "warn" as const, text: "Written by an earlier engine version" }
+    : check.identical
+      ? { tone: "ok" as const, text: `Replay identical (${check.events_replayed} events)` }
+      : { tone: "bad" as const, text: "Replay differs from the recorded belief" };
+  const seal = !check.log_sealed
+    ? { tone: "info" as const, text: "Log not sealed yet (sealed at reveal)" }
+    : check.log_intact
+      ? { tone: "ok" as const, text: "Log unchanged since the reveal" }
+      : { tone: "bad" as const, text: "Log changed after the reveal" };
+  return (
+    <div role="status" aria-label="Integrity" className="flex flex-wrap gap-2">
+      <Badge tone={replay.tone} dot>
+        {replay.text}
+      </Badge>
+      <Badge tone={seal.tone} dot>
+        {seal.text}
+      </Badge>
     </div>
   );
 }

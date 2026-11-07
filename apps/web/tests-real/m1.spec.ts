@@ -171,4 +171,10 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   expect(state.ground_truth?.correct).toBe(true);
   expect(state.ground_truth?.reveal?.commitment_verified).toBe(true);
 
+  // 9. The replay page shows the core's own check: the rebuilt belief and the sealed log.
+  await page.goto(`/app/investigations/${invId}/replay`);
+  const integrity = page.getByRole("status", { name: "Integrity" });
+  await expect(integrity).toContainText("Replay identical");
+  await expect(integrity).toContainText("Log unchanged since the reveal");
+
 });

@@ -26,6 +26,7 @@ export type Role = S["Role"];
 export type Skill = S["Skill"];
 export type Report = S["Report"];
 export type EventEnvelope = S["EventEnvelope"];
+export type ReplayResult = S["ReplayResult"];
 export type AnswerResult = S["AnswerResult"];
 export type VoiceAnswerResult = S["VoiceAnswerResult"];
 export type Extraction = S["Extraction"];
