@@ -67,9 +67,16 @@ export default function OnboardingPage() {
   const router = useRouter();
   const account = useAccount();
   const [state, setState] = useState<OnboardingState | null>(null);
-  const [etag, setEtag] = useState<string | null>(null);
+  // Refs hold the newest saved state, so a quick second click builds on the first one.
+  const latest = useRef<{ state: OnboardingState | null; etag: string | null; saved: OnboardingAnswers | null }>({ state: null, etag: null, saved: null });
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  function adopt(next: OnboardingState, etag: string | null) {
+    latest.current = { state: next, etag, saved: next.answers };
+    setState(next);
+  }
 
   useEffect(() => {
     if (account.status === "signed-out") router.replace(`/login?next=${encodeURIComponent(`/onboarding/${step}`)}`);
@@ -80,8 +87,7 @@ export default function OnboardingPage() {
       .onboarding()
       .then((r) => {
         if (!alive) return;
-        setState(r.state);
-        setEtag(r.etag);
+        adopt(r.state, r.etag);
       })
       .catch((e) => alive && !(e instanceof ApiError && e.status === 401) && setError(describeError(e)));
     return () => {
@@ -91,22 +97,39 @@ export default function OnboardingPage() {
 
   /** Save a change; the core keeps it, so the person resumes here on any device. */
   async function save(patch: { answers?: Partial<OnboardingAnswers>; step?: OnboardingStep; dismissed?: boolean }) {
-    if (!state || !etag) return null;
+    const shown = latest.current.state;
+    if (!shown || !latest.current.etag) return null;
+    if (patch.answers) {
+      // Show the choice at once and let later clicks add to it while this one is saving.
+      const next = { ...shown, answers: { ...shown.answers, ...patch.answers } };
+      latest.current.state = next;
+      setState(next);
+    }
     setBusy(true);
     setError(null);
+    const run = queue.current.then(() => send(patch));
+    queue.current = run;
+    return run;
+  }
+  /** Saves run one at a time: each needs the version the one before it returned. */
+  async function send(patch: { answers?: Partial<OnboardingAnswers>; step?: OnboardingStep; dismissed?: boolean }) {
+    const { state: current, etag } = latest.current;
+    if (!current || !etag) return null;
     try {
-      const body = { ...patch, answers: patch.answers ? { ...state.answers, ...patch.answers } : undefined };
+      const body = { ...patch, answers: patch.answers ? current.answers : undefined };
       const r = await accountApi.saveOnboarding(body as never, etag, actionKey("onboarding"));
-      setState(r.state);
-      setEtag(r.etag);
+      // A later choice may already be on screen: keep it until its own save returns.
+      latest.current = { state: { ...r.state, answers: { ...r.state.answers, ...diff(current.answers, latest.current.state?.answers) } }, etag: r.etag, saved: r.state.answers };
+      setState(latest.current.state);
       return r.state;
     } catch (e) {
-      if (e instanceof ApiError && e.status === 412) {
+      try {
         const fresh = await accountApi.onboarding();
-        setState(fresh.state);
-        setEtag(fresh.etag);
-        setError("This changed in another tab. We loaded the latest version.");
-      } else setError(describeError(e));
+        adopt(fresh.state, fresh.etag);
+      } catch {
+        if (latest.current.state && latest.current.saved) setState({ ...latest.current.state, answers: latest.current.saved });
+      }
+      setError(e instanceof ApiError && e.status === 412 ? "This changed in another tab. We loaded the latest version." : describeError(e));
       return null;
     } finally {
       setBusy(false);
@@ -163,8 +186,7 @@ export default function OnboardingPage() {
         ) : step === "org" ? (
           <CreateWorkspace answers={state.answers} existing={account.status === "ready" ? account.account.memberships.length : 0} onCreated={async (dest) => {
             const fresh = await accountApi.onboarding();
-            setState(fresh.state);
-            setEtag(fresh.etag);
+            adopt(fresh.state, fresh.etag);
             await refreshAccount();
             router.push(dest);
           }} />
@@ -203,6 +225,11 @@ export default function OnboardingPage() {
       </main>
     </div>
   );
+}
+
+/** The answers in ``after`` that differ from ``before``. */
+function diff(before: OnboardingAnswers, after: OnboardingAnswers | undefined): Partial<OnboardingAnswers> {
+  return Object.fromEntries(Object.entries(after ?? {}).filter(([k, v]) => JSON.stringify(before[k as keyof OnboardingAnswers]) !== JSON.stringify(v)));
 }
 
 function Step({ title, lead, children }: { title: string; lead: string; children: ReactNode }) {
@@ -247,7 +274,7 @@ function Choice<T extends string>({ legend, options, value, onPick }: { legend: 
 }
 
 function Survey({ answers, busy, onChange, onNext }: { answers: OnboardingAnswers; busy: boolean; onChange: (a: Partial<OnboardingAnswers>) => void; onNext: () => void }) {
-  const ready = answers.work && answers.organization_kind && answers.problem;
+  const ready = Object.values(answers).some((v) => (Array.isArray(v) ? v.length > 0 : Boolean(v)));
   return (
     <section className="flex flex-col gap-8">
       <h1 className="display-slab text-[clamp(38px,4.4vw,60px)]">A little about you</h1>
