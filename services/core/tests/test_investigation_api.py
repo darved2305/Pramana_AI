@@ -32,7 +32,7 @@ def test_health_and_readiness(core: TestClient) -> None:
     assert r.json()["checks"] == {
         "database": "ok",
         "simulator": "ok",
-        "packs": "ok",
+        "models": "ok",
         "gnani": "not configured",
     }
     assert "X-Request-ID" in r.headers

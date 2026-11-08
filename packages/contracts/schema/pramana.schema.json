@@ -455,6 +455,7 @@
     },
     "CreateInvestigation": {
       "additionalProperties": false,
+      "description": "Legacy developer/evaluation input. Production creation selects a saved site instead.",
       "properties": {
         "max_parallel_calls": {
           "default": 1,
@@ -490,10 +491,10 @@
         }
       },
       "required": [
-        "pack_id",
         "participants",
         "report",
-        "scenario"
+        "scenario",
+        "pack_id"
       ],
       "title": "CreateInvestigation",
       "type": "object"
@@ -543,6 +544,50 @@
         }
       },
       "title": "CreateOrganization",
+      "type": "object"
+    },
+    "CreateSiteInvestigation": {
+      "additionalProperties": false,
+      "properties": {
+        "max_parallel_calls": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Max Parallel Calls",
+          "type": "integer"
+        },
+        "participants": {
+          "items": {
+            "$ref": "#/$defs/ParticipantSpec"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Participants",
+          "type": "array"
+        },
+        "presence_checks": {
+          "default": false,
+          "title": "Presence Checks",
+          "type": "boolean"
+        },
+        "report": {
+          "$ref": "#/$defs/Report"
+        },
+        "scenario": {
+          "$ref": "#/$defs/ScenarioRequest"
+        },
+        "site_id": {
+          "title": "Site Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "participants",
+        "report",
+        "scenario",
+        "site_id"
+      ],
+      "title": "CreateSiteInvestigation",
       "type": "object"
     },
     "CurrentAccount": {
@@ -1307,6 +1352,18 @@
           "title": "Max Parallel Calls",
           "type": "integer"
         },
+        "model_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Sha256"
+        },
         "observations": {
           "items": {
             "$ref": "#/$defs/Observation"
@@ -1368,6 +1425,30 @@
         "sealed_commitment": {
           "title": "Sealed Commitment",
           "type": "string"
+        },
+        "site_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site Id"
+        },
+        "site_model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site Model Id"
         },
         "status": {
           "$ref": "#/$defs/InvestigationStatus"
@@ -3038,6 +3119,136 @@
       "title": "SessionDevice",
       "type": "object"
     },
+    "SiteModelDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "org_id": {
+          "title": "Org Id",
+          "type": "string"
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Published At"
+        },
+        "site_id": {
+          "title": "Site Id",
+          "type": "string"
+        },
+        "spec": {
+          "additionalProperties": true,
+          "title": "Spec",
+          "type": "object"
+        },
+        "spec_sha256": {
+          "title": "Spec Sha256",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "published",
+            "retired"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "org_id",
+        "site_id",
+        "version",
+        "status",
+        "spec_sha256",
+        "created_at",
+        "published_at",
+        "spec"
+      ],
+      "title": "SiteModelDocument",
+      "type": "object"
+    },
+    "SiteModelSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "org_id": {
+          "title": "Org Id",
+          "type": "string"
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Published At"
+        },
+        "site_id": {
+          "title": "Site Id",
+          "type": "string"
+        },
+        "spec_sha256": {
+          "title": "Spec Sha256",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "published",
+            "retired"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "org_id",
+        "site_id",
+        "version",
+        "status",
+        "spec_sha256",
+        "created_at",
+        "published_at"
+      ],
+      "title": "SiteModelSummary",
+      "type": "object"
+    },
     "SiteSummary": {
       "additionalProperties": false,
       "properties": {
@@ -3417,6 +3628,9 @@
     "CreateOrganization": {
       "$ref": "#/$defs/CreateOrganization"
     },
+    "CreateSiteInvestigation": {
+      "$ref": "#/$defs/CreateSiteInvestigation"
+    },
     "CurrentAccount": {
       "$ref": "#/$defs/CurrentAccount"
     },
@@ -3476,6 +3690,12 @@
     },
     "SessionDevice": {
       "$ref": "#/$defs/SessionDevice"
+    },
+    "SiteModelDocument": {
+      "$ref": "#/$defs/SiteModelDocument"
+    },
+    "SiteModelSummary": {
+      "$ref": "#/$defs/SiteModelSummary"
     },
     "SttResult": {
       "$ref": "#/$defs/SttResult"

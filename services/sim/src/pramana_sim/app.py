@@ -33,6 +33,7 @@ from pramana_contracts import (
     ActRequest,
     ActResult,
     CreateScenario,
+    DocumentedModel,
     FaultSpec,
     MoveRequest,
     MoveResult,
@@ -51,6 +52,7 @@ from pramana_contracts.tokens import (
     verify_capability,
 )
 from pramana_domain import DomainPack, load_pack
+from pramana_domain.spec_storage import load_spec, spec_digest
 
 from .scenario import Scenario, ScenarioError, draw_fault
 
@@ -66,6 +68,7 @@ class SimSettings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     max_scenarios: int = 500
     state_file: str | None = None
+    require_documented_models: bool = True
 
 
 class ScenarioStore:
@@ -85,6 +88,31 @@ class ScenarioStore:
             except (FileNotFoundError, ValueError) as exc:
                 raise ScenarioError(422, "UNKNOWN_PACK", f"unknown pack {pack_id}") from exc
         return self._packs[pack_id]
+
+    @staticmethod
+    def documented(pack_id: str, model: DocumentedModel) -> DomainPack:
+        try:
+            if spec_digest(model.spec).hex() != model.sha256:
+                raise ValueError("documented model hash mismatch")
+            pack = load_spec(model.spec)
+            if pack.pack != pack_id:
+                raise ValueError("documented model label mismatch")
+            return pack
+        except ValueError as exc:
+            raise ScenarioError(422, "INVALID_MODEL", "the documented model is invalid") from exc
+
+    def restore(self, snapshot: dict[str, object], *, legacy: bool = False) -> Scenario:
+        pack_id = snapshot.get("pack_id")
+        if not isinstance(pack_id, str):
+            raise ValueError("scenario pack is invalid")
+        raw_model = snapshot.get("documented_model")
+        if raw_model is None:
+            if not legacy:
+                raise ValueError("documented model is missing")
+            pack = self.pack(pack_id)
+        else:
+            pack = self.documented(pack_id, DocumentedModel.model_validate(raw_model))
+        return Scenario.from_snapshot(pack, snapshot)
 
     def add(self, scenario: Scenario) -> None:
         previous = self._items.copy()
@@ -114,7 +142,7 @@ class ScenarioStore:
             self.persist()
             return result
         except Exception:
-            self._items[sid] = Scenario.from_snapshot(self.pack(str(snapshot["pack_id"])), snapshot)
+            self._items[sid] = self.restore(snapshot)
             raise
 
     def persist(self) -> None:
@@ -125,7 +153,7 @@ class ScenarioStore:
         temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
         try:
             payload = {
-                "version": 2,
+                "version": 3,
                 "scenarios": [scenario.to_snapshot() for scenario in self._items.values()],
             }
             with temporary.open("w", encoding="utf-8", newline="\n") as stream:
@@ -145,7 +173,7 @@ class ScenarioStore:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             version = payload.get("version") if isinstance(payload, dict) else None
-            if type(version) is not int or version not in (1, 2):
+            if type(version) is not int or version not in (1, 2, 3):
                 raise ValueError("unsupported snapshot version")
             snapshots = payload.get("scenarios")
             if not isinstance(snapshots, list):
@@ -153,18 +181,15 @@ class ScenarioStore:
             for snapshot in snapshots:
                 if not isinstance(snapshot, dict):
                     raise ValueError("scenario entry is invalid")
-                if version == 2 and (
+                if version in (2, 3) and (
                     "presence_values" not in snapshot or "presence_attempts" not in snapshot
                 ):
                     raise ValueError("presence state is missing")
-                pack_id = snapshot.get("pack_id")
-                if not isinstance(pack_id, str):
-                    raise ValueError("scenario pack is invalid")
-                scenario = Scenario.from_snapshot(self.pack(pack_id), snapshot)
+                scenario = self.restore(snapshot, legacy=version in (1, 2))
                 self._items[scenario.id] = scenario
             while len(self._items) > self._limit:
                 self._items.popitem(last=False)
-        except (OSError, TypeError, ValueError, KeyError) as exc:
+        except (OSError, TypeError, ValueError, KeyError, ScenarioError) as exc:
             raise RuntimeError("simulator state file could not be loaded") from exc
 
 
@@ -219,10 +244,17 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
 
     @app.post("/sim/v1/scenarios", status_code=201, dependencies=[require_operator])
     async def create(req: CreateScenario) -> ScenarioCreated:
-        pack = store.pack(req.pack_id)
+        if req.documented_model is None:
+            if cfg.require_documented_models:
+                raise ScenarioError(422, "MODEL_REQUIRED", "supply a documented site model")
+            pack = store.pack(req.pack_id)
+        else:
+            pack = store.documented(req.pack_id, req.documented_model)
         fault = draw_fault(pack, req.seed) if req.fault == "random" else req.fault
         assert isinstance(fault, FaultSpec)
-        scenario = Scenario.create(pack, fault, req.participants)
+        scenario = Scenario.create(
+            pack, fault, req.participants, documented_model=req.documented_model
+        )
         store.add(scenario)
         return ScenarioCreated(scenario_id=scenario.id, commitment=scenario.commitment)
 

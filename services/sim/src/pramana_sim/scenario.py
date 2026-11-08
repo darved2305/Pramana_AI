@@ -18,6 +18,7 @@ from typing import Any
 
 from pramana_contracts import (
     ActResult,
+    DocumentedModel,
     Fault,
     FaultSpec,
     MoveResult,
@@ -32,6 +33,7 @@ from pramana_contracts import (
 from pramana_contracts.tokens import CapabilityClaims
 from pramana_domain import DomainPack, World
 from pramana_domain.pack import DEVICE_KINDS
+from pramana_domain.spec_storage import spec_digest
 
 
 class ScenarioError(Exception):
@@ -105,6 +107,7 @@ class Scenario:
     _active_faults: set[tuple[str, str]] = field(default_factory=set)
     presence_values: dict[str, str] = field(default_factory=dict, repr=False)
     presence_attempts: dict[tuple[str, str], int] = field(default_factory=dict)
+    documented_model: DocumentedModel | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.presence_values:
@@ -117,7 +120,12 @@ class Scenario:
 
     @classmethod
     def create(
-        cls, pack: DomainPack, fault: FaultSpec, participants: list[SimParticipant]
+        cls,
+        pack: DomainPack,
+        fault: FaultSpec,
+        participants: list[SimParticipant],
+        *,
+        documented_model: DocumentedModel | None = None,
     ) -> Scenario:
         sid = "sc_" + secrets.token_hex(6)
         salt = secrets.token_hex(16)
@@ -127,15 +135,28 @@ class Scenario:
                 raise ScenarioError(422, "UNKNOWN_LOCATION", f"unknown location {p.location_id}")
             people[p.id] = _Person(frozenset(p.roles), p.location_id)
         try:
-            return cls(sid, pack, fault, salt, commitment_for(sid, fault, salt), people)
+            return cls(
+                sid,
+                pack,
+                fault,
+                salt,
+                commitment_for(sid, fault, salt),
+                people,
+                documented_model=documented_model,
+            )
         except ValueError as exc:  # World rejects faults the pack cannot represent
             raise ScenarioError(422, "UNKNOWN_FAULT", str(exc)) from exc
 
     def to_snapshot(self) -> dict[str, object]:
         """Serialize the complete sealed world for local staging recovery."""
+        model = self.documented_model
+        if model is None:
+            spec = self.pack.model_dump(mode="json")
+            model = DocumentedModel(spec=spec, sha256=spec_digest(spec).hex())
         return {
             "id": self.id,
             "pack_id": self.pack.pack,
+            "documented_model": model.model_dump(mode="json"),
             "fault_spec": self.fault_spec.model_dump(mode="json"),
             "salt": self.salt,
             "commitment": self.commitment,
@@ -216,6 +237,9 @@ class Scenario:
             status=status,
             presence_values=presence_values,
             presence_attempts=presence_attempts,
+            documented_model=DocumentedModel.model_validate(snapshot["documented_model"])
+            if "documented_model" in snapshot
+            else None,
         )
         scenario.used_capabilities = set(used_capabilities)
         scenario.interventions = interventions

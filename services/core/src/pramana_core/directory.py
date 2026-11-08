@@ -32,7 +32,7 @@ from pramana_contracts import (
 from pramana_domain import DomainPack, load_pack
 from pramana_domain.pack import default_packs_dir
 
-from .db import Database, DirectoryParticipantRow, InvestigationRow
+from .db import Database, DirectoryParticipantRow, InvestigationRow, current_org
 from .errors import ApiError, not_found
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -155,6 +155,8 @@ class ConsoleQueries:
     ) -> InvestigationPage:
         report_text = InvestigationRow.request["report"]["text"].astext
         conds: list[Any] = []
+        if current_org.get() is not None:
+            conds.append(InvestigationRow.org_id == current_org.get())
         if statuses:
             conds.append(InvestigationRow.status.in_([s.value for s in statuses]))
         if q:

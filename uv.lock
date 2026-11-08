@@ -1690,7 +1690,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "pramana-contracts", editable = "packages/contracts" },
-    { name = "pydantic", specifier = ">=2.9" },
+    { name = "pydantic", specifier = ">=2.11" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 

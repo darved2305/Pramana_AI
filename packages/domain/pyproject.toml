@@ -3,7 +3,7 @@ name = "pramana-domain"
 version = "0.1.0"
 description = "Domain packs and deterministic site physics"
 requires-python = ">=3.11"
-dependencies = ["pramana-contracts", "pydantic>=2.9", "PyYAML>=6.0"]
+dependencies = ["pramana-contracts", "pydantic>=2.11", "PyYAML>=6.0"]
 
 [build-system]
 requires = ["hatchling>=1.25"]

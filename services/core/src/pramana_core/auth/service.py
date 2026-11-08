@@ -40,6 +40,8 @@ class Principal:
     participant_id: str | None = None
     scenario_id: str | None = None
     email_verified: bool = False
+    organization_id: str | None = None
+    token_id: str | None = None
 
     def has(self, role: StaffRole) -> bool:
         return role.value in self.roles

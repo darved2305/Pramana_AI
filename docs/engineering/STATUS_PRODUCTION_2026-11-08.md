@@ -19,7 +19,7 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | Full Python regression suite | Tested locally | 3,682 passed in 1,137.81 s, exit 0; isolated `pramana_prod_test` and `pramana_prod_e2e`, ports 8230/8330; no process-test skip |
 | Current UI browser gate | Tested locally | 48 passed in 2.0 min, exit 0, port 3112 |
 | Current real-stack browser gate | Tested locally | 23 passed in 2.2 min, exit 0, ports 3122/8220/8320/8420, isolated `pramana_prod_e2e`; includes mock Google and S1/S2/S7 |
-| Current Slice 3 CI | Pending | Local gates must finish before the slice is committed and pushed |
+| Current Slice 3 CI | CI green | `b329119`, [run 42440097131](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/actions/runs/42440097131): all five jobs passed; watched with exit status 0 and run list read |
 | Real Google sign-in | Tested locally with the user | User completed Google sign-in on port 3102; an aggregate-only query confirmed one Google identity, verified email and no global staff roles. The core used `pramana_app` against isolated `pramana_prod`; no tokens or profile details were logged |
 | Launch budget and database provider | User decision recorded | INR 1,000/month total GCP ceiling; Supabase Free in specific Mumbai region approved, application on GCP Mumbai, no domain. GCP project access/billing linkage checked read-only; scoped Supabase setup token requested in `.env` |
 | Staging/production deployment | Not run | STOP 2 remains before any cloud apply; no cloud spend or live calls/messages |
@@ -27,7 +27,19 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 
 ## Remaining work
 
-Slice 3 local gates passed. Commit and push it, then watch CI and inspect the run list. Slice 4 moves
+The uncommitted stored-model loader/cache passes 26 focused checks in 18.58 s using owner and
+runtime roles, plus Ruff, mypy (62 source files) and all three import contracts. Coverage includes
+organization checks before cache access, different physical models sharing a legacy label,
+coalesced compilation, bounded LRU eviction, retired-version recovery and a cold rebuild with
+identical engine matrices. Stored field names and aliases load without changing frozen bytes or
+hashes. Investigation and route integration are still pending; these changes have not been
+committed, pushed or checked in CI.
+
+A dedicated Pramana Supabase organization was created through the supplied token. Its settings
+and entitlement reads return HTTP 403, so database creation remains pending the token's resource
+scope. The browser/desktop host remains disconnected; the user has the official connection steps.
+
+Slice 3 is pushed as `b329119`, with all local gates and all five CI jobs green. Slice 4 moves
 tenant APIs under explicit organizations, pins investigations to stored site models, removes the
 named building defaults, and adds the route-complete tenant-leak generator. The review is in
 ignored `.cache/production-slice4-design.md`. Team, onboarding UI, adaptive home and the remaining

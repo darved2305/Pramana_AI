@@ -21,6 +21,7 @@ from . import (
     CapabilityGrant,
     CreateInvestigation,
     CreateOrganization,
+    CreateSiteInvestigation,
     CurrentAccount,
     DirectoryParticipant,
     EvaluationReport,
@@ -41,6 +42,8 @@ from . import (
     RequestApproval,
     RevealResult,
     SessionDevice,
+    SiteModelDocument,
+    SiteModelSummary,
     SttResult,
     SubmitAnswer,
     TtsRequest,
@@ -49,6 +52,9 @@ from . import (
 
 EXPORTED: tuple[type[BaseModel], ...] = (
     CreateOrganization,
+    CreateSiteInvestigation,
+    SiteModelDocument,
+    SiteModelSummary,
     CurrentAccount,
     OnboardingPatch,
     OnboardingState,

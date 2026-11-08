@@ -55,6 +55,7 @@ from .investigation import (
     ApprovalStatus,
     CapabilityGrant,
     CreateInvestigation,
+    CreateSiteInvestigation,
     DependsOn,
     DisagreementSide,
     DisagreementView,
@@ -93,6 +94,7 @@ from .sim import (
     ActRequest,
     ActResult,
     CreateScenario,
+    DocumentedModel,
     Fault,
     FaultSpec,
     MoveRequest,
@@ -108,6 +110,7 @@ from .sim import (
     ViewItem,
     ViewLabel,
 )
+from .sites import SiteModelDocument, SiteModelSummary
 from .voice import CallState, MediaClientMessage, MediaServerMessage, SttResult, TtsRequest
 
 __all__ = [
@@ -130,6 +133,7 @@ __all__ = [
     "CreateInvestigation",
     "CreateOrganization",
     "CreateScenario",
+    "CreateSiteInvestigation",
     "CurrentAccount",
     "DecisionBelief",
     "DependsOn",
@@ -137,6 +141,7 @@ __all__ = [
     "DirectoryParticipant",
     "DisagreementSide",
     "DisagreementView",
+    "DocumentedModel",
     "EvaluationReport",
     "EvaluationReportSummary",
     "EventEnvelope",
@@ -199,6 +204,8 @@ __all__ = [
     "ScenarioRequest",
     "SessionDevice",
     "SimParticipant",
+    "SiteModelDocument",
+    "SiteModelSummary",
     "SiteSummary",
     "Skill",
     "StaffRole",

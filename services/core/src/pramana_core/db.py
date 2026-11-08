@@ -24,6 +24,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -109,6 +110,8 @@ class InvestigationRow(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     pack_id: Mapped[str] = mapped_column(String(64))
+    site_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    site_model_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     status: Mapped[str] = mapped_column(String(24), index=True)
     scenario_id: Mapped[str] = mapped_column(String(64))
     commitment: Mapped[str] = mapped_column(String(64))
@@ -123,7 +126,15 @@ class InvestigationRow(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    __table_args__ = (Index("investigations_created_at", "created_at"),)
+    __table_args__ = (
+        Index("investigations_created_at", "created_at"),
+        UniqueConstraint("org_id", "id", name="investigations_org_id"),
+        ForeignKeyConstraint(
+            ["org_id", "site_id", "site_model_id"],
+            ["site_models.org_id", "site_models.site_id", "site_models.id"],
+            name="investigations_model_pin_fk",
+        ),
+    )
 
 
 class EventRow(Base):
@@ -142,6 +153,12 @@ class EventRow(Base):
 
     __table_args__ = (
         Index("events_inv_seq", "investigation_id", "seq"),
+        ForeignKeyConstraint(
+            ["org_id", "investigation_id"],
+            ["investigations.org_id", "investigations.id"],
+            name="events_org_investigation_fk",
+            ondelete="CASCADE",
+        ),
         UniqueConstraint(
             "investigation_id", "idempotency_key", name="events_investigation_idempotency"
         ),
@@ -150,6 +167,14 @@ class EventRow(Base):
 
 class QuestionRow(Base):
     __tablename__ = "questions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["org_id", "investigation_id"],
+            ["investigations.org_id", "investigations.id"],
+            name="questions_org_investigation_fk",
+            ondelete="CASCADE",
+        ),
+    )
 
     org_id: Mapped[uuid.UUID] = org_column()
 
@@ -171,6 +196,14 @@ class QuestionRow(Base):
 
 class ObservationRow(Base):
     __tablename__ = "observations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["org_id", "investigation_id"],
+            ["investigations.org_id", "investigations.id"],
+            name="observations_org_investigation_fk",
+            ondelete="CASCADE",
+        ),
+    )
 
     org_id: Mapped[uuid.UUID] = org_column()
 
@@ -195,6 +228,14 @@ class ObservationRow(Base):
 
 class ApprovalRow(Base):
     __tablename__ = "approvals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["org_id", "investigation_id"],
+            ["investigations.org_id", "investigations.id"],
+            name="approvals_org_investigation_fk",
+            ondelete="CASCADE",
+        ),
+    )
 
     org_id: Mapped[uuid.UUID] = org_column()
 

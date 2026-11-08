@@ -254,7 +254,12 @@ def test_memberships_visible_to_their_user_only(db_urls: tuple[str, str]) -> Non
 def test_runtime_role_cannot_rewrite_the_log(db_urls: tuple[str, str]) -> None:
     async def check() -> None:
         engine = create_async_engine(db_urls[1])
-        for statement in ("update events set type = 'x'", "delete from events"):
+        # Deleting a parent must not bypass the event DELETE restriction through a cascade.
+        for statement in (
+            "update events set type = 'x'",
+            "delete from events",
+            "delete from investigations",
+        ):
             with pytest.raises(DBAPIError, match="permission denied"):
                 async with engine.begin() as conn:
                     await conn.execute(text(statement))

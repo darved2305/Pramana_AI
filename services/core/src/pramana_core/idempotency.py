@@ -27,6 +27,7 @@ from starlette.exceptions import HTTPException
 
 from . import ids
 from .account_rows import IdempotencyRow
+from .auth.deps import current_principal
 from .db import Database, acting_for, current_actor, current_org, current_user
 from .errors import ApiError
 from .org_access import require_organization, require_user
@@ -45,6 +46,7 @@ class MutationPolicy:
     scope: Literal["user", "org"]
     roles: tuple[str, ...] = ()
     verified: bool = False
+    participants: bool = False
 
 
 def idempotent(
@@ -197,20 +199,35 @@ class IdempotencyRoute(APIRoute):
             return original
 
         async def handle(request: Request) -> Response:
-            principal = await require_user(request, verified=policy.verified)
+            principal = await current_principal(request)
             org_id: uuid.UUID | None = None
-            if policy.scope == "org":
-                access = await require_organization(request, principal, policy.roles)
-                request.state.organization = access
-                org_id = access.organization.id
-            actor = f"user:{principal.id}"
+            if principal.kind == "participant":
+                if (
+                    policy.scope != "org"
+                    or not policy.participants
+                    or not getattr(request.state, "participant_authorized", False)
+                    or not principal.token_id
+                    or current_org.get() is None
+                ):
+                    raise ApiError(403, "ROLE_FORBIDDEN", "this link cannot perform this action")
+                org_id = current_org.get()
+                actor = f"participant:{principal.token_id}"
+                user_id = None
+            else:
+                principal = await require_user(request, verified=policy.verified)
+                if policy.scope == "org":
+                    access = await require_organization(request, principal, policy.roles)
+                    request.state.organization = access
+                    org_id = access.organization.id
+                actor = f"user:{principal.id}"
+                user_id = principal.id
             scope = f"org:{org_id}" if org_id else actor
             key = parse_key(request.headers.get("idempotency-key"))
             request, body = await buffered_request(request)
             digest = fingerprint(request, body)
             db: Database = request.app.state.db
             nonce = ids.uuid7()
-            with acting_for(org_id, principal.id, actor=actor):
+            with acting_for(org_id, user_id, actor=actor):
                 await reap_expired(db)
                 async with db.transaction() as session:
                     now = (await session.execute(select(func.now()))).scalar_one()

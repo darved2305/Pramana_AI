@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pramana_contracts import (
@@ -39,8 +39,10 @@ from pramana_contracts import (
     CapabilityGrant,
     CreateInvestigation,
     CreateScenario,
+    CreateSiteInvestigation,
     Directness,
     DisagreementView,
+    DocumentedModel,
     EventEnvelope,
     Extraction,
     GroundTruthComparison,
@@ -74,6 +76,7 @@ from pramana_contracts.tokens import (
 )
 from pramana_contracts.tokens import verify as verify_token
 from pramana_domain import NO_FAULT, DomainPack, load_pack
+from pramana_domain.spec_storage import spec_digest
 from pramana_engine import (
     MODEL_VERSION,
     MULTIPLE_FAULTS,
@@ -87,6 +90,7 @@ from pramana_engine import (
     schedule,
 )
 
+from . import ids
 from .db import (
     ApprovalRow,
     Database,
@@ -94,6 +98,7 @@ from .db import (
     InvestigationRow,
     ObservationRow,
     QuestionRow,
+    current_org,
 )
 from .errors import ApiError, not_found
 from .language.explain import disagreement_view
@@ -103,6 +108,7 @@ from .language.presence import read_code
 from .language.realize import CONFIRM_PREFIX, realize, realize_challenge
 from .observability import log
 from .sim_client import SimClient
+from .site_models import PinnedModel, StoredModels
 
 
 @dataclass(frozen=True)
@@ -151,6 +157,7 @@ class InvestigationService:
         signing_key_b64: str,
         engine_config: EngineConfig | None = None,
         browser_sim_url: str = "http://127.0.0.1:8100",
+        require_saved_models: bool = False,
     ) -> None:
         self.browser_sim_url = browser_sim_url
         self.db = db
@@ -159,6 +166,8 @@ class InvestigationService:
         self._signing_key = private_key_from_b64(signing_key_b64)
         self._engine_config = engine_config or EngineConfig()
         self._models: dict[str, CompiledModel] = {}
+        self.site_models = StoredModels(db)
+        self.require_saved_models = require_saved_models
         # Active callers hold strong references to their lock. Once nobody is using an
         # investigation, its lock can be collected instead of accumulating for process life.
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
@@ -167,6 +176,8 @@ class InvestigationService:
     # -- helpers ---------------------------------------------------------------------------------
 
     def model(self, pack_id: str) -> CompiledModel:
+        if self.require_saved_models:
+            raise not_found("saved site model")
         if pack_id not in self._models:
             try:
                 self._models[pack_id] = compile_pack(load_pack(pack_id))
@@ -176,6 +187,17 @@ class InvestigationService:
 
     def pack(self, pack_id: str) -> DomainPack:
         return self.model(pack_id).pack
+
+    def _model_for(self, row: InvestigationRow) -> CompiledModel:
+        pinned = inspect(row).info.get("pinned_model")
+        if isinstance(pinned, PinnedModel):
+            return pinned.compiled
+        if row.site_model_id is not None or self.require_saved_models:
+            raise not_found("site model")
+        return self.model(row.pack_id)
+
+    def _pack_for(self, row: InvestigationRow) -> DomainPack:
+        return self._model_for(row).pack
 
     def _lock(self, inv_id: str) -> asyncio.Lock:
         return self._locks.setdefault(inv_id, asyncio.Lock())
@@ -207,10 +229,23 @@ class InvestigationService:
 
     async def _load_row(self, session: AsyncSession, inv_id: str, lock: bool) -> InvestigationRow:
         stmt = select(InvestigationRow).where(InvestigationRow.id == inv_id)
+        org = current_org.get()
+        if org is not None:
+            stmt = stmt.where(InvestigationRow.org_id == org)
+        elif self.require_saved_models:
+            raise not_found("investigation")
         if lock:
             stmt = stmt.with_for_update()
         row = (await session.execute(stmt)).scalar_one_or_none()
         if row is None:
+            raise not_found("investigation")
+        if row.site_id is not None and row.site_model_id is not None:
+            if org is None:
+                raise not_found("investigation")
+            inspect(row).info["pinned_model"] = await self.site_models.load(
+                row.site_id, row.site_model_id
+            )
+        elif self.require_saved_models or org is not None:
             raise not_found("investigation")
         return row
 
@@ -226,7 +261,7 @@ class InvestigationService:
     async def _rebuild(self, session: AsyncSession, row: InvestigationRow) -> tuple[Engine, int]:
         """A fresh engine built only from the event log; also returns how many events it read."""
         req = self._request(row)
-        engine = Engine(self.model(row.pack_id), list(req.participants), self._engine_config)
+        engine = Engine(self._model_for(row), list(req.participants), self._engine_config)
         events = await session.execute(
             select(EventRow.type, EventRow.payload)
             .where(EventRow.investigation_id == row.id)
@@ -393,7 +428,7 @@ class InvestigationService:
         req = self._request(row)
         person = next(p for p in req.participants if p.id == action.participant_id)
         lang = person.languages.template_language
-        text = realize(self.pack(row.pack_id), action, lang)
+        text = realize(self._pack_for(row), action, lang)
         qid = _id("q")
         session.add(
             QuestionRow(
@@ -590,7 +625,7 @@ class InvestigationService:
         """Ask the same person to read the presence token at the place they reported from."""
         engine.set_presence(asked.participant_id, asked.location_id, "pending")
         lang = cast(TemplateLanguage, asked.language)
-        text = realize_challenge(self.pack(row.pack_id), token_id, asked.location_id, lang)
+        text = realize_challenge(self._pack_for(row), token_id, asked.location_id, lang)
         qid = _id("q")
         session.add(
             QuestionRow(
@@ -788,8 +823,27 @@ class InvestigationService:
 
     # -- commands --------------------------------------------------------------------------------
 
-    async def create(self, req: CreateInvestigation) -> InvestigationState:
-        pack = self.pack(req.pack_id)
+    async def create(
+        self, req: CreateInvestigation | CreateSiteInvestigation
+    ) -> InvestigationState:
+        pinned: PinnedModel | None = None
+        if isinstance(req, CreateSiteInvestigation):
+            try:
+                site_id = ids.decode("site", req.site_id)
+            except ValueError as exc:
+                raise not_found("site") from exc
+            pinned = await self.site_models.pin(site_id)
+            model = pinned.compiled
+            documented = DocumentedModel(
+                spec=pinned.documented_spec, sha256=pinned.spec_sha256.hex()
+            )
+        else:
+            if self.require_saved_models:
+                raise ApiError(422, "SITE_REQUIRED", "choose a saved site for this investigation")
+            model = self.model(req.pack_id)
+            spec = model.pack.model_dump(mode="json")
+            documented = DocumentedModel(spec=spec, sha256=spec_digest(spec).hex())
+        pack = model.pack
         for p in req.participants:
             if p.location_id not in pack.location_by_id:
                 raise ApiError(
@@ -797,7 +851,8 @@ class InvestigationService:
                 )
         scenario = await self.sim.create_scenario(
             CreateScenario(
-                pack_id=req.pack_id,
+                pack_id=pack.pack,
+                documented_model=documented,
                 seed=req.scenario.seed,
                 fault=req.scenario.fault,
                 participants=[
@@ -808,20 +863,28 @@ class InvestigationService:
                 ],
             )
         )
-        inv_id = _id("inv")
+        inv_id = ids.new("inv")[1]
         # The requested fault (if any) is NOT stored by the core: only the simulator keeps it.
         stored = req.model_dump(mode="json")
         stored["scenario"] = {"seed": req.scenario.seed, "fault": "sealed"}
         row = InvestigationRow(
             id=inv_id,
-            pack_id=req.pack_id,
+            pack_id=pack.pack,
+            site_id=pinned.site_id if pinned else None,
+            site_model_id=pinned.model_id if pinned else None,
             status=InvestigationStatus.INVESTIGATING.value,
             scenario_id=scenario.scenario_id,
             commitment=scenario.commitment,
             request=stored,
             version=0,
         )
-        engine = Engine(self.model(req.pack_id), list(req.participants), self._engine_config)
+        if pinned:
+            org = current_org.get()
+            if org is None:
+                raise not_found("organization")
+            row.org_id = org
+            inspect(row).info["pinned_model"] = pinned
+        engine = Engine(model, list(req.participants), self._engine_config)
         async with self._lock(inv_id), self.db.transaction() as session:
             session.add(row)
             await session.flush()
@@ -830,7 +893,16 @@ class InvestigationService:
                 inv_id,
                 "InvestigationCreated",
                 {
-                    "pack_id": req.pack_id,
+                    "pack_id": pack.pack,
+                    **(
+                        {
+                            "site_id": ids.encode("site", pinned.site_id),
+                            "site_model_id": ids.encode("model", pinned.model_id),
+                            "model_sha256": pinned.spec_sha256.hex(),
+                        }
+                        if pinned
+                        else {}
+                    ),
                     "scenario_id": scenario.scenario_id,
                     "commitment": scenario.commitment,
                     "participants": stored["participants"],
@@ -846,12 +918,16 @@ class InvestigationService:
         return await self.get(inv_id)
 
     async def _intake(
-        self, session: AsyncSession, row: InvestigationRow, engine: Engine, req: CreateInvestigation
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        req: CreateInvestigation | CreateSiteInvestigation,
     ) -> None:
         """Map the report to evidence only when it explicitly answers the intake probe."""
         reporter = next(p for p in req.participants if p.id == req.report.reporter_id)
         parsed = await parse_report(
-            req.report.text, self.pack(req.pack_id), reporter.location_id, self.extractor
+            req.report.text, engine.model.pack, reporter.location_id, self.extractor
         )
         # Hints (floors, rooms, symptoms) are shown, never used as evidence.
         self._event(session, row.id, "IntakeParsed", parsed.hints())
@@ -916,7 +992,7 @@ class InvestigationService:
                             "question was addressed to another participant",
                         )
                     engine = await self._engine(session, row)
-                    outcomes = list(self.model(row.pack_id).outcomes[q.probe_id])
+                    outcomes = list(self._model_for(row).outcomes[q.probe_id])
                     if q.kind == "challenge":
                         if ans.text is None:
                             raise ApiError(
@@ -1049,7 +1125,7 @@ class InvestigationService:
             else:
                 await self.sim.close(row.scenario_id)
                 reveal = await self.sim.reveal(row.scenario_id)
-                pack = self.pack(row.pack_id)
+                pack = self._pack_for(row)
                 true_hyps = [f"{f.component_id}.{f.mode}" for f in reveal.fault_spec.faults]
                 true_set = {pack.decision_of.get(h, "UNMODELLED") for h in true_hyps or [NO_FAULT]}
                 if len(true_set) > 1:
@@ -1171,7 +1247,7 @@ class InvestigationService:
                 )
             elif type_ == "DisagreementExplained":
                 disagreements.append(DisagreementView.model_validate(payload))
-        model = self.model(row.pack_id)
+        model = self._model_for(row)
         waiting = [
             self._question_view(model, q)
             for q in questions
@@ -1180,6 +1256,11 @@ class InvestigationService:
         return InvestigationState(
             id=row.id,
             pack_id=row.pack_id,
+            site_id=ids.encode("site", row.site_id) if row.site_id else None,
+            site_model_id=ids.encode("model", row.site_model_id) if row.site_model_id else None,
+            model_sha256=inspect(row).info["pinned_model"].spec_sha256.hex()
+            if row.site_model_id
+            else None,
             status=InvestigationStatus(row.status),
             created_at=row.created_at,
             report=req.report,
@@ -1198,7 +1279,7 @@ class InvestigationService:
                 for o in observations
             ],
             questions_asked=len(questions),
-            approvals=[self._approval_view(row.pack_id, a) for a in approvals],
+            approvals=[self._approval_view(model.pack, a) for a in approvals],
             ground_truth=None
             if row.ground_truth is None
             else GroundTruthComparison.model_validate(row.ground_truth),
@@ -1252,8 +1333,8 @@ class InvestigationService:
 
     # -- approvals, capabilities and repairs ------------------------------------------------------
 
-    def _approval_view(self, pack_id: str, a: ApprovalRow) -> Approval:
-        action = next(x for x in self.pack(pack_id).actions if x.id == a.action)
+    def _approval_view(self, pack: DomainPack, a: ApprovalRow) -> Approval:
+        action = next(x for x in pack.actions if x.id == a.action)
         return Approval(
             id=a.id,
             action=a.action,
@@ -1279,7 +1360,7 @@ class InvestigationService:
             row = await self._load_row(session, inv_id, lock=True)
             if row.status != InvestigationStatus.DECIDED.value:
                 raise ApiError(409, "NOT_DECIDED", "approval follows a decision")
-            pack = self.pack(row.pack_id)
+            pack = self._pack_for(row)
             decision = (row.outcome or {}).get("decision_class")
             action = next((a for a in pack.actions if a.id == req.action), None)
             target = pack.component_by_id.get(req.target)
@@ -1414,7 +1495,7 @@ class InvestigationService:
                     issued["replaces"] = approval.capability_jti
                 approval.capability_jti = claims.jti
                 self._event(session, inv_id, "CapabilityIssued", issued)
-            pack = self.pack(row.pack_id)
+            pack = self._pack_for(row)
             action = next(a for a in pack.actions if a.id == approval.action)
             person = next(p for p in self._request(row).participants if p.id == participant_id)
             lang = person.languages.template_language
@@ -1494,12 +1575,19 @@ class InvestigationService:
             row = await self._load_row(session, inv_id, lock=False)
         if participant_id not in {p.id for p in self._request(row).participants}:
             raise not_found("participant")
-        token = mint(self._signing_key, participant_id=participant_id, scenario_id=row.scenario_id)
+        org_id = ids.encode("org", row.org_id) if row.site_model_id else None
+        token = mint(
+            self._signing_key,
+            participant_id=participant_id,
+            scenario_id=row.scenario_id,
+            organization_id=org_id,
+        )
         return {
             "token": token,
             "scenario_id": row.scenario_id,
             "participant_id": participant_id,
             "sim_url": self.browser_sim_url,
+            **({"org_id": org_id} if org_id else {}),
         }
 
     async def pending_question(
@@ -1527,7 +1615,7 @@ class InvestigationService:
             language=person.languages.template_language,
             probe_id=q.probe_id,
             participant=person,
-            pack=self.pack(row.pack_id),
+            pack=self._pack_for(row),
             scenario_id=row.scenario_id,
             kind=q.kind,
         )

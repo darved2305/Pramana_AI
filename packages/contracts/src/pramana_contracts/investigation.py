@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -116,8 +116,7 @@ class ScenarioRequest(StrictModel):
     fault: Literal["random"] | FaultSpec = "random"
 
 
-class CreateInvestigation(StrictModel):
-    pack_id: Identifier
+class InvestigationInput(StrictModel):
     participants: list[ParticipantSpec] = Field(min_length=1, max_length=12)
     report: Report
     scenario: ScenarioRequest
@@ -129,13 +128,23 @@ class CreateInvestigation(StrictModel):
     to, ask them to read a detail only someone there can see (docs/adr/0014)."""
 
     @model_validator(mode="after")
-    def _consistent(self) -> CreateInvestigation:
+    def _consistent(self) -> Self:
         ids = [p.id for p in self.participants]
         if len(set(ids)) != len(ids):
             raise ValueError("participant ids must be unique")
         if self.report.reporter_id not in ids:
             raise ValueError("report.reporter_id must be one of the participants")
         return self
+
+
+class CreateInvestigation(InvestigationInput):
+    """Legacy developer/evaluation input. Production creation selects a saved site instead."""
+
+    pack_id: Identifier
+
+
+class CreateSiteInvestigation(InvestigationInput):
+    site_id: str
 
 
 class QuestionStatus(StrEnum):
@@ -253,6 +262,9 @@ class DisagreementView(StrictModel):
 class InvestigationState(StrictModel):
     id: str
     pack_id: Identifier
+    site_id: str | None = None
+    site_model_id: str | None = None
+    model_sha256: str | None = None
     status: InvestigationStatus
     created_at: datetime
     report: Report

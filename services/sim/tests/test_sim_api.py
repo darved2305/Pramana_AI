@@ -30,6 +30,7 @@ PEOPLE = [
 def client() -> Iterator[TestClient]:
     settings = SimSettings(
         operator_key=SecretStr("op-secret"),
+        require_documented_models=False,  # Explicit legacy API compatibility coverage.
         oracle_key=SecretStr("oracle-secret"),
         participant_public_key=public_key_b64(KEY),
     )
@@ -154,6 +155,7 @@ def test_truth_requires_the_oracle_key(client: TestClient) -> None:
 def test_truth_route_is_disabled_without_an_oracle_key() -> None:
     settings = SimSettings(  # explicit None: a developer's .env must not leak into tests
         operator_key=SecretStr("op-secret"),
+        require_documented_models=False,
         oracle_key=None,
         participant_public_key=public_key_b64(KEY),
     )
@@ -463,6 +465,7 @@ def test_presence_values_are_fresh_per_scenario(client: TestClient) -> None:
 def _persistent_settings(state_file: Path) -> SimSettings:
     return SimSettings(
         operator_key=SecretStr("op-secret"),
+        require_documented_models=False,
         oracle_key=SecretStr("oracle-secret"),
         participant_public_key=public_key_b64(KEY),
         state_file=str(state_file),

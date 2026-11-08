@@ -65,3 +65,32 @@ async def require_organization(
     if roles and not set(roles).intersection(held_roles):
         raise ApiError(403, "ROLE_FORBIDDEN", "your workspace role does not allow this action")
     return OrganizationAccess(organization, tuple(held_roles), principal)
+
+
+async def participant_organization(request: Request, principal: Principal) -> OrganizationAccess:
+    """Resolve only the organization signed into a participant's token, never a membership."""
+    if principal.kind != "participant" or not principal.organization_id or not principal.token_id:
+        raise not_found("organization")
+    try:
+        org_id = ids.decode("org", principal.organization_id)
+        value = str(request.path_params.get("org", ""))
+        condition = (
+            OrganizationRow.id == ids.decode("org", value)
+            if value.startswith("org_")
+            else OrganizationRow.slug == value
+        )
+    except ValueError as exc:
+        raise not_found("organization") from exc
+    db: Database = request.app.state.db
+    with acting_for(org_id, actor=f"participant:{principal.token_id}"):
+        async with db.read() as session:
+            org = await session.scalar(
+                select(OrganizationRow).where(
+                    OrganizationRow.id == org_id,
+                    condition,
+                    OrganizationRow.deleted_at.is_(None),
+                )
+            )
+    if org is None:
+        raise not_found("organization")
+    return OrganizationAccess(org, (), principal)

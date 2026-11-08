@@ -501,6 +501,7 @@
    },
    "CreateInvestigation": {
     "additionalProperties": false,
+    "description": "Legacy developer/evaluation input. Production creation selects a saved site instead.",
     "properties": {
      "max_parallel_calls": {
       "default": 1,
@@ -536,10 +537,10 @@
      }
     },
     "required": [
-     "pack_id",
      "participants",
      "report",
-     "scenario"
+     "scenario",
+     "pack_id"
     ],
     "title": "CreateInvestigation",
     "type": "object"
@@ -586,6 +587,50 @@
      }
     },
     "title": "CreateOrganization",
+    "type": "object"
+   },
+   "CreateSiteInvestigation": {
+    "additionalProperties": false,
+    "properties": {
+     "max_parallel_calls": {
+      "default": 1,
+      "maximum": 3.0,
+      "minimum": 1.0,
+      "title": "Max Parallel Calls",
+      "type": "integer"
+     },
+     "participants": {
+      "items": {
+       "$ref": "#/components/schemas/ParticipantSpec"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "title": "Participants",
+      "type": "array"
+     },
+     "presence_checks": {
+      "default": false,
+      "title": "Presence Checks",
+      "type": "boolean"
+     },
+     "report": {
+      "$ref": "#/components/schemas/Report"
+     },
+     "scenario": {
+      "$ref": "#/components/schemas/ScenarioRequest"
+     },
+     "site_id": {
+      "title": "Site Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "participants",
+     "report",
+     "scenario",
+     "site_id"
+    ],
+    "title": "CreateSiteInvestigation",
     "type": "object"
    },
    "CurrentAccount": {
@@ -1357,6 +1402,17 @@
       "title": "Max Parallel Calls",
       "type": "integer"
      },
+     "model_sha256": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model Sha256"
+     },
      "observations": {
       "items": {
        "$ref": "#/components/schemas/Observation"
@@ -1418,6 +1474,28 @@
      "sealed_commitment": {
       "title": "Sealed Commitment",
       "type": "string"
+     },
+     "site_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Site Id"
+     },
+     "site_model_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Site Model Id"
      },
      "status": {
       "$ref": "#/components/schemas/InvestigationStatus"
@@ -2941,6 +3019,136 @@
     "title": "SessionDevice",
     "type": "object"
    },
+   "SiteModelDocument": {
+    "additionalProperties": false,
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "org_id": {
+      "title": "Org Id",
+      "type": "string"
+     },
+     "published_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Published At"
+     },
+     "site_id": {
+      "title": "Site Id",
+      "type": "string"
+     },
+     "spec": {
+      "additionalProperties": true,
+      "title": "Spec",
+      "type": "object"
+     },
+     "spec_sha256": {
+      "title": "Spec Sha256",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "published",
+       "retired"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "org_id",
+     "site_id",
+     "version",
+     "status",
+     "spec_sha256",
+     "created_at",
+     "published_at",
+     "spec"
+    ],
+    "title": "SiteModelDocument",
+    "type": "object"
+   },
+   "SiteModelSummary": {
+    "additionalProperties": false,
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "org_id": {
+      "title": "Org Id",
+      "type": "string"
+     },
+     "published_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Published At"
+     },
+     "site_id": {
+      "title": "Site Id",
+      "type": "string"
+     },
+     "spec_sha256": {
+      "title": "Spec Sha256",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "published",
+       "retired"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "org_id",
+     "site_id",
+     "version",
+     "status",
+     "spec_sha256",
+     "created_at",
+     "published_at"
+    ],
+    "title": "SiteModelSummary",
+    "type": "object"
+   },
    "SiteSummary": {
     "additionalProperties": false,
     "properties": {
@@ -3314,7 +3522,7 @@
   },
   "/ready": {
    "get": {
-    "description": "Readiness: database and simulator reachable, packs loadable.",
+    "description": "Readiness: database and simulator reachable, saved templates intact and loadable.",
     "operationId": "ready_ready_get",
     "responses": {
      "200": {
@@ -4689,6 +4897,1100 @@
     "summary": "Organization",
     "tags": [
      "accounts"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations": {
+   "get": {
+    "description": "Newest first. ``status`` may repeat; ``q`` searches the report text and the id.",
+    "operationId": "list_investigations_v1_orgs__org__investigations_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "items": {
+          "$ref": "#/components/schemas/InvestigationStatus"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 200,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "Offset",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationPage"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Investigations",
+    "tags": [
+     "investigations"
+    ]
+   },
+   "post": {
+    "operationId": "create_investigation_v1_orgs__org__investigations_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateSiteInvestigation"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Create Investigation",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}": {
+   "get": {
+    "operationId": "get_investigation_v1_orgs__org__investigations__inv_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Investigation",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/answers": {
+   "post": {
+    "operationId": "submit_answer_v1_orgs__org__investigations__inv_id__answers_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SubmitAnswer"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnswerResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Submit Answer",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/approvals": {
+   "post": {
+    "description": "Ask a human approver for a consequential action the decision calls for. The signed-in\naccount that asks is recorded; it cannot approve its own request.",
+    "operationId": "request_approval_v1_orgs__org__investigations__inv_id__approvals_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RequestApproval"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Request Approval",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/approvals/{approval_id}/capability": {
+   "post": {
+    "description": "The approved executor collects the single-use capability (expires in 5 minutes).",
+    "operationId": "issue_capability_v1_orgs__org__investigations__inv_id__approvals__approval_id__capability_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "approval_id",
+      "required": true,
+      "schema": {
+       "title": "Approval Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "participant_id",
+      "required": true,
+      "schema": {
+       "title": "Participant Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CapabilityGrant"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Issue Capability",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/approvals/{approval_id}/decision": {
+   "post": {
+    "description": "Needs the approver role. The approval records the signed-in approver; a free-text\n``approver_id`` is used only when sign-in is not enforced (tests).",
+    "operationId": "decide_approval_v1_orgs__org__investigations__inv_id__approvals__approval_id__decision_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "approval_id",
+      "required": true,
+      "schema": {
+       "title": "Approval Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApprovalDecision"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Decide Approval",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/events": {
+   "get": {
+    "operationId": "list_events_v1_orgs__org__investigations__inv_id__events_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "after_seq",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "After Seq",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/EventEnvelope"
+         },
+         "title": "Response List Events V1 Orgs  Org  Investigations  Inv Id  Events Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Events",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/interventions": {
+   "post": {
+    "description": "The executor reports the action as done; verification questions follow.",
+    "operationId": "report_intervention_v1_orgs__org__investigations__inv_id__interventions_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportIntervention"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Report Intervention",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/participants/{participant_id}/token": {
+   "post": {
+    "description": "Mint the participant's join token (operator only). It works at the simulator and, for\nthat participant's own answers and actions, at the core.",
+    "operationId": "participant_token_v1_orgs__org__investigations__inv_id__participants__participant_id__token_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "participant_id",
+      "required": true,
+      "schema": {
+       "title": "Participant Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Participant Token V1 Orgs  Org  Investigations  Inv Id  Participants  Participant Id  Token Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Participant Token",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/replay": {
+   "get": {
+    "description": "Rebuild the investigation from its event log and compare with the recorded belief.",
+    "operationId": "replay_check_v1_orgs__org__investigations__inv_id__replay_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReplayResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Replay Check",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/reveal": {
+   "post": {
+    "operationId": "reveal_ground_truth_v1_orgs__org__investigations__inv_id__reveal_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Reveal Ground Truth",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/stream": {
+   "get": {
+    "description": "Push the investigation's events: backfill after ``after_seq`` (or the browser's\n``Last-Event-ID``, whichever is later), then follow new events live.",
+    "operationId": "stream_events_v1_orgs__org__investigations__inv_id__stream_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "after_seq",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "After Seq",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "last-event-id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Last-Event-Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "text/event-stream": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "description": "Server-Sent Events. Each log event has `id: <seq>` and `data: <EventEnvelope>`. Control events: `ready`, `reset`, `bye`. Comments `: ping` are heartbeats."
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Stream Events",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites": {
+   "get": {
+    "operationId": "sites_v1_orgs__org__sites_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SiteSummary"
+         },
+         "title": "Response Sites V1 Orgs  Org  Sites Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Sites",
+    "tags": [
+     "sites"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}": {
+   "get": {
+    "operationId": "site_v1_orgs__org__sites__site_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SiteSummary"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Site",
+    "tags": [
+     "sites"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/models": {
+   "get": {
+    "operationId": "models_v1_orgs__org__sites__site_id__models_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SiteModelSummary"
+         },
+         "title": "Response Models V1 Orgs  Org  Sites  Site Id  Models Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Models",
+    "tags": [
+     "sites"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/models/{model_id}": {
+   "get": {
+    "operationId": "model_v1_orgs__org__sites__site_id__models__model_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "model_id",
+      "required": true,
+      "schema": {
+       "title": "Model Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SiteModelDocument"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Model",
+    "tags": [
+     "sites"
     ]
    }
   },

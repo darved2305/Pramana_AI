@@ -9,10 +9,12 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from pramana_contracts import CONTRACTS_VERSION
-from pramana_domain import load_pack
+from pramana_domain.spec_storage import load_spec, spec_digest
 
+from .account_rows import ModelTemplateRow
 from .accounts import AccountService
 from .api import accounts as accounts_api
 from .api import auth as auth_api
@@ -20,6 +22,8 @@ from .api import directory as directory_api
 from .api import evaluation as evaluation_api
 from .api import investigations as investigations_api
 from .api import packs as packs_api
+from .api import site_investigations as site_investigations_api
+from .api import sites as sites_api
 from .api import stream as stream_api
 from .api import voice as voice_api
 from .api import voice_turns as voice_turns_api
@@ -39,6 +43,7 @@ from .runtime.broadcast import EventBroadcaster
 from .runtime.recovery import recover
 from .settings import Settings, get_settings
 from .sim_client import SimClient
+from .site_models import StoredModels
 from .voice.conversation import QuestionAudioCache
 from .voice.gnani import GnaniClient
 from .voice.governor import DbLedger, GovernorLimits, VoiceGovernor
@@ -120,6 +125,7 @@ def create_app(
             HybridExtractor(RuleExtractor(), _llm_extractor(cfg)),
             cfg.participant_signing_key.get_secret_value(),
             browser_sim_url=cfg.browser_sim_url,
+            require_saved_models=cfg.mode == "production",
         )
         app.state.auth = AuthService(
             db,
@@ -128,6 +134,7 @@ def create_app(
             idle_s=cfg.session_idle_ttl_s,
         )
         app.state.accounts = AccountService(db)
+        app.state.site_models = StoredModels(db)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)
         app.state.participant_public_key = participant_public_key(
@@ -163,8 +170,15 @@ def create_app(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["Content-Type", "X-Request-ID", "X-Pramana-CSRF", "Authorization"],
-        expose_headers=["X-Request-ID"],
+        allow_headers=[
+            "Content-Type",
+            "X-Request-ID",
+            "X-Pramana-CSRF",
+            "Authorization",
+            "Idempotency-Key",
+            "If-Match",
+        ],
+        expose_headers=["X-Request-ID", "ETag", "Idempotent-Replayed"],
     )
     install_error_handlers(app)
 
@@ -175,7 +189,7 @@ def create_app(
 
     @app.get("/ready")
     async def ready(request: Request) -> JSONResponse:
-        """Readiness: database and simulator reachable, packs loadable."""
+        """Readiness: database and simulator reachable, saved templates intact and loadable."""
         checks: dict[str, str] = {}
         try:
             await request.app.state.db.ping()
@@ -184,10 +198,19 @@ def create_app(
             checks["database"] = f"error: {type(exc).__name__}"
         checks["simulator"] = "ok" if await request.app.state.sim.health() else "unreachable"
         try:
-            load_pack("campus_block_c")
-            checks["packs"] = "ok"
+            async with request.app.state.db.read() as session:
+                template = await session.scalar(
+                    select(ModelTemplateRow)
+                    .where(ModelTemplateRow.purpose == "sandbox")
+                    .order_by(ModelTemplateRow.version.desc())
+                    .limit(1)
+                )
+            if template is None or spec_digest(template.spec) != template.spec_sha256:
+                raise ValueError("saved template missing or corrupt")
+            load_spec(template.spec)
+            checks["models"] = "ok"
         except Exception as exc:
-            checks["packs"] = f"error: {type(exc).__name__}"
+            checks["models"] = f"error: {type(exc).__name__}"
         checks["gnani"] = "configured" if request.app.state.gnani.configured else "not configured"
         ok = all(v == "ok" for k, v in checks.items() if k != "gnani")
         return JSONResponse(
@@ -197,11 +220,14 @@ def create_app(
 
     app.include_router(auth_api.router)
     app.include_router(accounts_api.router)
-    app.include_router(investigations_api.router)
-    app.include_router(directory_api.router)
-    app.include_router(evaluation_api.router)
-    app.include_router(stream_api.router)
-    app.include_router(packs_api.router)
-    app.include_router(voice_api.router)
-    app.include_router(voice_turns_api.router)
+    app.include_router(sites_api.router)
+    app.include_router(site_investigations_api.router)
+    if cfg.mode != "production":
+        app.include_router(investigations_api.router)
+        app.include_router(directory_api.router)
+        app.include_router(evaluation_api.router)
+        app.include_router(stream_api.router)
+        app.include_router(packs_api.router)
+        app.include_router(voice_api.router)
+        app.include_router(voice_turns_api.router)
     return app

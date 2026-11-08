@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from ..auth.deps import require_staff
 from ..errors import ApiError
 from ..investigations import InvestigationService
+from ..org_access import require_organization
 from ..runtime.broadcast import EventBroadcaster, TooManySubscribersError
 from ..runtime.stream import EventStreamResponse, event_stream, parse_last_event_id
 
@@ -83,7 +84,15 @@ async def stream_events(
         if principal.kind != "user":
             return True
         token = request.cookies.get(cfg.session_cookie_name, "")
-        return await request.app.state.auth.resolve(token, touch=False) is not None
+        user = await request.app.state.auth.resolve(token, touch=False)
+        if user is None:
+            return False
+        if "org" in request.path_params:
+            try:
+                await require_organization(request, user)
+            except ApiError:
+                return False
+        return True
 
     body = event_stream(
         sub,
