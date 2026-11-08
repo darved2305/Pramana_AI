@@ -35,7 +35,7 @@ async def get_pack(pack_id: str, request: Request) -> dict[str, Any]:
                 "kind": loc.kind,
                 "label": loc.label.en,
                 "restricted": loc.restricted,
-                "access_roles": [r.value for r in loc.access_roles],
+                "access_roles": [str(r) for r in loc.access_roles],
             }
             for loc in pack.locations
         ],
@@ -50,5 +50,8 @@ async def get_pack(pack_id: str, request: Request) -> dict[str, Any]:
             for p in pack.probes
         ],
         "decision_classes": [{"id": d.id, "label": d.label} for d in pack.decision_classes],
-        "walking_roles": [r.value for r in pack.walking_roles],
+        "walking_roles": [str(r) for r in pack.walking_roles],
+        "roles": [
+            {"id": r.id, "label": r.label, "skill": r.skill} for r in pack.role_catalogue.values()
+        ],
     }

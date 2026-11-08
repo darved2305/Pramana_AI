@@ -32,7 +32,6 @@ from pramana_contracts import (
 )
 from pramana_contracts.tokens import CapabilityClaims
 from pramana_domain import DomainPack, World
-from pramana_domain.pack import DEVICE_KINDS
 from pramana_domain.spec_storage import spec_digest
 
 
@@ -311,10 +310,10 @@ class Scenario:
 
     def _can_enter(self, person: _Person, location_id: str) -> bool:
         loc = self.pack.location_by_id[location_id]
-        return not loc.restricted or bool(person.roles & {r.value for r in loc.access_roles})
+        return not loc.restricted or bool(person.roles & {str(r) for r in loc.access_roles})
 
     def _reachable(self, person: _Person) -> list[str]:
-        if not person.roles & {r.value for r in self.pack.walking_roles}:
+        if not person.roles & {str(r) for r in self.pack.walking_roles}:
             return []
         return sorted(
             loc.id
@@ -343,7 +342,7 @@ class Scenario:
         if not probe.allows(person.roles):
             raise ScenarioError(403, "ROLE_NOT_PERMITTED", f"{probe_id} not permitted for role")
         if probe.binding_at(person.location_id) is None:
-            where = "here" if probe.kind in DEVICE_KINDS else f"at {person.location_id}"
+            where = "here" if probe.is_device else f"at {person.location_id}"
             raise ScenarioError(
                 409, "NOT_OBSERVABLE_HERE", f"{probe_id} cannot be observed {where}"
             )
@@ -368,7 +367,7 @@ class Scenario:
         comp = self.pack.component_by_id.get(target)
         if action is None or comp is None or comp.kind != action.target_kind:
             raise ScenarioError(422, "INVALID_ACTION", f"{action_id} cannot target {target}")
-        if not person.roles & {r.value for r in action.roles}:
+        if not person.roles & {str(r) for r in action.roles}:
             raise ScenarioError(403, "ROLE_NOT_PERMITTED", f"{action_id} needs another role")
         if action.at_target_location and comp.location != person.location_id:
             raise ScenarioError(409, "NOT_AT_TARGET", f"go to {comp.location} first")

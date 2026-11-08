@@ -1,0 +1,120 @@
+{
+  "id": "ward_cooling",
+  "title": "Hospital ward cooling",
+  "kind": "hospital",
+  "summary": "A roof plant room: power, HVAC breaker, chiller and one air handler per ward.",
+  "description": {
+    "id": "ward_cooling",
+    "title": "Hospital ward cooling",
+    "roles": [
+      {
+        "id": "nurse",
+        "skill": "lay",
+        "label": "Nurse"
+      },
+      {
+        "id": "ward_staff",
+        "skill": "access",
+        "label": "Ward staff"
+      },
+      {
+        "id": "hvac_tech",
+        "skill": "technician",
+        "label": "HVAC technician"
+      },
+      {
+        "id": "electrician",
+        "skill": "technician",
+        "label": "Electrician"
+      }
+    ],
+    "places": [
+      {
+        "id": "WARD_A",
+        "name": "ward A",
+        "floor": 2
+      },
+      {
+        "id": "WARD_B",
+        "name": "ward B",
+        "floor": 2
+      },
+      {
+        "id": "PLANT",
+        "name": "the roof plant room",
+        "floor": 3,
+        "kind": "plant_room",
+        "restricted": true,
+        "access": [
+          "ward_staff",
+          "hvac_tech",
+          "electrician"
+        ]
+      }
+    ],
+    "equipment": [
+      {
+        "id": "GRID",
+        "type": "utility_supply",
+        "name": "mains power",
+        "at": "PLANT"
+      },
+      {
+        "id": "MCB_HVAC",
+        "type": "breaker",
+        "name": "the HVAC breaker",
+        "at": "PLANT",
+        "needs": [
+          "GRID"
+        ]
+      },
+      {
+        "id": "CHILLER",
+        "type": "chiller",
+        "name": "the chiller",
+        "at": "PLANT",
+        "needs": [
+          "MCB_HVAC"
+        ]
+      },
+      {
+        "id": "AHU_A",
+        "type": "air_handler",
+        "name": "air handler A",
+        "at": "PLANT",
+        "needs": [
+          "CHILLER"
+        ]
+      },
+      {
+        "id": "AHU_B",
+        "type": "air_handler",
+        "name": "air handler B",
+        "at": "PLANT",
+        "needs": [
+          "CHILLER"
+        ]
+      }
+    ],
+    "service_points": [
+      {
+        "id": "room_cool",
+        "label": "Cool air from the vents",
+        "outcomes": [
+          "cool",
+          "warm"
+        ],
+        "question": {
+          "en": "In {place}, hold your hand at the air vent. Is the air cool, or warm?",
+          "hi-en": "{place} mein vent ke paas haath rakhiye. Hawa thandi hai, ya garam?",
+          "hi": "{place} में वेंट के पास हाथ रखिए। हवा ठंडी है, या गरम?",
+          "mr": "{place} मध्ये व्हेंटजवळ हात धरा. हवा थंड आहे, की गरम?"
+        },
+        "served_by": {
+          "WARD_A": "AHU_A",
+          "WARD_B": "AHU_B"
+        }
+      }
+    ]
+  }
+}

@@ -29,12 +29,10 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
 
-class Role(StrEnum):
-    STUDENT = "student"
-    GUARD = "guard"
-    ELECTRICIAN = "electrician"
-    IT_TECH = "it_tech"
-    HOUSEKEEPING = "housekeeping"
+Role = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,47}$")]
+"""A role from the site model's own catalogue (a nurse, a plumber, a guard). The core checks it
+against the pinned model; the built-in hostel catalogue is student, guard, electrician, it_tech
+and housekeeping."""
 
 
 class Skill(StrEnum):

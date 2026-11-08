@@ -97,7 +97,7 @@ class ParticipantState:
 
     @property
     def roles(self) -> set[str]:
-        return {r.value for r in self.spec.roles}
+        return {str(r) for r in self.spec.roles}
 
 
 @dataclass(frozen=True)
@@ -698,7 +698,7 @@ class Engine:
                 elif loc_id != ps.location_id or unsure:
                     if probe.kind in DEVICE_KINDS:
                         reasons.append("phone checks are only asked where the person is")
-                    elif not set(ps.roles) & {r.value for r in pack.walking_roles}:
+                    elif not set(ps.roles) & {str(r) for r in pack.walking_roles}:
                         reasons.append("not asked to walk")
                     else:
                         walks = [
@@ -710,7 +710,7 @@ class Engine:
                         else:
                             walk = max(int(w or 0) for w in walks)
                             move = True
-                if loc.restricted and not set(ps.roles) & {r.value for r in loc.access_roles}:
+                if loc.restricted and not set(ps.roles) & {str(r) for r in loc.access_roles}:
                     reasons.append(f"no access to {loc_id}")
                 if (pid, probe_id, loc_id) in answered_keys:
                     reasons.append("already answered")

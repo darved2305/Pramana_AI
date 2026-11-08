@@ -21,6 +21,58 @@ No number in this document is a measured Pramana result unless it cites a genera
 
 ---
 
+## Any-site product conversion, 2026-11-08
+
+The user asked that Pramana work for any kind of site and situation, keeping the vision
+(PRODUCT.md §0-1: an active-sensing system whose sensors are people, for places sensors do not
+cover), with real onboarding, saved state for returning users, every control backed by the
+core, and every sidebar tab worth opening. This section is the plan of record for that work.
+
+**What was wrong.** The engine was general, but the site model was not: `physics.py` knew only
+building power and Wi-Fi, probe and component kinds were fixed enums, roles were five hostel
+roles, and the only way to describe a site was hand-written YAML. The console was the
+single-tenant hackathon console: it used the unscoped API, defaulted to `campus_block_c` in four
+pages, kept preferences only in browser storage and had no onboarding route, although the core
+already had `/v1/me`, onboarding state, organizations, sites and stored models.
+
+**How comparable products structure this** (accessed 2026-11-08, [S] search summaries):
+
+| Product | Structure | Take for Pramana |
+|---|---|---|
+| MaintainX, Fiix (maintenance software) | Asset register with a parent column; CSV import; people and locations created before assets | Describe a site as places, roles and equipment; import later |
+| ServiceNow CMDB | One core relationship, "Depends on / Used by", along which impact propagates | The dependency physics' `requires` graph, with `any_of` for redundancy |
+| ISO 14224 | Equipment classes, each with standard failure modes (fails to start, spurious stop, leakage) | An equipment library: pick a type, inherit its failure modes, checks and repairs |
+| incident.io Catalog | Custom types with typed attributes and relationships, plus importers | Site descriptions are typed data validated with readable errors |
+
+**Built (tested locally; see the status report).**
+
+1. Dependency physics (`pramana_domain/rules.py`, `physics.py`): any system as components with
+   `requires`, local faults and declarative probe rules. Network packs are unchanged; no
+   `MODEL_VERSION` change.
+2. Role catalogues per site. `Role` in the contracts is an identifier checked against the pinned
+   model (`UNKNOWN_ROLE`).
+3. Equipment library (`library.py`) and site builder (`builder.py`): places, roles, equipment and
+   service points become a validated model with questions in every language, one decision per
+   fault, checks restricted by skill and access, and generated walks.
+4. Model health check (`pramana_eval/health.py`): faults nobody can notice, look-alike faults
+   needing different decisions, unreachable checks, missing repairers, weak verification and
+   decisions spanning several repair targets, plus simulated noisy investigations per fault.
+5. A hand-written water-supply template and generated retail and hospital-ward sites, all
+   diagnosed by the unchanged engine. The health check found that `campus_block_c`'s
+   `DISPATCH_ELECTRICIAN_DB_C2` spans two breakers; it is left as is to keep replayed beliefs.
+
+**Next slices, in order.**
+
+| Slice | Scope | Exit |
+|---|---|---|
+| B. Site builder API | Org-scoped drafts: create from a template or description, validate, health check, publish an immutable version; equipment library and templates endpoints | Draft to published model over HTTP, tenant-leak tests, health report stored with the version |
+| C. People per site | Directory under `/v1/orgs/{org}/sites/{site}/people`, roles checked against the published model | Old `/v1/participants` removed from production mode |
+| D. Console foundation | `/app/[org]/...`, routing from `/v1/me`, server-side preferences, organization switcher, every page on scoped APIs, no `campus_block_c` in product code | Authenticity audit extended; a returning user lands where they left off |
+| E. Onboarding | §7 flow: three questions, workspace, guided sandbox, "your site" from a template or description with the health check, people, test call | Browser tests per user state (new, invited, returning, removed) |
+| F. Tabs | Overview: adaptive home with reasons. Investigations: live board. People: reliability learned per person. Sites: builder, health report, diff and publish. Evaluation: model health per site instead of global developer reports. Voice: device and language check. Settings: organization, team and invitations | Each tab backed by a core endpoint and its tests |
+
+---
+
 ## Review notes, 2026-11-07
 
 Checked on 2026-11-07 (evening, IST) against `main` at `e8194cb`, on the `production` branch.

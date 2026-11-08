@@ -1827,7 +1827,7 @@ export interface components {
             /** Question Budget */
             question_budget?: number | null;
             /** Roles */
-            roles?: components["schemas"]["Role"][] | null;
+            roles?: string[] | null;
             skill?: components["schemas"]["Skill"] | null;
         };
         /**
@@ -1855,7 +1855,7 @@ export interface components {
              */
             question_budget?: number;
             /** Roles */
-            roles: components["schemas"]["Role"][];
+            roles: string[];
             skill: components["schemas"]["Skill"];
         };
         /** PendingInvitation */
@@ -2053,11 +2053,6 @@ export interface components {
             /** Scenario Id */
             scenario_id: string;
         };
-        /**
-         * Role
-         * @enum {string}
-         */
-        Role: "student" | "guard" | "electrician" | "it_tech" | "housekeeping";
         /**
          * ScenarioRequest
          * @description How the simulator should choose the sealed hidden fault.

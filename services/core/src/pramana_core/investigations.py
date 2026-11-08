@@ -849,6 +849,11 @@ class InvestigationService:
                 raise ApiError(
                     422, "UNKNOWN_LOCATION", f"participant {p.id}: unknown location {p.location_id}"
                 )
+            unknown = sorted(set(map(str, p.roles)) - set(pack.role_catalogue))
+            if unknown:
+                raise ApiError(
+                    422, "UNKNOWN_ROLE", f"participant {p.id}: this site has no role {unknown[0]}"
+                )
         scenario = await self.sim.create_scenario(
             CreateScenario(
                 pack_id=pack.pack,
@@ -857,7 +862,7 @@ class InvestigationService:
                 fault=req.scenario.fault,
                 participants=[
                     SimParticipant(
-                        id=p.id, location_id=p.location_id, roles=[r.value for r in p.roles]
+                        id=p.id, location_id=p.location_id, roles=[str(r) for r in p.roles]
                     )
                     for p in req.participants
                 ],
@@ -1375,7 +1380,7 @@ class InvestigationService:
             )
             if person is None:
                 raise not_found("participant")
-            if not {r.value for r in person.roles} & {r.value for r in action.roles}:
+            if not {str(r) for r in person.roles} & {str(r) for r in action.roles}:
                 raise ApiError(403, "ROLE_NOT_PERMITTED", f"{action.id} needs another role")
             probability = (row.outcome or {}).get("decision_probability") or 0.0
             why = (row.outcome or {}).get("reason")

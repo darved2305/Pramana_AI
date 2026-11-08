@@ -1,0 +1,331 @@
+# Site model template: building water supply (simulated).
+#
+# A second, unrelated kind of system, described entirely as data with the dependency physics
+# (packages/domain/src/pramana_domain/rules.py). No building-network concepts appear here: the
+# engine, simulator, voice and approval flow are the same code that runs the hostel Wi-Fi model.
+# Hindi and Marathi wording needs native review before real use (docs/engineering/LANGUAGE_REVIEW.md).
+
+pack: building_water_supply
+version: 0.1.0
+title: Building water supply (simulated)
+physics: dependency
+
+roles:
+  - { id: resident,    skill: lay,        label: "Resident or office worker" }
+  - { id: guard,       skill: access,     label: "Security guard" }
+  - { id: plumber,     skill: technician, label: "Plumber" }
+  - { id: electrician, skill: technician, label: "Electrician" }
+
+locations:
+  - { id: GUARD_DESK,    floor: 0, kind: desk,       label: { en: "the guard desk", hi: "गार्ड डेस्क", hi-en: "guard desk", mr: "गार्ड डेस्क" } }
+  - { id: PUMP_ROOM,     floor: 0, kind: plant_room, label: { en: "the pump room", hi: "पंप रूम", hi-en: "pump room", mr: "पंप रूम" }, restricted: true, access_roles: [guard, plumber, electrician] }
+  - { id: ELEC_PANEL,    floor: 0, kind: panel,      label: { en: "the ground-floor electrical panel", hi: "ग्राउंड फ़्लोर का बिजली पैनल", hi-en: "ground floor bijli panel", mr: "तळमजल्यावरचं वीज पॅनल" }, restricted: true, access_roles: [electrician, guard] }
+  - { id: SERVICE_SHAFT, floor: 1, kind: shaft,      label: { en: "the plumbing shaft on floor 1", hi: "पहली मंज़िल का प्लंबिंग शाफ़्ट", hi-en: "first floor plumbing shaft", mr: "पहिल्या मजल्यावरचा प्लंबिंग शाफ्ट" }, restricted: true, access_roles: [plumber, guard] }
+  - { id: F1_WASHROOM,   floor: 1, kind: room,       label: { en: "the first-floor washroom", hi: "पहली मंज़िल का वॉशरूम", hi-en: "first floor washroom", mr: "पहिल्या मजल्यावरचं वॉशरूम" } }
+  - { id: F2_WASHROOM,   floor: 2, kind: room,       label: { en: "the second-floor washroom", hi: "दूसरी मंज़िल का वॉशरूम", hi-en: "second floor washroom", mr: "दुसऱ्या मजल्यावरचं वॉशरूम" } }
+  - { id: F3_WASHROOM,   floor: 3, kind: room,       label: { en: "the third-floor washroom", hi: "तीसरी मंज़िल का वॉशरूम", hi-en: "third floor washroom", mr: "तिसऱ्या मजल्यावरचं वॉशरूम" } }
+  - { id: ROOF_TANK,     floor: 4, kind: roof,       label: { en: "the overhead tank on the roof", hi: "छत की पानी की टंकी", hi-en: "chhat ki paani ki tanki", mr: "गच्चीवरची पाण्याची टाकी" }, restricted: true, access_roles: [guard, plumber] }
+
+walks:
+  - [GUARD_DESK, PUMP_ROOM, 30]
+  - [GUARD_DESK, ELEC_PANEL, 20]
+  - [GUARD_DESK, SERVICE_SHAFT, 45]
+  - [SERVICE_SHAFT, F1_WASHROOM, 15]
+  - [F1_WASHROOM, F2_WASHROOM, 40]
+  - [F2_WASHROOM, F3_WASHROOM, 40]
+  - [F3_WASHROOM, ROOF_TANK, 60]
+
+walking_roles: [guard, plumber, electrician]
+
+# `requires` lists what must be working for a component to work. `{ any_of: [...] }` is
+# redundant supply: either pump can fill the overhead tank. A `local` failure mode breaks only
+# the component itself, never what depends on it.
+components:
+  - { id: GRID_FEED,     kind: power_feed, label: "Utility power to the building", failure_modes: [{ id: lost, prior: 0.003, label: "Building power supply lost" }] }
+  - { id: LOBBY_LIGHTS,  kind: light,      label: "Guard desk lights", requires: [GRID_FEED], location: GUARD_DESK }
+  - { id: PUMP_BREAKER,  kind: breaker,    label: "Pump circuit breaker", requires: [GRID_FEED], location: ELEC_PANEL,
+      failure_modes: [{ id: tripped, prior: 0.006, label: "Pump circuit breaker tripped" }] }
+  - { id: PUMP_CONTROL,  kind: controller, label: "Pump control panel", requires: [PUMP_BREAKER], location: PUMP_ROOM,
+      failure_modes: [{ id: controller_fault, prior: 0.003, label: "Pump controller failed" },
+                      { id: display_dead, prior: 0.002, label: "Control panel display failed (pumps unaffected)", local: true }] }
+  - { id: MUNICIPAL,     kind: supply,     label: "Municipal water supply", failure_modes: [{ id: cut, prior: 0.008, label: "Municipal water supply off" }] }
+  - { id: SUMP,          kind: tank,       label: "Underground sump", requires: [MUNICIPAL], location: PUMP_ROOM }
+  - { id: PUMP_A,        kind: pump,       label: "Pump A", requires: [SUMP, PUMP_CONTROL], location: PUMP_ROOM,
+      failure_modes: [{ id: dead, prior: 0.004, label: "Pump A motor failed" }] }
+  - { id: PUMP_B,        kind: pump,       label: "Pump B", requires: [SUMP, PUMP_CONTROL], location: PUMP_ROOM,
+      failure_modes: [{ id: dead, prior: 0.004, label: "Pump B motor failed" }] }
+  - { id: OVERHEAD_TANK, kind: tank,       label: "Overhead tank", requires: [{ any_of: [PUMP_A, PUMP_B] }], location: ROOF_TANK }
+  - { id: VALVE_F1,      kind: valve,      label: "Floor 1 isolation valve", requires: [OVERHEAD_TANK], location: SERVICE_SHAFT,
+      failure_modes: [{ id: closed, prior: 0.004, label: "Floor 1 valve left closed" }] }
+  - { id: VALVE_F2,      kind: valve,      label: "Floor 2 isolation valve", requires: [OVERHEAD_TANK], location: SERVICE_SHAFT,
+      failure_modes: [{ id: closed, prior: 0.004, label: "Floor 2 valve left closed" }] }
+  - { id: VALVE_F3,      kind: valve,      label: "Floor 3 isolation valve", requires: [OVERHEAD_TANK], location: SERVICE_SHAFT,
+      failure_modes: [{ id: closed, prior: 0.004, label: "Floor 3 valve left closed" }] }
+
+no_fault_prior: 0.003      # nothing in the supply is broken: a single tap or fixture
+open_world_prior: 0.0008   # a cause outside this model (a burst riser, a contaminated tank)
+
+probes:
+  - id: tap_flows
+    label: "Water comes from the tap"
+    kind: rule
+    class: visual
+    outcomes: [flowing, dry]
+    rules: [{ when: { alive: $target }, outcome: flowing }]
+    default: dry
+    roles: [any]
+    exec_s: 15
+    observes: [{ at: F1_WASHROOM, target: VALVE_F1 }, { at: F2_WASHROOM, target: VALVE_F2 }, { at: F3_WASHROOM, target: VALVE_F3 }]
+    templates:
+      en: "In {place}, please open a tap. Is water coming out, or is it dry?"
+      hi-en: "{place} mein ek tap kholiye. Paani aa raha hai, ya bilkul sukha hai?"
+      hi: "{place} में एक नल खोलिए। पानी आ रहा है, या बिल्कुल सूखा है?"
+      mr: "{place} मध्ये एक नळ उघडा. पाणी येतंय, की पूर्ण कोरडा आहे?"
+
+  - id: lights_on
+    label: "Lights are on"
+    kind: rule
+    class: visual
+    outcomes: ["on", "off"]
+    rules: [{ when: { alive: $target }, outcome: "on" }]
+    default: "off"
+    roles: [any]
+    exec_s: 5
+    observes: [{ at: GUARD_DESK, target: LOBBY_LIGHTS }]
+    templates:
+      en: "At {place}, are the lights on right now?"
+      hi-en: "{place} pe abhi lights jal rahi hain?"
+      hi: "{place} पर अभी लाइटें जल रही हैं?"
+      mr: "{place} जवळ आत्ता दिवे चालू आहेत का?"
+
+  - id: tank_level
+    label: "Overhead tank has water"
+    kind: rule
+    class: visual
+    outcomes: [has_water, empty]
+    rules: [{ when: { alive: OVERHEAD_TANK }, outcome: has_water }]
+    default: empty
+    roles: [guard, plumber]
+    exec_s: 40
+    observes: [{ at: ROOF_TANK }]
+    templates:
+      en: "At {place}, please lift the lid and look inside. Is there water in the tank, or is it empty?"
+      hi-en: "{place} pe dhakkan utha ke andar dekhiye. Tanki mein paani hai, ya khaali hai?"
+      hi: "{place} पर ढक्कन उठाकर अंदर देखिए। टंकी में पानी है, या ख़ाली है?"
+      mr: "{place} वर झाकण उचलून आत बघा. टाकीत पाणी आहे, की रिकामी आहे?"
+
+  - id: sump_level
+    label: "Sump has water"
+    kind: rule
+    class: visual
+    outcomes: [has_water, empty]
+    rules: [{ when: { alive: SUMP }, outcome: has_water }]
+    default: empty
+    roles: [guard, plumber]
+    exec_s: 30
+    observes: [{ at: PUMP_ROOM }]
+    templates:
+      en: "In {place}, please look into the underground sump. Is there water in it, or is it empty?"
+      hi-en: "{place} mein underground sump mein dekhiye. Usme paani hai, ya khaali hai?"
+      hi: "{place} में ज़मीन के नीचे वाले संप में देखिए। उसमें पानी है, या ख़ाली है?"
+      mr: "{place} मध्ये जमिनीखालच्या संपमध्ये बघा. त्यात पाणी आहे, की रिकामा आहे?"
+
+  - id: pump_a_running
+    label: "Pump A is running"
+    kind: rule
+    class: visual
+    outcomes: [running, silent]
+    rules: [{ when: { alive: $target }, outcome: running }]
+    default: silent
+    roles: [guard, plumber, electrician]
+    exec_s: 20
+    observes: [{ at: PUMP_ROOM, target: PUMP_A }]
+    templates:
+      en: "In {place}, put your hand near pump A. Is it running, humming and vibrating, or silent?"
+      hi-en: "{place} mein pump A ke paas haath rakhiye. Woh chal raha hai, awaaz aur vibration hai, ya bilkul band hai?"
+      hi: "{place} में पंप A के पास हाथ रखिए। वह चल रहा है, आवाज़ और कंपन है, या बिल्कुल बंद है?"
+      mr: "{place} मध्ये पंप A जवळ हात ठेवा. तो चालू आहे, आवाज आणि कंपन आहे, की पूर्ण बंद आहे?"
+
+  - id: pump_b_running
+    label: "Pump B is running"
+    kind: rule
+    class: visual
+    outcomes: [running, silent]
+    rules: [{ when: { alive: $target }, outcome: running }]
+    default: silent
+    roles: [guard, plumber, electrician]
+    exec_s: 20
+    observes: [{ at: PUMP_ROOM, target: PUMP_B }]
+    templates:
+      en: "In {place}, put your hand near pump B. Is it running, humming and vibrating, or silent?"
+      hi-en: "{place} mein pump B ke paas haath rakhiye. Woh chal raha hai, awaaz aur vibration hai, ya bilkul band hai?"
+      hi: "{place} में पंप B के पास हाथ रखिए। वह चल रहा है, आवाज़ और कंपन है, या बिल्कुल बंद है?"
+      mr: "{place} मध्ये पंप B जवळ हात ठेवा. तो चालू आहे, आवाज आणि कंपन आहे, की पूर्ण बंद आहे?"
+
+  - id: control_display
+    label: "Pump control panel display"
+    kind: rule
+    class: visual
+    outcomes: [lit, blank]
+    rules:
+      - { when: { faulty: $target }, outcome: blank }
+      - { when: { supplied: $target }, outcome: lit }
+    default: blank
+    roles: [guard, plumber, electrician]
+    exec_s: 10
+    observes: [{ at: PUMP_ROOM, target: PUMP_CONTROL }]
+    templates:
+      en: "In {place}, look at the pump control panel. Is its display lit, or blank?"
+      hi-en: "{place} mein pump control panel dekhiye. Uski screen jal rahi hai, ya bilkul blank hai?"
+      hi: "{place} में पंप कंट्रोल पैनल देखिए। उसकी स्क्रीन जल रही है, या बिल्कुल खाली है?"
+      mr: "{place} मध्ये पंप कंट्रोल पॅनल बघा. त्याची स्क्रीन चालू आहे, की पूर्ण कोरी आहे?"
+
+  - id: inlet_flow
+    label: "Municipal water flows into the sump"
+    kind: rule
+    class: visual
+    outcomes: ["yes", "no"]
+    rules: [{ when: { alive: MUNICIPAL }, outcome: "yes" }]
+    default: "no"
+    roles: [guard, plumber]
+    exec_s: 25
+    observes: [{ at: PUMP_ROOM }]
+    templates:
+      en: "In {place}, look at the municipal inlet pipe into the sump. Is water coming in? Yes or no?"
+      hi-en: "{place} mein sump mein aane wali municipal pipe dekhiye. Paani aa raha hai? Haan ya nahi?"
+      hi: "{place} में संप में आने वाली नगरपालिका की पाइप देखिए। पानी आ रहा है? हाँ या नहीं?"
+      mr: "{place} मध्ये संपमध्ये येणारा महापालिकेचा पाइप बघा. पाणी येतंय का? हो की नाही?"
+
+  - id: pump_breaker
+    label: "Pump breaker position"
+    kind: rule
+    class: panel
+    outcomes: [up, tripped]
+    rules: [{ when: { fault: $target.tripped }, outcome: tripped }]
+    default: up
+    roles: [electrician, guard]
+    exec_s: 20
+    observes: [{ at: ELEC_PANEL, target: PUMP_BREAKER }]
+    templates:
+      en: "At {place}, find the breaker labelled PUMP. Is its switch up, or down and tripped?"
+      hi-en: "{place} pe PUMP likha breaker dhoondiye. Uska switch upar hai, ya neeche trip hua hai?"
+      hi: "{place} पर PUMP लिखा ब्रेकर ढूँढिए। उसका स्विच ऊपर है, या नीचे ट्रिप हुआ है?"
+      mr: "{place} वर PUMP लिहिलेला ब्रेकर शोधा. त्याचा स्विच वर आहे, की खाली ट्रिप झालाय?"
+
+  - id: valve_f1
+    label: "Floor 1 valve handle"
+    kind: rule
+    class: panel
+    outcomes: [open, closed]
+    rules: [{ when: { fault: $target.closed }, outcome: closed }]
+    default: open
+    roles: [plumber, guard]
+    exec_s: 20
+    observes: [{ at: SERVICE_SHAFT, target: VALVE_F1 }]
+    templates:
+      en: "In {place}, find the valve marked FLOOR 1. Is its handle along the pipe (open) or across it (closed)?"
+      hi-en: "{place} mein FLOOR 1 likha valve dhoondiye. Handle pipe ke saath seedha hai (khula) ya aada hai (band)?"
+      hi: "{place} में FLOOR 1 लिखा वाल्व ढूँढिए। हैंडल पाइप के साथ सीधा है (खुला) या आड़ा है (बंद)?"
+      mr: "{place} मध्ये FLOOR 1 लिहिलेला व्हॉल्व शोधा. हँडल पाइपच्या बाजूने सरळ आहे (उघडा) की आडवा आहे (बंद)?"
+
+  - id: valve_f2
+    label: "Floor 2 valve handle"
+    kind: rule
+    class: panel
+    outcomes: [open, closed]
+    rules: [{ when: { fault: $target.closed }, outcome: closed }]
+    default: open
+    roles: [plumber, guard]
+    exec_s: 20
+    observes: [{ at: SERVICE_SHAFT, target: VALVE_F2 }]
+    templates:
+      en: "In {place}, find the valve marked FLOOR 2. Is its handle along the pipe (open) or across it (closed)?"
+      hi-en: "{place} mein FLOOR 2 likha valve dhoondiye. Handle pipe ke saath seedha hai (khula) ya aada hai (band)?"
+      hi: "{place} में FLOOR 2 लिखा वाल्व ढूँढिए। हैंडल पाइप के साथ सीधा है (खुला) या आड़ा है (बंद)?"
+      mr: "{place} मध्ये FLOOR 2 लिहिलेला व्हॉल्व शोधा. हँडल पाइपच्या बाजूने सरळ आहे (उघडा) की आडवा आहे (बंद)?"
+
+  - id: valve_f3
+    label: "Floor 3 valve handle"
+    kind: rule
+    class: panel
+    outcomes: [open, closed]
+    rules: [{ when: { fault: $target.closed }, outcome: closed }]
+    default: open
+    roles: [plumber, guard]
+    exec_s: 20
+    observes: [{ at: SERVICE_SHAFT, target: VALVE_F3 }]
+    templates:
+      en: "In {place}, find the valve marked FLOOR 3. Is its handle along the pipe (open) or across it (closed)?"
+      hi-en: "{place} mein FLOOR 3 likha valve dhoondiye. Handle pipe ke saath seedha hai (khula) ya aada hai (band)?"
+      hi: "{place} में FLOOR 3 लिखा वाल्व ढूँढिए। हैंडल पाइप के साथ सीधा है (खुला) या आड़ा है (बंद)?"
+      mr: "{place} मध्ये FLOOR 3 लिहिलेला व्हॉल्व शोधा. हँडल पाइपच्या बाजूने सरळ आहे (उघडा) की आडवा आहे (बंद)?"
+
+actions:
+  - id: open_valve
+    label: "Open a closed floor valve"
+    target_kind: valve
+    fixes: closed
+    roles: [plumber]
+    at_target_location: true
+    risk: low
+    reversible: true
+    decision_classes: [OPEN_VALVE_F1, OPEN_VALVE_F2, OPEN_VALVE_F3]
+    instructions:
+      en: "You are cleared to open {target} at {place}. Please confirm once it is done."
+      hi-en: "Aapko {place} pe {target} kholne ki permission mil gayi hai. Ho jaye toh bataiye."
+      hi: "आपको {place} पर {target} खोलने की अनुमति मिल गई है। हो जाए तो बताइए।"
+      mr: "तुम्हाला {place} येथे {target} उघडण्याची परवानगी मिळाली आहे. झाल्यावर सांगा."
+  - id: reset_breaker
+    label: "Reset the tripped pump breaker"
+    target_kind: breaker
+    fixes: tripped
+    roles: [electrician]
+    at_target_location: true
+    risk: medium
+    reversible: true
+    decision_classes: [RESET_PUMP_BREAKER]
+    instructions:
+      en: "You are cleared to reset {target} at {place}. Please confirm once it is done."
+      hi-en: "Aapko {place} pe {target} reset karne ki permission mil gayi hai. Ho jaye toh bataiye."
+      hi: "आपको {place} पर {target} रीसेट करने की अनुमति मिल गई है। हो जाए तो बताइए।"
+      mr: "तुम्हाला {place} येथे {target} रीसेट करण्याची परवानगी मिळाली आहे. झाल्यावर सांगा."
+
+move_templates:
+  en: "Could you please walk to {place}? Once you are there: "
+  hi-en: "Kya aap {place} tak ja sakte hain? Wahan pahunch kar: "
+  hi: "क्या आप {place} तक जा सकते हैं? वहाँ पहुँचकर: "
+  mr: "तुम्ही {place} पर्यंत जाऊ शकाल का? तिथे पोहोचल्यावर: "
+
+presence_tokens:
+  - id: pump_room_plate
+    at: PUMP_ROOM
+    label: "Plate on pump A's motor (last three characters)"
+    templates:
+      en: "One quick check, since you are in {place}: please read the last three characters on the metal plate of pump A's motor."
+      hi-en: "Ek chhota sa check, aap {place} mein hain: pump A ki motor ki metal plate ke aakhri teen akshar padhiye."
+      hi: "एक छोटी सी जाँच, आप {place} में हैं: पंप A की मोटर की धातु की प्लेट के आख़िरी तीन अक्षर पढ़िए।"
+      mr: "एक छोटी तपासणी, तुम्ही {place} मध्ये आहात: पंप A च्या मोटरच्या धातूच्या पट्टीवरची शेवटची तीन अक्षरं वाचा."
+  - id: roof_tank_tag
+    at: ROOF_TANK
+    label: "Tag on the tank lid (last three characters)"
+    templates:
+      en: "One quick check, since you are at {place}: please read the last three characters on the tag tied to the tank lid."
+      hi-en: "Ek chhota sa check, aap {place} pe hain: tanki ke dhakkan pe bandhe tag ke aakhri teen akshar padhiye."
+      hi: "एक छोटी सी जाँच, आप {place} पर हैं: टंकी के ढक्कन पर बँधे टैग के आख़िरी तीन अक्षर पढ़िए।"
+      mr: "एक छोटी तपासणी, तुम्ही {place} वर आहात: टाकीच्या झाकणाला बांधलेल्या टॅगवरची शेवटची तीन अक्षरं वाचा."
+
+decision_classes:
+  - { id: OPEN_VALVE_F1,        label: "Send the plumber to open the floor 1 valve", hypotheses: [VALVE_F1.closed] }
+  - { id: OPEN_VALVE_F2,        label: "Send the plumber to open the floor 2 valve", hypotheses: [VALVE_F2.closed] }
+  - { id: OPEN_VALVE_F3,        label: "Send the plumber to open the floor 3 valve", hypotheses: [VALVE_F3.closed] }
+  - { id: RESET_PUMP_BREAKER,   label: "Send the electrician to reset the pump breaker", hypotheses: [PUMP_BREAKER.tripped] }
+  - { id: SERVICE_PUMP_CONTROL, label: "Call the pump vendor for the control panel", hypotheses: [PUMP_CONTROL.controller_fault, PUMP_CONTROL.display_dead] }
+  - { id: REPAIR_PUMP,          label: "Send the plumber to repair the failed pump", hypotheses: [PUMP_A.dead, PUMP_B.dead] }
+  - { id: ORDER_TANKER,         label: "Order a water tanker and report the municipal outage", hypotheses: [MUNICIPAL.cut] }
+  - { id: ESCALATE_POWER,       label: "Escalate the building power loss to facilities", hypotheses: [GRID_FEED.lost] }
+  - { id: CHECK_FIXTURE,        label: "No supply fault: check the reporter's tap or fixture", hypotheses: [NO_FAULT] }
+
+loss_minutes:
+  wrong_default: 30
+  wrong_by_decision: { ORDER_TANKER: 90, CHECK_FIXTURE: 45 }
+  any_under_open_world: 30

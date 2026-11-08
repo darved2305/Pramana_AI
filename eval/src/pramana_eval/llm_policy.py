@@ -102,7 +102,7 @@ class LlmPolicy:
         ids = {f"a{i + 1}": a for i, a in enumerate(menu)}
         decisions = [d.id for d in self.pack.decision_classes]
         people = "\n".join(
-            f"- {p.spec.id}: {p.spec.roles[0].value} at {p.spec.location_id}"
+            f"- {p.spec.id}: {p.spec.roles[0]} at {p.spec.location_id}"
             for p in self._scenario.people
         )
         rep = self._report

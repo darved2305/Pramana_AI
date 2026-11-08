@@ -83,6 +83,9 @@ class ConsoleQueries:
     def _check_location(pack: DomainPack, spec: ParticipantSpec) -> None:
         if spec.location_id not in pack.location_by_id:
             raise ApiError(422, "UNKNOWN_LOCATION", f"unknown location {spec.location_id}")
+        unknown = sorted(set(map(str, spec.roles)) - set(pack.role_catalogue))
+        if unknown:
+            raise ApiError(422, "UNKNOWN_ROLE", f"this site has no role {unknown[0]}")
 
     async def list_participants(self, pack_id: str | None) -> list[DirectoryParticipant]:
         stmt = select(DirectoryParticipantRow).order_by(

@@ -40,8 +40,17 @@ export const TEMPLATE_LANGS: { value: TemplateLanguage; label: string }[] = [
   { value: "hi-en", label: "Hinglish (Hindi and English mixed)" },
 ];
 
-export function roleLabel(r: Role) {
-  return ROLES.find((x) => x.value === r)?.label ?? r;
+/** The roles people can hold at this site: its own catalogue, or the built-in list. */
+export function roleOptions(pack?: SitePack): { value: Role; label: string }[] {
+  return pack?.roles?.length ? pack.roles.map((r) => ({ value: r.id, label: r.label })) : ROLES;
+}
+
+export function roleLabel(r: Role, pack?: SitePack) {
+  return (
+    roleOptions(pack).find((x) => x.value === r)?.label ??
+    ROLES.find((x) => x.value === r)?.label ??
+    r.replace(/_/g, " ")
+  );
 }
 export function langLabel(c: string | undefined = "en") {
   return STT_LANGS.find((x) => x.value === c)?.label ?? TEMPLATE_LANGS.find((x) => x.value === c)?.label ?? c ?? "English";
@@ -60,11 +69,12 @@ function slug(name: string) {
   );
 }
 
-export function emptyParticipant(): ParticipantSpec {
+export function emptyParticipant(pack?: SitePack): ParticipantSpec {
+  const everyday = pack?.roles?.find((r) => r.skill === "lay") ?? pack?.roles?.[0];
   return {
     id: "",
     display_name: "",
-    roles: ["student"],
+    roles: [everyday?.id ?? "student"],
     skill: "lay",
     location_id: "",
     languages: { stt_candidates: ["hi-IN"], template_language: "hi", codemix: false },
@@ -88,7 +98,7 @@ export function ParticipantForm({
   submitLabel?: string;
 }) {
   const editing = Boolean(initial?.id);
-  const [p, setP] = useState<ParticipantSpec>(initial ?? emptyParticipant());
+  const [p, setP] = useState<ParticipantSpec>(initial ?? emptyParticipant(pack));
   const [touched, setTouched] = useState(false);
   const [idEdited, setIdEdited] = useState(editing);
   const [saving, setSaving] = useState(false);
@@ -175,7 +185,7 @@ export function ParticipantForm({
       <fieldset>
         <legend className="mb-2 text-[13px] font-medium text-fg-2">Roles</legend>
         <div className="flex flex-wrap gap-2">
-          {ROLES.map((r) => {
+          {roleOptions(pack).map((r) => {
             const on = p.roles.includes(r.value);
             return (
               <button

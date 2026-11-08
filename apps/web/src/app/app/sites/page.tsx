@@ -110,7 +110,7 @@ export default function SitesPage() {
                       <KeyValue k="ID" v={<span className="font-mono text-[12px]">{loc.id}</span>} />
                       <KeyValue k="Access" v={loc.restricted ? <Badge tone="warn">Restricted</Badge> : <Badge tone="ok">Open</Badge>} />
                       {loc.restricted ? (
-                        <KeyValue k="Who may enter" v={loc.access_roles.map(roleLabel).join(", ") || "Nobody listed"} />
+                        <KeyValue k="Who may enter" v={loc.access_roles.map((r) => roleLabel(r, pack.data)).join(", ") || "Nobody listed"} />
                       ) : null}
                       <KeyValue k="People here" v={people.filter((p) => p.location_id === loc.id).map((p) => p.display_name).join(", ") || "Nobody in the directory"} />
                     </dl>
@@ -121,7 +121,7 @@ export default function SitesPage() {
                           <p className="text-[14px]">{p.label}</p>
                           <p className="mt-0.5 text-[12px] text-muted">
                             Answers: {p.outcomes.map((o) => o.replace(/_/g, " ")).join(" / ")}
-                            {p.roles.includes("any") ? "" : ` · needs ${p.roles.map((r) => roleLabel(r as never)).join(" or ")}`}
+                            {p.roles.includes("any") ? "" : ` · needs ${p.roles.map((r) => roleLabel(r, pack.data)).join(" or ")}`}
                           </p>
                         </li>
                       ))}
@@ -155,7 +155,7 @@ export default function SitesPage() {
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">{p.outcomes.map((o) => <Tag key={o}>{o.replace(/_/g, " ")}</Tag>)}</div>
                       </td>
-                      <td className="hidden px-4 py-3 text-fg-2 md:table-cell">{p.roles.includes("any") ? "Anyone" : p.roles.map((r) => roleLabel(r as never)).join(", ")}</td>
+                      <td className="hidden px-4 py-3 text-fg-2 md:table-cell">{p.roles.includes("any") ? "Anyone" : p.roles.map((r) => roleLabel(r, pack.data)).join(", ")}</td>
                       <td className="hidden px-4 py-3 text-fg-2 lg:table-cell">{p.locations.length ? `${p.locations.length} places` : "Anywhere"}</td>
                     </tr>
                   ))}

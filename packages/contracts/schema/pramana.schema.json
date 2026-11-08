@@ -2436,7 +2436,8 @@
           "anyOf": [
             {
               "items": {
-                "$ref": "#/$defs/Role"
+                "pattern": "^[a-z][a-z0-9_]{0,47}$",
+                "type": "string"
               },
               "minItems": 1,
               "type": "array"
@@ -2500,7 +2501,8 @@
         },
         "roles": {
           "items": {
-            "$ref": "#/$defs/Role"
+            "pattern": "^[a-z][a-z0-9_]{0,47}$",
+            "type": "string"
           },
           "minItems": 1,
           "title": "Roles",
@@ -3016,17 +3018,6 @@
       ],
       "title": "RevealResult",
       "type": "object"
-    },
-    "Role": {
-      "enum": [
-        "student",
-        "guard",
-        "electrician",
-        "it_tech",
-        "housekeeping"
-      ],
-      "title": "Role",
-      "type": "string"
     },
     "ScenarioRequest": {
       "additionalProperties": false,

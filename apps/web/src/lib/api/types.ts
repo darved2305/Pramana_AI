@@ -22,7 +22,8 @@ export type Approval = S["Approval"];
 export type ApprovalStatus = S["ApprovalStatus"];
 export type ParticipantSpec = S["ParticipantSpec"];
 export type LanguageProfile = S["LanguageProfile"];
-export type Role = S["Role"];
+/** A role id from the site model's own catalogue (a plumber, a nurse, a guard). */
+export type Role = ParticipantSpec["roles"][number];
 export type Skill = S["Skill"];
 export type Report = S["Report"];
 export type EventEnvelope = S["EventEnvelope"];
@@ -67,6 +68,13 @@ export interface SitePack {
   probes: PackProbe[];
   decision_classes: { id: string; label: string }[];
   walking_roles: Role[];
+  /** The site's own role catalogue (a plumber, a nurse). Older cores omit it. */
+  roles?: PackRole[];
+}
+export interface PackRole {
+  id: Role;
+  label: string;
+  skill: Skill;
 }
 export interface PackLocation {
   id: string;
