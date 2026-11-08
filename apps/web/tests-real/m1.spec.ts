@@ -74,7 +74,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   await page.getByText("These people have agreed to be contacted").click();
   await expect(page.getByRole("checkbox", { name: /agreed to be contacted/ })).toBeChecked();
   await page.getByRole("button", { name: "Start investigation" }).click();
-  await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9a-f]+$/);
+  await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9A-HJKMNP-TV-Z]{26}$/);
   const invId = page.url().split("/").pop() as string;
 
   // 2. Personal links from the console.

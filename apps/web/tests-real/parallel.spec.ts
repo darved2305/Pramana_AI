@@ -52,7 +52,7 @@ test("parallel: three people asked at once reach the S1 decision", async ({ page
   await page.getByText("These people have agreed to be contacted").click();
   await expect(page.getByRole("checkbox", { name: /agreed to be contacted/ })).toBeChecked();
   await page.getByRole("button", { name: "Start investigation" }).click();
-  await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9a-f]+$/);
+  await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9A-HJKMNP-TV-Z]{26}$/);
   const invId = page.url().split("/").pop() as string;
 
   let state = await api<State>(request, "GET", `/v1/investigations/${invId}`);
