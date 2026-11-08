@@ -233,9 +233,7 @@ async def load_facts(
 
     sandbox_ids = {s.id for s in sites if s.mode == "sandbox"}
     people = await session.scalar(
-        select(func.count())
-        .select_from(SitePersonRow)
-        .where(SitePersonRow.org_id == org_id)
+        select(func.count()).select_from(SitePersonRow).where(SitePersonRow.org_id == org_id)
     )
     return HomeFacts(
         display_name=display_name,
