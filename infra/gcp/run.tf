@@ -85,7 +85,7 @@ resource "google_cloud_run_v2_service" "svc" {
       }
 
       dynamic "env" {
-        for_each = contains(["api", "media", "worker"], each.key) ? toset(["database-url", "gnani-api-key", "participant-signing-key", "sim-operator-key", "google-oauth-client-id", "google-oauth-client-secret"]) : toset([])
+        for_each = contains(["api", "media", "worker"], each.key) ? toset(["database-url", "gnani-api-key", "participant-signing-key", "pramana-pii-key", "sim-operator-key", "google-oauth-client-id", "google-oauth-client-secret"]) : toset([])
         content {
           name = upper(replace(env.value, "-", "_"))
           value_source {

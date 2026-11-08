@@ -12,6 +12,7 @@ locals {
     "migration-database-url",
     "gnani-api-key",
     "participant-signing-key",
+    "pramana-pii-key",
     "sim-operator-key",
     "sim-oracle-key",
     "google-oauth-client-id",
