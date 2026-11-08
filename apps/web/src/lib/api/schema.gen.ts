@@ -497,6 +497,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_v1_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Onboarding */
+        get: operations["onboarding_v1_onboarding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Save Onboarding */
+        patch: operations["save_onboarding_v1_onboarding_patch"];
+        trace?: never;
+    };
+    "/v1/orgs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Organization */
+        post: operations["create_organization_v1_orgs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Organization */
+        get: operations["organization_v1_orgs__org__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/packs": {
         parameters: {
             query?: never;
@@ -652,6 +721,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountPreferences */
+        AccountPreferences: {
+            home_layout?: components["schemas"]["HomeLayout"];
+            /** Last Org Id */
+            last_org_id?: string | null;
+            /** Last Site By Org */
+            last_site_by_org?: {
+                [key: string]: string;
+            };
+        };
         /** AnswerResult */
         AnswerResult: {
             extraction: components["schemas"]["Extraction"];
@@ -846,6 +925,30 @@ export interface components {
             report: components["schemas"]["Report"];
             scenario: components["schemas"]["ScenarioRequest"];
         };
+        /** CreateOrganization */
+        CreateOrganization: {
+            kind?: components["schemas"]["OrganizationKind"] | null;
+            /** Name */
+            name?: string | null;
+            /** Slug */
+            slug?: string | null;
+        };
+        /** CurrentAccount */
+        CurrentAccount: {
+            /** Destination */
+            destination: string;
+            /** Identities */
+            identities: components["schemas"]["IdentitySummary"][];
+            /** Join Suggestions */
+            join_suggestions?: components["schemas"]["JoinSuggestion"][];
+            /** Memberships */
+            memberships: components["schemas"]["OrganizationSummary"][];
+            onboarding: components["schemas"]["OnboardingState"];
+            /** Pending Invitations */
+            pending_invitations?: components["schemas"]["PendingInvitation"][];
+            preferences: components["schemas"]["AccountPreferences"];
+            user: components["schemas"]["AuthSession"];
+        };
         /** DecisionBelief */
         DecisionBelief: {
             /** Id */
@@ -1038,6 +1141,18 @@ export interface components {
          * @enum {string}
          */
         Hedge: "certain" | "probable" | "unsure";
+        /** HomeLayout */
+        HomeLayout: {
+            /**
+             * Checklist Dismissed
+             * @default false
+             */
+            checklist_dismissed?: boolean;
+            /** Hides */
+            hides?: string[];
+            /** Pins */
+            pins?: string[];
+        };
         /** HypothesisBelief */
         HypothesisBelief: {
             /** Decision Class */
@@ -1048,6 +1163,19 @@ export interface components {
             label: string;
             /** Probability */
             probability: number;
+        };
+        /** IdentitySummary */
+        IdentitySummary: {
+            /** Email At Link */
+            email_at_link?: string | null;
+            /** Hosted Domain */
+            hosted_domain?: string | null;
+            /** Id */
+            id: string;
+            /** Last Used At */
+            last_used_at?: string | null;
+            /** Provider */
+            provider: string;
         };
         /** InfeasibleAction */
         InfeasibleAction: {
@@ -1148,6 +1276,20 @@ export interface components {
              */
             updated_at: string;
         };
+        /** JoinSuggestion */
+        JoinSuggestion: {
+            /** Domain */
+            domain: string;
+            /** Organization Id */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /**
+             * Policy
+             * @enum {string}
+             */
+            policy: "request" | "auto";
+        };
         /**
          * LanguageProfile
          * @description How we speak to and listen to one participant.
@@ -1223,6 +1365,96 @@ export interface components {
          * @enum {string}
          */
         ObservationState: "committed" | "superseded" | "discarded";
+        /** OnboardingAnswers */
+        OnboardingAnswers: {
+            /** Buildings */
+            buildings?: ("one" | "two_to_five" | "six_to_twenty" | "more_than_twenty") | null;
+            /** Languages */
+            languages?: ("en" | "hi" | "mr" | "hi-en")[];
+            organization_kind?: components["schemas"]["OrganizationKind"] | null;
+            /** Other Problem */
+            other_problem?: string | null;
+            /** Problem */
+            problem?: ("wifi" | "power" | "both" | "other") | null;
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version?: 1;
+            /** Work */
+            work?: ("facilities" | "it" | "duty_manager" | "technician" | "representative" | "other") | null;
+        };
+        /** OnboardingPatch */
+        OnboardingPatch: {
+            answers?: components["schemas"]["OnboardingAnswers"] | null;
+            /** Dismissed */
+            dismissed?: boolean | null;
+            step?: components["schemas"]["OnboardingStep"] | null;
+        };
+        /** OnboardingState */
+        OnboardingState: {
+            answers: components["schemas"]["OnboardingAnswers"];
+            /** Completed At */
+            completed_at?: string | null;
+            /** Dismissed At */
+            dismissed_at?: string | null;
+            /** Org Id */
+            org_id?: string | null;
+            step: components["schemas"]["OnboardingStep"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * OnboardingStep
+         * @enum {string}
+         */
+        OnboardingStep: "welcome" | "survey" | "org" | "sandbox" | "site" | "people" | "test_call" | "done" | "join" | "waiting";
+        /** OrganizationCreated */
+        OrganizationCreated: {
+            /** Destination */
+            destination: string;
+            live_site: components["schemas"]["SiteSummary"];
+            onboarding: components["schemas"]["OnboardingState"];
+            organization: components["schemas"]["OrganizationSummary"];
+            sandbox_site: components["schemas"]["SiteSummary"];
+        };
+        /**
+         * OrganizationKind
+         * @enum {string}
+         */
+        OrganizationKind: "campus" | "hospital" | "office" | "hotel" | "retail" | "other";
+        /**
+         * OrganizationRole
+         * @enum {string}
+         */
+        OrganizationRole: "owner" | "admin" | "operator" | "approver" | "viewer";
+        /** OrganizationSummary */
+        OrganizationSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            kind: components["schemas"]["OrganizationKind"];
+            /** Name */
+            name: string;
+            /** Roles */
+            roles: components["schemas"]["OrganizationRole"][];
+            /** Slug */
+            slug: string;
+            /** Timezone */
+            timezone: string;
+            /** Version */
+            version: number;
+        };
         /** OutcomePreview */
         OutcomePreview: {
             /** Decision */
@@ -1296,6 +1528,22 @@ export interface components {
             /** Roles */
             roles: components["schemas"]["Role"][];
             skill: components["schemas"]["Skill"];
+        };
+        /** PendingInvitation */
+        PendingInvitation: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Id */
+            id: string;
+            /** Organization Id */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Roles */
+            roles: components["schemas"]["OrganizationRole"][];
         };
         /** PlanDecision */
         PlanDecision: {
@@ -1527,6 +1775,29 @@ export interface components {
             last_seen_at: string;
             /** User Agent */
             user_agent?: string | null;
+        };
+        /** SiteSummary */
+        SiteSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Model Id */
+            current_model_id: string | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "sandbox" | "live";
+            /** Name */
+            name: string;
+            /** Org Id */
+            org_id: string;
         };
         /**
          * Skill
@@ -2411,6 +2682,192 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_v1_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentAccount"];
+                };
+            };
+        };
+    };
+    onboarding_v1_onboarding_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingState"];
+                };
+            };
+        };
+    };
+    save_onboarding_v1_onboarding_patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OnboardingPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingState"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The form changed in another tab */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The form version is required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_organization_v1_orgs_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrganization"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationCreated"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    organization_v1_orgs__org__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSummary"];
                 };
             };
             /** @description Validation Error */

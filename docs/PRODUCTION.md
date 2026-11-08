@@ -36,6 +36,27 @@ change their spec or identity, or be deleted. The tenant-leak route generator an
 provisioning are still pending the organization API slices; schema tests alone do not establish
 application-level tenant isolation.
 
+**Account and retry implementation, 2026-11-08.** Google sign-in is CI green on `87e05bd`,
+[run 42387269258](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/actions/runs/42387269258).
+Real Google sign-in passed with the user locally on Nov 8. Organization creation needs
+a user-scoped idempotency key before an organization exists, so the schema below now uses
+`scope, principal, key` with a nullable organization. Responses are stored as bytes with selected
+headers, and a short pending lease plus a row lock protects concurrent requests. Business state
+and the serialized response join one database transaction. The 72-hour reaper is scoped and has
+a maintenance command; scheduling it remains worker deployment work. Survey state has an
+optimistic version and strong ETags. Published sandbox models are copied from a frozen database
+template. Full organization-scoped API isolation remains Slice 4 work.
+
+**Deployment budget decision, 2026-11-08.** The user confirmed that the complete application must
+be deployed and set an INR 1,000/month total GCP budget. They approved Supabase Free PostgreSQL
+in specific Mumbai (`ap-south-1`) with the app on GCP Mumbai (`asia-south1`), accepting free-tier
+pausing and our own backups. No domain is owned; start with the managed Cloud Run HTTPS URL.
+The HA Cloud SQL/load-balancer defaults in `infra/gcp` are now an unapproved larger-tier reference,
+not this launch plan. See [the primary-source budget review](engineering/CLOUD_BUDGET_REVIEW_2026-11-08.md).
+Project access and billing linkage were checked read-only. No cloud resource or API was created
+or enabled, and STOP 2 remains before cloud apply. Private database schema/roles, durable sandbox
+state, service invocation, quotas, backup/restore and spending controls must be verified first.
+
 **Code claims (§1.4).** Every `file:line` cited in §1.4 still matches the tree: `api/directory.py:42,50,57,64`, `main.py:169`, `app/app/page.tsx:24-25`, `lib/api/core.ts:165`, `lib/store/local.ts:77`, `pack.py:344`, `speakable.py:10`, `investigations.py:132,362-366,791,883`, `auth/service.py:53,95`, `voice/governor.py:15`, `voice/media.py:117`, `auth/deps.py:60-67`, `login/page.tsx:204`, `lib/api/auth.ts:55-57`. The inventory holds: 29 HTTP paths, 7 migrations, 9 tables, an engine LRU of 32 (`ENGINE_CACHE_MAX`). No corrections were needed.
 
 **Research claims re-checked (primary sources, accessed 2026-11-07).**
@@ -460,15 +481,18 @@ Browser                         api                                   provider /
 1. **Clients.** Generate a random key per user intent: one per press of "Create organization", reused by every retry of that press. The mutation layer (TanStack Query, §11) attaches it.
 2. **API.** Middleware covers POST and PATCH (and DELETE, for uniform behaviour). The key is required on every endpoint that creates something or triggers a side effect: create organization, invite, create investigation, answers, approvals and decisions, interventions, notify, publish a model.
    - Format: `^[A-Za-z0-9_-]{16,128}$`, validated before lookup.
-   - Scope: `(org_id, principal, key)`, where the principal is the user, participant session or API key.
-   - Fingerprint: SHA-256 of method, path and canonical body.
+   - Scope: `(scope, principal, key)`, where scope is `org:<uuid>` for tenant commands or
+     `user:<user_id>` for pre-organization commands. The principal is the user, participant session
+     or API key; participant and API-key integration joins the organization-scoped API slice.
+   - Fingerprint: SHA-256 of method, path including query, and canonical body.
    - Status codes, following the IETF draft:
      - new key: run the handler and store the status and body with the transaction;
      - finished, same fingerprint: replay the stored response;
      - in flight: `409 IDEMPOTENCY_IN_FLIGHT`;
      - same key, different fingerprint: `422 IDEMPOTENCY_KEY_REUSED`;
      - missing where required: `400 IDEMPOTENCY_KEY_REQUIRED`.
-   - Retention: 72 hours, cleared by a reaper job (brandur).
+   - Retention: 72 hours. The implemented scoped reaper skips active row locks and runs during
+     mutations or via `scripts/reap_idempotency.py`; a scheduled worker remains deployment work.
 3. **Commands with external effects** ("approve and notify the technician", "place a call"). One local transaction commits the state change and an outbox row. The worker calls the provider with a provider-side idempotency key derived from the outbox id, where the provider supports one. Where it does not, record the attempt and reconcile through status APIs or webhooks; never retry a non-idempotent call blindly (brandur).
 4. **Webhooks.** Verify the signature and timestamp, then `INSERT` into `inbox (provider, event_id)` under a unique constraint in the same transaction as the effect. Answer 2xx quickly and process asynchronously.
 5. **Events.** `idempotency_key` becomes unique per investigation, not globally.
@@ -707,6 +731,7 @@ create table onboarding_state (
   step             text not null,                    -- welcome, survey, org, sandbox, site, people, test_call, done
   answers          jsonb not null default '{}',      -- validated by a versioned contract (§7.3)
   answers_version  int not null default 1,
+  version          int not null default 1,           -- If-Match / strong ETag for survey autosave
   dismissed_at     timestamptz,
   completed_at     timestamptz,
   updated_at       timestamptz not null default now()
@@ -888,18 +913,20 @@ create table work_orders (                           -- live replacement for sim
 
 -- Reliability --------------------------------------------------------------------------------
 create table idempotency_keys (
-  org_id           uuid not null,
+  scope            text not null,                    -- org:<uuid> or user:<user_id> before an org exists
+  org_id           uuid references organizations(id),
   principal        text not null,                    -- user id, participant session or API key id
   key              text not null check (char_length(key) between 16 and 128),
   method           text not null,
   path             text not null,
   request_sha256   bytea not null,
-  recovery_point   text not null default 'started',
+  owner_nonce      uuid,                             -- identifies the pending lease owner
   locked_until     timestamptz,
   response_status  int,
-  response_body    jsonb,
+  response_body    bytea,                            -- exact serialized bytes for a lost-response replay
+  response_headers jsonb not null default '{}',
   created_at       timestamptz not null default now(),
-  primary key (org_id, principal, key)
+  primary key (scope, principal, key)
 );
 
 create table outbox (

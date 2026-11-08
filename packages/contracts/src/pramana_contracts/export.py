@@ -20,6 +20,8 @@ from . import (
     AuthSession,
     CapabilityGrant,
     CreateInvestigation,
+    CreateOrganization,
+    CurrentAccount,
     DirectoryParticipant,
     EvaluationReport,
     EvaluationReportSummary,
@@ -29,6 +31,9 @@ from . import (
     LoginRequest,
     MediaClientMessage,
     MediaServerMessage,
+    OnboardingPatch,
+    OnboardingState,
+    OrganizationCreated,
     PackSummary,
     ParticipantPatch,
     ParticipantView,
@@ -43,6 +48,11 @@ from . import (
 )
 
 EXPORTED: tuple[type[BaseModel], ...] = (
+    CreateOrganization,
+    CurrentAccount,
+    OnboardingPatch,
+    OnboardingState,
+    OrganizationCreated,
     CreateInvestigation,
     InvestigationState,
     SubmitAnswer,

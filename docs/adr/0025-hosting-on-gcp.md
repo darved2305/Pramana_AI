@@ -2,6 +2,16 @@
 
 **Status:** proposed (cloud choice confirmed by the user on 2026-11-07)
 
+**Starter budget amendment, 2026-11-08.** The user set an INR 1,000/month total GCP ceiling and
+approved Supabase Free PostgreSQL in specific Mumbai, with the application on Cloud Run Mumbai.
+The HA Cloud SQL, load balancer and always-on process topology below remains a larger-tier
+reference and is not authorized for the launch. The starter uses managed Cloud Run HTTPS URLs,
+zero minimum instances, bounded pools/instances, private service invocation, a private database
+schema and separate migration/runtime roles. Backups, restoration, free-tier pausing, quotas and
+spend controls must be verified. See
+[the sourced budget review](../engineering/CLOUD_BUDGET_REVIEW_2026-11-08.md).
+This amendment changes the hosting profile, not the deterministic engine or sealed truth boundary.
+
 **Amends:** 0005 (local development stays Docker-free; containers are for deployment only) and
 0009 (in the cloud a load balancer routes `/api` and `/media` paths directly, so SSE no longer
 passes through the Next.js rewrite and its proxy idle timeout).

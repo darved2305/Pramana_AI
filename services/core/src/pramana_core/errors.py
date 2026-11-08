@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -12,9 +14,12 @@ from .observability import log
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, code: str, message: str) -> None:
+    def __init__(
+        self, status: int, code: str, message: str, *, details: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(message)
         self.status, self.code, self.message = status, code, message
+        self.details = details
 
 
 def not_found(what: str) -> ApiError:
@@ -29,7 +34,8 @@ def _body(request: Request, code: str, message: str, **extra: object) -> dict[st
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api(request: Request, exc: ApiError) -> JSONResponse:
-        return JSONResponse(_body(request, exc.code, exc.message), status_code=exc.status)
+        extra = {"details": exc.details} if exc.details is not None else {}
+        return JSONResponse(_body(request, exc.code, exc.message, **extra), status_code=exc.status)
 
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:

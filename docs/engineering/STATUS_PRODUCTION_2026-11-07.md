@@ -17,7 +17,7 @@ Worktree: `gnani ai hackathon-production`, branch `production`. `main` remains a
 | UI browser suite and build | Tested locally | 48 passed in 2.2 min, exit 0, port 3112 |
 | Real-stack browser suite and build | Tested locally | 23 passed in 2.8 min, exit 0; includes mock Google sign-in/cancellation, S1, S2, S7, parallel calls and repair recovery |
 | R0 and tenancy CI | CI green | `56e5bca`, [run 42383301031](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/actions/runs/42383301031): all five jobs passed; Python 3,526, UI 48, real browser 21, both images and Terraform |
-| Google auth CI | Pending | Local evidence above; push and CI pending. Draft [PR #3](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/pull/3) remains unmerged |
+| Google auth CI | CI green | `87e05bd`, [run 42387269258](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/actions/runs/42387269258): all five jobs passed. Draft [PR #3](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/pull/3) remains unmerged |
 | Docker image builds locally | Not run | Docker Desktop was not running. R0/tenancy images were built and smoke-tested in CI |
 | Real Google sign-in | Not run | User has the exact redirect URI and .env fields for GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET. Browser/native control is disconnected; the user must perform the Google console and sign-in steps |
 | Staging or production deployment | Not run | No Terraform apply, cloud resources or live provider calls in this session |

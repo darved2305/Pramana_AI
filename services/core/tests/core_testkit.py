@@ -12,6 +12,8 @@ from pramana_core.settings import Settings
 SIGNING_KEY = generate_private_key_b64()
 OPERATOR_KEY = "test-operator-key"
 DEMO_ORG_ID = "019a5e00-0000-7000-8000-000000000001"
+DEMO_SITE_ID = "019a5e00-0000-7000-8000-000000000011"
+DEMO_MODEL_ID = "019a5e00-0000-7000-8000-000000000012"
 """Created by migration 0008; owns every row written without an organization context."""
 
 
@@ -54,6 +56,26 @@ async def truncate_all(db_url: str) -> None:
         has_limits = await conn.exec_driver_sql("select to_regclass('rate_limits') is not null")
         if has_limits.scalar():
             await conn.exec_driver_sql("truncate rate_limits")
+        has_templates = await conn.exec_driver_sql(
+            "select to_regclass('model_templates') is not null"
+        )
+        if has_templates.scalar():
+            await conn.exec_driver_sql(
+                f"insert into sites (id,org_id,name,kind,mode) values "
+                f"('{DEMO_SITE_ID}','{DEMO_ORG_ID}',"
+                "'Sample hostel (simulated)','hostel','sandbox') "
+                "on conflict do nothing"
+            )
+            await conn.exec_driver_sql(
+                "insert into site_models "
+                "(id,org_id,site_id,version,status,spec,spec_sha256,published_at) "
+                f"select '{DEMO_MODEL_ID}','{DEMO_ORG_ID}','{DEMO_SITE_ID}',1,'published',"
+                "spec,spec_sha256,now() from model_templates where purpose = 'sandbox' "
+                "order by version desc limit 1 on conflict do nothing"
+            )
+            await conn.exec_driver_sql(
+                f"update sites set current_model_id = '{DEMO_MODEL_ID}' where id = '{DEMO_SITE_ID}'"
+            )
     await engine.dispose()
 
 

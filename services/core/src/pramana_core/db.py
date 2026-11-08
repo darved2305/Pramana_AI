@@ -8,12 +8,14 @@ work and never shared between concurrent tasks.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from sqlalchemy import (
     BigInteger,
@@ -27,6 +29,8 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
+    event,
     func,
     text,
 )
@@ -37,7 +41,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.schema import FetchedValue
 
 from .settings import Settings
@@ -51,29 +55,38 @@ current_user: ContextVar[str | None] = ContextVar("current_user", default=None)
 """The signed-in user, copied into ``app.user_id``: lets a person read their own memberships
 across organizations, nothing else."""
 
+current_actor: ContextVar[str | None] = ContextVar("current_actor", default=None)
+
 
 @contextmanager
-def acting_for(org_id: uuid.UUID | None, user_id: str | None = None) -> Iterator[None]:
+def acting_for(
+    org_id: uuid.UUID | None, user_id: str | None = None, *, actor: str | None = None
+) -> Iterator[None]:
     """Run the enclosed work in an organization context (and optionally as a user)."""
     org_token = current_org.set(org_id)
     user_token = current_user.set(user_id) if user_id is not None else None
+    actor_token = current_actor.set(actor) if actor is not None else None
     try:
         yield
     finally:
         current_org.reset(org_token)
         if user_token is not None:
             current_user.reset(user_token)
+        if actor_token is not None:
+            current_actor.reset(actor_token)
 
 
 async def apply_context(session: AsyncSession) -> None:
     """Copy the context into the current transaction (``set_config(..., true)``: transaction-local,
     so a pooled connection never carries one request's organization into the next)."""
     org, user = current_org.get(), current_user.get()
-    if org is None and user is None:
-        return
+    actor = current_actor.get() or (f"user:{user}" if user else "")
     await session.execute(
-        text("select set_config('app.org_id', :org, true), set_config('app.user_id', :user, true)"),
-        {"org": str(org) if org else "", "user": user or ""},
+        text(
+            "select set_config('app.org_id', :org, true), "
+            "set_config('app.user_id', :user, true), set_config('app.principal', :actor, true)"
+        ),
+        {"org": str(org) if org else "", "user": user or "", "actor": actor},
     )
 
 
@@ -124,10 +137,15 @@ class EventRow(Base):
     )
     type: Mapped[str] = mapped_column(String(48))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    idempotency_key: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (Index("events_inv_seq", "investigation_id", "seq"),)
+    __table_args__ = (
+        Index("events_inv_seq", "investigation_id", "seq"),
+        UniqueConstraint(
+            "investigation_id", "idempotency_key", name="events_investigation_idempotency"
+        ),
+    )
 
 
 class QuestionRow(Base):
@@ -329,6 +347,7 @@ class OrganizationRow(Base):
     slug: Mapped[str] = mapped_column(String(40), unique=True)
     name: Mapped[str] = mapped_column(String(120))
     kind: Mapped[str] = mapped_column(String(16))
+    version: Mapped[int] = mapped_column(Integer, server_default="1")
     timezone: Mapped[str] = mapped_column(String(64), server_default="Asia/Kolkata")
     data_region: Mapped[str] = mapped_column(String(32), server_default="asia-south1")
     plan: Mapped[str] = mapped_column(String(32), server_default="starter")
@@ -397,6 +416,22 @@ def make_engine(settings: Settings) -> AsyncEngine:
 CommitListener = Callable[[set[str]], None]
 
 
+@event.listens_for(Session, "before_flush")
+def _track_appended_events(session: Session, _context: Any, _instances: Any) -> None:
+    touched = cast(set[str], session.info.setdefault("appended_investigations", set()))
+    touched.update(row.investigation_id for row in session.new if isinstance(row, EventRow))
+
+
+@dataclass
+class UnitOfWork:
+    db: Database
+    session: AsyncSession
+    owner_task: asyncio.Task[Any] | None
+
+
+_unit_of_work: ContextVar[UnitOfWork | None] = ContextVar("unit_of_work", default=None)
+
+
 class Database:
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
@@ -408,22 +443,57 @@ class Database:
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[AsyncSession]:
         """One session, one transaction: commits on success, rolls back on any exception."""
+        joined = self._joined_session()
+        if joined is not None:
+            await apply_context(joined)
+            yield joined
+            await joined.flush()
+            return
         async with self._sessions() as session:
             async with session.begin():
                 await apply_context(session)
                 yield session
                 await session.flush()
-                touched = {
-                    obj.investigation_id
-                    for obj in session.identity_map.values()
-                    if isinstance(obj, EventRow)
-                }
             # Committed (``begin()`` exited without an exception).
-            for listener in list(self.commit_listeners):
-                listener(touched)
+            self._notify(session)
+
+    def _joined_session(self) -> AsyncSession | None:
+        work = _unit_of_work.get()
+        if work and work.db is self and work.owner_task is asyncio.current_task():
+            return work.session
+        return None
+
+    def _notify(self, session: AsyncSession) -> None:
+        touched = cast(set[str], session.info.get("appended_investigations", set()))
+        for listener in list(self.commit_listeners):
+            listener(touched)
+
+    @asynccontextmanager
+    async def unit_of_work(self) -> AsyncIterator[AsyncSession]:
+        """Commit business state and an idempotent response together, then notify readers.
+
+        A child task may inherit organization context, but it never inherits this session.
+        """
+        if self._joined_session() is not None:
+            raise RuntimeError("a request already has a unit of work")
+        async with self._sessions() as session:
+            async with session.begin():
+                token = _unit_of_work.set(UnitOfWork(self, session, asyncio.current_task()))
+                try:
+                    await apply_context(session)
+                    yield session
+                    await session.flush()
+                finally:
+                    _unit_of_work.reset(token)
+            self._notify(session)
 
     @asynccontextmanager
     async def read(self) -> AsyncIterator[AsyncSession]:
+        joined = self._joined_session()
+        if joined is not None:
+            await apply_context(joined)
+            yield joined
+            return
         async with self._sessions() as session:
             # The session begins a transaction on first use; the context lives until it ends.
             await apply_context(session)

@@ -1,0 +1,1368 @@
+{
+  "actions": [
+    {
+      "at_target_location": true,
+      "decision_classes": [
+        "DISPATCH_ELECTRICIAN_DB_C2",
+        "DISPATCH_ELECTRICIAN_MAIN"
+      ],
+      "fixes": "tripped",
+      "id": "reset_breaker",
+      "instructions": {
+        "en": "You are cleared to reset {target} at {place}. Please confirm once it is done.",
+        "hi": "आपको {place} पर {target} रीसेट करने की अनुमति मिल गई है। हो जाए तो बताइए।",
+        "hi-en": "Aapko {place} pe {target} reset karne ki permission mil gayi hai. Ho jaye toh bataiye.",
+        "mr": "तुम्हाला {place} येथे {target} रीसेट करण्याची परवानगी मिळाली आहे. झाल्यावर सांगा."
+      },
+      "label": "Reset a tripped breaker",
+      "reversible": true,
+      "risk": "medium",
+      "roles": [
+        "electrician"
+      ],
+      "target_kind": "breaker"
+    }
+  ],
+  "components": [
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "FEED_MAIN",
+      "kind": "feed",
+      "label": "Main utility feed",
+      "location": null,
+      "poe_from": null,
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "lost",
+          "label": "Upstream power interruption to DB-C2",
+          "prior": 0.003
+        }
+      ],
+      "hosted_on": null,
+      "id": "FEED_C2",
+      "kind": "feed",
+      "label": "Sub-feed to panel DB-C2",
+      "location": "DB_C2_PANEL",
+      "poe_from": null,
+      "powered_by": "FEED_MAIN",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "tripped",
+          "label": "Breaker MAIN-1 tripped",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": null,
+      "id": "CB_MAIN_1",
+      "kind": "breaker",
+      "label": "Breaker MAIN-1 (IDF-1 rack)",
+      "location": "IDF1",
+      "poe_from": null,
+      "powered_by": "FEED_MAIN",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "tripped",
+          "label": "Breaker C2-5 tripped",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": null,
+      "id": "CB_C2_5",
+      "kind": "breaker",
+      "label": "Breaker C2-5 (lighting F2/F3)",
+      "location": "DB_C2_PANEL",
+      "poe_from": null,
+      "powered_by": "FEED_C2",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "tripped",
+          "label": "Breaker C2-7 tripped",
+          "prior": 0.004
+        }
+      ],
+      "hosted_on": null,
+      "id": "CB_C2_7",
+      "kind": "breaker",
+      "label": "Breaker C2-7 (IDF-2 rack)",
+      "location": "DB_C2_PANEL",
+      "poe_from": null,
+      "powered_by": "FEED_C2",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "LIGHTS_F1",
+      "kind": "light",
+      "label": "Ground-floor lights",
+      "location": null,
+      "poe_from": null,
+      "powered_by": "FEED_MAIN",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "LIGHTS_F2",
+      "kind": "light",
+      "label": "Second-floor corridor lights",
+      "location": null,
+      "poe_from": null,
+      "powered_by": "CB_C2_5",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "LIGHTS_F3",
+      "kind": "light",
+      "label": "Third-floor corridor lights",
+      "location": null,
+      "poe_from": null,
+      "powered_by": "CB_C2_5",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "LIGHT_IDF2",
+      "kind": "light",
+      "label": "IDF-2 closet light",
+      "location": "IDF2",
+      "poe_from": null,
+      "powered_by": "CB_C2_5",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "NVR_C2",
+      "kind": "nvr",
+      "label": "CCTV recorder in IDF-2",
+      "location": "IDF2",
+      "poe_from": null,
+      "powered_by": "CB_C2_7",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "SOCKETS_F2",
+      "kind": "socket",
+      "label": "Second-floor room sockets",
+      "location": null,
+      "poe_from": null,
+      "powered_by": "FEED_C2",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "SOCKETS_F3",
+      "kind": "socket",
+      "label": "Third-floor room sockets",
+      "location": null,
+      "poe_from": null,
+      "powered_by": "FEED_C2",
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "down",
+          "label": "ISP outage",
+          "prior": 0.003
+        }
+      ],
+      "hosted_on": null,
+      "id": "ISP_LINK",
+      "kind": "isp",
+      "label": "ISP fibre link",
+      "location": null,
+      "poe_from": null,
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [],
+      "hosted_on": null,
+      "id": "ONT",
+      "kind": "ont",
+      "label": "Fibre terminal (ONT)",
+      "location": "IDF1",
+      "poe_from": null,
+      "powered_by": "CB_MAIN_1",
+      "uplink": null,
+      "upstream": "ISP_LINK"
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "dead",
+          "label": "Gateway router failed",
+          "prior": 0.001
+        }
+      ],
+      "hosted_on": null,
+      "id": "GATEWAY",
+      "kind": "gateway",
+      "label": "Gateway router",
+      "location": "IDF1",
+      "poe_from": null,
+      "powered_by": "CB_MAIN_1",
+      "uplink": null,
+      "upstream": "ISP_LINK"
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "down",
+          "label": "DHCP service failure",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": "GATEWAY",
+      "id": "DHCP",
+      "kind": "dhcp",
+      "label": "DHCP service",
+      "location": null,
+      "poe_from": null,
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "down",
+          "label": "DNS failure",
+          "prior": 0.003
+        }
+      ],
+      "hosted_on": "GATEWAY",
+      "id": "DNS",
+      "kind": "dns",
+      "label": "DNS resolver",
+      "location": null,
+      "poe_from": null,
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "dead",
+          "label": "Core switch failed",
+          "prior": 0.001
+        }
+      ],
+      "hosted_on": null,
+      "id": "SW_CORE",
+      "kind": "switch",
+      "label": "Core switch (IDF-1)",
+      "location": "IDF1",
+      "poe_from": null,
+      "powered_by": "CB_MAIN_1",
+      "uplink": "GATEWAY",
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "dead",
+          "label": "Switch SW-C2 failed",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": null,
+      "id": "SW_C2",
+      "kind": "switch",
+      "label": "PoE switch SW-C2 (IDF-2)",
+      "location": "IDF2",
+      "poe_from": null,
+      "powered_by": "CB_C2_7",
+      "uplink": "SW_CORE",
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "dead",
+          "label": "Access point 1A failed",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": null,
+      "id": "AP_1A",
+      "kind": "ap",
+      "label": "Access point 1A",
+      "location": "F1_LOBBY",
+      "poe_from": "SW_CORE",
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "dead",
+          "label": "Access point 2A failed",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": null,
+      "id": "AP_2A",
+      "kind": "ap",
+      "label": "Access point 2A",
+      "location": "F2_CORRIDOR",
+      "poe_from": "SW_C2",
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "dead",
+          "label": "Access point 2B failed",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": null,
+      "id": "AP_2B",
+      "kind": "ap",
+      "label": "Access point 2B",
+      "location": "F2_R205",
+      "poe_from": "SW_C2",
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "dead",
+          "label": "Access point 3A failed",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": null,
+      "id": "AP_3A",
+      "kind": "ap",
+      "label": "Access point 3A",
+      "location": "F3_CORRIDOR",
+      "poe_from": "SW_C2",
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    },
+    {
+      "failure_modes": [
+        {
+          "id": "dead",
+          "label": "Access point 3B failed",
+          "prior": 0.002
+        }
+      ],
+      "hosted_on": null,
+      "id": "AP_3B",
+      "kind": "ap",
+      "label": "Access point 3B",
+      "location": "F3_R310",
+      "poe_from": "SW_C2",
+      "powered_by": null,
+      "uplink": null,
+      "upstream": null
+    }
+  ],
+  "decision_classes": [
+    {
+      "hypotheses": [
+        "CB_C2_7.tripped",
+        "CB_C2_5.tripped"
+      ],
+      "id": "DISPATCH_ELECTRICIAN_DB_C2",
+      "label": "Send the electrician to panel DB-C2"
+    },
+    {
+      "hypotheses": [
+        "FEED_C2.lost"
+      ],
+      "id": "ESCALATE_FACILITIES_POWER",
+      "label": "Escalate the DB-C2 supply loss to facilities"
+    },
+    {
+      "hypotheses": [
+        "CB_MAIN_1.tripped"
+      ],
+      "id": "DISPATCH_ELECTRICIAN_MAIN",
+      "label": "Send the electrician to breaker MAIN-1"
+    },
+    {
+      "hypotheses": [
+        "SW_C2.dead"
+      ],
+      "id": "IT_ONSITE_SW_C2",
+      "label": "IT on site: replace switch SW-C2"
+    },
+    {
+      "hypotheses": [
+        "SW_CORE.dead",
+        "GATEWAY.dead"
+      ],
+      "id": "IT_ONSITE_CORE",
+      "label": "IT on site: core switch or gateway in IDF-1"
+    },
+    {
+      "hypotheses": [
+        "AP_1A.dead"
+      ],
+      "id": "IT_REPLACE_AP_1A",
+      "label": "IT: replace access point 1A"
+    },
+    {
+      "hypotheses": [
+        "AP_2A.dead"
+      ],
+      "id": "IT_REPLACE_AP_2A",
+      "label": "IT: replace access point 2A"
+    },
+    {
+      "hypotheses": [
+        "AP_2B.dead"
+      ],
+      "id": "IT_REPLACE_AP_2B",
+      "label": "IT: replace access point 2B"
+    },
+    {
+      "hypotheses": [
+        "AP_3A.dead"
+      ],
+      "id": "IT_REPLACE_AP_3A",
+      "label": "IT: replace access point 3A"
+    },
+    {
+      "hypotheses": [
+        "AP_3B.dead"
+      ],
+      "id": "IT_REPLACE_AP_3B",
+      "label": "IT: replace access point 3B"
+    },
+    {
+      "hypotheses": [
+        "DHCP.down"
+      ],
+      "id": "IT_FIX_DHCP",
+      "label": "IT (remote): restore the DHCP service"
+    },
+    {
+      "hypotheses": [
+        "DNS.down"
+      ],
+      "id": "IT_FIX_DNS",
+      "label": "IT (remote): restore DNS"
+    },
+    {
+      "hypotheses": [
+        "ISP_LINK.down"
+      ],
+      "id": "ESCALATE_ISP",
+      "label": "Raise a ticket with the ISP"
+    },
+    {
+      "hypotheses": [
+        "NO_FAULT"
+      ],
+      "id": "NO_ACTION_USER_SIDE",
+      "label": "No building fault: help the reporter with their device"
+    }
+  ],
+  "locations": [
+    {
+      "access_roles": [],
+      "floor": 1,
+      "id": "GUARD_DESK",
+      "kind": "desk",
+      "label": {
+        "en": "the guard desk",
+        "hi": "गार्ड डेस्क",
+        "hi_en": "guard desk",
+        "mr": "गार्ड डेस्क"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_1A"
+      ]
+    },
+    {
+      "access_roles": [],
+      "floor": 1,
+      "id": "MAINT_ROOM",
+      "kind": "room",
+      "label": {
+        "en": "the maintenance room",
+        "hi": "मेंटेनेंस रूम",
+        "hi_en": "maintenance room",
+        "mr": "मेंटेनन्स रूम"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_1A"
+      ]
+    },
+    {
+      "access_roles": [],
+      "floor": 1,
+      "id": "F1_LOBBY",
+      "kind": "corridor",
+      "label": {
+        "en": "the ground-floor lobby",
+        "hi": "ग्राउंड फ़्लोर की लॉबी",
+        "hi_en": "ground floor lobby",
+        "mr": "तळमजल्याची लॉबी"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_1A"
+      ]
+    },
+    {
+      "access_roles": [
+        "guard",
+        "it_tech",
+        "electrician"
+      ],
+      "floor": 1,
+      "id": "IDF1",
+      "kind": "closet",
+      "label": {
+        "en": "network closet IDF-1",
+        "hi": "नेटवर्क क्लोज़ेट IDF-1",
+        "hi_en": "network closet IDF-1",
+        "mr": "नेटवर्क खोली IDF-1"
+      },
+      "restricted": true,
+      "wifi_coverage": [
+        "AP_1A"
+      ]
+    },
+    {
+      "access_roles": [],
+      "floor": 2,
+      "id": "F2_CORRIDOR",
+      "kind": "corridor",
+      "label": {
+        "en": "the second-floor corridor",
+        "hi": "दूसरी मंज़िल का कॉरिडोर",
+        "hi_en": "second floor corridor",
+        "mr": "दुसऱ्या मजल्याचा कॉरिडॉर"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_2A",
+        "AP_2B"
+      ]
+    },
+    {
+      "access_roles": [],
+      "floor": 2,
+      "id": "F2_R205",
+      "kind": "room",
+      "label": {
+        "en": "room 205",
+        "hi": "रूम 205",
+        "hi_en": "room 205",
+        "mr": "खोली 205"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_2B",
+        "AP_2A"
+      ]
+    },
+    {
+      "access_roles": [],
+      "floor": 2,
+      "id": "F2_R210",
+      "kind": "room",
+      "label": {
+        "en": "room 210",
+        "hi": "रूम 210",
+        "hi_en": "room 210",
+        "mr": "खोली 210"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_2A"
+      ]
+    },
+    {
+      "access_roles": [
+        "guard",
+        "it_tech",
+        "electrician"
+      ],
+      "floor": 2,
+      "id": "IDF2",
+      "kind": "closet",
+      "label": {
+        "en": "network closet IDF-2",
+        "hi": "नेटवर्क क्लोज़ेट IDF-2",
+        "hi_en": "network closet IDF-2",
+        "mr": "नेटवर्क खोली IDF-2"
+      },
+      "restricted": true,
+      "wifi_coverage": [
+        "AP_2A"
+      ]
+    },
+    {
+      "access_roles": [
+        "electrician",
+        "guard"
+      ],
+      "floor": 2,
+      "id": "DB_C2_PANEL",
+      "kind": "panel",
+      "label": {
+        "en": "distribution board DB-C2",
+        "hi": "डिस्ट्रीब्यूशन बोर्ड DB-C2",
+        "hi_en": "distribution board DB-C2",
+        "mr": "डिस्ट्रिब्युशन बोर्ड DB-C2"
+      },
+      "restricted": true,
+      "wifi_coverage": [
+        "AP_2A"
+      ]
+    },
+    {
+      "access_roles": [],
+      "floor": 3,
+      "id": "F3_CORRIDOR",
+      "kind": "corridor",
+      "label": {
+        "en": "the third-floor corridor",
+        "hi": "तीसरी मंज़िल का कॉरिडोर",
+        "hi_en": "third floor corridor",
+        "mr": "तिसऱ्या मजल्याचा कॉरिडॉर"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_3A",
+        "AP_3B"
+      ]
+    },
+    {
+      "access_roles": [],
+      "floor": 3,
+      "id": "F3_R304",
+      "kind": "room",
+      "label": {
+        "en": "room 304",
+        "hi": "रूम 304",
+        "hi_en": "room 304",
+        "mr": "खोली 304"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_3A",
+        "AP_3B"
+      ]
+    },
+    {
+      "access_roles": [],
+      "floor": 3,
+      "id": "F3_R310",
+      "kind": "room",
+      "label": {
+        "en": "room 310",
+        "hi": "रूम 310",
+        "hi_en": "room 310",
+        "mr": "खोली 310"
+      },
+      "restricted": false,
+      "wifi_coverage": [
+        "AP_3B"
+      ]
+    }
+  ],
+  "loss_minutes": {
+    "any_under_open_world": 30.0,
+    "wrong_by_decision": {
+      "ESCALATE_ISP": 60.0,
+      "NO_ACTION_USER_SIDE": 45.0
+    },
+    "wrong_default": 25.0
+  },
+  "move_templates": {
+    "en": "Could you please walk to {place}? Once you are there: ",
+    "hi": "क्या आप {place} तक जा सकते हैं? वहाँ पहुँचकर: ",
+    "hi-en": "Kya aap {place} tak ja sakte hain? Wahan pahunch kar: ",
+    "mr": "तुम्ही {place} पर्यंत जाऊ शकाल का? तिथे पोहोचल्यावर: "
+  },
+  "no_fault_prior": 0.002,
+  "open_world_prior": 0.0008,
+  "pack": "campus_block_c",
+  "presence_tokens": [
+    {
+      "at": "IDF2",
+      "id": "idf2_switch_label",
+      "label": "Label on the network switch (last three characters)",
+      "templates": {
+        "en": "One quick check, since you are in {place}: please read the last three characters on the white label of the network switch.",
+        "hi": "एक छोटी सी जाँच, आप {place} में हैं: नेटवर्क स्विच के सफ़ेद लेबल के आख़िरी तीन अक्षर पढ़िए।",
+        "hi-en": "Ek chhota sa check, aap {place} mein hain: network switch ke white label ke aakhri teen akshar padhiye.",
+        "mr": "एक छोटी तपासणी, तुम्ही {place} मध्ये आहात: नेटवर्क स्विचच्या पांढऱ्या लेबलवरची शेवटची तीन अक्षरं वाचा."
+      }
+    },
+    {
+      "at": "IDF1",
+      "id": "idf1_rack_label",
+      "label": "Label on the rack door (last three characters)",
+      "templates": {
+        "en": "One quick check, since you are in {place}: please read the last three characters on the label of the rack door.",
+        "hi": "एक छोटी सी जाँच, आप {place} में हैं: रैक के दरवाज़े के लेबल के आख़िरी तीन अक्षर पढ़िए।",
+        "hi-en": "Ek chhota sa check, aap {place} mein hain: rack ke darwaze ke label ke aakhri teen akshar padhiye.",
+        "mr": "एक छोटी तपासणी, तुम्ही {place} मध्ये आहात: रॅकच्या दरवाज्यावरच्या लेबलची शेवटची तीन अक्षरं वाचा."
+      }
+    },
+    {
+      "at": "DB_C2_PANEL",
+      "id": "db_c2_door_label",
+      "label": "Label inside the panel door (last three characters)",
+      "templates": {
+        "en": "One quick check, since you are at {place}: please read the last three characters on the label inside the panel door.",
+        "hi": "एक छोटी सी जाँच, आप {place} पर हैं: पैनल के दरवाज़े के अंदर वाले लेबल के आख़िरी तीन अक्षर पढ़िए।",
+        "hi-en": "Ek chhota sa check, aap {place} pe hain: panel ke darwaze ke andar wale label ke aakhri teen akshar padhiye.",
+        "mr": "एक छोटी तपासणी, तुम्ही {place} जवळ आहात: पॅनलच्या दरवाज्याच्या आतल्या लेबलची शेवटची तीन अक्षरं वाचा."
+      }
+    }
+  ],
+  "probes": [
+    {
+      "exec_s": 20.0,
+      "id": "internet_works",
+      "kind": "internet_works",
+      "label": "Internet works on the hostel Wi-Fi",
+      "observes": [
+        {
+          "at": "GUARD_DESK",
+          "target": null
+        },
+        {
+          "at": "MAINT_ROOM",
+          "target": null
+        },
+        {
+          "at": "F1_LOBBY",
+          "target": null
+        },
+        {
+          "at": "F2_CORRIDOR",
+          "target": null
+        },
+        {
+          "at": "F2_R205",
+          "target": null
+        },
+        {
+          "at": "F2_R210",
+          "target": null
+        },
+        {
+          "at": "F3_CORRIDOR",
+          "target": null
+        },
+        {
+          "at": "F3_R304",
+          "target": null
+        },
+        {
+          "at": "F3_R310",
+          "target": null
+        }
+      ],
+      "outcomes": [
+        "yes",
+        "no"
+      ],
+      "probe_class": "device",
+      "roles": [
+        "any"
+      ],
+      "templates": {
+        "en": "On your phone, using the hostel Wi-Fi, does a normal website open? Please say yes or no.",
+        "hi": "आपके फ़ोन पर हॉस्टल वाई-फ़ाई से कोई सामान्य वेबसाइट खुल रही है? हाँ या नहीं बताइए।",
+        "hi-en": "Aapke phone pe hostel WiFi se koi normal website khul rahi hai? Haan ya nahi batayiye.",
+        "mr": "तुमच्या फोनवर हॉस्टेलच्या वाय-फायवर एखादी साधी वेबसाइट उघडते का? हो किंवा नाही सांगा."
+      }
+    },
+    {
+      "exec_s": 15.0,
+      "id": "wifi_status",
+      "kind": "wifi_status",
+      "label": "Wi-Fi status on the phone",
+      "observes": [
+        {
+          "at": "GUARD_DESK",
+          "target": null
+        },
+        {
+          "at": "MAINT_ROOM",
+          "target": null
+        },
+        {
+          "at": "F1_LOBBY",
+          "target": null
+        },
+        {
+          "at": "F2_CORRIDOR",
+          "target": null
+        },
+        {
+          "at": "F2_R205",
+          "target": null
+        },
+        {
+          "at": "F2_R210",
+          "target": null
+        },
+        {
+          "at": "F3_CORRIDOR",
+          "target": null
+        },
+        {
+          "at": "F3_R304",
+          "target": null
+        },
+        {
+          "at": "F3_R310",
+          "target": null
+        }
+      ],
+      "outcomes": [
+        "no_network",
+        "stuck_connecting",
+        "connected"
+      ],
+      "probe_class": "device",
+      "roles": [
+        "any"
+      ],
+      "templates": {
+        "en": "Please open the Wi-Fi list on your phone. Is NAVA-WiFi missing, stuck on connecting, or connected?",
+        "hi": "फ़ोन की वाई-फ़ाई सूची खोलिए। NAVA-WiFi दिख ही नहीं रहा, कनेक्ट होने पर अटका है, या कनेक्टेड है?",
+        "hi-en": "Phone ki WiFi list kholiye. NAVA-WiFi dikh hi nahi raha, connecting pe atka hai, ya connected hai?",
+        "mr": "फोनमधली वाय-फाय यादी उघडा. NAVA-WiFi दिसतच नाही, कनेक्ट होताना अडकलंय, की कनेक्टेड आहे?"
+      }
+    },
+    {
+      "exec_s": 25.0,
+      "id": "web_by_ip",
+      "kind": "web_by_ip",
+      "label": "IP test page loads",
+      "observes": [
+        {
+          "at": "GUARD_DESK",
+          "target": null
+        },
+        {
+          "at": "MAINT_ROOM",
+          "target": null
+        },
+        {
+          "at": "F1_LOBBY",
+          "target": null
+        },
+        {
+          "at": "F2_CORRIDOR",
+          "target": null
+        },
+        {
+          "at": "F2_R205",
+          "target": null
+        },
+        {
+          "at": "F2_R210",
+          "target": null
+        },
+        {
+          "at": "F3_CORRIDOR",
+          "target": null
+        },
+        {
+          "at": "F3_R304",
+          "target": null
+        },
+        {
+          "at": "F3_R310",
+          "target": null
+        }
+      ],
+      "outcomes": [
+        "yes",
+        "no"
+      ],
+      "probe_class": "device",
+      "roles": [
+        "any"
+      ],
+      "templates": {
+        "en": "Please open the bookmark called 'IP test page' on your phone. Does that page load? Yes or no?",
+        "hi": "फ़ोन में 'IP test page' नाम का बुकमार्क खोलिए। क्या वह पेज खुलता है? हाँ या नहीं?",
+        "hi-en": "Phone mein 'IP test page' naam ka bookmark kholiye. Kya woh page khulta hai? Haan ya nahi?",
+        "mr": "फोनमधला 'IP test page' नावाचा बुकमार्क उघडा. ते पान उघडतं का? हो की नाही?"
+      }
+    },
+    {
+      "exec_s": 10.0,
+      "id": "corridor_lights",
+      "kind": "powered",
+      "label": "Corridor lights",
+      "observes": [
+        {
+          "at": "GUARD_DESK",
+          "target": "LIGHTS_F1"
+        },
+        {
+          "at": "F1_LOBBY",
+          "target": "LIGHTS_F1"
+        },
+        {
+          "at": "F2_CORRIDOR",
+          "target": "LIGHTS_F2"
+        },
+        {
+          "at": "F2_R205",
+          "target": "LIGHTS_F2"
+        },
+        {
+          "at": "F2_R210",
+          "target": "LIGHTS_F2"
+        },
+        {
+          "at": "F3_CORRIDOR",
+          "target": "LIGHTS_F3"
+        },
+        {
+          "at": "F3_R304",
+          "target": "LIGHTS_F3"
+        },
+        {
+          "at": "F3_R310",
+          "target": "LIGHTS_F3"
+        }
+      ],
+      "outcomes": [
+        "on",
+        "off"
+      ],
+      "probe_class": "visual",
+      "roles": [
+        "any"
+      ],
+      "templates": {
+        "en": "Please look at the corridor right outside you. Are the corridor lights on or off?",
+        "hi": "बाहर कॉरिडोर में देखिए। कॉरिडोर की लाइटें जल रही हैं या बंद हैं?",
+        "hi-en": "Bahar corridor mein dekhiye. Corridor ki lights on hain ya off?",
+        "mr": "बाहेर कॉरिडॉरमध्ये बघा. कॉरिडॉरमधले दिवे चालू आहेत की बंद?"
+      }
+    },
+    {
+      "exec_s": 15.0,
+      "id": "ap_light",
+      "kind": "ap_light",
+      "label": "Access-point status light",
+      "observes": [
+        {
+          "at": "F1_LOBBY",
+          "target": "AP_1A"
+        },
+        {
+          "at": "F2_CORRIDOR",
+          "target": "AP_2A"
+        },
+        {
+          "at": "F2_R205",
+          "target": "AP_2B"
+        },
+        {
+          "at": "F3_CORRIDOR",
+          "target": "AP_3A"
+        },
+        {
+          "at": "F3_R310",
+          "target": "AP_3B"
+        }
+      ],
+      "outcomes": [
+        "on",
+        "off"
+      ],
+      "probe_class": "visual",
+      "roles": [
+        "any"
+      ],
+      "templates": {
+        "en": "In {place}, there is a white Wi-Fi box on the ceiling. Is the small light on it on or off?",
+        "hi": "{place} में छत पर एक सफ़ेद वाई-फ़ाई डिब्बा है। उसकी छोटी लाइट जल रही है या बंद है?",
+        "hi-en": "{place} mein chhat pe ek white WiFi box hai. Uski chhoti light on hai ya off?",
+        "mr": "{place} मध्ये छताला एक पांढरा वाय-फाय डबा आहे. त्यावरचा छोटा दिवा चालू आहे की बंद?"
+      }
+    },
+    {
+      "exec_s": 15.0,
+      "id": "switch_leds",
+      "kind": "switch_leds",
+      "label": "Network switch lights",
+      "observes": [
+        {
+          "at": "IDF2",
+          "target": "SW_C2"
+        },
+        {
+          "at": "IDF1",
+          "target": "SW_CORE"
+        }
+      ],
+      "outcomes": [
+        "green",
+        "amber",
+        "off"
+      ],
+      "probe_class": "visual",
+      "roles": [
+        "guard",
+        "it_tech",
+        "electrician"
+      ],
+      "templates": {
+        "en": "In {place}, look at the network switch in the rack. Are its port lights green, amber, or completely off?",
+        "hi": "{place} में रैक वाले नेटवर्क स्विच को देखिए। उसकी लाइटें हरी हैं, नारंगी हैं, या बिल्कुल बंद?",
+        "hi-en": "{place} mein rack wale network switch ko dekhiye. Uski lights green hain, orange hain, ya bilkul band?",
+        "mr": "{place} मध्ये रॅकमधला नेटवर्क स्विच बघा. त्याचे दिवे हिरवे आहेत, नारंगी आहेत, की पूर्ण बंद?"
+      }
+    },
+    {
+      "exec_s": 8.0,
+      "id": "nvr_screen",
+      "kind": "powered",
+      "label": "CCTV recorder screen",
+      "observes": [
+        {
+          "at": "IDF2",
+          "target": "NVR_C2"
+        }
+      ],
+      "outcomes": [
+        "on",
+        "off"
+      ],
+      "probe_class": "visual",
+      "roles": [
+        "guard",
+        "it_tech",
+        "electrician"
+      ],
+      "templates": {
+        "en": "In {place}, there is a small CCTV recorder screen. Is that screen on or off?",
+        "hi": "{place} में सीसीटीवी रिकॉर्डर की छोटी स्क्रीन है। वह स्क्रीन चालू है या बंद?",
+        "hi-en": "{place} mein CCTV recorder ki chhoti screen hai. Woh screen on hai ya off?",
+        "mr": "{place} मध्ये CCTV रेकॉर्डरचा छोटा स्क्रीन आहे. तो स्क्रीन चालू आहे की बंद?"
+      }
+    },
+    {
+      "exec_s": 5.0,
+      "id": "closet_light",
+      "kind": "powered",
+      "label": "Closet ceiling light",
+      "observes": [
+        {
+          "at": "IDF2",
+          "target": "LIGHT_IDF2"
+        }
+      ],
+      "outcomes": [
+        "on",
+        "off"
+      ],
+      "probe_class": "visual",
+      "roles": [
+        "guard",
+        "it_tech",
+        "electrician"
+      ],
+      "templates": {
+        "en": "When you switch on the light in {place}, does the ceiling light come on?",
+        "hi": "{place} की लाइट का स्विच चालू करने पर छत की लाइट जलती है?",
+        "hi-en": "{place} ki light ka switch on karne par chhat ki light jalti hai?",
+        "mr": "{place} मधल्या दिव्याचं बटण चालू केल्यावर छताचा दिवा लागतो का?"
+      }
+    },
+    {
+      "exec_s": 10.0,
+      "id": "wan_led",
+      "kind": "wan_led",
+      "label": "Gateway internet light",
+      "observes": [
+        {
+          "at": "IDF1",
+          "target": "GATEWAY"
+        }
+      ],
+      "outcomes": [
+        "green",
+        "red",
+        "off"
+      ],
+      "probe_class": "visual",
+      "roles": [
+        "guard",
+        "it_tech"
+      ],
+      "templates": {
+        "en": "In {place}, find the router labelled GATEWAY. Is the light marked INTERNET green, red, or off?",
+        "hi": "{place} में GATEWAY लिखा राउटर ढूँढिए। INTERNET वाली लाइट हरी है, लाल है, या बंद?",
+        "hi-en": "{place} mein GATEWAY likha router dhoondhiye. INTERNET wali light green hai, red hai, ya band?",
+        "mr": "{place} मध्ये GATEWAY लिहिलेला राउटर शोधा. INTERNET असं लिहिलेला दिवा हिरवा आहे, लाल आहे, की बंद?"
+      }
+    },
+    {
+      "exec_s": 20.0,
+      "id": "breaker_c2_7",
+      "kind": "breaker",
+      "label": "Breaker C2-7 position",
+      "observes": [
+        {
+          "at": "DB_C2_PANEL",
+          "target": "CB_C2_7"
+        }
+      ],
+      "outcomes": [
+        "up",
+        "tripped"
+      ],
+      "probe_class": "panel",
+      "roles": [
+        "electrician"
+      ],
+      "templates": {
+        "en": "At {place}, without touching anything, is breaker number 7 in the up position or tripped down?",
+        "hi": "{place} पर, बिना कुछ छुए, ब्रेकर नंबर 7 ऊपर है या ट्रिप होकर नीचे है?",
+        "hi-en": "{place} pe, bina kuch chhue, breaker number 7 upar hai ya trip hokar neeche hai?",
+        "mr": "{place} वर, कशालाही हात न लावता, ब्रेकर नंबर 7 वर आहे की ट्रिप होऊन खाली आहे?"
+      }
+    },
+    {
+      "exec_s": 20.0,
+      "id": "breaker_c2_5",
+      "kind": "breaker",
+      "label": "Breaker C2-5 position",
+      "observes": [
+        {
+          "at": "DB_C2_PANEL",
+          "target": "CB_C2_5"
+        }
+      ],
+      "outcomes": [
+        "up",
+        "tripped"
+      ],
+      "probe_class": "panel",
+      "roles": [
+        "electrician"
+      ],
+      "templates": {
+        "en": "At {place}, without touching anything, is breaker number 5 in the up position or tripped down?",
+        "hi": "{place} पर, बिना कुछ छुए, ब्रेकर नंबर 5 ऊपर है या ट्रिप होकर नीचे है?",
+        "hi-en": "{place} pe, bina kuch chhue, breaker number 5 upar hai ya trip hokar neeche hai?",
+        "mr": "{place} वर, कशालाही हात न लावता, ब्रेकर नंबर 5 वर आहे की ट्रिप होऊन खाली आहे?"
+      }
+    },
+    {
+      "exec_s": 15.0,
+      "id": "breaker_main_1",
+      "kind": "breaker",
+      "label": "Breaker MAIN-1 position",
+      "observes": [
+        {
+          "at": "IDF1",
+          "target": "CB_MAIN_1"
+        }
+      ],
+      "outcomes": [
+        "up",
+        "tripped"
+      ],
+      "probe_class": "panel",
+      "roles": [
+        "electrician"
+      ],
+      "templates": {
+        "en": "In {place}, without touching anything, is the breaker labelled MAIN-1 up or tripped down?",
+        "hi": "{place} में, बिना कुछ छुए, MAIN-1 लिखा ब्रेकर ऊपर है या ट्रिप होकर नीचे है?",
+        "hi-en": "{place} mein, bina kuch chhue, MAIN-1 likha breaker upar hai ya trip hokar neeche hai?",
+        "mr": "{place} मध्ये, कशालाही हात न लावता, MAIN-1 लिहिलेला ब्रेकर वर आहे की ट्रिप होऊन खाली आहे?"
+      }
+    },
+    {
+      "exec_s": 20.0,
+      "id": "room_socket",
+      "kind": "powered",
+      "label": "Wall socket power",
+      "observes": [
+        {
+          "at": "F2_R205",
+          "target": "SOCKETS_F2"
+        },
+        {
+          "at": "F2_R210",
+          "target": "SOCKETS_F2"
+        },
+        {
+          "at": "F3_R304",
+          "target": "SOCKETS_F3"
+        },
+        {
+          "at": "F3_R310",
+          "target": "SOCKETS_F3"
+        }
+      ],
+      "outcomes": [
+        "on",
+        "off"
+      ],
+      "probe_class": "device",
+      "roles": [
+        "any"
+      ],
+      "templates": {
+        "en": "In {place}, please plug a phone charger into the wall socket. Does the phone start charging?",
+        "hi": "{place} में दीवार के सॉकेट में फ़ोन चार्जर लगाइए। क्या फ़ोन चार्ज होने लगता है?",
+        "hi-en": "{place} mein deewar ke socket mein phone charger lagaiye. Kya phone charge hone lagta hai?",
+        "mr": "{place} मध्ये भिंतीतल्या सॉकेटला फोनचा चार्जर लावा. फोन चार्ज व्हायला लागतो का?"
+      }
+    },
+    {
+      "exec_s": 10.0,
+      "id": "fibre_light",
+      "kind": "fibre_led",
+      "label": "Fibre terminal light",
+      "observes": [
+        {
+          "at": "IDF1",
+          "target": "ONT"
+        }
+      ],
+      "outcomes": [
+        "green",
+        "red",
+        "off"
+      ],
+      "probe_class": "visual",
+      "roles": [
+        "guard",
+        "it_tech"
+      ],
+      "templates": {
+        "en": "In {place}, find the small white fibre box labelled ONT. Is its PON light green, red, or off?",
+        "hi": "{place} में ONT लिखा छोटा सफ़ेद फ़ाइबर डिब्बा ढूँढिए। उसकी PON लाइट हरी है, लाल है, या बंद?",
+        "hi-en": "{place} mein ONT likha chhota white fibre box dhoondhiye. Uski PON light green hai, red hai, ya band?",
+        "mr": "{place} मध्ये ONT लिहिलेला छोटा पांढरा फायबर डबा शोधा. त्याचा PON दिवा हिरवा आहे, लाल आहे, की बंद?"
+      }
+    }
+  ],
+  "title": "Hostel Block C (simulated)",
+  "version": "0.1.0",
+  "walking_roles": [
+    "guard",
+    "electrician",
+    "it_tech",
+    "housekeeping"
+  ],
+  "walks": [
+    [
+      "GUARD_DESK",
+      "F1_LOBBY",
+      10
+    ],
+    [
+      "MAINT_ROOM",
+      "F1_LOBBY",
+      20
+    ],
+    [
+      "F1_LOBBY",
+      "IDF1",
+      15
+    ],
+    [
+      "F1_LOBBY",
+      "F2_CORRIDOR",
+      40
+    ],
+    [
+      "F2_CORRIDOR",
+      "IDF2",
+      15
+    ],
+    [
+      "F2_CORRIDOR",
+      "DB_C2_PANEL",
+      20
+    ],
+    [
+      "F2_CORRIDOR",
+      "F2_R205",
+      10
+    ],
+    [
+      "F2_CORRIDOR",
+      "F2_R210",
+      10
+    ],
+    [
+      "F2_CORRIDOR",
+      "F3_CORRIDOR",
+      40
+    ],
+    [
+      "F3_CORRIDOR",
+      "F3_R304",
+      10
+    ],
+    [
+      "F3_CORRIDOR",
+      "F3_R310",
+      10
+    ]
+  ]
+}

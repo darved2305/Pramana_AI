@@ -28,8 +28,11 @@ STOP 1 is answered: start now on `production` only, GCP `asia-south1`, product n
 domain undecided. The user has the cloud project, Google OAuth client, Gnani, LLM and telephony
 keys. Ask for each by name only when its slice needs it; values go into the untracked `.env`.
 
-Next is Slice 3: idempotency, `/v1/me`, onboarding state, and atomic organization/sandbox setup.
-Then continue with Slices 4 through 7. Notes are in `.cache/production-slice3-design.md` locally.
+Next is Slice 4: organization-scoped routes, pinned stored site models and the route-complete
+tenant-leak generator. Then continue with Slices 5 through 7. Integration review notes are in
+`.cache/production-slice4-design.md` locally. Slice 3's schema, contracts, API and request unit of
+work pass 3,682 Python, 48 UI and 23 real-browser tests locally; read the Nov 8 status report and
+CI run list for its commit/CI state before treating it as CI green.
 
 R0 definitions are in `3f0ebdc`, tenancy in `5c9ecea`, and the image smoke correction in `56e5bca`.
 All five CI jobs passed on `56e5bca` (run 42383301031). Terraform has never been applied. Slice 2's
@@ -38,12 +41,23 @@ limiter pass 3,625 Python, 48 UI and 23 real-browser tests locally. Read the sta
 its CI result before treating it as CI green. Full ID rows with onboarding/team/UI prerequisites
 are still pending; test names alone are not their exit proof.
 
-Real Google validation is pending the user's client configuration. The production `.env` has
-client ID/secret fields and Google issuer/discovery plus the local callback prepared.
-Register `http://localhost:3102/api/core/v1/auth/google/callback`, then save the two OAuth values
-in `.env`. Browser/native control was disconnected, so the user was given those Google console
-steps. Confirm presence by name only and perform one real sign-in when ready. Do not overwrite
-values they add. STOP 2 still requires explicit approval of a concrete plan and costs before apply.
+Real Google sign-in passed with the user on Nov 8, using the runtime database role and the local
+callback `http://localhost:3102/api/core/v1/auth/google/callback`. Credentials and GCP project ID
+are saved only in the ignored production `.env`. Do not print their values or overwrite them.
+Browser/native control was disconnected; a scripted probe was blocked by automatic approval, so
+the user performed the normal browser flow. The owned local stack uses ports 8210/8310/3102;
+`.cache/production-real-auth.py` and its log identify it. Leave the main/demo processes alone.
+
+The user wants the complete application deployed. Their budget is **INR 1,000/month total GCP**,
+and they approved **Supabase Free in Mumbai** for PostgreSQL with the app on GCP Mumbai, including
+the free-tier pause/backup tradeoff. No domain is owned; use a managed Cloud Run HTTPS URL first.
+Read `docs/engineering/CLOUD_BUDGET_REVIEW_2026-11-08.md`. Existing HA Terraform defaults exceed
+this budget and must not be applied. GCP project access and billing linkage were checked read-only;
+no APIs/resources were enabled or created. A scoped `SUPABASE_ACCESS_TOKEN` was requested in `.env`
+for the chosen organization. Use a private database schema, distinct owner/runtime roles and no
+public API exposure of global auth tables. Before public deployment, add app/storage quotas,
+durable simulator state, private service invocation, backups/restore verification and spend controls.
+STOP 2 still requires explicit approval of a concrete resource plan and costs before cloud apply.
 
 1. **Branch and worktree.** All production work happens on a branch named `production` in its own
    worktree, never on `main`:

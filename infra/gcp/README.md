@@ -3,6 +3,12 @@
 Terraform for ADR 0025 and PRODUCTION.md §13.3. **Nothing here has been applied.** CI runs
 `terraform fmt -check` and `terraform validate` only.
 
+**Budget change, 2026-11-08:** the user's first deployment ceiling is INR 1,000 per month total.
+The HA defaults below exceed it and must not be applied unchanged. See the
+[budget review](../../docs/engineering/CLOUD_BUDGET_REVIEW_2026-11-08.md) for sourced prices,
+starter alternatives and work required before a concrete plan can be approved. No cloud resource,
+including the state bucket, may be created ahead of that approval.
+
 ## What it creates
 
 | File | Resources |
@@ -16,7 +22,8 @@ Terraform for ADR 0025 and PRODUCTION.md §13.3. **Nothing here has been applied
 
 ## Before the first apply (needs the user's explicit go-ahead)
 
-1. Create the state bucket by hand: `gcloud storage buckets create gs://<project>-tfstate --location=asia-south1 --uniform-bucket-level-access`.
+1. Before approval, prepare the review plan using an isolated local backend. After approval,
+   create the state bucket: `gcloud storage buckets create gs://<project>-tfstate --location=asia-south1 --uniform-bucket-level-access`.
 2. `terraform init -backend-config="bucket=<project>-tfstate" -backend-config="prefix=staging"`.
 3. `terraform plan -var project_id=<project> -var environment=staging -out plan.bin` and show the
    user the plan and the cost estimate below.

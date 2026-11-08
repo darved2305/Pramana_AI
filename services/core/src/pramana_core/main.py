@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse
 from pramana_contracts import CONTRACTS_VERSION
 from pramana_domain import load_pack
 
+from .accounts import AccountService
+from .api import accounts as accounts_api
 from .api import auth as auth_api
 from .api import directory as directory_api
 from .api import evaluation as evaluation_api
@@ -125,6 +127,7 @@ def create_app(
             LoginThrottle(cfg.login_max_failures, cfg.login_lockout_s),
             idle_s=cfg.session_idle_ttl_s,
         )
+        app.state.accounts = AccountService(db)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)
         app.state.participant_public_key = participant_public_key(
@@ -193,6 +196,7 @@ def create_app(
         )
 
     app.include_router(auth_api.router)
+    app.include_router(accounts_api.router)
     app.include_router(investigations_api.router)
     app.include_router(directory_api.router)
     app.include_router(evaluation_api.router)
