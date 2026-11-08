@@ -21,3 +21,5 @@ class SiteModelSummary(StrictModel):
 
 class SiteModelDocument(SiteModelSummary):
     spec: dict[str, Any]
+    description: dict[str, Any] | None = None
+    """The site description it was generated from, when made with the builder."""

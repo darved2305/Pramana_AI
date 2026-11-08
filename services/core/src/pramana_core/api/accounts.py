@@ -4,12 +4,14 @@
 from fastapi import APIRouter, Request, Response
 
 from pramana_contracts.accounts import (
+    AccountPreferences,
     CreateOrganization,
     CurrentAccount,
     OnboardingPatch,
     OnboardingState,
     OrganizationCreated,
     OrganizationSummary,
+    PreferencesPatch,
 )
 
 from ..accounts import AccountService, organization_view
@@ -25,6 +27,18 @@ async def me(request: Request, response: Response) -> CurrentAccount:
     service: AccountService = request.app.state.accounts
     response.headers["Cache-Control"] = "no-store"
     return await service.me(principal)
+
+
+@router.patch("/me/preferences")
+@idempotent("user")
+async def save_preferences(
+    body: PreferencesPatch, request: Request, response: Response
+) -> AccountPreferences:
+    """Remember where the person left off and how their home is arranged, on every device."""
+    principal = await require_user(request)
+    service: AccountService = request.app.state.accounts
+    response.headers["Cache-Control"] = "no-store"
+    return await service.save_preferences(principal, body)
 
 
 @router.get("/onboarding")

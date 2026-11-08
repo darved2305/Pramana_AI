@@ -3342,6 +3342,19 @@
           "title": "Created At",
           "type": "string"
         },
+        "description": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
         "id": {
           "title": "Id",
           "type": "string"

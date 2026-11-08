@@ -123,6 +123,19 @@ class AccountPreferences(StrictModel):
     home_layout: HomeLayout = Field(default_factory=HomeLayout)
 
 
+class LastSite(StrictModel):
+    org_id: str
+    site_id: str
+
+
+class PreferencesPatch(StrictModel):
+    """Only the fields sent change. Workspaces and sites must be the person's own."""
+
+    last_org_id: str | None = None
+    last_site: LastSite | None = None
+    home_layout: HomeLayout | None = None
+
+
 class CurrentAccount(StrictModel):
     user: AuthSession
     identities: list[IdentitySummary]

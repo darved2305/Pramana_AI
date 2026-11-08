@@ -74,7 +74,11 @@ async def model(
     row = await store.row(sid, mid)
     if spec_digest(row.spec) != row.spec_sha256:
         raise ApiError(503, "MODEL_INTEGRITY_ERROR", "the saved model failed its integrity check")
-    document = SiteModelDocument(**_view(row).model_dump(), spec=row.spec)
+    document = SiteModelDocument(
+        **_view(row).model_dump(),
+        spec=row.spec,
+        description=(row.source or {}).get("description"),
+    )
     response.headers["ETag"] = (
         '"' + hashlib.sha256(document.model_dump_json().encode()).hexdigest() + '"'
     )

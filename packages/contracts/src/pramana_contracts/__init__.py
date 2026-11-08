@@ -20,6 +20,7 @@ from .accounts import (
     OrganizationRole,
     OrganizationSummary,
     PendingInvitation,
+    PreferencesPatch,
     SiteSummary,
 )
 from .common import (
@@ -45,6 +46,13 @@ from .console import (
     ParticipantPatch,
     SessionDevice,
     StaffRole,
+)
+from .home import (
+    HomeInvestigation,
+    HomeModule,
+    HomeSite,
+    SetupStep,
+    WorkspaceHome,
 )
 from .investigation import (
     ANSWERABLE_STATUSES,
@@ -123,6 +131,7 @@ from .site_builder import (
     SiteModelDraft,
     SiteTemplateView,
 )
+from .site_people import SitePerson
 from .sites import SiteModelDocument, SiteModelSummary
 from .voice import CallState, MediaClientMessage, MediaServerMessage, SttResult, TtsRequest
 
@@ -169,7 +178,10 @@ __all__ = [
     "GroundTruthComparison",
     "HealthFinding",
     "Hedge",
+    "HomeInvestigation",
     "HomeLayout",
+    "HomeModule",
+    "HomeSite",
     "HypothesisBelief",
     "IdentitySummary",
     "InfeasibleAction",
@@ -209,6 +221,7 @@ __all__ = [
     "PlanDecision",
     "PlanKind",
     "PlanRule",
+    "PreferencesPatch",
     "PresenceCheck",
     "PresenceCheckResult",
     "PresenceCheckView",
@@ -225,10 +238,12 @@ __all__ = [
     "ScenarioCreated",
     "ScenarioRequest",
     "SessionDevice",
+    "SetupStep",
     "SimParticipant",
     "SiteModelDocument",
     "SiteModelDraft",
     "SiteModelSummary",
+    "SitePerson",
     "SiteSummary",
     "SiteTemplateView",
     "Skill",
@@ -240,4 +255,5 @@ __all__ = [
     "ViewItem",
     "ViewLabel",
     "VoiceAnswerResult",
+    "WorkspaceHome",
 ]

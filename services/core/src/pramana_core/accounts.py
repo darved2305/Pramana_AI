@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -26,6 +27,7 @@ from pramana_contracts.accounts import (
     OrganizationKind,
     OrganizationRole,
     OrganizationSummary,
+    PreferencesPatch,
     SiteSummary,
 )
 
@@ -42,7 +44,7 @@ from .db import (
     UserIdentityRow,
     acting_for,
 )
-from .errors import ApiError
+from .errors import ApiError, not_found
 
 RESERVED_SLUGS = frozenset(
     {
@@ -57,6 +59,15 @@ RESERVED_SLUGS = frozenset(
         "invite",
         "admin",
         "billing",
+        "investigations",
+        "participants",
+        "people",
+        "sites",
+        "evaluation",
+        "voice",
+        "preview",
+        "join",
+        "home",
     }
 )
 
@@ -242,6 +253,60 @@ class AccountService:
                         last_site_by_org=preferences.last_site_by_org,
                         home_layout=HomeLayout.model_validate(preferences.home_layout),
                     ),
+                )
+
+    async def save_preferences(
+        self, principal: Principal, patch: PreferencesPatch
+    ) -> AccountPreferences:
+        with acting_for(None, principal.id):
+            async with self.db.transaction() as session:
+                _, preferences = await self._ensure(session, principal.id)
+                active = {
+                    org_id
+                    for (org_id,) in (
+                        await session.execute(
+                            select(MembershipRow.org_id).where(
+                                MembershipRow.user_id == principal.id,
+                                MembershipRow.status == "active",
+                            )
+                        )
+                    ).all()
+                }
+
+                def own(value: str) -> uuid.UUID:
+                    try:
+                        org_id = ids.decode("org", value)
+                    except ValueError as exc:
+                        raise not_found("organization") from exc
+                    if org_id not in active:
+                        raise not_found("organization")
+                    return org_id
+
+                fields = patch.model_fields_set
+                if "last_org_id" in fields:
+                    preferences.last_org_id = (
+                        own(patch.last_org_id) if patch.last_org_id is not None else None
+                    )
+                if patch.last_site is not None:
+                    org_id = own(patch.last_site.org_id)
+                    try:
+                        ids.decode("site", patch.last_site.site_id)
+                    except ValueError as exc:
+                        raise not_found("site") from exc
+                    preferences.last_site_by_org = {
+                        **preferences.last_site_by_org,
+                        ids.encode("org", org_id): patch.last_site.site_id,
+                    }
+                if patch.home_layout is not None:
+                    preferences.home_layout = patch.home_layout.model_dump(mode="json")
+                preferences.updated_at = datetime.now(UTC)
+                await session.flush()
+                return AccountPreferences(
+                    last_org_id=ids.encode("org", preferences.last_org_id)
+                    if preferences.last_org_id
+                    else None,
+                    last_site_by_org=preferences.last_site_by_org,
+                    home_layout=HomeLayout.model_validate(preferences.home_layout),
                 )
 
     async def patch_onboarding(

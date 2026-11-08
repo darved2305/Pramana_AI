@@ -34,6 +34,7 @@ from pramana_engine.health import check, default_cast
 from . import ids
 from .db import Database, SiteModelRow, SiteRow, current_org, current_user
 from .errors import ApiError, not_found
+from .people import SitePeople
 
 HEALTH_EPISODES = 12
 
@@ -111,8 +112,9 @@ def draft_view(row: SiteModelRow) -> SiteModelDraft:
 
 
 class SiteBuilder:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, people: SitePeople | None = None) -> None:
         self.db = db
+        self.people = people
 
     async def _site(self, session: AsyncSession, site_id: Any, *, lock: bool = False) -> SiteRow:
         stmt = select(SiteRow).where(
@@ -209,6 +211,8 @@ class SiteBuilder:
         if row.id != model_id:
             raise not_found("draft")
         pack = load_spec(row.spec)
+        if people is None and self.people is not None:
+            people = await self.people.specs(site_id) or None
         cast = people or default_cast(pack)
         for person in cast:
             unknown = set(map(str, person.roles)) - set(pack.role_catalogue)

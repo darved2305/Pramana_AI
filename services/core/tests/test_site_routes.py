@@ -38,6 +38,25 @@ SITE_OPERATIONS = {
     ("post", "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/health"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/publish"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/discard"),
+    ("get", "/v1/orgs/{org}/sites/{site_id}/people"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/people"),
+    ("patch", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/remove"),
+}
+
+
+# A valid body per unsafe operation, so the organization boundary itself is what answers.
+VALID_BODIES: dict[tuple[str, str], Any] = {
+    ("post", "/draft"): {"template_id": "office_water"},
+    ("post", "/people"): {
+        "id": "p_probe",
+        "display_name": "Probe",
+        "roles": ["staff"],
+        "skill": "lay",
+        "location_id": "LOBBY",
+        "languages": {"stt_candidates": ["hi-IN"]},
+    },
+    ("patch", "/people/{person_id}"): {"display_name": "Probe"},
 }
 
 
@@ -63,6 +82,7 @@ def _path(template: str, workspace: dict[str, Any], *, org: str | None = None) -
     return template.format(
         org=org or workspace["organization"]["slug"],
         site_id=workspace["sandbox_site"]["id"],
+        person_id="p_probe",
         model_id=workspace["sandbox_site"]["current_model_id"],
     )
 
@@ -86,7 +106,9 @@ def test_other_member_cannot_read_any_site_operation(
     for path in (_path(template, a), _path(template, a, org=b["organization"]["slug"])):
         # Unsafe methods carry CSRF and a key so the organization boundary itself answers.
         unsafe = {**CSRF, "Idempotency-Key": "cross-org-probe-0001"}
-        body = {"template_id": "office_water"} if template.endswith("/draft") else None
+        body = VALID_BODIES.get((method, template.rsplit("/sites/{site_id}", 1)[-1]))
+        if method == "patch" and "If-Match" not in unsafe:
+            unsafe = {**unsafe, "If-Match": '"1"'}
         response = client.request(
             method, path, headers=unsafe if method != "get" else None, json=body
         )
@@ -117,7 +139,8 @@ def test_owner_can_read_saved_model_and_hash_its_exact_spec(account_core: TestCl
     assert body["spec_sha256"] == spec_digest(body["spec"]).hex()
     assert body["status"] == "published"
     assert body["org_id"] == workspace["organization"]["id"]
-    assert set(body) == set(models.json()[0]) | {"spec"}
+    assert set(body) == set(models.json()[0]) | {"spec", "description"}
+    assert body["description"] is None  # the frozen sandbox was not made with the builder
     assert document.headers["cache-control"] == "private, no-store"
     assert document.headers["etag"].startswith('"')
     assert client.get(document.request.url).headers["etag"] == document.headers["etag"]

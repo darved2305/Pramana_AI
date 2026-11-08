@@ -20,8 +20,10 @@ from .api import accounts as accounts_api
 from .api import auth as auth_api
 from .api import directory as directory_api
 from .api import evaluation as evaluation_api
+from .api import home as home_api
 from .api import investigations as investigations_api
 from .api import packs as packs_api
+from .api import people as people_api
 from .api import site_builder as site_builder_api
 from .api import site_investigations as site_investigations_api
 from .api import sites as sites_api
@@ -40,6 +42,7 @@ from .language.extraction import RuleExtractor
 from .language.hybrid import HybridExtractor
 from .llm import LlmClient
 from .observability import RequestContextMiddleware, configure_logging, log
+from .people import SitePeople
 from .runtime.broadcast import EventBroadcaster
 from .runtime.recovery import recover
 from .settings import Settings, get_settings
@@ -137,7 +140,8 @@ def create_app(
         )
         app.state.accounts = AccountService(db)
         app.state.site_models = StoredModels(db)
-        app.state.site_builder = SiteBuilder(db)
+        app.state.site_people = SitePeople(db)
+        app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)
         app.state.participant_public_key = participant_public_key(
@@ -226,6 +230,8 @@ def create_app(
     app.include_router(sites_api.router)
     app.include_router(site_builder_api.library)
     app.include_router(site_builder_api.router)
+    app.include_router(people_api.router)
+    app.include_router(home_api.router)
     app.include_router(site_investigations_api.router)
     if cfg.mode != "production":
         app.include_router(investigations_api.router)

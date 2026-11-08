@@ -554,6 +554,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Save Preferences
+         * @description Remember where the person left off and how their home is arranged, on every device.
+         */
+        patch: operations["save_preferences_v1_me_preferences_patch"];
+        trace?: never;
+    };
     "/v1/onboarding": {
         parameters: {
             query?: never;
@@ -598,6 +618,23 @@ export interface paths {
         };
         /** Organization */
         get: operations["organization_v1_orgs__org__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/home": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Home */
+        get: operations["home_v1_orgs__org__home_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -979,6 +1016,64 @@ export interface paths {
         get: operations["model_v1_orgs__org__sites__site_id__models__model_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List People */
+        get: operations["list_people_v1_orgs__org__sites__site_id__people_get"];
+        put?: never;
+        /**
+         * Add Person
+         * @description ``409 PERSON_EXISTS`` when the id is taken at this site; roles must exist in its model.
+         */
+        post: operations["add_person_v1_orgs__org__sites__site_id__people_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/people/{person_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Person */
+        patch: operations["update_person_v1_orgs__org__sites__site_id__people__person_id__patch"];
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Person
+         * @description Past investigations keep their own copy of who took part.
+         */
+        post: operations["remove_person_v1_orgs__org__sites__site_id__people__person_id__remove_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1662,6 +1757,23 @@ export interface components {
          * @enum {string}
          */
         Hedge: "certain" | "probable" | "unsure";
+        /** HomeInvestigation */
+        HomeInvestigation: {
+            /** Decision Label */
+            decision_label?: string | null;
+            /** Decision Probability */
+            decision_probability?: number | null;
+            /** Id */
+            id: string;
+            /** Report Text */
+            report_text: string;
+            /** Site Id */
+            site_id: string | null;
+            /** Status */
+            status: string;
+            /** Updated At */
+            updated_at: string;
+        };
         /** HomeLayout */
         HomeLayout: {
             /**
@@ -1673,6 +1785,50 @@ export interface components {
             hides?: string[];
             /** Pins */
             pins?: string[];
+        };
+        /** HomeModule */
+        HomeModule: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "approvals" | "active" | "decided" | "setup" | "sites" | "recent";
+            /** Investigations */
+            investigations?: components["schemas"]["HomeInvestigation"][];
+            /**
+             * Pinned
+             * @default false
+             */
+            pinned?: boolean;
+            /** Reason */
+            reason: string;
+            /** Sites */
+            sites?: components["schemas"]["HomeSite"][];
+            /** Steps */
+            steps?: components["schemas"]["SetupStep"][];
+            /** Title */
+            title: string;
+        };
+        /** HomeSite */
+        HomeSite: {
+            /**
+             * Draft
+             * @enum {string}
+             */
+            draft: "none" | "unchecked" | "healthy" | "problems";
+            /** Id */
+            id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "sandbox" | "live";
+            /** Model Version */
+            model_version: number | null;
+            /** Name */
+            name: string;
+            /** Open Investigations */
+            open_investigations: number;
         };
         /** HypothesisBelief */
         HypothesisBelief: {
@@ -1838,6 +1994,13 @@ export interface components {
              * @enum {string}
              */
             template_language?: "en" | "hi" | "mr" | "hi-en";
+        };
+        /** LastSite */
+        LastSite: {
+            /** Org Id */
+            org_id: string;
+            /** Site Id */
+            site_id: string;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -2139,6 +2302,16 @@ export interface components {
          */
         PlanKind: "ask" | "decide" | "abstain" | "verified" | "not_verified";
         /**
+         * PreferencesPatch
+         * @description Only the fields sent change. Workspaces and sites must be the person's own.
+         */
+        PreferencesPatch: {
+            home_layout?: components["schemas"]["HomeLayout"] | null;
+            /** Last Org Id */
+            last_org_id?: string | null;
+            last_site?: components["schemas"]["LastSite"] | null;
+        };
+        /**
          * PresenceCheckView
          * @description A presence check (docs/adr/0014). Nobody is accused: a failed check only means the
          *     answer from that place counts for less, and someone else is asked.
@@ -2346,6 +2519,20 @@ export interface components {
             /** User Agent */
             user_agent?: string | null;
         };
+        /** SetupStep */
+        SetupStep: {
+            /** Done */
+            done: boolean;
+            /** Href */
+            href: string;
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "workspace" | "practice" | "site" | "people" | "investigate";
+            /** Label */
+            label: string;
+        };
         /** SiteModelDocument */
         SiteModelDocument: {
             /**
@@ -2353,6 +2540,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Description */
+            description?: {
+                [key: string]: unknown;
+            } | null;
             /** Id */
             id: string;
             /** Org Id */
@@ -2427,6 +2618,24 @@ export interface components {
              * @enum {string}
              */
             status: "published" | "retired";
+            /** Version */
+            version: number;
+        };
+        /** SitePerson */
+        SitePerson: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            person: components["schemas"]["ParticipantSpec"];
+            /** Site Id */
+            site_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
             /** Version */
             version: number;
         };
@@ -2565,6 +2774,15 @@ export interface components {
         VoiceAnswerResult: {
             result: components["schemas"]["AnswerResult"];
             stt: components["schemas"]["SttResult"];
+        };
+        /** WorkspaceHome */
+        WorkspaceHome: {
+            /** Greeting Name */
+            greeting_name: string;
+            /** Hidden */
+            hidden?: ("approvals" | "active" | "decided" | "setup" | "sites" | "recent")[];
+            /** Modules */
+            modules: components["schemas"]["HomeModule"][];
         };
     };
     responses: never;
@@ -3424,6 +3642,56 @@ export interface operations {
             };
         };
     };
+    save_preferences_v1_me_preferences_patch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferencesPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPreferences"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     onboarding_v1_onboarding_get: {
         parameters: {
             query?: never;
@@ -3577,6 +3845,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrganizationSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_v1_orgs__org__home_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceHome"];
                 };
             };
             /** @description Validation Error */
@@ -4536,6 +4835,194 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_people_v1_orgs__org__sites__site_id__people_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePerson"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_person_v1_orgs__org__sites__site_id__people_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePerson"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_person_v1_orgs__org__sites__site_id__people__person_id__patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePerson"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_person_v1_orgs__org__sites__site_id__people__person_id__remove_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
             422: {
                 headers: {
                     [name: string]: unknown;

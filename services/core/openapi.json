@@ -1408,6 +1408,69 @@
     "title": "Hedge",
     "type": "string"
    },
+   "HomeInvestigation": {
+    "additionalProperties": false,
+    "properties": {
+     "decision_label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decision Label"
+     },
+     "decision_probability": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decision Probability"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "report_text": {
+      "title": "Report Text",
+      "type": "string"
+     },
+     "site_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Site Id"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "site_id",
+     "status",
+     "report_text",
+     "updated_at"
+    ],
+    "title": "HomeInvestigation",
+    "type": "object"
+   },
    "HomeLayout": {
     "additionalProperties": false,
     "properties": {
@@ -1434,6 +1497,120 @@
      }
     },
     "title": "HomeLayout",
+    "type": "object"
+   },
+   "HomeModule": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "enum": [
+       "approvals",
+       "active",
+       "decided",
+       "setup",
+       "sites",
+       "recent"
+      ],
+      "title": "Id",
+      "type": "string"
+     },
+     "investigations": {
+      "items": {
+       "$ref": "#/components/schemas/HomeInvestigation"
+      },
+      "title": "Investigations",
+      "type": "array"
+     },
+     "pinned": {
+      "default": false,
+      "title": "Pinned",
+      "type": "boolean"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     },
+     "sites": {
+      "items": {
+       "$ref": "#/components/schemas/HomeSite"
+      },
+      "title": "Sites",
+      "type": "array"
+     },
+     "steps": {
+      "items": {
+       "$ref": "#/components/schemas/SetupStep"
+      },
+      "title": "Steps",
+      "type": "array"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "reason"
+    ],
+    "title": "HomeModule",
+    "type": "object"
+   },
+   "HomeSite": {
+    "additionalProperties": false,
+    "properties": {
+     "draft": {
+      "enum": [
+       "none",
+       "unchecked",
+       "healthy",
+       "problems"
+      ],
+      "title": "Draft",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "mode": {
+      "enum": [
+       "sandbox",
+       "live"
+      ],
+      "title": "Mode",
+      "type": "string"
+     },
+     "model_version": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model Version"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "open_investigations": {
+      "title": "Open Investigations",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "mode",
+     "model_version",
+     "draft",
+     "open_investigations"
+    ],
+    "title": "HomeSite",
     "type": "object"
    },
    "HypothesisBelief": {
@@ -1920,6 +2097,25 @@
      "stt_candidates"
     ],
     "title": "LanguageProfile",
+    "type": "object"
+   },
+   "LastSite": {
+    "additionalProperties": false,
+    "properties": {
+     "org_id": {
+      "title": "Org Id",
+      "type": "string"
+     },
+     "site_id": {
+      "title": "Site Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "org_id",
+     "site_id"
+    ],
+    "title": "LastSite",
     "type": "object"
    },
    "LoginRequest": {
@@ -2850,6 +3046,45 @@
     "title": "PlanKind",
     "type": "string"
    },
+   "PreferencesPatch": {
+    "additionalProperties": false,
+    "description": "Only the fields sent change. Workspaces and sites must be the person's own.",
+    "properties": {
+     "home_layout": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/HomeLayout"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "last_org_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Org Id"
+     },
+     "last_site": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/LastSite"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "title": "PreferencesPatch",
+    "type": "object"
+   },
    "PresenceCheckView": {
     "additionalProperties": false,
     "description": "A presence check (docs/adr/0014). Nobody is accused: a failed check only means the\nanswer from that place counts for less, and someone else is asked.",
@@ -3367,6 +3602,42 @@
     "title": "SessionDevice",
     "type": "object"
    },
+   "SetupStep": {
+    "additionalProperties": false,
+    "properties": {
+     "done": {
+      "title": "Done",
+      "type": "boolean"
+     },
+     "href": {
+      "title": "Href",
+      "type": "string"
+     },
+     "id": {
+      "enum": [
+       "workspace",
+       "practice",
+       "site",
+       "people",
+       "investigate"
+      ],
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "done",
+     "href"
+    ],
+    "title": "SetupStep",
+    "type": "object"
+   },
    "SiteModelDocument": {
     "additionalProperties": false,
     "properties": {
@@ -3374,6 +3645,18 @@
       "format": "date-time",
       "title": "Created At",
       "type": "string"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
      },
      "id": {
       "title": "Id",
@@ -3563,6 +3846,41 @@
      "published_at"
     ],
     "title": "SiteModelSummary",
+    "type": "object"
+   },
+   "SitePerson": {
+    "additionalProperties": false,
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "person": {
+      "$ref": "#/components/schemas/ParticipantSpec"
+     },
+     "site_id": {
+      "title": "Site Id",
+      "type": "string"
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "site_id",
+     "person",
+     "version",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "SitePerson",
     "type": "object"
    },
    "SiteSummary": {
@@ -3938,6 +4256,43 @@
      "result"
     ],
     "title": "VoiceAnswerResult",
+    "type": "object"
+   },
+   "WorkspaceHome": {
+    "additionalProperties": false,
+    "properties": {
+     "greeting_name": {
+      "title": "Greeting Name",
+      "type": "string"
+     },
+     "hidden": {
+      "items": {
+       "enum": [
+        "approvals",
+        "active",
+        "decided",
+        "setup",
+        "sites",
+        "recent"
+       ],
+       "type": "string"
+      },
+      "title": "Hidden",
+      "type": "array"
+     },
+     "modules": {
+      "items": {
+       "$ref": "#/components/schemas/HomeModule"
+      },
+      "title": "Modules",
+      "type": "array"
+     }
+    },
+    "required": [
+     "greeting_name",
+     "modules"
+    ],
+    "title": "WorkspaceHome",
     "type": "object"
    }
   }
@@ -5208,6 +5563,67 @@
     ]
    }
   },
+  "/v1/me/preferences": {
+   "patch": {
+    "description": "Remember where the person left off and how their home is arranged, on every device.",
+    "operationId": "save_preferences_v1_me_preferences_patch",
+    "parameters": [
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PreferencesPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountPreferences"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Save Preferences",
+    "tags": [
+     "accounts"
+    ]
+   }
+  },
   "/v1/onboarding": {
    "get": {
     "operationId": "onboarding_v1_onboarding_get",
@@ -5400,6 +5816,48 @@
     "summary": "Organization",
     "tags": [
      "accounts"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/home": {
+   "get": {
+    "operationId": "home_v1_orgs__org__home_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceHome"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Home",
+    "tags": [
+     "home"
     ]
    }
   },
@@ -6898,6 +7356,322 @@
     "summary": "Model",
     "tags": [
      "sites"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people": {
+   "get": {
+    "operationId": "list_people_v1_orgs__org__sites__site_id__people_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SitePerson"
+         },
+         "title": "Response List People V1 Orgs  Org  Sites  Site Id  People Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List People",
+    "tags": [
+     "people"
+    ]
+   },
+   "post": {
+    "description": "``409 PERSON_EXISTS`` when the id is taken at this site; roles must exist in its model.",
+    "operationId": "add_person_v1_orgs__org__sites__site_id__people_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ParticipantSpec"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SitePerson"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Add Person",
+    "tags": [
+     "people"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people/{person_id}": {
+   "patch": {
+    "operationId": "update_person_v1_orgs__org__sites__site_id__people__person_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "person_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Person Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "If-Match",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "If-Match"
+      }
+     },
+     {
+      "in": "header",
+      "name": "If-Match",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ParticipantPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SitePerson"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Update Person",
+    "tags": [
+     "people"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/remove": {
+   "post": {
+    "description": "Past investigations keep their own copy of who took part.",
+    "operationId": "remove_person_v1_orgs__org__sites__site_id__people__person_id__remove_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "person_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Person Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Remove Person",
+    "tags": [
+     "people"
     ]
    }
   },
