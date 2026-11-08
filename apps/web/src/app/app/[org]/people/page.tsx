@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/app/Avatar";
 import { ParticipantForm, langLabel, roleLabel } from "@/components/app/ParticipantForm";
+import { ConsentDialog, ConsentSummary, EraseDialog } from "@/components/app/PersonPrivacy";
 import { Badge, Button, Card, Dialog, EmptyState, ErrorState, Notice, PageHeader, Select, Skeleton } from "@/components/ui";
 import { IconEdit, IconPlus, IconTrash, IconUsers } from "@/components/ui/icons";
 import { accountApi, actionKey } from "@/lib/api/account";
 import { ApiError, describeError } from "@/lib/api/http";
-import type { PersonTrackRecord, SitePack, SitePerson } from "@/lib/api/types";
+import type { ConsentRecord, PersonTrackRecord, SitePack, SitePerson } from "@/lib/api/types";
 import { packFromDescription, packFromSpec } from "@/lib/builder/sitePack";
 import type { SiteDescription } from "@/lib/builder/description";
 import { useLoad } from "@/lib/data/hooks";
@@ -63,7 +64,23 @@ export default function PeoplePage() {
   const [editing, setEditing] = useState<"new" | SitePerson | null>(null);
   const [removing, setRemoving] = useState<SitePerson | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [consentFor, setConsentFor] = useState<SitePerson | null>(null);
+  const [erasing, setErasing] = useState<SitePerson | null>(null);
+  const [erased, setErased] = useState<string | null>(null);
+  const canErase = ws.roles.has("owner") || ws.roles.has("admin");
   const list = useMemo(() => (people.status === "ready" ? people.data : []), [people]);
+  const personKey = list.map((x) => x.person.id).join(",");
+  // A few at a time: this page can list a whole site.
+  const consents = useLoad(siteId && personKey ? `consents|${ws.org.id}|${siteId}|${personKey}` : null, async (s) => {
+    const out = new Map<string, ConsentRecord[]>();
+    for (let i = 0; i < list.length; i += 6) {
+      const part = list.slice(i, i + 6);
+      const rows = await Promise.all(part.map((x) => ws.api.consents(siteId as string, x.person.id, s)));
+      part.forEach((x, n) => out.set(x.person.id, rows[n]));
+    }
+    return out;
+  });
+  const consentsOf = (pid: string) => (consents.status === "ready" ? consents.data.get(pid) : undefined);
   const sitePack = pack.status === "ready" ? pack.data : null;
 
   function chooseSite(id: string) {
@@ -97,6 +114,7 @@ export default function PeoplePage() {
         }
       />
       {error ? <Notice tone="bad" title="That did not work">{error}</Notice> : null}
+      {erased ? <Notice tone="ok" title={`${erased} was erased`}>Past investigations will show them as Erased person.</Notice> : null}
 
       {sites.status === "error" ? (
         <ErrorState error={sites.error} onRetry={sites.reload} />
@@ -141,19 +159,28 @@ export default function PeoplePage() {
                   {!p.available ? <Badge tone="warn">Unavailable</Badge> : null}
                 </div>
                 <TrackRecord record={recordOf(p.id)} />
+                <ConsentSummary records={consentsOf(p.id)} failed={consents.status === "error"} />
                 {sitePack.probes.length ? (
                   <p className="text-[13px] text-fg-2">
                     {can ? `Can make ${can} check${can === 1 ? "" : "s"} at this site.` : "Cannot make any check here yet: give them a role or access to a place."}
                   </p>
                 ) : null}
                 {ws.canOperate ? (
-                  <div className="mt-auto flex gap-2 border-t border-white/[.06] pt-3">
+                  <div className="mt-auto flex flex-wrap gap-2 border-t border-white/[.06] pt-3">
                     <Button size="sm" onClick={() => setEditing(entry)}>
                       <IconEdit className="h-4 w-4" /> Edit
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setRemoving(entry)}>
                       <IconTrash className="h-4 w-4" /> Remove
                     </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setConsentFor(entry)}>
+                      Consent
+                    </Button>
+                    {canErase ? (
+                      <Button size="sm" variant="ghost" onClick={() => { setErased(null); setErasing(entry); }}>
+                        Erase
+                      </Button>
+                    ) : null}
                   </div>
                 ) : null}
               </Card>
@@ -210,6 +237,30 @@ export default function PeoplePage() {
           </>
         }
       />
+
+      {siteId ? (
+        <>
+          <ConsentDialog
+            person={consentFor?.person ?? null}
+            siteId={siteId}
+            api={ws.api}
+            records={consentFor ? (consentsOf(consentFor.person.id) ?? []) : []}
+            onChanged={consents.reload}
+            onClose={() => setConsentFor(null)}
+          />
+          <EraseDialog
+            person={erasing?.person ?? null}
+            siteId={siteId}
+            api={ws.api}
+            onClose={() => setErasing(null)}
+            onErased={(name) => {
+              setErasing(null);
+              setErased(name);
+              people.reload();
+            }}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

@@ -15,6 +15,8 @@ import type {
   SiteModelDocument,
   SiteModelDraft,
   SiteModelSummary,
+  ConsentRecord,
+  RecordConsent,
   SitePerson,
   PersonTrackRecord,
   SiteSummary,
@@ -91,6 +93,14 @@ export function organizationApi(org: string) {
       }),
     removePerson: (siteId: string, personId: string, action: OrganizationAction) =>
       mutate<void>(`${site(siteId)}/people/${enc(personId)}/remove`, undefined, action),
+    erasePerson: (siteId: string, personId: string, action: OrganizationAction) =>
+      mutate<void>(`${site(siteId)}/people/${enc(personId)}/erase`, undefined, action),
+    consents: (siteId: string, personId: string, signal?: AbortSignal) =>
+      request<ConsentRecord[]>("core", `${site(siteId)}/people/${enc(personId)}/consents`, { signal }),
+    recordConsent: (siteId: string, personId: string, body: RecordConsent, action: OrganizationAction) =>
+      mutate<ConsentRecord>(`${site(siteId)}/people/${enc(personId)}/consents`, body, action),
+    withdrawConsent: (siteId: string, personId: string, purpose: RecordConsent["purpose"], action: OrganizationAction) =>
+      mutate<void>(`${site(siteId)}/people/${enc(personId)}/consents/${enc(purpose)}/withdraw`, undefined, action),
     site: (id: string, signal?: AbortSignal) => request<SiteSummary>("core", site(id), { signal }),
     models: (id: string, signal?: AbortSignal) =>
       request<SiteModelSummary[]>("core", `${site(id)}/models`, { signal }),
