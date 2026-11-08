@@ -20,6 +20,7 @@ import {
   Tabs,
 } from "@/components/ui";
 import { IconHistory, IconPlus, IconSearch } from "@/components/ui/icons";
+import { InvestigationBoard } from "@/components/console/InvestigationBoard";
 import { usePreviewMode } from "@/lib/store/local";
 import { useInvestigationList } from "@/lib/data/hooks";
 import { STATUS_LABEL, STATUS_TONE, relative } from "@/lib/data/derive";
@@ -62,6 +63,9 @@ function InvestigationsInner() {
   const [filter, setFilter] = useState<Filter>("all");
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState(false);
+  const board = params.get("view") === "board";
+  const setView = (next: "list" | "board") =>
+    router.replace(`${scope.base}/investigations${next === "board" ? "?view=board" : ""}`, { scroll: false });
   const needle = useDebounced(q, 250);
   const query = useMemo(() => ({ status: STATUS_FILTER[filter], q: needle, limit: PAGE, offset: page * PAGE }), [filter, needle, page]);
   const list = useInvestigationList(query);
@@ -76,6 +80,14 @@ function InvestigationsInner() {
         eyebrow={preview ? <PreviewBadge /> : undefined}
         actions={
           <>
+            <div role="group" aria-label="View" className="flex rounded-full p-0.5 shadow-[inset_0_0_0_0.8px_var(--app-line)]">
+              {(["list", "board"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={board === (v === "board")} onClick={() => setView(v)}
+                  className={`h-[34px] rounded-full px-3.5 text-[13px] ${board === (v === "board") ? "bg-white/[.07] text-fg" : "text-muted hover:text-fg"}`}>
+                  {v === "list" ? "List" : "Board"}
+                </button>
+              ))}
+            </div>
             <Button onClick={() => setOpenId(true)}>Open by ID</Button>
             <ButtonLink href={`${scope.base}/investigations/new`} variant="primary" size="lg">
               <IconPlus className="h-4 w-4" /> New investigation
@@ -84,7 +96,8 @@ function InvestigationsInner() {
         }
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {board ? <InvestigationBoard /> : null}
+      <div className={board ? "hidden" : "flex flex-wrap items-center justify-between gap-3"}>
         <Tabs<Filter>
           label="Filter investigations"
           value={filter}
@@ -117,7 +130,7 @@ function InvestigationsInner() {
         </div>
       </div>
 
-      {list.status === "loading" ? (
+      {board ? null : list.status === "loading" ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
           <Skeleton className="h-[160px]" />
           <Skeleton className="h-[160px]" />

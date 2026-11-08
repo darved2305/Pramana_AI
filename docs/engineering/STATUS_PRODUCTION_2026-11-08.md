@@ -32,7 +32,8 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | Slices C and D backend: people per site, workspace home, saved preferences | CI green | `75931b5` (+ format fix `a8fbd98`): migration 0013 `site_people` with forced RLS, `/v1/orgs/{org}/home` pure rules with reasons, `PATCH /v1/me/preferences`, reserved console slugs. 84 focused API tests; full suite exit 0. Run 42453588374 failed on formatting; the fix's run 42453668911 passed |
 | Onboarding, workspace console, practice runs, model-driven repairs | CI green | `2f7fa34`: Continue with Google, `/onboarding/[step]` saved server-side, `/app/[org]` home, sites builder, people, investigations under workspace routes, practice on a site's own model (`practice`), `repair_options` from the site's actions, participant links carrying the workspace, general answer vocabulary. Full suite exit 0, UI 48 passed, real-stack 27 passed; CI run for `2f7fa34` passed all jobs |
 | Bugs found by the browser journey and fixed | Fixed | A stale draft overwrote the editor; JSONB key order made every saved draft look unsaved; the home counted the legacy directory; the hostel-only repair dialog and decision ids; the extractor returned unknown for any non-hostel outcome |
-| Team invitations, members, model health page, settings page | Tested locally | Migration 0014 `invitations` (hashed one-time secrets, 7-day expiry, one open link per address, audit entries), `/v1/orgs/{org}/members`, published model documents carry their passed check. 12 invitation tests, 60 home/site tests and the real-browser team journey pass; full suite running at the time of writing |
+| Team invitations, members, model health page, settings page | CI green | `090fa3b`: migration 0014 `invitations` (hashed one-time secrets, 7-day expiry, one open link per address, audit entries), `/v1/orgs/{org}/members`, published model documents carry their passed check. Full suite exit 0, UI 48, real-stack 28 (team journey included); CI passed all jobs |
+| Member roles and removal, track records, workspace voice, investigations board | Tested locally | Last-owner rule and owner-only owner role with row locks and audit entries; per-person track record counted only against revealed causes and only before repairs; question audio, spoken answers and media/call sockets under the workspace boundary (socket token organization claim must match, 4403 otherwise); production voice status for signed-in people without provider address or spend; a live board by stage. Focused API tests and the real-browser team and workspace journeys pass (a workspace participant link answers on a phone-sized page); full Python suite exit 0, UI 48 passed, real-stack 28 passed |
 
 ## Remaining work
 
@@ -44,10 +45,10 @@ model, team invitations, model health and settings pages. Still open:
   tests; retire them (and `DEFAULT_PACK`) once the real-stack fixtures use workspaces.
 - Live investigations with real people (calls, messages, work orders) are R3; a live site can
   only be practised on, and the core says so.
-- Voice answers and question audio still use the unscoped routes; give the media sockets their
-  own organization boundary.
-- Member role changes and removal (with the last-owner rule), email delivery of invitations,
-  and showing pending invitations in `/v1/me` are not built.
+- Email delivery of invitations and showing pending invitations in `/v1/me` are not built; the
+  owner shares the one-time link themselves.
+- Real-stack browser runs have voice off (no Gnani key); workspace voice is covered by API tests
+  with the Gnani protocol emulation.
 - Answer vocabulary for new outcomes falls back to the outcome's own words; site authors cannot
   yet add synonyms. Hindi and Marathi wording everywhere new needs native review.
 

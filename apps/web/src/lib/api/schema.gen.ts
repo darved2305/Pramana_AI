@@ -715,6 +715,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org}/investigations/{inv_id}/answers/voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Voice Answer */
+        post: operations["voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org}/investigations/{inv_id}/approvals": {
         parameters: {
             query?: never;
@@ -835,6 +852,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org}/investigations/{inv_id}/questions/{question_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Question Audio
+         * @description The pending question, spoken in the participant's language (WAV).
+         *
+         *     Cached audio is one WAV. Otherwise the WAV is streamed while Timbre synthesises it
+         *     (``X-Audio-Streamed: true``; its header has an open-ended data length, as Timbre's own
+         *     WAVs do), so the browser can start playing before synthesis finishes.
+         */
+        get: operations["question_audio_v1_orgs__org__investigations__inv_id__questions__question_id__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org}/investigations/{inv_id}/replay": {
         parameters: {
             query?: never;
@@ -942,6 +983,43 @@ export interface paths {
         get: operations["members_v1_orgs__org__members_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/members/{member_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Member */
+        patch: operations["update_member_v1_orgs__org__members__member_id__patch"];
+        trace?: never;
+    };
+    "/v1/orgs/{org}/members/{member_id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Member
+         * @description Owners and admins remove anyone; everyone may remove themselves (leave).
+         */
+        post: operations["remove_member_v1_orgs__org__members__member_id__remove_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1109,6 +1187,26 @@ export interface paths {
          * @description ``409 PERSON_EXISTS`` when the id is taken at this site; roles must exist in its model.
          */
         post: operations["add_person_v1_orgs__org__sites__site_id__people_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/people/track-record": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Track Record
+         * @description How often each person's answers matched causes that were later revealed or confirmed.
+         */
+        get: operations["track_record_v1_orgs__org__sites__site_id__people_track_record_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1456,6 +1554,15 @@ export interface components {
             /** Question Id */
             question_id: string;
         };
+        /** Body_voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post */
+        Body_voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post: {
+            /** Audio */
+            audio: string;
+            /** Participant Id */
+            participant_id: string;
+            /** Question Id */
+            question_id: string;
+        };
         /** CandidateScore */
         CandidateScore: {
             action: components["schemas"]["ProbeAction"];
@@ -1496,6 +1603,18 @@ export interface components {
             sim_url: string;
             /** Target */
             target: string;
+        };
+        /** CheckRecord */
+        CheckRecord: {
+            /** Checked */
+            checked: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "device" | "visual" | "panel";
+            /** Matched */
+            matched: number;
         };
         /**
          * CreateInvestigation
@@ -2405,6 +2524,23 @@ export interface components {
             /** Roles */
             roles: components["schemas"]["OrganizationRole"][];
         };
+        /**
+         * PersonTrackRecord
+         * @description Answers this person gave in investigations whose true cause is known, and how many
+         *     matched it. Only revealed or confirmed causes count, never Pramana's own conclusion.
+         */
+        PersonTrackRecord: {
+            /** By Kind */
+            by_kind: components["schemas"]["CheckRecord"][];
+            /** Checked */
+            checked: number;
+            /** Investigations */
+            investigations: number;
+            /** Matched */
+            matched: number;
+            /** Person Id */
+            person_id: string;
+        };
         /** PlanDecision */
         PlanDecision: {
             action?: components["schemas"]["ProbeAction"] | null;
@@ -2916,6 +3052,11 @@ export interface components {
             /** Voice */
             voice?: string | null;
         };
+        /** UpdateMemberRoles */
+        UpdateMemberRoles: {
+            /** Roles */
+            roles: components["schemas"]["OrganizationRole"][];
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -2952,6 +3093,8 @@ export interface components {
             display_name: string;
             /** Email */
             email: string | null;
+            /** Id */
+            id: string;
             /**
              * Joined At
              * Format: date-time
@@ -4291,6 +4434,58 @@ export interface operations {
             };
         };
     };
+    voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceAnswerResult"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     request_approval_v1_orgs__org__investigations__inv_id__approvals_post: {
         parameters: {
             query?: never;
@@ -4584,6 +4779,38 @@ export interface operations {
             };
         };
     };
+    question_audio_v1_orgs__org__investigations__inv_id__questions__question_id__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     replay_check_v1_orgs__org__investigations__inv_id__replay_get: {
         parameters: {
             query?: never;
@@ -4849,6 +5076,106 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_member_v1_orgs__org__members__member_id__patch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberRoles"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMember"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_member_v1_orgs__org__members__member_id__remove_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5314,6 +5641,38 @@ export interface operations {
                 content?: never;
             };
             /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    track_record_v1_orgs__org__sites__site_id__people_track_record_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonTrackRecord"][];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

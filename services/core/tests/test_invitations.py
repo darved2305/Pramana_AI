@@ -138,3 +138,66 @@ def test_another_workspace_cannot_see_or_revoke_invitations(account_core: TestCl
     invite_id = created["invitation"]["id"]
     assert post(client, f"/v1/orgs/{org}/invitations/{invite_id}/revoke").status_code == 404
     assert post(client, f"/v1/orgs/{other_slug}/invitations/{invite_id}/revoke").status_code == 404
+
+
+def joined_as(client: TestClient, roles: list[str]) -> tuple[str, str]:
+    """Owner creates a workspace; the approver account joins it with ``roles``."""
+    org = create(client).json()["organization"]["slug"]
+    created = invite(client, org, APPROVER_EMAIL, roles)
+    login(client, "approver")
+    assert post(client, "/v1/invitations/accept", {"token": token(created)}).status_code == 200
+    mate = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    login(client, "operator")
+    return org, mate
+
+
+def patch(client: TestClient, path: str, json: Any) -> Any:
+    return client.patch(path, json=json, headers={**CSRF, "Idempotency-Key": uuid.uuid4().hex})
+
+
+def test_owners_change_roles_and_the_last_owner_stays(account_core: TestClient) -> None:
+    client = account_core
+    org, mate = joined_as(client, ["viewer"])
+    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    changed = patch(client, f"/v1/orgs/{org}/members/{mate}", {"roles": ["approver", "operator"]})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["roles"] == ["approver", "operator"]
+    alone = patch(client, f"/v1/orgs/{org}/members/{me}", {"roles": ["admin"]})
+    assert alone.status_code == 409
+    assert alone.json()["error"]["code"] == "LAST_OWNER"
+    # With a second owner, the first may step down.
+    assert patch(client, f"/v1/orgs/{org}/members/{mate}", {"roles": ["owner"]}).status_code == 200
+    assert patch(client, f"/v1/orgs/{org}/members/{me}", {"roles": ["admin"]}).status_code == 200
+
+
+def test_admins_cannot_touch_the_owner_role(account_core: TestClient) -> None:
+    client = account_core
+    org, mate = joined_as(client, ["admin"])
+    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    login(client, "approver")  # the admin
+    r = patch(client, f"/v1/orgs/{org}/members/{mate}", {"roles": ["owner"]})
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "OWNER_ONLY"
+    assert post(client, f"/v1/orgs/{org}/members/{me}/remove").status_code == 403
+
+
+def test_leaving_and_removal_end_access_at_once(account_core: TestClient) -> None:
+    client = account_core
+    org, mate = joined_as(client, ["operator"])
+    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    last = post(client, f"/v1/orgs/{org}/members/{me}/remove")
+    assert last.status_code == 409  # the last owner cannot leave
+    assert post(client, f"/v1/orgs/{org}/members/{mate}/remove").status_code == 204
+    login(client, "approver")
+    assert client.get(f"/v1/orgs/{org}/home").status_code == 404
+    assert client.get("/v1/me").json()["memberships"] == []
+
+
+def test_a_member_may_leave_but_not_remove_others(account_core: TestClient) -> None:
+    client = account_core
+    org, mate = joined_as(client, ["viewer"])
+    owner = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    login(client, "approver")
+    assert post(client, f"/v1/orgs/{org}/members/{owner}/remove").status_code == 403
+    assert post(client, f"/v1/orgs/{org}/members/{mate}/remove").status_code == 204
+    assert client.get(f"/v1/orgs/{org}/members").status_code == 404

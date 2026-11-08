@@ -4,8 +4,8 @@
  */
 import { actionKey } from "./account";
 import { core } from "./core";
-import { request } from "./http";
-import type { AnswerResult, CapabilityGrant, InvestigationState, SubmitAnswer } from "./types";
+import { request, requestStream } from "./http";
+import type { AnswerResult, CapabilityGrant, InvestigationState, SubmitAnswer, VoiceAnswerResult } from "./types";
 import type { JoinPayload } from "@/lib/join";
 
 export function participantApi(link: JoinPayload) {
@@ -21,6 +21,23 @@ export function participantApi(link: JoinPayload) {
     getInvestigation: () =>
       root ? request<InvestigationState>("core", root, { token: link.t }) : core.getInvestigation(link.i, undefined, link.t),
     answer: (body: SubmitAnswer) => (root ? post<AnswerResult>("/answers", body) : core.answer(link.i, body, link.t)),
+    answerByVoice: (questionId: string, audio: Blob) => {
+      if (!root) return core.answerByVoice(link.i, questionId, link.p, audio, link.t);
+      const form = new FormData();
+      form.set("question_id", questionId);
+      form.set("participant_id", link.p);
+      form.set("audio", audio, "answer.wav");
+      return request<VoiceAnswerResult>("core", `${root}/answers/voice`, {
+        method: "POST",
+        form,
+        token: link.t,
+        headers: { "Idempotency-Key": actionKey("voice") },
+      });
+    },
+    questionAudioStream: (questionId: string) =>
+      root
+        ? requestStream("core", `${root}/questions/${encodeURIComponent(questionId)}/audio`, { token: link.t })
+        : core.questionAudioStream(link.i, questionId, link.t),
     collectCapability: (approvalId: string) =>
       root
         ? post<CapabilityGrant>(`/approvals/${encodeURIComponent(approvalId)}/capability?participant_id=${encodeURIComponent(link.p)}`)

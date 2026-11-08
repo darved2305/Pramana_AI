@@ -28,6 +28,7 @@ from .api import packs as packs_api
 from .api import people as people_api
 from .api import site_builder as site_builder_api
 from .api import site_investigations as site_investigations_api
+from .api import site_voice as site_voice_api
 from .api import sites as sites_api
 from .api import stream as stream_api
 from .api import voice as voice_api
@@ -240,6 +241,10 @@ def create_app(
     app.include_router(invitations_api.router)
     app.include_router(invitations_api.accept_router)
     app.include_router(site_investigations_api.router)
+    app.include_router(site_voice_api.router)
+    app.include_router(site_voice_api.sockets)
+    if cfg.mode == "production":
+        app.include_router(site_voice_api.account)
     if cfg.mode != "production":
         app.include_router(investigations_api.router)
         app.include_router(directory_api.router)

@@ -87,8 +87,11 @@ class ParticipantCall:
         broadcaster: EventBroadcaster,
         active: ActiveSessions,
         max_s: float,
+        *,
+        organization: str | None = None,
     ) -> None:
         self.ws, self.inv_id, self.participant_id = ws, inv_id, participant_id
+        self.organization = organization
         self.svc, self.gnani, self.cache = svc, gnani, cache
         self.broadcaster, self.active, self.max_s = broadcaster, active, max_s
         self.call = CallSession(
@@ -129,6 +132,8 @@ class ParticipantCall:
                 claims = self.svc.verify_participant_token(str(start.get("token", "")))
             except TokenError as exc:
                 raise MediaClosedError(4401) from exc
+            if self.organization is not None and claims.org != self.organization:
+                raise MediaClosedError(4403)  # a link from another workspace
             if claims.sub != self.participant_id:
                 await self._fail(ApiError(403, "WRONG_PARTICIPANT", "token is for someone else"))
             state = await self.svc.get(self.inv_id)

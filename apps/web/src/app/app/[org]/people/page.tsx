@@ -9,7 +9,7 @@ import { Badge, Button, Card, Dialog, EmptyState, ErrorState, Notice, PageHeader
 import { IconEdit, IconPlus, IconTrash, IconUsers } from "@/components/ui/icons";
 import { accountApi, actionKey } from "@/lib/api/account";
 import { ApiError, describeError } from "@/lib/api/http";
-import type { SitePack, SitePerson } from "@/lib/api/types";
+import type { PersonTrackRecord, SitePack, SitePerson } from "@/lib/api/types";
 import { packFromDescription, packFromSpec } from "@/lib/builder/sitePack";
 import type { SiteDescription } from "@/lib/builder/description";
 import { useLoad } from "@/lib/data/hooks";
@@ -45,6 +45,8 @@ export default function PeoplePage() {
   const site = sites.status === "ready" ? sites.data.find((s) => s.id === siteId) : undefined;
 
   const people = useLoad(siteId ? `people|${ws.org.id}|${siteId}` : null, (s) => ws.api.people(siteId as string, s));
+  const records = useLoad(siteId ? `track|${ws.org.id}|${siteId}` : null, (s) => ws.api.trackRecord(siteId as string, s));
+  const recordOf = (pid: string) => (records.status === "ready" ? records.data.find((r) => r.person_id === pid) : undefined);
   // Places and roles come from the published model, or the draft before the first publish.
   const pack = useLoad(site ? `pack|${ws.org.id}|${site.id}|${site.current_model_id}` : null, async (s) => {
     if (!site) return null;
@@ -138,6 +140,7 @@ export default function PeoplePage() {
                   ))}
                   {!p.available ? <Badge tone="warn">Unavailable</Badge> : null}
                 </div>
+                <TrackRecord record={recordOf(p.id)} />
                 {sitePack.probes.length ? (
                   <p className="text-[13px] text-fg-2">
                     {can ? `Can make ${can} check${can === 1 ? "" : "s"} at this site.` : "Cannot make any check here yet: give them a role or access to a place."}
@@ -210,3 +213,27 @@ export default function PeoplePage() {
     </div>
   );
 }
+
+const KIND_LABEL: Record<string, string> = { device: "phone checks", visual: "looking", panel: "reading panels" };
+
+/** Answers matched against causes that were later revealed or confirmed, never Pramana's guess. */
+function TrackRecord({ record }: { record: PersonTrackRecord | undefined }) {
+  if (!record || record.checked === 0) {
+    return <p className="text-[12px] text-muted">No track record yet: it builds up from investigations whose cause was revealed or confirmed.</p>;
+  }
+  const share = Math.round((100 * record.matched) / record.checked);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-[13px] text-fg-2">
+        <span className="font-medium text-fg">{share}%</span> of {record.checked} answer{record.checked === 1 ? "" : "s"} matched the cause found later, over {record.investigations} investigation{record.investigations === 1 ? "" : "s"}.
+      </p>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[.06]" role="img" aria-label={`${record.matched} of ${record.checked} answers matched`}>
+        <span className="block h-full bg-ok" style={{ width: `${share}%` }} />
+      </div>
+      <p className="text-[12px] text-muted">
+        {record.by_kind.map((k) => `${KIND_LABEL[k.kind] ?? k.kind}: ${k.matched}/${k.checked}`).join(" · ")}
+      </p>
+    </div>
+  );
+}
+

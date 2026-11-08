@@ -210,7 +210,7 @@ def test_each_scoped_investigation_route_rejects_other_org_before_body_validatio
         for method in definition
         if method in {"get", "post", "patch", "put", "delete"}
     ]
-    assert len(operations) == 13
+    assert len(operations) == 15  # including question audio and spoken answers
     for method, template in operations:
         for org in (a.workspace["organization"]["slug"], b["organization"]["slug"]):
             if "{inv_id}" not in template and org == b["organization"]["slug"]:
@@ -220,6 +220,7 @@ def test_each_scoped_investigation_route_rejects_other_org_before_body_validatio
                 inv_id=investigation["id"],
                 approval_id="foreign-approval",
                 participant_id="p_riya",
+                question_id="q_foreign",
             )
             response = raw.request(method, path, json={}, headers=CSRF)
             assert response.status_code == 404, (method, path, response.text)
@@ -361,7 +362,12 @@ def test_production_has_no_legacy_file_or_unscoped_investigation_routes(migrated
     )
     paths = create_app(cfg).openapi()["paths"]
     assert "/v1/orgs/{org}/investigations" in paths
+    # Voice status is personal and holds no tenant data (no spend, no provider address).
+    assert "/v1/voice/status" in paths
     for path in paths:
+        if path == "/v1/voice/status":
+            continue
         assert not path.startswith(
             ("/v1/investigations", "/v1/packs", "/v1/participants", "/v1/evaluation", "/v1/voice")
         ), path
+    assert "/v1/orgs/{org}/investigations/{inv_id}/answers/voice" in paths

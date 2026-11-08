@@ -35,10 +35,12 @@ workspace console, practice runs and model-driven repairs (`2f7fa34`). Team invi
 model health and settings pages were tested locally last; check `git log` for their commit.
 
 Next, in order: retire the legacy single-site console (move real-stack fixtures to workspaces,
-remove `DEFAULT_PACK`); an organization boundary for voice and media sockets; member role
-changes and removal with the last-owner rule; people reliability learned from investigations on
-the People page; a live investigations board. Do not merge `production` into `main` until the
-user says so (they confirmed on Nov 8: wait until everything is done properly). Read the Next.js
+remove `DEFAULT_PACK` and the global-staff-role redirect exception in `/app`); synonyms for
+outcome words in site descriptions; email delivery of invitations once a provider is chosen;
+then R3 live reach (calls, messages, work orders) so a live site can run real investigations.
+Done since: member roles and removal, per-person track records, workspace voice and media
+sockets, and an investigations board. Do not merge `production` into `main` until the user says
+so (they confirmed on Nov 8: wait until everything is done properly). Read the Next.js
 16 docs in `apps/web/node_modules/next/dist/docs/` before writing routes or `proxy.ts`.
 
 Lessons from this session: run `mypy` and read its whole output before pushing (a truncated

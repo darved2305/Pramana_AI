@@ -10,7 +10,6 @@ import { Wordmark } from "@/components/brand/Wordmark";
 import { VoiceField } from "@/components/voice/VoiceField";
 import { DeviceCheck } from "@/components/join/DeviceCheck";
 import { IconMic, IconPlay } from "@/components/ui/icons";
-import { core } from "@/lib/api/core";
 import { sim } from "@/lib/api/sim";
 import { ApiError, describeError } from "@/lib/api/http";
 import { decodeJoin, type JoinPayload } from "@/lib/join";
@@ -235,7 +234,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           setPhase("idle");
         },
       },
-      { callParticipantId: payload.p, playQuestion: false },
+      { callParticipantId: payload.p, playQuestion: false, organization: payload.o },
     );
     try {
       await Promise.race([
@@ -320,7 +319,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           done(session);
         },
       },
-      { playQuestion: false },
+      { playQuestion: false, organization: payload.o },
     );
     try {
       await Promise.race([
@@ -370,7 +369,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         if (preview) {
           setUnderstood("Recorded. (Preview: nothing was sent.)");
         } else {
-          const r = await core.answerByVoice(state.id, q.id, payload.p, wav, payload.t);
+          const r = await participantApi(payload).answerByVoice(q.id, wav);
           setUnderstood(`I heard "${r.stt.transcript}" and understood: ${heardAs(r.result.extraction)}`);
           setState(r.result.state);
         }
@@ -403,7 +402,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       // Never wait on resume(): it stays pending until the browser sees a user gesture.
       if (ctx.state === "suspended") void ctx.resume();
       listenRef.current?.stop();
-      const res = await core.questionAudioStream(state.id, q.id, payload.t);
+      const res = await participantApi(payload).questionAudioStream(q.id);
       const playback = playWavStream(res, ctx);
       listenRef.current = playback;
       await playback.done;

@@ -6,13 +6,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Path, Request, Response
 
-from pramana_contracts import ParticipantPatch, ParticipantSpec, SitePerson
+from pramana_contracts import ParticipantPatch, ParticipantSpec, PersonTrackRecord, SitePerson
 
 from .. import ids
+from ..db import Database
 from ..errors import not_found
 from ..idempotency import idempotent
 from ..people import SitePeople, person_etag, person_view
 from ..tenant_routes import OrganizationRoute
+from ..track_record import track_records
 
 EDITORS = ("operator", "owner", "admin")
 PersonId = Annotated[str, Path(pattern=r"^[A-Za-z0-9_.:-]{1,64}$")]
@@ -41,6 +43,18 @@ async def list_people(
     org: str, site_id: str, request: Request, response: Response
 ) -> list[SitePerson]:
     return [person_view(r) for r in await _people(request, response).listing(_site(site_id))]
+
+
+@router.get("/track-record")
+async def track_record(
+    org: str, site_id: str, request: Request, response: Response
+) -> list[PersonTrackRecord]:
+    """How often each person's answers matched causes that were later revealed or confirmed."""
+    site = _site(site_id)
+    await _people(request, response).listing(site)  # 404 for a site outside this workspace
+    db: Database = request.app.state.db
+    async with db.read() as session:
+        return await track_records(session, request.state.organization.organization.id, site)
 
 
 @router.post("", status_code=201)

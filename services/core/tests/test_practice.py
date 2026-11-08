@@ -135,3 +135,36 @@ def test_the_shared_practice_site_is_always_practice(account_core: TestClient) -
     started = post(client, f"/v1/orgs/{org}/investigations", body)
     assert started.status_code == 201, started.text
     assert started.json()["practice"] is True
+
+
+def test_track_record_counts_only_revealed_truth(account_core: TestClient) -> None:
+    client = account_core
+    workspace, investigations = published_water_site(client)
+    site = workspace["live_site"]["id"]
+    org = workspace["organization"]["slug"]
+    record_path = f"/v1/orgs/{org}/sites/{site}/people/track-record"
+    initial = post(client, investigations, request(site, "VALVE_F2.closed", practice=True)).json()
+
+    class Scoped:
+        def post(self, path: str, **kw: Any) -> Any:
+            return client.post(
+                path.replace("/v1/investigations", investigations),
+                headers={**CSRF, "Idempotency-Key": uuid.uuid4().hex, **kw.pop("headers", {})},
+                **kw,
+            )
+
+        def get(self, path: str, **kw: Any) -> Any:
+            return client.get(path.replace("/v1/investigations", investigations), **kw)
+
+    with TestClient(client.app.state.sim._http._transport.app) as sim:
+        final, _ = run_to_conclusion(Scoped(), sim, initial)  # type: ignore[arg-type]
+    # Nothing is known until the truth is: Pramana's own conclusion is not evidence.
+    assert client.get(record_path).json() == []
+    revealed = post(client, f"{investigations}/{final['id']}/reveal")
+    assert revealed.status_code == 200, revealed.text
+    records = {r["person_id"]: r for r in client.get(record_path).json()}
+    assert records, "someone answered"
+    for r in records.values():
+        assert r["matched"] == r["checked"] > 0  # the bot answered truthfully
+        assert r["investigations"] == 1
+        assert sum(k["checked"] for k in r["by_kind"]) == r["checked"]

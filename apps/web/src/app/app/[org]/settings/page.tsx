@@ -1,12 +1,14 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Avatar } from "@/components/app/Avatar";
 import { Badge, Button, Card, CardHeader, ErrorState, Field, Input, KeyValue, Notice, PageHeader, Skeleton } from "@/components/ui";
 import { IconCopy } from "@/components/ui/icons";
 import { actionKey } from "@/lib/api/account";
 import { describeError } from "@/lib/api/http";
-import type { CreateInvitation } from "@/lib/api/types";
+import type { CreateInvitation, WorkspaceMember } from "@/lib/api/types";
+import { refreshAccount } from "@/lib/data/account";
 import { relative } from "@/lib/data/derive";
 import { useLoad } from "@/lib/data/hooks";
 import { useWorkspace } from "@/lib/org/context";
@@ -23,6 +25,7 @@ const ROLE_HELP: { id: InvitedRole | "owner"; label: string; can: string }[] = [
 
 export default function WorkspaceSettingsPage() {
   const ws = useWorkspace();
+  const router = useRouter();
   const canManage = ws.roles.has("owner") || ws.roles.has("admin");
   const members = useLoad(`members|${ws.org.id}`, (s) => ws.api.members(s));
   const invitations = useLoad(canManage ? `invitations|${ws.org.id}` : null, (s) => ws.api.invitations(s));
@@ -70,25 +73,19 @@ export default function WorkspaceSettingsPage() {
         {members.status === "loading" ? <Skeleton className="h-24" /> : null}
         {members.status === "error" ? <ErrorState error={members.error} onRetry={members.reload} /> : null}
         {members.status === "ready" ? (
-          <ul className="flex flex-col divide-y divide-white/[.06]">
+          <ul className="flex flex-col divide-y divide-white/[.06]" aria-label="Members">
             {members.data.map((m) => (
-              <li key={`${m.display_name}-${m.joined_at}`} className="flex flex-wrap items-center gap-3 py-3">
-                <Avatar name={m.display_name} size={36} />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] text-fg">
-                    {m.display_name} {m.you ? <Badge>You</Badge> : null}
-                  </span>
-                  <span className="block text-[12px] text-muted">
-                    {m.email ?? "Address visible to owners and admins"} · joined {relative(m.joined_at)}
-                  </span>
-                </span>
-                <span className="flex flex-wrap gap-1.5">
-                  {m.roles.map((r) => (
-                    <Badge key={r} tone={r === "approver" ? "warn" : r === "owner" || r === "admin" ? "accent" : "muted"}>{r}</Badge>
-                  ))}
-                  {m.status !== "active" ? <Badge tone="warn">{m.status}</Badge> : null}
-                </span>
-              </li>
+              <MemberRow
+                key={m.id}
+                member={m}
+                canManage={canManage}
+                isOwner={ws.roles.has("owner")}
+                onChanged={members.reload}
+                onLeft={async () => {
+                  await refreshAccount();
+                  router.push("/app");
+                }}
+              />
             ))}
           </ul>
         ) : null}
@@ -190,3 +187,95 @@ export default function WorkspaceSettingsPage() {
     </div>
   );
 }
+
+const ALL_ROLES: WorkspaceMember["roles"] = ["owner", "admin", "operator", "approver", "viewer"];
+
+/** One member: their roles (editable by owners and admins), remove, or leave for yourself. */
+function MemberRow({
+  member: m,
+  canManage,
+  isOwner,
+  onChanged,
+  onLeft,
+}: {
+  member: WorkspaceMember;
+  canManage: boolean;
+  isOwner: boolean;
+  onChanged: () => void;
+  onLeft: () => void;
+}) {
+  const ws = useWorkspace();
+  const [roles, setRoles] = useState<WorkspaceMember["roles"] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const editing = roles !== null;
+  const current = roles ?? m.roles;
+  async function run(fn: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      return true;
+    } catch (x) {
+      setError(describeError(x));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <li className="flex flex-col gap-2 py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Avatar name={m.display_name} size={36} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] text-fg">
+            {m.display_name} {m.you ? <Badge>You</Badge> : null}
+          </span>
+          <span className="block text-[12px] text-muted">
+            {m.email ?? "Address visible to owners and admins"} · joined {relative(m.joined_at)}
+          </span>
+        </span>
+        {!editing ? (
+          <span className="flex flex-wrap gap-1.5">
+            {m.roles.map((r) => (
+              <Badge key={r} tone={r === "approver" ? "warn" : r === "owner" || r === "admin" ? "accent" : "muted"}>{r}</Badge>
+            ))}
+          </span>
+        ) : null}
+        <span className="flex gap-1">
+          {canManage && !editing ? <Button size="sm" variant="ghost" onClick={() => setRoles(m.roles)}>Change roles</Button> : null}
+          {m.you ? (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={async () => {
+              if (await run(() => ws.api.removeMember(m.id, { key: actionKey("leave") }))) onLeft();
+            }}>Leave</Button>
+          ) : canManage ? (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={async () => {
+              if (await run(() => ws.api.removeMember(m.id, { key: actionKey("remove") }))) onChanged();
+            }}>Remove</Button>
+          ) : null}
+        </span>
+      </div>
+      {editing ? (
+        <div className="flex flex-wrap items-center gap-2 pl-12">
+          {ALL_ROLES.filter((r) => r !== "owner" || isOwner).map((r) => {
+            const on = current.includes(r);
+            return (
+              <label key={r} className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] shadow-[inset_0_0_0_0.8px_var(--app-line)]">
+                <input type="checkbox" checked={on} onChange={() => setRoles(on ? current.filter((x) => x !== r) : [...current, r])} /> {r}
+              </label>
+            );
+          })}
+          <Button size="sm" variant="primary" disabled={busy || current.length === 0} onClick={async () => {
+            if (await run(() => ws.api.updateMember(m.id, current, { key: actionKey("roles") }))) {
+              setRoles(null);
+              onChanged();
+            }
+          }}>Save roles</Button>
+          <Button size="sm" variant="ghost" onClick={() => setRoles(null)}>Cancel</Button>
+        </div>
+      ) : null}
+      {error ? <p role="alert" className="pl-12 text-[13px] text-bad">{error}</p> : null}
+    </li>
+  );
+}
+

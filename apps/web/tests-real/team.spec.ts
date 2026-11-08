@@ -54,8 +54,29 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await expect(page).toHaveURL(new RegExp(`${base}$`));
   await page.goto(`${base}/settings`);
   await expect(page.getByRole("heading", { name: "Harbour Clinic" })).toBeVisible();
-  const members = page.getByRole("listitem").filter({ hasText: /joined/ });
+  const members = page.getByRole("list", { name: "Members" }).getByRole("listitem");
   await expect(members).toHaveCount(2);
   await expect(page.getByText(`${owner}@gmail.com`)).toHaveCount(0); // approvers do not see addresses
   await expect(page.getByRole("button", { name: "Create invitation link" })).toHaveCount(0);
+
+  // Back as the owner: change the teammate's roles, then remove them.
+  await page.request.post("/api/core/v1/auth/logout", { headers: { "X-Pramana-CSRF": "1" } });
+  await googleSignIn(page, owner, `${base}/settings`);
+  await expect(page).toHaveURL(new RegExp(`${base}/settings$`));
+  const memberList = page.getByRole("list", { name: "Members" });
+  const row = memberList.getByRole("listitem").filter({ hasText: `${mate}@gmail.com` });
+  await row.getByRole("button", { name: "Change roles" }).click();
+  await row.getByRole("checkbox", { name: "operator" }).check();
+  await row.getByRole("button", { name: "Save roles" }).click();
+  await expect(row.getByText("operator", { exact: true })).toBeVisible();
+  // The last owner cannot step down.
+  const me = memberList.getByRole("listitem").filter({ hasText: `${owner}@gmail.com` });
+  await me.getByRole("button", { name: "Change roles" }).click();
+  await me.getByRole("checkbox", { name: "owner" }).uncheck();
+  await me.getByRole("checkbox", { name: "admin" }).check();
+  await me.getByRole("button", { name: "Save roles" }).click();
+  await expect(me.getByText(/a workspace needs an owner/)).toBeVisible();
+  await me.getByRole("button", { name: "Cancel" }).click();
+  await row.getByRole("button", { name: "Remove" }).click();
+  await expect(memberList.getByRole("listitem").filter({ hasText: `${mate}@gmail.com` })).toHaveCount(0);
 });

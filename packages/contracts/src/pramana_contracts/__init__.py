@@ -89,7 +89,7 @@ from .invitations import (
     InvitationCreated,
     InvitationView,
 )
-from .members import WorkspaceMember
+from .members import UpdateMemberRoles, WorkspaceMember
 from .participants import LanguageProfile, ParticipantSpec
 from .reasoning import (
     BeliefSnapshot,
@@ -140,7 +140,7 @@ from .site_builder import (
     SiteModelDraft,
     SiteTemplateView,
 )
-from .site_people import SitePerson
+from .site_people import CheckRecord, PersonTrackRecord, SitePerson
 from .sites import SiteModelDocument, SiteModelSummary
 from .voice import CallState, MediaClientMessage, MediaServerMessage, SttResult, TtsRequest
 
@@ -162,6 +162,7 @@ __all__ = [
     "CallState",
     "CandidateScore",
     "CapabilityGrant",
+    "CheckRecord",
     "CreateInvestigation",
     "CreateInvitation",
     "CreateOrganization",
@@ -232,6 +233,7 @@ __all__ = [
     "ParticipantSpec",
     "ParticipantView",
     "PendingInvitation",
+    "PersonTrackRecord",
     "PlanDecision",
     "PlanKind",
     "PlanRule",
@@ -267,6 +269,7 @@ __all__ = [
     "SubmitAnswer",
     "TemplateLanguage",
     "TtsRequest",
+    "UpdateMemberRoles",
     "ViewItem",
     "ViewLabel",
     "VoiceAnswerResult",

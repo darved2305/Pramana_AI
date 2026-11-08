@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { answerTruthfully, openParticipant } from "./helpers";
 
 /** A brand-new person: mock Google sign-in, then a workspace of their own. */
 async function newWorkspace(page: Page, who: string) {
@@ -15,7 +16,7 @@ async function newWorkspace(page: Page, who: string) {
   return (await created.json()) as { organization: { slug: string; id: string }; live_site: { id: string } };
 }
 
-test("a new workspace describes its own site, checks it and publishes it", async ({ page }) => {
+test("a new workspace describes its own site, checks it and publishes it", async ({ page, browser }) => {
   test.setTimeout(120_000);
   const ws = await newWorkspace(page, `builder-${Date.now()}`);
   const base = `/app/${ws.organization.slug}`;
@@ -83,8 +84,29 @@ test("a new workspace describes its own site, checks it and publishes it", async
   await page.getByRole("button", { name: "Start investigation" }).click();
   await expect(page).toHaveURL(new RegExp(`${base}/investigations/inv_[0-9A-HJKMNP-TV-Z]{26}$`));
   await expect(page.getByRole("heading", { name: "No water on the second floor since morning" })).toBeVisible();
+  // A participant link from the workspace works on its own, with no staff session.
+  const invId = page.url().split("/").pop() as string;
+  const state = await (await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/investigations/${invId}`)).json();
+  const q = state.pending_question;
+  const model = await (await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/sites/${ws.live_site.id}/models/${state.site_model_id}`)).json();
+  const probeLabel = model.spec.probes.find((p: { id: string }) => p.id === q.action.probe_id).label as string;
+  const who = state.participants.find((p: { id: string }) => p.id === q.action.participant_id).display_name as string;
+  await page.getByRole("button", { name: "Participant links" }).first().click();
+  const row = page.getByRole("dialog", { name: "Participant links" }).getByRole("listitem").filter({ hasText: who });
+  await row.getByRole("button", { name: "Create link" }).click();
+  const joinUrl = (await row.getByRole("link").getAttribute("href")) as string;
+  await page.keyboard.press("Escape");
+  const phone = await openParticipant(browser, joinUrl);
+  await answerTruthfully(phone, q.text, probeLabel, false);
+  await expect.poll(async () => (await (await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/investigations/${invId}`)).json()).questions_asked).toBeGreaterThan(state.questions_asked);
+  await phone.context().close();
+
   await page.goto(`${base}/investigations`);
   await expect(page.getByText("No water on the second floor since morning")).toBeVisible();
+  // The board shows the same investigation in the column for its stage.
+  await page.getByRole("button", { name: "Board" }).click();
+  await expect(page).toHaveURL(/view=board$/);
+  await expect(page.getByLabel("Investigations by stage").getByText("No water on the second floor since morning")).toBeVisible();
 
   // Hiding a module is remembered by the core.
   await page.goto(base);

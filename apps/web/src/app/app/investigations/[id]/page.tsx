@@ -296,7 +296,7 @@ function LinksDialog({ open, onClose, state, preview }: { open: boolean; onClose
     setErr(null);
     try {
       const t = await scope.participantToken(state.id, pid);
-      const url = `${window.location.origin}/join/${encodeJoin({ i: state.id, p: pid, s: t.scenario_id, t: t.token, ...(scope.workspace ? { o: scope.workspace } : {}) })}`;
+      const url = `${window.location.origin}/join/${encodeJoin({ i: state.id, p: pid, s: t.scenario_id, t: t.token, ...(scope.workspace ? { o: (t as { org_id?: string }).org_id ?? scope.workspace } : {}) })}`;
       setLinks((l) => ({ ...l, [pid]: url }));
     } catch (e) {
       setErr(describeError(e));

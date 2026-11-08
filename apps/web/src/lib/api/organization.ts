@@ -16,6 +16,7 @@ import type {
   SiteModelDraft,
   SiteModelSummary,
   SitePerson,
+  PersonTrackRecord,
   SiteSummary,
   ParticipantPatch,
   WorkspaceHome,
@@ -59,11 +60,22 @@ export function organizationApi(org: string) {
     home: (signal?: AbortSignal) => request<WorkspaceHome>("core", `${root}/home`, { signal }),
     members: (signal?: AbortSignal) => request<WorkspaceMember[]>("core", `${root}/members`, { signal }),
     invitations: (signal?: AbortSignal) => request<InvitationView[]>("core", `${root}/invitations`, { signal }),
+    updateMember: (memberId: string, roles: WorkspaceMember["roles"], action: OrganizationAction) =>
+      request<WorkspaceMember>("core", `${root}/members/${enc(memberId)}`, {
+        method: "PATCH",
+        json: { roles },
+        signal: action.signal,
+        headers: { "Idempotency-Key": action.key },
+      }),
+    removeMember: (memberId: string, action: OrganizationAction) =>
+      mutate<void>(`${root}/members/${enc(memberId)}/remove`, undefined, action),
     invite: (body: CreateInvitation, action: OrganizationAction) =>
       mutate<InvitationCreated>(`${root}/invitations`, body, action),
     revokeInvitation: (id: string, action: OrganizationAction) =>
       mutate<void>(`${root}/invitations/${enc(id)}/revoke`, undefined, action),
     sites: (signal?: AbortSignal) => request<SiteSummary[]>("core", `${root}/sites`, { signal }),
+    trackRecord: (siteId: string, signal?: AbortSignal) =>
+      request<PersonTrackRecord[]>("core", `${site(siteId)}/people/track-record`, { signal }),
     people: (siteId: string, signal?: AbortSignal) =>
       request<SitePerson[]>("core", `${site(siteId)}/people`, { signal }),
     addPerson: (siteId: string, person: ParticipantSpec, action: OrganizationAction) =>

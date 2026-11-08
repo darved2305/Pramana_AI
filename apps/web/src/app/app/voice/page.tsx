@@ -21,10 +21,13 @@ export default function VoicePage() {
     const ctrl = new AbortController();
     const load = async () => {
       try {
-        const [s, u] = await Promise.all([core.voiceStatus(ctrl.signal), core.voiceUsage(ctrl.signal)]);
-        setStatus(s);
-        setUsage(u);
+        setStatus(await core.voiceStatus(ctrl.signal));
         setError(null);
+        // Spend and limits are platform-wide, so only staff may read them.
+        setUsage(await core.voiceUsage(ctrl.signal).catch((e) => {
+          if ((e as Error).name === "AbortError") throw e;
+          return null;
+        }));
       } catch (e) {
         if ((e as Error).name !== "AbortError") setError(e);
       }
@@ -40,28 +43,28 @@ export default function VoicePage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="Voice" subtitle="The speech service the core is using and today's spend, refreshed every 5 seconds." />
-      {error && !usage ? (
+      {error && !status ? (
         <Card>
           <ErrorState error={error} />
         </Card>
-      ) : !status || !usage ? (
+      ) : !status ? (
         <Skeleton className="h-[320px] rounded-[16px]" />
-      ) : (
+      ) : usage ? (
         <Meter status={status} usage={usage} />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ProviderCard status={status} />
+        </div>
       )}
     </div>
   );
 }
 
-function Meter({ status, usage }: { status: VoiceStatus; usage: VoiceUsage }) {
+function ProviderCard({ status }: { status: VoiceStatus }) {
   const live = status.provider === "gnani";
-  const budget = usage.limits.daily_budget_inr;
-  const share = budget > 0 ? Math.min(1, usage.spent_today_inr / budget) : 0;
-  const services = Object.entries(usage.by_service);
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="p-5" aria-label="Provider">
-        <CardHeader title="Provider" subtitle="Which speech service the core actually calls." />
+    <Card className="p-5" aria-label="Provider">
+      <CardHeader title="Provider" subtitle="Which speech service the core actually calls." />
         <dl className="mt-3 divide-y divide-line">
           <KeyValue
             k="Service"
@@ -81,6 +84,16 @@ function Meter({ status, usage }: { status: VoiceStatus; usage: VoiceUsage }) {
           </Notice>
         ) : null}
       </Card>
+  );
+}
+
+function Meter({ status, usage }: { status: VoiceStatus; usage: VoiceUsage }) {
+  const budget = usage.limits.daily_budget_inr;
+  const share = budget > 0 ? Math.min(1, usage.spent_today_inr / budget) : 0;
+  const services = Object.entries(usage.by_service);
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <ProviderCard status={status} />
 
       <Card className="p-5" aria-label="Spend today">
         <CardHeader title="Spend today" subtitle="Priced before each call is sent and recorded after it, in UTC days." />

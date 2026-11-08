@@ -57,6 +57,7 @@ export type HomeModule = S["HomeModule"];
 export type HomeSite = S["HomeSite"];
 export type HomeInvestigation = S["HomeInvestigation"];
 export type SitePerson = S["SitePerson"];
+export type PersonTrackRecord = S["PersonTrackRecord"];
 export type WorkspaceMember = S["WorkspaceMember"];
 export type InvitationView = S["InvitationView"];
 export type InvitationCreated = S["InvitationCreated"];

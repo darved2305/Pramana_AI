@@ -405,6 +405,30 @@
     "title": "Body_voice_answer_v1_investigations__inv_id__answers_voice_post",
     "type": "object"
    },
+   "Body_voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post": {
+    "properties": {
+     "audio": {
+      "contentMediaType": "application/octet-stream",
+      "title": "Audio",
+      "type": "string"
+     },
+     "participant_id": {
+      "title": "Participant Id",
+      "type": "string"
+     },
+     "question_id": {
+      "title": "Question Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "question_id",
+     "participant_id",
+     "audio"
+    ],
+    "title": "Body_voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post",
+    "type": "object"
+   },
    "CandidateScore": {
     "additionalProperties": false,
     "properties": {
@@ -513,6 +537,35 @@
      "instructions"
     ],
     "title": "CapabilityGrant",
+    "type": "object"
+   },
+   "CheckRecord": {
+    "additionalProperties": false,
+    "properties": {
+     "checked": {
+      "title": "Checked",
+      "type": "integer"
+     },
+     "kind": {
+      "enum": [
+       "device",
+       "visual",
+       "panel"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "matched": {
+      "title": "Matched",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "kind",
+     "checked",
+     "matched"
+    ],
+    "title": "CheckRecord",
     "type": "object"
    },
    "CreateInvestigation": {
@@ -3119,6 +3172,44 @@
     "title": "PendingInvitation",
     "type": "object"
    },
+   "PersonTrackRecord": {
+    "additionalProperties": false,
+    "description": "Answers this person gave in investigations whose true cause is known, and how many\nmatched it. Only revealed or confirmed causes count, never Pramana's own conclusion.",
+    "properties": {
+     "by_kind": {
+      "items": {
+       "$ref": "#/components/schemas/CheckRecord"
+      },
+      "title": "By Kind",
+      "type": "array"
+     },
+     "checked": {
+      "title": "Checked",
+      "type": "integer"
+     },
+     "investigations": {
+      "title": "Investigations",
+      "type": "integer"
+     },
+     "matched": {
+      "title": "Matched",
+      "type": "integer"
+     },
+     "person_id": {
+      "title": "Person Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "person_id",
+     "investigations",
+     "checked",
+     "matched",
+     "by_kind"
+    ],
+    "title": "PersonTrackRecord",
+    "type": "object"
+   },
    "PlanDecision": {
     "additionalProperties": false,
     "properties": {
@@ -4459,6 +4550,25 @@
     "title": "TtsRequest",
     "type": "object"
    },
+   "UpdateMemberRoles": {
+    "additionalProperties": false,
+    "properties": {
+     "roles": {
+      "items": {
+       "$ref": "#/components/schemas/OrganizationRole"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "title": "Roles",
+      "type": "array"
+     }
+    },
+    "required": [
+     "roles"
+    ],
+    "title": "UpdateMemberRoles",
+    "type": "object"
+   },
    "ValidationError": {
     "properties": {
      "ctx": {
@@ -4572,6 +4682,10 @@
       ],
       "title": "Email"
      },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
      "joined_at": {
       "format": "date-time",
       "title": "Joined At",
@@ -4599,6 +4713,7 @@
      }
     },
     "required": [
+     "id",
      "display_name",
      "email",
      "roles",
@@ -6506,6 +6621,75 @@
     ]
    }
   },
+  "/v1/orgs/{org}/investigations/{inv_id}/answers/voice": {
+   "post": {
+    "operationId": "voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_voice_answer_v1_orgs__org__investigations__inv_id__answers_voice_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VoiceAnswerResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Voice Answer",
+    "tags": [
+     "voice turns"
+    ]
+   }
+  },
   "/v1/orgs/{org}/investigations/{inv_id}/approvals": {
    "post": {
     "description": "Ask a human approver for a consequential action the decision calls for. The signed-in\naccount that asks is recorded; it cannot approve its own request.",
@@ -6945,6 +7129,56 @@
     ]
    }
   },
+  "/v1/orgs/{org}/investigations/{inv_id}/questions/{question_id}/audio": {
+   "get": {
+    "description": "The pending question, spoken in the participant's language (WAV).\n\nCached audio is one WAV. Otherwise the WAV is streamed while Timbre synthesises it\n(``X-Audio-Streamed: true``; its header has an open-ended data length, as Timbre's own\nWAVs do), so the browser can start playing before synthesis finishes.",
+    "operationId": "question_audio_v1_orgs__org__investigations__inv_id__questions__question_id__audio_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "question_id",
+      "required": true,
+      "schema": {
+       "title": "Question Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Question Audio",
+    "tags": [
+     "voice turns"
+    ]
+   }
+  },
   "/v1/orgs/{org}/investigations/{inv_id}/replay": {
    "get": {
     "description": "Rebuild the investigation from its event log and compare with the recorded belief.",
@@ -7333,6 +7567,148 @@
      }
     },
     "summary": "Members",
+    "tags": [
+     "members"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/members/{member_id}": {
+   "patch": {
+    "operationId": "update_member_v1_orgs__org__members__member_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "member_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,32}$",
+       "title": "Member Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateMemberRoles"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceMember"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Update Member",
+    "tags": [
+     "members"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/members/{member_id}/remove": {
+   "post": {
+    "description": "Owners and admins remove anyone; everyone may remove themselves (leave).",
+    "operationId": "remove_member_v1_orgs__org__members__member_id__remove_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "member_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,32}$",
+       "title": "Member Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Remove Member",
     "tags": [
      "members"
     ]
@@ -8081,6 +8457,62 @@
      }
     },
     "summary": "Add Person",
+    "tags": [
+     "people"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people/track-record": {
+   "get": {
+    "description": "How often each person's answers matched causes that were later revealed or confirmed.",
+    "operationId": "track_record_v1_orgs__org__sites__site_id__people_track_record_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/PersonTrackRecord"
+         },
+         "title": "Response Track Record V1 Orgs  Org  Sites  Site Id  People Track Record Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Track Record",
     "tags": [
      "people"
     ]

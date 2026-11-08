@@ -39,6 +39,7 @@ SITE_OPERATIONS = {
     ("post", "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/publish"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/discard"),
     ("get", "/v1/orgs/{org}/sites/{site_id}/people"),
+    ("get", "/v1/orgs/{org}/sites/{site_id}/people/track-record"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people"),
     ("patch", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/remove"),
