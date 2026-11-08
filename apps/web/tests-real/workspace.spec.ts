@@ -52,6 +52,13 @@ test("a new workspace describes its own site, checks it and publishes it", async
     page.getByLabel("Import equipment from CSV").setInputFiles({ name: "assets.csv", mimeType: "text/csv", buffer: Buffer.from(body) });
   await upload("name,type,location\nBooster,not_a_type,Plant room\n");
   await expect(page.getByText('Row 2: unknown equipment type "not_a_type".')).toBeVisible();
+  await page.getByLabel("Import equipment from CSV").setInputFiles({
+    name: "huge-assets.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.alloc(5 * 1024 * 1024 + 1, 0x61),
+  });
+  await expect(page.getByRole("alert", { name: "Import result" })).toContainText("Choose a CSV file no larger than 5 MB.");
+  await expect(page.getByRole("textbox", { name: "Equipment name" }).first()).toHaveValue("main power");
   await upload("name,type,location,floor,depends_on\nBooster unit,pump,Plant room,1,main power\n");
   await expect(page.getByText("Imported: 1 added, 0 updated, 1 new places.", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Save draft" }).click();

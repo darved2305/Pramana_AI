@@ -103,6 +103,14 @@ are in this report. `GCP_PROJECT_ID` is also in `.env`. No GCP APIs or resources
 created. The selected budget architecture and primary-source review are recorded in
 `CLOUD_BUDGET_REVIEW_2026-11-08.md`; the original HA defaults must not be applied.
 
+## Chrome first-time-user review, 2026-11-09
+
+The initial real-stack run in installed Chrome passed all 30 existing tests. The site builder's
+CSV importer had no file-size check and read the entire upload into browser memory. It now rejects
+files larger than 5 MB before reading them and announces the readable error to assistive
+technology. The real-stack workspace journey covers an oversized file and confirms the current
+draft stays unchanged. The focused workspace suite passed 2 tests after the fix.
+
 Email can use the local outbox in Slice 5 until a provider and sending identity are configured.
 Voice, LLM and telephony credentials are requested only when those integrations need them.
 

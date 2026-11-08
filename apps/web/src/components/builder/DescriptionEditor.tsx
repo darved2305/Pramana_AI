@@ -26,6 +26,7 @@ type Tab = "places" | "roles" | "equipment" | "noticed";
 
 const cell = "px-2 py-2 align-top";
 const head = "px-2 pb-2 text-left text-[12px] font-medium uppercase tracking-[0.06em] text-muted";
+const MAX_CSV_BYTES = 5 * 1024 * 1024;
 
 /** Edits a site description in place. Every change goes through ``onChange``; nothing saves here. */
 export function DescriptionEditor({
@@ -277,6 +278,10 @@ function CsvImport({ value, set, library }: { value: SiteDescription; set: Sette
   const [result, setResult] = useState<{ ok: boolean; lines: string[] } | null>(null);
   const read = async (file: File | undefined) => {
     if (!file) return;
+    if (file.size > MAX_CSV_BYTES) {
+      setResult({ ok: false, lines: ["This file is too large to import. Choose a CSV file no larger than 5 MB."] });
+      return;
+    }
     const r = importEquipment(value, await file.text(), library);
     if (!r.description) {
       setResult({ ok: false, lines: r.errors });
@@ -308,7 +313,7 @@ function CsvImport({ value, set, library }: { value: SiteDescription; set: Sette
         </a>
       </div>
       {result ? (
-        <ul aria-label="Import result" className={result.ok ? "text-fg" : "text-[var(--app-bad,#f87171)]"}>
+        <ul role={result.ok ? "status" : "alert"} aria-label="Import result" className={result.ok ? "text-fg" : "text-[var(--app-bad,#f87171)]"}>
           {result.lines.map((l) => (
             <li key={l}>{l}</li>
           ))}
