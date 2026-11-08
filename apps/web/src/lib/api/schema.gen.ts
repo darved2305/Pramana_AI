@@ -966,7 +966,7 @@ export interface paths {
         put?: never;
         /**
          * Create Invitation
-         * @description Returns the link once. Share it with the person; it works for their email only.
+         * @description Returns the link once, and emails it when Gmail is set up. It works for their email only.
          */
         post: operations["create_invitation_v1_orgs__org__invitations_post"];
         delete?: never;
@@ -2296,6 +2296,11 @@ export interface components {
         InvitationCreated: {
             /** Accept Path */
             accept_path: string;
+            /**
+             * Email Delivery
+             * @enum {string}
+             */
+            email_delivery: "sent" | "failed" | "not_configured";
             invitation: components["schemas"]["InvitationView"];
         };
         /** InvitationView */

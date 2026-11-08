@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     automation_key: SecretStr | None = Field(default=None, alias="CORE_AUTOMATION_KEY")
     """Shared secret for scripts and bots (``X-Automation-Key``): acts as operator and approver.
     Never sent to the browser."""
+    gmail_address: str | None = Field(default=None, alias="GMAIL_ADDRESS")
+    gmail_app_password: SecretStr | None = Field(default=None, alias="GMAIL_APP_PASSWORD")
+    public_web_url: str | None = Field(default=None, alias="PUBLIC_WEB_URL")
+    """The address people open the console at. Invitation emails need it for their link."""
     oidc_issuer: str = Field(default="https://accounts.google.com", alias="OIDC_ISSUER")
     oidc_discovery_url: str = Field(
         default="https://accounts.google.com/.well-known/openid-configuration",
@@ -162,6 +166,18 @@ class Settings(BaseSettings):
     @property
     def browser_sim_url(self) -> str:
         return self.sim_public_url or self.sim_url
+
+    @property
+    def invitation_link_base(self) -> str | None:
+        """Where emailed links point, or None when emailing them is not set up. Production
+        needs HTTPS, so a link with a secret in it is never mailed for plain HTTP."""
+        if not (self.gmail_address and self.gmail_app_password and self.public_web_url):
+            return None
+        parts = urlsplit(self.public_web_url)
+        allowed = ("https",) if self.mode == "production" else ("https", "http")
+        if parts.scheme not in allowed or not parts.hostname:
+            return None
+        return self.public_web_url.rstrip("/")
 
 
 @lru_cache(maxsize=1)

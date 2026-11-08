@@ -17,7 +17,7 @@ from pramana_contracts import (
 from .. import ids
 from ..errors import not_found
 from ..idempotency import IdempotencyRoute, idempotent
-from ..invitations import Invitations, invitation_view
+from ..invitations import Invitations, email_invitation, invitation_view
 from ..org_access import require_user
 from ..tenant_routes import OrganizationRoute
 
@@ -50,13 +50,24 @@ async def list_invitations(org: str, request: Request, response: Response) -> li
 async def create_invitation(
     org: str, body: CreateInvitation, request: Request, response: Response
 ) -> InvitationCreated:
-    """Returns the link once. Share it with the person; it works for their email only."""
+    """Returns the link once, and emails it when Gmail is set up. It works for their email only."""
     access = request.state.organization
     row, token = await _service(request, response).create(
         access.organization.id, request.state.principal, body
     )
     name = request.state.principal.display_name
-    return InvitationCreated(invitation=invitation_view(row, name), accept_path=f"/invite/{token}")
+    accept_path = f"/invite/{token}"
+    delivery = await email_invitation(
+        request.app.state.mailer,
+        request.app.state.settings.invitation_link_base,
+        row,
+        access.organization.name,
+        name,
+        accept_path,
+    )
+    return InvitationCreated(
+        invitation=invitation_view(row, name), accept_path=accept_path, email_delivery=delivery
+    )
 
 
 @router.post("/{invite_id}/revoke", status_code=204)

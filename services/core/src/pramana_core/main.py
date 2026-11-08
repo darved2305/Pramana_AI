@@ -45,6 +45,7 @@ from .invitations import Invitations
 from .language.extraction import RuleExtractor
 from .language.hybrid import HybridExtractor
 from .llm import LlmClient
+from .mail import GmailSmtp
 from .observability import RequestContextMiddleware, configure_logging, log
 from .people import SitePeople
 from .runtime.broadcast import EventBroadcaster
@@ -149,6 +150,11 @@ def create_app(
         app.state.site_models = StoredModels(db)
         app.state.site_people = SitePeople(db, app.state.vault)
         app.state.invitations = Invitations(db)
+        app.state.mailer = (
+            GmailSmtp(cfg.gmail_address, cfg.gmail_app_password)
+            if cfg.invitation_link_base and cfg.gmail_address and cfg.gmail_app_password
+            else None
+        )
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)

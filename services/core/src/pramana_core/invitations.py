@@ -8,10 +8,12 @@ The invited address must be the signed-in person's verified email.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import ColumnElement, func, select
 
@@ -23,8 +25,11 @@ from .accounts import organization_view
 from .auth.service import Principal
 from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, acting_for
 from .errors import ApiError, not_found
+from .mail import Mailer
+from .observability import log
 
 LIFETIME = timedelta(days=7)
+SEND_TIMEOUT_S = 6.0
 INVALID = "this invitation link is not valid"
 
 
@@ -65,6 +70,45 @@ def _audit(org_id: uuid.UUID, actor: str, action: str, row: InvitationRow) -> Au
         target_id=ids.encode("invite", row.id),
         details={"roles": sorted(row.roles)},
     )
+
+
+Delivery = Literal["sent", "failed", "not_configured"]
+
+
+async def email_invitation(
+    mailer: Mailer | None,
+    link_base: str | None,
+    row: InvitationRow,
+    workspace: str,
+    inviter: str,
+    accept_path: str,
+) -> Delivery:
+    """Email the accept link. Never raises: the invitation stands whatever happens here.
+
+    The link holds the secret, so failures are logged by type only, without the message.
+    On a timeout the worker thread may still finish, so "failed" means "not confirmed".
+    """
+    if mailer is None or not link_base:
+        return "not_configured"
+    subject = " ".join(f"Join {workspace} on Pramana".split())
+    text = (
+        f"{inviter} invited you to join {workspace} on Pramana.\n\n"
+        f"Open this link to accept:\n{link_base}{accept_path}\n\n"
+        f"It works for 7 days and only when you sign in as {row.email}.\n"
+        "If you were not expecting this, you can ignore this email.\n"
+    )
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(mailer.send, row.email, subject, text), SEND_TIMEOUT_S
+        )
+    except Exception as exc:
+        log.warning(
+            "invitation_email_not_confirmed",
+            error=type(exc).__name__,
+            invitation=ids.encode("invite", row.id),
+        )
+        return "failed"
+    return "sent"
 
 
 def _mask(email: str) -> str:

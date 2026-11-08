@@ -2266,13 +2266,23 @@
       "title": "Accept Path",
       "type": "string"
      },
+     "email_delivery": {
+      "enum": [
+       "sent",
+       "failed",
+       "not_configured"
+      ],
+      "title": "Email Delivery",
+      "type": "string"
+     },
      "invitation": {
       "$ref": "#/components/schemas/InvitationView"
      }
     },
     "required": [
      "invitation",
-     "accept_path"
+     "accept_path",
+     "email_delivery"
     ],
     "title": "InvitationCreated",
     "type": "object"
@@ -7623,7 +7633,7 @@
     ]
    },
    "post": {
-    "description": "Returns the link once. Share it with the person; it works for their email only.",
+    "description": "Returns the link once, and emails it when Gmail is set up. It works for their email only.",
     "operationId": "create_invitation_v1_orgs__org__invitations_post",
     "parameters": [
      {

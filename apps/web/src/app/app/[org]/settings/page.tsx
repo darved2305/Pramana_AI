@@ -7,7 +7,7 @@ import { Badge, Button, Card, CardHeader, ErrorState, Field, Input, KeyValue, No
 import { IconCopy } from "@/components/ui/icons";
 import { actionKey } from "@/lib/api/account";
 import { describeError } from "@/lib/api/http";
-import type { CreateInvitation, WorkspaceMember } from "@/lib/api/types";
+import type { CreateInvitation, InvitationCreated, WorkspaceMember } from "@/lib/api/types";
 import { refreshAccount } from "@/lib/data/account";
 import { relative } from "@/lib/data/derive";
 import { useLoad } from "@/lib/data/hooks";
@@ -33,7 +33,7 @@ export default function WorkspaceSettingsPage() {
   const [roles, setRoles] = useState<InvitedRole[]>(["operator"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [link, setLink] = useState<{ email: string; url: string } | null>(null);
+  const [link, setLink] = useState<{ email: string; url: string; delivery: InvitationCreated["email_delivery"] } | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function invite(e: React.FormEvent) {
@@ -43,7 +43,11 @@ export default function WorkspaceSettingsPage() {
     setError(null);
     try {
       const created = await ws.api.invite({ email: email.trim(), roles }, { key: actionKey("invite") });
-      setLink({ email: created.invitation.email, url: `${window.location.origin}${created.accept_path}` });
+      setLink({
+        email: created.invitation.email,
+        url: `${window.location.origin}${created.accept_path}`,
+        delivery: created.email_delivery,
+      });
       setCopied(false);
       setEmail("");
       invitations.reload();
@@ -128,7 +132,13 @@ export default function WorkspaceSettingsPage() {
           </form>
           {link ? (
             <Notice tone="ok" title={`Invitation link for ${link.email}`}>
-              <p>Copy it now: for safety it is not shown again. Creating a new one replaces it.</p>
+              {link.delivery === "sent" ? (
+                <p>We emailed this link to {link.email}. You can also copy it now: for safety it is not shown again.</p>
+              ) : link.delivery === "failed" ? (
+                <p>We could not confirm the email was sent, so please send this link yourself. Copy it now: for safety it is not shown again.</p>
+              ) : (
+                <p>Copy it now and send it to them: for safety it is not shown again. Creating a new one replaces it.</p>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <code className="max-w-full break-all rounded-[8px] bg-white/[.05] px-2 py-1 font-mono text-[12px]">{link.url}</code>
                 <Button

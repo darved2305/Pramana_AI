@@ -36,6 +36,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await page.getByRole("checkbox", { name: /Approver/ }).check();
   await page.getByRole("button", { name: "Create invitation link" }).click();
   const link = await page.locator("code").filter({ hasText: "/invite/org_" }).innerText();
+  await expect(page.getByText("Copy it now and send it to them")).toBeVisible(); // no Gmail set up here
   await expect(page.getByRole("list", { name: "Invitations" }).getByText("pending")).toBeVisible();
 
   // Someone else with the link cannot use it.
@@ -79,4 +80,21 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await me.getByRole("button", { name: "Cancel" }).click();
   await row.getByRole("button", { name: "Remove" }).click();
   await expect(memberList.getByRole("listitem").filter({ hasText: `${mate}@gmail.com` })).toHaveCount(0);
+
+  // The screen says truthfully whether the link was emailed. The core's answer is rewritten here,
+  // because this stack has no Gmail account and never sends a real message.
+  for (const [delivery, words] of [
+    ["sent", "We emailed this link to"],
+    ["failed", "We could not confirm the email was sent"],
+  ] as const) {
+    await page.route("**/invitations", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), email_delivery: delivery } });
+    });
+    await page.getByLabel("Their email address").fill(`${delivery}-${stamp}@example.com`);
+    await page.getByRole("button", { name: "Create invitation link" }).click();
+    await expect(page.getByText(words)).toBeVisible();
+    await page.unroute("**/invitations");
+  }
 });
