@@ -201,3 +201,49 @@ def test_a_member_may_leave_but_not_remove_others(account_core: TestClient) -> N
     assert post(client, f"/v1/orgs/{org}/members/{owner}/remove").status_code == 403
     assert post(client, f"/v1/orgs/{org}/members/{mate}/remove").status_code == 204
     assert client.get(f"/v1/orgs/{org}/members").status_code == 404
+
+
+def test_an_invited_person_sees_and_accepts_from_their_account(account_core: TestClient) -> None:
+    client = account_core
+    workspace = create(client).json()["organization"]
+    created = invite(client, workspace["slug"], APPROVER_EMAIL, ["viewer"])
+    other = invite(client, workspace["slug"], "someone.else@example.com", ["viewer"])
+
+    login(client, "approver")
+    pending = client.get("/v1/me").json()["pending_invitations"]
+    assert [p["id"] for p in pending] == [created["invitation"]["id"]]
+    assert pending[0]["organization_name"] == workspace["name"]
+    assert pending[0]["roles"] == ["viewer"]
+    assert "token" not in pending[0]
+    assert "email" not in pending[0]
+
+    # Somebody else's invitation cannot be accepted by id, and its address is not revealed.
+    stolen = post(
+        client,
+        "/v1/invitations/accept-pending",
+        {"organization_id": workspace["id"], "invitation_id": other["invitation"]["id"]},
+    )
+    assert stolen.status_code == 404
+    assert "someone" not in stolen.text
+    assert "so*" not in stolen.text
+
+    joined = post(
+        client,
+        "/v1/invitations/accept-pending",
+        {"organization_id": workspace["id"], "invitation_id": pending[0]["id"]},
+    )
+    assert joined.status_code == 200, joined.text
+    assert joined.json()["destination"] == f"/app/{workspace['slug']}"
+    me = client.get("/v1/me").json()
+    assert me["pending_invitations"] == []
+    assert [m["slug"] for m in me["memberships"]] == [workspace["slug"]]
+
+
+def test_withdrawn_invitations_leave_the_list(account_core: TestClient) -> None:
+    client = account_core
+    org = create(client).json()["organization"]["slug"]
+    created = invite(client, org, APPROVER_EMAIL, ["viewer"])
+    revoked = post(client, f"/v1/orgs/{org}/invitations/{created['invitation']['id']}/revoke")
+    assert revoked.status_code == 204
+    login(client, "approver")
+    assert client.get("/v1/me").json()["pending_invitations"] == []

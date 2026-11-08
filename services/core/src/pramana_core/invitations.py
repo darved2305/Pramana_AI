@@ -13,36 +13,19 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, Text, func, select
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ColumnElement, func, select
 
 from pramana_contracts import CreateInvitation, InvitationAccepted, InvitationView
 
 from . import ids
+from .account_rows import InvitationRow
 from .accounts import organization_view
 from .auth.service import Principal
-from .db import AuditLogRow, Base, Database, MembershipRow, OrganizationRow, UserRow, acting_for
+from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, acting_for
 from .errors import ApiError, not_found
 
 LIFETIME = timedelta(days=7)
 INVALID = "this invitation link is not valid"
-
-
-class InvitationRow(Base):
-    __tablename__ = "invitations"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"))
-    email: Mapped[str] = mapped_column(String(254))
-    roles: Mapped[list[str]] = mapped_column(ARRAY(Text))
-    token_hash: Mapped[bytes] = mapped_column(LargeBinary)
-    invited_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    accepted_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 def _hash(secret: str) -> bytes:
@@ -171,6 +154,28 @@ class Invitations:
             raise ApiError(404, "INVITATION_NOT_FOUND", INVALID) from exc
         if not secret:
             raise ApiError(404, "INVITATION_NOT_FOUND", INVALID)
+        return await self._join(
+            principal, org_id, InvitationRow.token_hash == _hash(secret), hide_email=False
+        )
+
+    async def accept_pending(
+        self, principal: Principal, org_ref: str, invite_ref: str
+    ) -> InvitationAccepted:
+        """Join from the list in ``/v1/me``. The verified email is the proof here."""
+        try:
+            org_id, invite_id = ids.decode("org", org_ref), ids.decode("invite", invite_ref)
+        except ValueError as exc:
+            raise ApiError(404, "INVITATION_NOT_FOUND", INVALID) from exc
+        return await self._join(principal, org_id, InvitationRow.id == invite_id, hide_email=True)
+
+    async def _join(
+        self,
+        principal: Principal,
+        org_id: uuid.UUID,
+        match: ColumnElement[bool],
+        *,
+        hide_email: bool,
+    ) -> InvitationAccepted:
         if not principal.email_verified:
             raise ApiError(
                 403, "EMAIL_VERIFICATION_REQUIRED", "verify your email before joining a workspace"
@@ -178,12 +183,10 @@ class Invitations:
         now = datetime.now(UTC)
         with acting_for(org_id, principal.id, actor=f"user:{principal.id}"):
             async with self.db.transaction() as session:
-                # The lookup is by hash; equality on a 256-bit digest leaks nothing useful.
+                # A hash lookup: equality on a 256-bit digest leaks nothing useful.
                 row = await session.scalar(
                     select(InvitationRow)
-                    .where(
-                        InvitationRow.org_id == org_id, InvitationRow.token_hash == _hash(secret)
-                    )
+                    .where(InvitationRow.org_id == org_id, match)
                     .with_for_update()
                 )
                 if row is None:
@@ -195,6 +198,8 @@ class Invitations:
                 if row.accepted_at is None and row.expires_at <= now:
                     raise ApiError(410, "INVITATION_EXPIRED", "this invitation has expired")
                 if principal.email.lower() != row.email:
+                    if hide_email:
+                        raise ApiError(404, "INVITATION_NOT_FOUND", INVALID)
                     raise ApiError(
                         403,
                         "INVITATION_EMAIL_MISMATCH",

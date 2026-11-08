@@ -48,6 +48,12 @@ export const accountApi = Object.freeze({
       json: { token },
       headers: { "Idempotency-Key": key },
     }),
+  acceptPendingInvitation: (organizationId: string, invitationId: string, key: string) =>
+    request<InvitationAccepted>("core", "/v1/invitations/accept-pending", {
+      method: "POST",
+      json: { organization_id: organizationId, invitation_id: invitationId },
+      headers: { "Idempotency-Key": key },
+    }),
   createOrganization: (body: CreateOrganization, key: string) =>
     request<OrganizationCreated>("core", "/v1/orgs", {
       method: "POST",

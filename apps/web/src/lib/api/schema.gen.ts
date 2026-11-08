@@ -514,6 +514,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invitations/accept-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Pending Invitation
+         * @description Accept an invitation listed in ``/v1/me``, sent to this verified address.
+         */
+        post: operations["accept_pending_invitation_v1_invitations_accept_pending_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/library/equipment": {
         parameters: {
             query?: never;
@@ -1409,6 +1429,13 @@ export interface components {
         AcceptInvitation: {
             /** Token */
             token: string;
+        };
+        /** AcceptPendingInvitation */
+        AcceptPendingInvitation: {
+            /** Invitation Id */
+            invitation_id: string;
+            /** Organization Id */
+            organization_id: string;
         };
         /** AccountPreferences */
         AccountPreferences: {
@@ -3921,6 +3948,56 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AcceptInvitation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationAccepted"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_pending_invitation_v1_invitations_accept_pending_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptPendingInvitation"];
             };
         };
         responses: {

@@ -7,7 +7,7 @@ import { clsx } from "clsx";
 import { Wordmark } from "@/components/brand/Wordmark";
 import { accountApi, actionKey } from "@/lib/api/account";
 import { ApiError, describeError } from "@/lib/api/http";
-import type { OnboardingAnswers, OnboardingState, OnboardingStep } from "@/lib/api/types";
+import type { CurrentAccount, OnboardingAnswers, OnboardingState, OnboardingStep } from "@/lib/api/types";
 import { refreshAccount, useAccount } from "@/lib/data/account";
 
 /** The steps a new person walks through, in order. ``join``/``waiting`` are for invitations. */
@@ -153,6 +153,9 @@ export default function OnboardingPage() {
           <p className="text-cream/60" aria-busy="true">Loading your setup...</p>
         ) : step === "welcome" ? (
           <Step title="Find out what is wrong by asking the people who are there" lead="When something breaks where there are no sensors, Pramana works out who can check what, asks them by voice in their own language, and reasons from their answers to the cause. Setting up takes a few minutes.">
+            {account.status === "ready" && (account.account.pending_invitations ?? []).length > 0 ? (
+              <Invitations invitations={account.account.pending_invitations ?? []} onJoined={(dest) => router.push(dest)} />
+            ) : null}
             <Primary busy={busy} onClick={() => go("survey")}>Get started</Primary>
           </Step>
         ) : step === "survey" ? (
@@ -323,5 +326,53 @@ function SiteStep({ slug, problem, busy, onNext }: { slug: string; problem: Prob
         <Secondary busy={busy} onClick={onNext}>Continue</Secondary>
       </div>
     </Step>
+  );
+}
+
+/** Workspaces that invited this verified address: joining needs no link. */
+function Invitations({
+  invitations,
+  onJoined,
+}: {
+  invitations: NonNullable<CurrentAccount["pending_invitations"]>;
+  onJoined: (destination: string) => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const keys = useRef(new Map<string, string>());
+
+  async function join(organizationId: string, id: string) {
+    setBusy(id);
+    setProblem(null);
+    const key = keys.current.get(id) ?? actionKey("accept");
+    keys.current.set(id, key);
+    try {
+      const joined = await accountApi.acceptPendingInvitation(organizationId, id, key);
+      await refreshAccount();
+      onJoined(joined.destination);
+    } catch (e) {
+      setProblem(describeError(e));
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section aria-label="Invitations" className="mb-8 flex flex-col gap-3">
+      <h2 className="text-[20px] font-medium text-cream">You have been invited</h2>
+      {problem ? <p className="text-[14px] text-[#ff8a7f]">{problem}</p> : null}
+      <ul className="flex flex-col gap-3">
+        {invitations.map((invite) => (
+          <li key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border-[0.8px] border-cream/25 px-4 py-3">
+            <span className="text-[16px] text-cream">
+              {invite.organization_name}
+              <span className="ml-2 text-[14px] text-cream/60">{invite.roles.join(", ")}</span>
+            </span>
+            <button type="button" className="btn-cream disabled:opacity-50" disabled={busy !== null} onClick={() => join(invite.organization_id, invite.id)}>
+              {busy === invite.id ? "Joining..." : "Join"}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

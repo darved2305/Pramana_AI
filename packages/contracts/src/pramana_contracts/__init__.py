@@ -84,6 +84,7 @@ from .investigation import (
 )
 from .invitations import (
     AcceptInvitation,
+    AcceptPendingInvitation,
     CreateInvitation,
     InvitationAccepted,
     InvitationCreated,
@@ -150,6 +151,7 @@ __all__ = [
     "TERMINAL_STATUSES",
     "UNKNOWN_OUTCOME",
     "AcceptInvitation",
+    "AcceptPendingInvitation",
     "AccountPreferences",
     "ActRequest",
     "ActResult",

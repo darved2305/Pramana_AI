@@ -52,6 +52,11 @@ class AcceptInvitation(StrictModel):
     token: str = Field(min_length=20, max_length=200)
 
 
+class AcceptPendingInvitation(StrictModel):
+    organization_id: str = Field(min_length=1, max_length=64)
+    invitation_id: str = Field(min_length=1, max_length=64)
+
+
 class InvitationAccepted(StrictModel):
     organization: OrganizationSummary
     destination: str

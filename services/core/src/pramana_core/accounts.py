@@ -27,12 +27,13 @@ from pramana_contracts.accounts import (
     OrganizationKind,
     OrganizationRole,
     OrganizationSummary,
+    PendingInvitation,
     PreferencesPatch,
     SiteSummary,
 )
 
 from . import ids
-from .account_rows import ModelTemplateRow, OnboardingRow, PreferenceRow
+from .account_rows import InvitationRow, ModelTemplateRow, OnboardingRow, PreferenceRow
 from .auth.service import Principal
 from .db import (
     AuditLogRow,
@@ -220,6 +221,25 @@ class AccountService:
                         .order_by(UserIdentityRow.created_at)
                     )
                 )
+                invited = (
+                    (
+                        await session.execute(
+                            select(InvitationRow, OrganizationRow.name)
+                            .join(OrganizationRow, OrganizationRow.id == InvitationRow.org_id)
+                            .where(
+                                InvitationRow.email == principal.email.lower(),
+                                InvitationRow.accepted_at.is_(None),
+                                InvitationRow.revoked_at.is_(None),
+                                InvitationRow.expires_at > datetime.now(UTC),
+                                OrganizationRow.deleted_at.is_(None),
+                            )
+                            .order_by(InvitationRow.created_at.desc())
+                            .limit(20)
+                        )
+                    ).all()
+                    if principal.email_verified
+                    else []
+                )
                 await session.flush()
                 orgs = [organization_view(org, roles) for org, roles in memberships]
                 onboard = onboarding_view(state)
@@ -246,6 +266,17 @@ class AccountService:
                         for identity in identities
                     ],
                     memberships=orgs,
+                    pending_invitations=[
+                        PendingInvitation(
+                            id=ids.encode("invite", row.id),
+                            organization_id=ids.encode("org", row.org_id),
+                            organization_name=name,
+                            roles=[OrganizationRole(role) for role in sorted(row.roles)],
+                            expires_at=row.expires_at,
+                        )
+                        for row, name in invited
+                        if row.org_id not in active_ids
+                    ],
                     onboarding=onboard,
                     destination=destination(onboard, orgs, preferred),
                     preferences=AccountPreferences(

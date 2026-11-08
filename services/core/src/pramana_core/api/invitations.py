@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request, Response
 
 from pramana_contracts import (
     AcceptInvitation,
+    AcceptPendingInvitation,
     CreateInvitation,
     InvitationAccepted,
     InvitationCreated,
@@ -79,3 +80,15 @@ async def accept_invitation(
 ) -> InvitationAccepted:
     principal = await require_user(request, verified=True)
     return await _service(request, response).accept(principal, body.token)
+
+
+@accept_router.post("/accept-pending")
+@idempotent("user", verified=True)
+async def accept_pending_invitation(
+    body: AcceptPendingInvitation, request: Request, response: Response
+) -> InvitationAccepted:
+    """Accept an invitation listed in ``/v1/me``, sent to this verified address."""
+    principal = await require_user(request, verified=True)
+    return await _service(request, response).accept_pending(
+        principal, body.organization_id, body.invitation_id
+    )

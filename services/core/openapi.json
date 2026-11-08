@@ -17,6 +17,29 @@
     "title": "AcceptInvitation",
     "type": "object"
    },
+   "AcceptPendingInvitation": {
+    "additionalProperties": false,
+    "properties": {
+     "invitation_id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Invitation Id",
+      "type": "string"
+     },
+     "organization_id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Organization Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "organization_id",
+     "invitation_id"
+    ],
+    "title": "AcceptPendingInvitation",
+    "type": "object"
+   },
    "AccountPreferences": {
     "additionalProperties": false,
     "properties": {
@@ -5974,6 +5997,67 @@
      }
     },
     "summary": "Accept Invitation",
+    "tags": [
+     "invitations"
+    ]
+   }
+  },
+  "/v1/invitations/accept-pending": {
+   "post": {
+    "description": "Accept an invitation listed in ``/v1/me``, sent to this verified address.",
+    "operationId": "accept_pending_invitation_v1_invitations_accept_pending_post",
+    "parameters": [
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AcceptPendingInvitation"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationAccepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Accept Pending Invitation",
     "tags": [
      "invitations"
     ]
