@@ -210,7 +210,7 @@ def test_each_scoped_investigation_route_rejects_other_org_before_body_validatio
         for method in definition
         if method in {"get", "post", "patch", "put", "delete"}
     ]
-    assert len(operations) == 15  # including question audio and spoken answers
+    assert len(operations) == 17  # including question audio, spoken answers and the two advisories
     for method, template in operations:
         for org in (a.workspace["organization"]["slug"], b["organization"]["slug"]):
             if "{inv_id}" not in template and org == b["organization"]["slug"]:
