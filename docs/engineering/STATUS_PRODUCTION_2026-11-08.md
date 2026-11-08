@@ -39,6 +39,11 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | Pending invitations in `/v1/me` | Pushed | `ef29567`: migration 0015 adds read-only policies limited to the signed-in person's verified email; `POST /v1/invitations/accept-pending`; shown on the welcome step. Invitation, account and RLS tests pass as the restricted role; UI 48 passed. The join button has no browser journey of its own yet |
 | Personal data vault, consent, erasure | Pushed | `b7ad488`: migration 0016 `person_keys`, `personal_texts`, `consents`; AES-256-GCM with one data key per person, wrapped by a master key held in the process (`PRAMANA_PII_KEY`, required in production). Cloud KMS is not wired: it replaces `MasterKey` at deployment. Directory names sealed, and for site investigations names, reports and transcripts stay out of events and rows; erasure also scrubs saved idempotent responses. `POST .../people/{id}/erase` and consent routes added. No UI for erasure or consent yet. Consent is recorded but nothing enforces it until R3 |
 
+| New kinds of site | Tested locally | `test_new_kinds_of_site.py`, through the real core and simulator by API, under owner and restricted database roles: a hospital, an office and a metro station built from empty, each reaching the right decision for two injected faults, with exact replay and seal. Also a contradicting witness, two simultaneous faults, self-approval refused, no hostel wording, nothing personal in the log. Medical gas and nurse call equipment types added. Not driven through the browser |
+| Real Google sign-in | Partly checked | First sign-in with the owner's account verified in the database on `localhost:3102`. Returning user, cancel at Google and wrong-account invitation not yet exercised on real Google |
+| Chrome first-time-user review | Partial | About a quarter of the journey. Fixes: `b03c5eb`, `4b15c68`, `2c66c00` |
+| Deployment | Not done | New free Supabase project (Singapore, migrated to 0016, `pramana_app` role, anon and authenticated access revoked). Cloud Run APIs enabled; no image or service. Do not apply `infra/gcp` defaults |
+
 ## Edge-case audit (PRODUCTION.md 6.2, ID/OR/DA rows)
 
 Matched by test name and scope, not by re-reading each assertion.

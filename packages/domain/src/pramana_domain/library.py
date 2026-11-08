@@ -201,6 +201,22 @@ def _instructions(verb_en: str, verb_hien: str, verb_hi: str, verb_mr: str) -> T
     }
 
 
+GAS_PRESSURE = CheckSpec(
+    id="pressure",
+    label="Pressure gauge on {name}",
+    outcomes=("normal", "low"),
+    rule="alive",
+    probe_class="panel",
+    skill="access",
+    exec_s=25,
+    question={
+        "en": "At {place}, read the pressure gauge on {name}. Is it normal, or low?",
+        "hi-en": "{place} pe {name} ka pressure gauge dekhiye. Woh normal hai, ya low?",
+        "hi": "{place} पर {name} का प्रेशर गेज देखिए। वह नॉर्मल है, या लो?",
+        "mr": "{place} वर {name} चा प्रेशर गेज बघा. तो नॉर्मल आहे, की लो?",
+    },
+)
+
 RESET = RepairSpec(
     id="reset",
     label="Reset a tripped breaker",
@@ -365,6 +381,23 @@ LIBRARY: dict[str, EquipmentType] = {
             [DISPLAY],
             [RESTART],
             keywords=("pos", "terminal", "kiosk", "monitor", "device"),
+        ),
+        _t(
+            "medical_gas_source",
+            "Medical gas source (oxygen bank, manifold, plant)",
+            [FailureSpec("depleted", "{name} out of supply", 0.004)],
+            [GAS_PRESSURE],
+            escalation="Call the biomedical engineer and gas supplier for {name}",
+            keywords=("oxygen", "o2", "manifold", "medical gas", "cylinder"),
+        ),
+        _t(
+            "nurse_call",
+            "Nurse call system",
+            [STOPPED],
+            [DISPLAY],
+            [RESTART],
+            escalation="Call the biomedical engineer for {name}",
+            keywords=("nurse call", "bedside call", "call bell"),
         ),
         _t(
             "server",
