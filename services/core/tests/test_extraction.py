@@ -755,3 +755,12 @@ def test_hindi_defer_request_does_not_answer_yes_no_question() -> None:
     )
     assert result.wants_to_stop
     assert result.outcome == "unknown"
+
+
+def test_a_sites_own_words_count_as_the_outcome() -> None:
+    words = {"dry": ["gone quiet", "टोंटी शांत"], "flowing": ["coming fine"]}
+    outcomes = ["flowing", "dry"]
+    assert X.extract_sync("the taps have gone quiet", outcomes).outcome == "unknown"
+    assert X.extract_sync("the taps have gone quiet", outcomes, words=words).outcome == "dry"
+    assert X.extract_sync("यहाँ टोंटी शांत है", outcomes, words=words).outcome == "dry"
+    assert X.extract_sync("it is coming fine", outcomes, words=words).outcome == "flowing"

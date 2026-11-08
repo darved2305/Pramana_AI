@@ -19,7 +19,7 @@ and Latin script) and Hinglish. Processing order matters:
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -980,6 +980,12 @@ def outcome_phrases(outcome: str) -> list[tuple[str, ...]]:
     return [own] if own else []
 
 
+def site_phrases(words: Mapping[str, Sequence[str]] | None, outcome: str) -> list[tuple[str, ...]]:
+    """Words a site's author listed for this outcome ("no water" for "dry")."""
+    said = (tuple(tokenize(w)) for w in (words or {}).get(outcome, ()))
+    return [p for p in said if p]
+
+
 FLIP = {"yes": "no", "no": "yes", "on": "off", "off": "on", "up": "tripped", "tripped": "up"}
 
 
@@ -1590,7 +1596,12 @@ def _remove_self_corrected(
 
 class Extractor(Protocol):
     async def extract(
-        self, text: str, outcomes: Sequence[str], *, question: str | None = None
+        self,
+        text: str,
+        outcomes: Sequence[str],
+        *,
+        question: str | None = None,
+        words: Mapping[str, Sequence[str]] | None = None,
     ) -> Extraction: ...
 
 
@@ -1598,16 +1609,30 @@ class RuleExtractor:
     """Deterministic, zero-latency extractor. Conservative: ambiguity yields ``unknown``."""
 
     async def extract(
-        self, text: str, outcomes: Sequence[str], *, question: str | None = None
+        self,
+        text: str,
+        outcomes: Sequence[str],
+        *,
+        question: str | None = None,
+        words: Mapping[str, Sequence[str]] | None = None,
     ) -> Extraction:
-        return self.extract_sync(text, outcomes, question=question)
+        return self.extract_sync(text, outcomes, question=question, words=words)
 
     def extract_sync(
-        self, text: str, outcomes: Sequence[str], *, question: str | None = None
+        self,
+        text: str,
+        outcomes: Sequence[str],
+        *,
+        question: str | None = None,
+        words: Mapping[str, Sequence[str]] | None = None,
     ) -> Extraction:
         tokens = tokenize(text)
         taken = [False] * len(tokens)
-        candidates = [m for o in outcomes for m in _find(tokens, outcome_phrases(o), o)]
+        candidates = [
+            m
+            for o in outcomes
+            for m in _find(tokens, outcome_phrases(o) + site_phrases(words, o), o)
+        ]
         # "lagta hai" is "it seems" unless it ends an answer phrase that started earlier:
         # "charge hone lagta hai" is "it starts charging", not a hedge.
         probable = [

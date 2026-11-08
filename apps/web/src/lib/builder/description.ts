@@ -42,6 +42,7 @@ export interface ServicePoint {
   outcomes: [string, string];
   served_by: Record<string, string>;
   exec_s?: number;
+  words?: Record<string, string[]>;
 }
 export interface SiteDescription {
   id: string;

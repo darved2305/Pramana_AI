@@ -587,7 +587,12 @@ class InvestigationService:
             return False
         if not alt:
             return False
-        heard = await self.extractor.extract(alt, outcomes, question=q.text)
+        heard = await self.extractor.extract(
+            alt,
+            outcomes,
+            question=q.text,
+            words=engine.model.pack.probe_by_id[q.probe_id].outcome_words,
+        )
         if heard.outcome != extraction.outcome or heard.injection_suspected:
             log.info(
                 "second_decode_disagrees",
@@ -1019,7 +1024,10 @@ class InvestigationService:
                         )
                     elif ans.text is not None:
                         extraction = await self.extractor.extract(
-                            ans.text, outcomes, question=q.text
+                            ans.text,
+                            outcomes,
+                            question=q.text,
+                            words=self._model_for(row).pack.probe_by_id[q.probe_id].outcome_words,
                         )
                     else:
                         if ans.outcome not in (*outcomes, UNKNOWN_OUTCOME):

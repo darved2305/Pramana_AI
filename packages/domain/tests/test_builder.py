@@ -206,3 +206,15 @@ def test_every_library_type_builds() -> None:
         }
         pack = build(SiteDescription.model_validate(desc)).pack
         assert pack.component_by_id["THING"].kind == type_id
+
+
+def test_a_sites_answer_words_reach_the_probe() -> None:
+    site = water_site()
+    point = site["service_points"][0]
+    low, high = point["outcomes"]
+    point["words"] = {high: ["nothing comes out"]}
+    built = build(SiteDescription.model_validate(site))
+    assert built.pack.probe_by_id[point["id"]].outcome_words == {high: ["nothing comes out"]}
+    point["words"] = {low: ["same"], high: ["Same "]}
+    with pytest.raises(ValueError, match="listed for both outcomes"):
+        SiteDescription.model_validate(site)

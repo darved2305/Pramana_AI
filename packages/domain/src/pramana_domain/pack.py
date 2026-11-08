@@ -186,6 +186,8 @@ class Probe(PackModel):
     """``rule`` probes: the first rule whose condition holds gives the outcome."""
     default: StrictStr | None = None
     """``rule`` probes: the outcome when no rule holds."""
+    outcome_words: dict[StrictStr, list[StrictStr]] = Field(default_factory=dict)
+    """Other ways people at this site say each outcome ("no water" for "dry")."""
 
     @property
     def is_device(self) -> bool:

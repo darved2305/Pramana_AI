@@ -74,6 +74,8 @@ class ServicePoint(_Model):
     served_by: dict[StrictStr, StrictStr] = Field(min_length=1)
     """Place id -> the equipment whose state people see there."""
     exec_s: int = Field(default=15, gt=0)
+    words: dict[Slug, list[StrictStr]] = Field(default_factory=dict)
+    """Other ways people here say each outcome, in any language."""
 
 
 class SiteDescription(_Model):
@@ -121,6 +123,14 @@ class SiteDescription(_Model):
                     errors.append(f"service point {sp.id}: unknown place {place!r}")
                 if eq not in equipment:
                     errors.append(f"service point {sp.id}: unknown equipment {eq!r}")
+            for outcome in sp.words:
+                if outcome not in sp.outcomes:
+                    errors.append(f"service point {sp.id}: unknown outcome {outcome!r}")
+            shared = {w.strip().casefold() for w in sp.words.get(sp.outcomes[0], [])} & {
+                w.strip().casefold() for w in sp.words.get(sp.outcomes[1], [])
+            }
+            if shared:
+                errors.append(f"service point {sp.id}: {sorted(shared)} listed for both outcomes")
             missing = set(LANGS) - set(sp.question)
             if missing:
                 errors.append(f"service point {sp.id}: question missing {sorted(missing)}")
@@ -248,6 +258,7 @@ def build(desc: SiteDescription) -> BuildResult:
                 "exec_s": sp.exec_s,
                 "observes": [{"at": at, "target": eq} for at, eq in sp.served_by.items()],
                 "templates": dict(sp.question),
+                **({"outcome_words": sp.words} if sp.words else {}),
             }
         )
     for e in desc.equipment:

@@ -361,6 +361,22 @@ function Noticed({ value, set }: { value: SiteDescription; set: Setter }) {
               </label>
             ))}
           </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {s.outcomes.map((outcome) => (
+              <label key={outcome} className="flex flex-col gap-1 text-[12px] text-fg-2">
+                Other ways people say {outcome.replace(/_/g, " ")} (comma separated)
+                <NeedsInput
+                  value={(s.words?.[outcome] ?? []).join(", ")}
+                  onCommit={(text) => {
+                    const said = text.split(",").map((w) => w.trim()).filter(Boolean);
+                    const words = { ...s.words, [outcome]: said };
+                    if (said.length === 0) delete words[outcome];
+                    update(i, { ...s, words });
+                  }}
+                />
+              </label>
+            ))}
+          </div>
           <div className="flex flex-col gap-2">
             <span className="text-[12px] text-fg-2">Served by</span>
             {Object.entries(s.served_by).map(([place, eq]) => (
