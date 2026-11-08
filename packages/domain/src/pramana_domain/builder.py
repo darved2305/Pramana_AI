@@ -302,17 +302,17 @@ def build(desc: SiteDescription) -> BuildResult:
     action_decisions: dict[str, list[str]] = {}
     for e in desc.equipment:
         etype = LIBRARY[e.type]
-        name = equipment_names[e.id]["en"]
+        display = equipment_names[e.id]["en"]
         for f in etype.failures:
             decision = f"{e.id}_{f.id}".upper()
             fix = repair_of.get((etype.id, f.id))
             if fix is not None:
                 repair = fix[1]
                 who = role_label.get(repair.trade, "technician").lower()
-                label = f"Send the {who} to {repair.verb} {name}"
+                label = f"Send the {who} to {repair.verb} {display}"
                 action_decisions.setdefault(f"{repair.id}_{etype.id}", []).append(decision)
             else:
-                label = etype.escalation.format(name=name)
+                label = etype.escalation.format(name=display)
                 loss_by_decision[decision] = 45.0
             decision_classes.append(
                 {"id": decision, "label": label, "hypotheses": [f"{e.id}.{f.id}"]}
