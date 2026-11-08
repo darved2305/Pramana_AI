@@ -34,6 +34,7 @@ from pramana_domain.pack import default_packs_dir
 
 from .db import Database, DirectoryParticipantRow, InvestigationRow, current_org
 from .errors import ApiError, not_found
+from .vault import ERASED_REPORT, SEALED, PersonVault
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -56,6 +57,7 @@ class ConsoleQueries:
     db: Database
     packs_dir: Path
     reports_dir: Path
+    vault: PersonVault | None = None
 
     # -- packs -------------------------------------------------------------------------------
 
@@ -189,6 +191,13 @@ class ConsoleQueries:
                 .scalars()
                 .all()
             )
+            sealed = [r.id for r in rows if r.request["report"]["text"] == SEALED]
+            org = current_org.get()
+            texts = (
+                await self.vault.texts(session, org, sealed)
+                if self.vault is not None and org is not None
+                else {}
+            )
         items = [
             InvestigationSummary(
                 id=r.id,
@@ -196,7 +205,13 @@ class ConsoleQueries:
                 status=InvestigationStatus(r.status),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
-                report_text=r.request["report"]["text"],
+                report_text=(
+                    r.request["report"]["text"]
+                    if r.request["report"]["text"] != SEALED
+                    else texts.get(
+                        (r.id, "report", r.request["report"]["reporter_id"]), ERASED_REPORT
+                    )
+                ),
                 reporter_id=r.request["report"]["reporter_id"],
                 participant_count=len(r.request.get("participants", [])),
                 decision_class=(r.outcome or {}).get("decision_class"),
@@ -270,8 +285,13 @@ class ConsoleQueries:
         )
 
 
-def make_queries(db: Database, reports_dir: str) -> ConsoleQueries:
+def make_queries(
+    db: Database, reports_dir: str, vault: PersonVault | None = None
+) -> ConsoleQueries:
     rd = Path(reports_dir)
     return ConsoleQueries(
-        db=db, packs_dir=default_packs_dir(), reports_dir=rd if rd.is_absolute() else REPO_ROOT / rd
+        db=db,
+        packs_dir=default_packs_dir(),
+        reports_dir=rd if rd.is_absolute() else REPO_ROOT / rd,
+        vault=vault,
     )

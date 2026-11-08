@@ -16,7 +16,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import secrets
+import uuid
 import weakref
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
@@ -110,6 +112,7 @@ from .language.realize import CONFIRM_PREFIX, realize, realize_challenge
 from .observability import log
 from .sim_client import SimClient
 from .site_models import PinnedModel, StoredModels
+from .vault import ERASED_NAME, ERASED_REPORT, SEALED, PersonRef, PersonVault
 
 
 @dataclass(frozen=True)
@@ -147,6 +150,53 @@ def _not_pending(status: str) -> str:
     }.get(status, "question already answered")
 
 
+_TOKEN = re.compile("\u27e6([^\u27e7]+)\u27e7")
+
+
+def person_token(person_id: str) -> str:
+    """Stands for a person in stored text; the name is filled in only when it is read."""
+    return f"\u27e6{person_id}\u27e7"
+
+
+def named(
+    payload: dict[str, Any], inv_id: str, texts: dict[tuple[str, str, str], str]
+) -> dict[str, Any]:
+    """The payload with people's names put back, or "Erased person" if their key is gone."""
+
+    def swap(match: re.Match[str]) -> str:
+        return texts.get((inv_id, "name", match.group(1)), ERASED_NAME)
+
+    loaded: dict[str, Any] = json.loads(_TOKEN.sub(swap, json.dumps(payload, ensure_ascii=False)))
+    return loaded
+
+
+def _real_people(
+    people: list[ParticipantSpec], inv_id: str, texts: dict[tuple[str, str, str], str]
+) -> list[ParticipantSpec]:
+    return [
+        p.model_copy(update={"display_name": texts.get((inv_id, "name", p.id), ERASED_NAME)})
+        if p.display_name == SEALED
+        else p
+        for p in people
+    ]
+
+
+def _real_report(report: Report, inv_id: str, texts: dict[tuple[str, str, str], str]) -> Report:
+    if report.text != SEALED:
+        return report
+    text = texts.get((inv_id, "report", report.reporter_id), ERASED_REPORT)
+    return report.model_copy(update={"text": text})
+
+
+def _real_observation(
+    obs: Observation, inv_id: str, texts: dict[tuple[str, str, str], str]
+) -> Observation:
+    if obs.transcript is not None:
+        return obs
+    text = texts.get((inv_id, "transcript", obs.id))
+    return obs if text is None else obs.model_copy(update={"transcript": text})
+
+
 class InvestigationService:
     ENGINE_CACHE_MAX = 32
 
@@ -157,11 +207,13 @@ class InvestigationService:
         extractor: Extractor,
         signing_key_b64: str,
         engine_config: EngineConfig | None = None,
+        vault: PersonVault | None = None,
         browser_sim_url: str = "http://127.0.0.1:8100",
         require_saved_models: bool = False,
     ) -> None:
         self.browser_sim_url = browser_sim_url
         self.db = db
+        self.vault = vault
         self.sim = sim
         self.extractor = extractor
         self._signing_key = private_key_from_b64(signing_key_b64)
@@ -208,6 +260,17 @@ class InvestigationService:
         self._cache[inv_id] = (version, engine)
         while len(self._cache) > self.ENGINE_CACHE_MAX:
             self._cache.popitem(last=False)
+
+    def _sealing(self, site_id: uuid.UUID | None) -> PersonVault | None:
+        """The vault, for investigations on a saved site. Legacy synthetic runs stay as they are."""
+        return self.vault if site_id is not None else None
+
+    async def _texts(
+        self, session: AsyncSession, row: InvestigationRow
+    ) -> dict[tuple[str, str, str], str]:
+        if self.vault is None or row.site_id is None:
+            return {}
+        return await self.vault.texts(session, row.org_id, [row.id])
 
     @staticmethod
     def _event(
@@ -320,7 +383,7 @@ class InvestigationService:
                 )
         return engine, len(rows)
 
-    def _record_observation(
+    async def _record_observation(
         self,
         session: AsyncSession,
         inv_id: str,
@@ -331,6 +394,7 @@ class InvestigationService:
         question_id: str | None,
         modality: str,
         transcript: str | None,
+        site_id: uuid.UUID | None = None,
     ) -> tuple[Observation, ObserveResult]:
         try:
             result = engine.observe(ev)
@@ -354,7 +418,23 @@ class InvestigationService:
             else ObservationState.DISCARDED,
             committed_at=_now(),
         )
-        session.add(ObservationRow(investigation_id=inv_id, **obs.model_dump()))
+        vault = self._sealing(site_id)
+        stored_obs = obs.model_dump()
+        extraction_stored = extraction
+        if vault is not None and site_id is not None:
+            # Words stay out of the row and the log; only the person's key can read them.
+            stored_obs["transcript"] = None
+            extraction_stored = extraction.model_copy(update={"evidence": []})
+        session.add(ObservationRow(investigation_id=inv_id, **stored_obs))
+        if vault is not None and site_id is not None and transcript:
+            await vault.keep(
+                session,
+                self._person(site_id, ev.participant_id),
+                investigation_id=inv_id,
+                kind="transcript",
+                item=obs.id,
+                text=transcript,
+            )
         self._event(
             session,
             inv_id,
@@ -375,7 +455,7 @@ class InvestigationService:
                 "superseded_previous": result.superseded,
                 "contradiction": result.contradiction,
                 "surprise_bits": result.surprise_bits,
-                "extraction": extraction.model_dump(mode="json"),
+                "extraction": extraction_stored.model_dump(mode="json"),
                 "decision_critical": result.decision_critical,
                 "multiple_faults_suspected": result.multiple_faults_suspected,
             },
@@ -396,7 +476,11 @@ class InvestigationService:
             )
         if result.disagreements:
             row_pack = engine.model.pack
-            names = {p.spec.id: p.spec.display_name for p in engine.participants.values()}
+            names = (
+                {p.spec.id: person_token(p.spec.id) for p in engine.participants.values()}
+                if vault is not None
+                else {p.spec.id: p.spec.display_name for p in engine.participants.values()}
+            )
             for d in result.disagreements:
                 view = disagreement_view(row_pack, names, d, obs.id)
                 self._event(session, inv_id, "DisagreementExplained", view.model_dump(mode="json"))
@@ -880,6 +964,11 @@ class InvestigationService:
         stored["scenario"] = {"seed": req.scenario.seed, "fault": "sealed"}
         # Everything is simulated today: the shared sandbox, the legacy pack path and
         # practice runs on a site's own model. Live runs will store False here.
+        vault = self._sealing(pinned.site_id if pinned else None)
+        if vault is not None:
+            for person in stored["participants"]:
+                person["display_name"] = SEALED
+            stored["report"]["text"] = SEALED
         stored["practice"] = (
             pinned is None or pinned.sandbox or bool(getattr(req, "practice", False))
         )
@@ -904,6 +993,8 @@ class InvestigationService:
         async with self._lock(inv_id), self.db.transaction() as session:
             session.add(row)
             await session.flush()
+            if vault is not None and pinned is not None:
+                await self._keep_request(session, vault, row, pinned.site_id, req)
             self._event(
                 session,
                 inv_id,
@@ -925,13 +1016,46 @@ class InvestigationService:
                     "engine_model_version": MODEL_VERSION,
                 },
             )
-            self._event(session, inv_id, "ReportReceived", req.report.model_dump(mode="json"))
+            self._event(session, inv_id, "ReportReceived", stored["report"])
             await self._intake(session, row, engine, req)
             await self._schedule(session, row, engine)
             row.version = 1
         self._cache_engine(inv_id, row.version, engine)
         log.info("investigation_created", investigation_id=inv_id, status=row.status)
         return await self.get(inv_id)
+
+    @staticmethod
+    def _person(site_id: uuid.UUID, person_id: str) -> PersonRef:
+        org = current_org.get()
+        if org is None:
+            raise not_found("organization")
+        return PersonRef(org, site_id, person_id)
+
+    async def _keep_request(
+        self,
+        session: AsyncSession,
+        vault: PersonVault,
+        row: InvestigationRow,
+        site_id: uuid.UUID,
+        req: CreateInvestigation | CreateSiteInvestigation,
+    ) -> None:
+        for person in req.participants:
+            await vault.keep(
+                session,
+                self._person(site_id, person.id),
+                investigation_id=row.id,
+                kind="name",
+                item=person.id,
+                text=person.display_name,
+            )
+        await vault.keep(
+            session,
+            self._person(site_id, req.report.reporter_id),
+            investigation_id=row.id,
+            kind="report",
+            item=req.report.reporter_id,
+            text=req.report.text,
+        )
 
     async def _intake(
         self,
@@ -951,7 +1075,12 @@ class InvestigationService:
         if extraction is None:
             return
         if extraction.outcome == UNKNOWN_OUTCOME:
-            self._event(session, row.id, "IntakeUnmapped", extraction.model_dump(mode="json"))
+            unmapped = (
+                extraction.model_copy(update={"evidence": []})
+                if self._sealing(row.site_id) is not None
+                else extraction
+            )
+            self._event(session, row.id, "IntakeUnmapped", unmapped.model_dump(mode="json"))
             return
         ev = Evidence(
             reporter.id,
@@ -961,7 +1090,7 @@ class InvestigationService:
             extraction.hedge,
             extraction.directness,
         )
-        _ = self._record_observation(
+        _ = await self._record_observation(
             session,
             row.id,
             engine,
@@ -970,6 +1099,7 @@ class InvestigationService:
             question_id=None,
             modality="text",
             transcript=req.report.text,
+            site_id=row.site_id,
         )
 
     async def answer(
@@ -1063,7 +1193,7 @@ class InvestigationService:
                         version = row.version
                         continue_planning = False
                     else:
-                        obs, observed = self._record_observation(
+                        obs, observed = await self._record_observation(
                             session,
                             inv_id,
                             engine,
@@ -1072,6 +1202,7 @@ class InvestigationService:
                             question_id=q.id,
                             modality=ans.modality.value,
                             transcript=ans.text,
+                            site_id=row.site_id,
                         )
                         await self._supersede(session, inv_id, obs)
                         continue_planning = True
@@ -1248,6 +1379,7 @@ class InvestigationService:
                     .order_by(EventRow.seq)
                 )
             ).all()
+            texts = await self._texts(session, row)
         checks: dict[str, PresenceCheckView] = {}
         disagreements: list[DisagreementView] = []
         for type_, payload in testimony:
@@ -1265,7 +1397,11 @@ class InvestigationService:
                     update={"status": "passed" if payload["passed"] else "failed"}
                 )
             elif type_ == "DisagreementExplained":
-                disagreements.append(DisagreementView.model_validate(payload))
+                disagreements.append(
+                    DisagreementView.model_validate(
+                        named(payload, inv_id, texts) if texts or row.site_id else payload
+                    )
+                )
         model = self._model_for(row)
         waiting = [
             self._question_view(model, q)
@@ -1282,8 +1418,8 @@ class InvestigationService:
             else None,
             status=InvestigationStatus(row.status),
             created_at=row.created_at,
-            report=req.report,
-            participants=req.participants,
+            report=_real_report(req.report, row.id, texts),
+            participants=_real_people(req.participants, row.id, texts),
             sealed_commitment=row.commitment,
             belief=snapshot,
             plan=plan,
@@ -1296,7 +1432,13 @@ class InvestigationService:
             practice=bool(row.request.get("practice", True)),
             repair_options=self._repair_options(model.pack, row, req.participants),
             observations=[
-                Observation.model_validate({c: getattr(o, c) for c in Observation.model_fields})
+                _real_observation(
+                    Observation.model_validate(
+                        {c: getattr(o, c) for c in Observation.model_fields}
+                    ),
+                    row.id,
+                    texts,
+                )
                 for o in observations
             ],
             questions_asked=len(questions),
@@ -1365,7 +1507,7 @@ class InvestigationService:
 
     async def events(self, inv_id: str, after_seq: int, limit: int) -> list[EventEnvelope]:
         async with self.db.read() as session:
-            await self._load_row(session, inv_id, lock=False)
+            row = await self._load_row(session, inv_id, lock=False)
             rows = (
                 (
                     await session.execute(
@@ -1378,12 +1520,16 @@ class InvestigationService:
                 .scalars()
                 .all()
             )
+            needs_names = any(r.type == "DisagreementExplained" for r in rows)
+            texts = await self._texts(session, row) if needs_names else {}
         return [
             EventEnvelope(
                 seq=r.seq,
                 investigation_id=r.investigation_id,
                 type=r.type,
-                payload=r.payload,
+                payload=named(r.payload, inv_id, texts)
+                if r.type == "DisagreementExplained" and row.site_id
+                else r.payload,
                 ts=r.ts,
             )
             for r in rows

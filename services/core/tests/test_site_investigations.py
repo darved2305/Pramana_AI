@@ -353,6 +353,7 @@ def test_production_has_no_legacy_file_or_unscoped_investigation_routes(migrated
     cfg = core_settings(
         migrated_db,
         PRAMANA_MODE="production",
+        PRAMANA_PII_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
         AUTH_REQUIRED=True,
         CORE_AUTOMATION_KEY="",
         SESSION_COOKIE_SECURE=True,

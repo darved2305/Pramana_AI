@@ -24,6 +24,7 @@ from pramana_contracts import (
 from . import ids
 from .db import InvestigationRow, SiteModelRow, SiteRow
 from .people import SitePersonRow
+from .vault import ERASED_REPORT, SEALED, PersonVault
 
 ACTIVE = {"investigating", "awaiting_approval", "acting", "verifying"}
 CONCLUDED = {"verified", "not_verified", "closed", "abstained"}
@@ -159,6 +160,18 @@ def _decision_labels(spec: dict[str, Any] | None) -> dict[str, str]:
     return {d["id"]: d["label"] for d in (spec or {}).get("decision_classes", [])}
 
 
+def _stored_report(row: InvestigationRow) -> str:
+    return str((row.request.get("report") or {}).get("text", ""))
+
+
+def _report_text(row: InvestigationRow, texts: dict[tuple[str, str, str], str]) -> str:
+    stored = _stored_report(row)
+    if stored != SEALED:
+        return stored
+    reporter = str((row.request.get("report") or {}).get("reporter_id", ""))
+    return texts.get((row.id, "report", reporter), ERASED_REPORT)
+
+
 async def load_facts(
     session: AsyncSession,
     org_id: Any,
@@ -166,6 +179,7 @@ async def load_facts(
     display_name: str,
     roles: frozenset[str],
     layout: dict[str, Any],
+    vault: PersonVault | None = None,
 ) -> HomeFacts:
     sites = list(
         await session.scalars(
@@ -187,6 +201,8 @@ async def load_facts(
             .limit(200)
         )
     )
+    sealed = [r.id for r in rows if _stored_report(r) == SEALED]
+    texts = await vault.texts(session, org_id, sealed) if vault is not None else {}
     open_by_site: dict[Any, int] = {}
     for r in rows:
         if r.status in ACTIVE | {"decided"}:
@@ -223,7 +239,7 @@ async def load_facts(
             id=r.id,
             site_id=ids.encode("site", r.site_id) if r.site_id else None,
             status=r.status,
-            report_text=str((r.request.get("report") or {}).get("text", ""))[:200],
+            report_text=_report_text(r, texts)[:200],
             decision_label=_decision_labels(model.spec if model else None).get(decision)
             if decision
             else None,

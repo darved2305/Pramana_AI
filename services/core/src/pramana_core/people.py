@@ -7,6 +7,7 @@ as a precondition, so two editors cannot silently overwrite each other.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -18,9 +19,12 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    bindparam,
     func,
     inspect,
     select,
+    text,
+    update,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,10 +41,15 @@ from pramana_domain import DomainPack
 from pramana_domain.spec_storage import load_spec
 
 from . import ids
+from .account_rows import IdempotencyRow
 from .auth.service import Principal
 from .db import AuditLogRow, Base, Database, SiteModelRow, SiteRow, current_org
 from .errors import ApiError, not_found
 from .vault import SEALED, PersonKeyRow, PersonRef, PersonVault
+
+_ERASED_RESPONSE = json.dumps(
+    {"error": {"code": "PERSON_ERASED", "message": "this response named someone since erased"}}
+).encode()
 
 
 class SitePersonRow(Base):
@@ -281,6 +290,19 @@ class SitePeople:
             await self.vault.erase(session, ref)
             if row is not None:
                 await session.delete(row)
+            # Saved responses repeat names and reports. Keep the claim, so an old retry still
+            # cannot run twice, but drop the words.
+            await session.execute(
+                update(IdempotencyRow)
+                .where(
+                    IdempotencyRow.org_id == site.org_id,
+                    IdempotencyRow.response_body.is_not(None),
+                    text("position(:person in response_body) > 0").bindparams(
+                        bindparam("person", json.dumps(person_id).encode(), type_=LargeBinary)
+                    ),
+                )
+                .values(response_status=410, response_body=_ERASED_RESPONSE, response_headers={})
+            )
             session.add(
                 AuditLogRow(
                     id=ids.uuid7(),

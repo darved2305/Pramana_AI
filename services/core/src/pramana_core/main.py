@@ -129,6 +129,7 @@ def create_app(
         app.state.question_audio = QuestionAudioCache(
             disk_dir=Path(cfg.tts_cache_dir) if cfg.tts_cache_dir else None
         )
+        app.state.vault = PersonVault(master_key(cfg))
         app.state.investigations = InvestigationService(
             db,
             sim,
@@ -136,6 +137,7 @@ def create_app(
             cfg.participant_signing_key.get_secret_value(),
             browser_sim_url=cfg.browser_sim_url,
             require_saved_models=cfg.mode == "production",
+            vault=app.state.vault,
         )
         app.state.auth = AuthService(
             db,
@@ -145,7 +147,6 @@ def create_app(
         )
         app.state.accounts = AccountService(db)
         app.state.site_models = StoredModels(db)
-        app.state.vault = PersonVault(master_key(cfg))
         app.state.site_people = SitePeople(db, app.state.vault)
         app.state.invitations = Invitations(db)
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
@@ -154,7 +155,7 @@ def create_app(
         app.state.participant_public_key = participant_public_key(
             cfg.participant_signing_key.get_secret_value()
         )
-        app.state.console = make_queries(db, cfg.eval_reports_dir)
+        app.state.console = make_queries(db, cfg.eval_reports_dir, app.state.vault)
         broadcaster = EventBroadcaster()
         db.commit_listeners.append(broadcaster.publish)
         app.state.broadcaster = broadcaster

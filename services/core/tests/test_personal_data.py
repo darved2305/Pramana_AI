@@ -10,9 +10,12 @@ import pytest
 from auth_testkit import CSRF, login
 from cryptography.exceptions import InvalidTag
 from fastapi.testclient import TestClient
+from participant_bot import run_to_conclusion
 from test_accounts import account_core as account_core
 from test_accounts import create
 from test_google_auth import sql
+from test_practice import published_water_site
+from test_practice import request as practice_request
 
 from pramana_core.vault import MasterKey, PersonRef, PersonVault
 
@@ -93,6 +96,9 @@ def test_erasure_is_permanent_and_blocks_reuse(account_core: TestClient, migrate
     assert len(action) == 1
     assert NAME not in action[0]["details"]
 
+    saved = sql(migrated_db, "select response_body from idempotency_keys")
+    assert not [r for r in saved if r["response_body"] and NAME.encode() in r["response_body"]]
+
     # Erasing twice is harmless, and the id cannot quietly come back.
     assert post(client, f"/v1/orgs/{org}/sites/{site}/people/ananya/erase").status_code == 204
     again = post(client, f"/v1/orgs/{org}/sites/{site}/people", PERSON)
@@ -156,3 +162,74 @@ def test_a_ciphertext_cannot_be_moved_to_another_person() -> None:
 def test_the_master_key_must_be_the_right_length() -> None:
     with pytest.raises(ValueError, match="32 bytes"):
         MasterKey(base64.urlsafe_b64decode("AAAA"))
+
+
+def test_erasing_a_person_keeps_the_replay_identical(
+    account_core: TestClient, migrated_db: str
+) -> None:
+    """LC-03: nothing identifying is in the log, and erasure leaves the replay byte-identical."""
+    client = account_core
+    workspace, investigations = published_water_site(client)
+    org = workspace["organization"]["slug"]
+    site = workspace["live_site"]["id"]
+    name, words = "Asha", "Doosre floor pe paani nahi aa raha"
+    created = post(
+        client, investigations, practice_request(site, "VALVE_F2.closed", practice=True)
+    ).json()
+    inv = created["id"]
+    assert created["report"]["text"] == words
+    assert name in [p["display_name"] for p in created["participants"]]
+
+    class Scoped:
+        def post(self, path: str, **kw: Any) -> Any:
+            return client.post(
+                path.replace("/v1/investigations", investigations),
+                headers={**CSRF, "Idempotency-Key": uuid.uuid4().hex, **kw.pop("headers", {})},
+                **kw,
+            )
+
+        def get(self, path: str, **kw: Any) -> Any:
+            return client.get(path.replace("/v1/investigations", investigations), **kw)
+
+    with TestClient(client.app.state.sim._http._transport.app) as sim:
+        final, _ = run_to_conclusion(Scoped(), sim, created)  # type: ignore[arg-type]
+    state_path = f"{investigations}/{inv}"
+    assert post(client, f"{state_path}/reveal").status_code == 200
+    before = client.get(f"{state_path}/replay").json()
+    assert before["identical"] is True
+    assert before["log_intact"] is True
+    answered = [o for o in final["observations"] if o["transcript"]]
+    assert answered, "the operator still reads what people said"
+
+    rows = sql(
+        migrated_db,
+        "select type, payload::text as payload from events where investigation_id = :inv",
+        {"inv": inv},
+    )
+    for row in rows:
+        assert words not in row["payload"], row["type"]
+        assert f'"display_name": "{name}"' not in row["payload"], row["type"]
+    stored = sql(
+        migrated_db,
+        "select transcript from observations "
+        "where investigation_id = :inv and transcript is not null",
+        {"inv": inv},
+    )
+    assert stored == []
+
+    assert post(client, f"/v1/orgs/{org}/sites/{site}/people/p_asha/erase").status_code == 204
+    after = client.get(state_path).json()
+    who = {p["id"]: p["display_name"] for p in after["participants"]}
+    assert who["p_asha"] == "Erased person"
+    assert who["p_guard"] == "Guard"
+    assert after["report"]["text"] != words
+    saved = sql(migrated_db, "select response_body from idempotency_keys")
+    assert not [r for r in saved if r["response_body"] and words.encode() in r["response_body"]]
+    for observation in after["observations"]:
+        if observation["participant_id"] == "p_asha":
+            assert observation["transcript"] is None
+
+    replay = client.get(f"{state_path}/replay").json()
+    assert replay["identical"] is True
+    assert replay["log_intact"] is True
+    assert replay["replayed_sha256"] == before["replayed_sha256"]

@@ -29,6 +29,7 @@ from .db import Base
 from .settings import Settings
 
 ERASED_NAME = "Erased person"
+ERASED_REPORT = "This report was erased at the person's request."
 SEALED = "-"
 """Stands in for a sealed value in columns and events that must hold something."""
 

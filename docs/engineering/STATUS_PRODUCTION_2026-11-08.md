@@ -34,6 +34,23 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | Bugs found by the browser journey and fixed | Fixed | A stale draft overwrote the editor; JSONB key order made every saved draft look unsaved; the home counted the legacy directory; the hostel-only repair dialog and decision ids; the extractor returned unknown for any non-hostel outcome |
 | Team invitations, members, model health page, settings page | CI green | `090fa3b`: migration 0014 `invitations` (hashed one-time secrets, 7-day expiry, one open link per address, audit entries), `/v1/orgs/{org}/members`, published model documents carry their passed check. Full suite exit 0, UI 48, real-stack 28 (team journey included); CI passed all jobs |
 | Member roles and removal, track records, workspace voice, investigations board | Tested locally | Last-owner rule and owner-only owner role with row locks and audit entries; per-person track record counted only against revealed causes and only before repairs; question audio, spoken answers and media/call sockets under the workspace boundary (socket token organization claim must match, 4403 otherwise); production voice status for signed-in people without provider address or spend; a live board by stage. Focused API tests and the real-browser team and workspace journeys pass (a workspace participant link answers on a phone-sized page); full Python suite exit 0, UI 48 passed, real-stack 28 passed |
+| CSV equipment import in the site builder | CI green | `ce1051e`: `apps/web/src/lib/builder/csv.ts`; workspace real-stack journey 2 passed; run 42479734853 passed |
+| Answer words per outcome | Pushed | `e86e800`: `Probe.outcome_words`, `ServicePoint.words`, passed to all extractors. ruff, mypy, API drift and focused suites pass locally |
+| Pending invitations in `/v1/me` | Pushed | `ef29567`: migration 0015 adds read-only policies limited to the signed-in person's verified email; `POST /v1/invitations/accept-pending`; shown on the welcome step. Invitation, account and RLS tests pass as the restricted role; UI 48 passed. The join button has no browser journey of its own yet |
+| Personal data vault, consent, erasure | Pushed | `b7ad488`: migration 0016 `person_keys`, `personal_texts`, `consents`; AES-256-GCM with one data key per person, wrapped by a master key held in the process (`PRAMANA_PII_KEY`, required in production). Cloud KMS is not wired: it replaces `MasterKey` at deployment. Directory names sealed, and for site investigations names, reports and transcripts stay out of events and rows; erasure also scrubs saved idempotent responses. `POST .../people/{id}/erase` and consent routes added. No UI for erasure or consent yet. Consent is recorded but nothing enforces it until R3 |
+
+## Edge-case audit (PRODUCTION.md 6.2, ID/OR/DA rows)
+
+Matched by test name and scope, not by re-reading each assertion.
+
+| Result | Rows |
+|---|---|
+| Automated test found | ID-01, 02, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 09, 10; DA-01, 05 |
+| Partly covered | ID-06 (address check and switch-account prompt; the masked message is not asserted in a browser); ID-11 (disabled sign-in only); OR-01, OR-02 (saved preference, no switcher journey); OR-04 (access ends; stream closing not tested for removal); OR-05 (roles change; mid-session refresh not tested); OR-08 (suggestions; slug change and redirects not built); OR-11 (self-approval refused; "Invite an approver" not tested); DA-02, DA-03, DA-06, DA-08 (server rules; banners not tested) |
+| Not built | ID-03, ID-04 (domain join); OR-07 (organization deletion, R3); DA-04 (consent gate, R3); DA-07 (list pages use offset, not cursor) |
+
+Known limit of sealing: investigation search matches ids only for sealed reports, because the
+text is encrypted.
 
 ## Remaining work
 
@@ -45,12 +62,11 @@ model, team invitations, model health and settings pages. Still open:
   tests; retire them (and `DEFAULT_PACK`) once the real-stack fixtures use workspaces.
 - Live investigations with real people (calls, messages, work orders) are R3; a live site can
   only be practised on, and the core says so.
-- Email delivery of invitations and showing pending invitations in `/v1/me` are not built; the
-  owner shares the one-time link themselves.
+- Email delivery of invitations is not built; the owner shares the one-time link themselves.
+  Pending invitations show on the welcome step only, not inside a workspace.
 - Real-stack browser runs have voice off (no Gnani key); workspace voice is covered by API tests
   with the Gnani protocol emulation.
-- Answer vocabulary for new outcomes falls back to the outcome's own words; site authors cannot
-  yet add synonyms. Hindi and Marathi wording everywhere new needs native review.
+- Hindi and Marathi wording everywhere new needs native review.
 
 The uncommitted stored-model loader/cache passes 26 focused checks in 18.58 s using owner and
 runtime roles, plus Ruff, mypy (62 source files) and all three import contracts. Coverage includes

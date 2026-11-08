@@ -29,6 +29,7 @@ async def home(org: str, request: Request, response: Response) -> WorkspaceHome:
             display_name=principal.display_name,
             roles=frozenset(access.roles),
             layout=layout or {},
+            vault=request.app.state.vault,
         )
     response.headers["Cache-Control"] = "private, no-store"
     return plan_home(facts)

@@ -24,6 +24,11 @@ submission at risk.
 
 ### Resume checkpoint, 2026-11-08 (latest; supersedes the order below where they differ)
 
+Latest state: pending invitations (migration 0015), per-person sealing, consent records and
+erasure (migration 0016, `vault.py`) are built. `PRAMANA_PII_KEY` is required in production and
+must be created at deployment; a Cloud KMS wrapper replaces `MasterKey` in R0. Not built: erasure
+and consent screens, a consent gate on asking (R3), the 30-minute outside-user test.
+
 The user's direction: Pramana must work for any kind of site and situation with the same
 vision, real onboarding, saved state for returning users, every button backed by the core,
 and every sidebar tab worth opening. The plan of record is PRODUCTION.md, "Any-site product
