@@ -60,6 +60,7 @@ from pramana_contracts import (
     ProbeAction,
     Question,
     QuestionStatus,
+    RepairOption,
     Report,
     ReportIntervention,
     RequestApproval,
@@ -832,7 +833,7 @@ class InvestigationService:
                 site_id = ids.decode("site", req.site_id)
             except ValueError as exc:
                 raise not_found("site") from exc
-            pinned = await self.site_models.pin(site_id)
+            pinned = await self.site_models.pin(site_id, practice=req.practice)
             model = pinned.compiled
             documented = DocumentedModel(
                 spec=pinned.documented_spec, sha256=pinned.spec_sha256.hex()
@@ -872,6 +873,11 @@ class InvestigationService:
         # The requested fault (if any) is NOT stored by the core: only the simulator keeps it.
         stored = req.model_dump(mode="json")
         stored["scenario"] = {"seed": req.scenario.seed, "fault": "sealed"}
+        # Everything is simulated today: the shared sandbox, the legacy pack path and
+        # practice runs on a site's own model. Live runs will store False here.
+        stored["practice"] = (
+            pinned is None or pinned.sandbox or bool(getattr(req, "practice", False))
+        )
         row = InvestigationRow(
             id=inv_id,
             pack_id=pack.pack,
@@ -1279,6 +1285,8 @@ class InvestigationService:
             presence_checks_enabled=bool(row.request.get("presence_checks", False)),
             presence_checks=list(checks.values()),
             disagreements=disagreements,
+            practice=bool(row.request.get("practice", True)),
+            repair_options=self._repair_options(model.pack, row, req.participants),
             observations=[
                 Observation.model_validate({c: getattr(o, c) for c in Observation.model_fields})
                 for o in observations
@@ -1289,6 +1297,43 @@ class InvestigationService:
             if row.ground_truth is None
             else GroundTruthComparison.model_validate(row.ground_truth),
         )
+
+    @staticmethod
+    def _repair_options(
+        pack: DomainPack, row: InvestigationRow, people: list[ParticipantSpec]
+    ) -> list[RepairOption]:
+        """Repairs the site's model allows for the current decision, per specific target."""
+        decision = (row.outcome or {}).get("decision_class")
+        if row.status != InvestigationStatus.DECIDED.value or not decision:
+            return []
+        hypotheses = next((d.hypotheses for d in pack.decision_classes if d.id == decision), [])
+        options: list[RepairOption] = []
+        for act in pack.actions:
+            if decision not in act.decision_classes:
+                continue
+            allowed = {str(r) for r in act.roles}
+            for hid in hypotheses:
+                cid, _, mode = hid.rpartition(".")
+                comp = pack.component_by_id.get(cid)
+                if comp is None or comp.kind != act.target_kind or mode != act.fixes:
+                    continue
+                place = pack.location_by_id.get(comp.location) if comp.location else None
+                options.append(
+                    RepairOption(
+                        action=act.id,
+                        action_label=act.label,
+                        target=comp.id,
+                        target_label=comp.label,
+                        place=place.label.en if place else None,
+                        risk=act.risk,
+                        reversible=act.reversible,
+                        participant_ids=[
+                            p.id for p in people if allowed & {str(r) for r in p.roles}
+                        ],
+                        roles=sorted(allowed),
+                    )
+                )
+        return options
 
     @staticmethod
     def _question_view(model: CompiledModel, q: QuestionRow) -> Question:

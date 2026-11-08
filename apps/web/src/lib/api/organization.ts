@@ -1,5 +1,5 @@
 /** Saved-site investigation client. Each instance permanently belongs to one organization. */
-import { request } from "./http";
+import { request, requestStream } from "./http";
 import type { ListQuery } from "./core";
 import type {
   AnswerResult,
@@ -10,9 +10,15 @@ import type {
   InvestigationState,
   ParticipantToken,
   ReplayResult,
+  ParticipantSpec,
+  SaveDraft,
   SiteModelDocument,
+  SiteModelDraft,
   SiteModelSummary,
+  SitePerson,
   SiteSummary,
+  ParticipantPatch,
+  WorkspaceHome,
   SubmitAnswer,
 } from "./types";
 
@@ -46,7 +52,23 @@ export function organizationApi(org: string) {
   // different instances without redirecting one person's requests into another workspace.
   return Object.freeze({
     org,
+    home: (signal?: AbortSignal) => request<WorkspaceHome>("core", `${root}/home`, { signal }),
     sites: (signal?: AbortSignal) => request<SiteSummary[]>("core", `${root}/sites`, { signal }),
+    people: (siteId: string, signal?: AbortSignal) =>
+      request<SitePerson[]>("core", `${site(siteId)}/people`, { signal }),
+    addPerson: (siteId: string, person: ParticipantSpec, action: OrganizationAction) =>
+      mutate<SitePerson>(`${site(siteId)}/people`, person, action),
+    updatePerson: (
+      siteId: string, personId: string, patch: ParticipantPatch, version: number, action: OrganizationAction,
+    ) =>
+      request<SitePerson>("core", `${site(siteId)}/people/${enc(personId)}`, {
+        method: "PATCH",
+        json: patch,
+        signal: action.signal,
+        headers: { "Idempotency-Key": action.key, "If-Match": `"${version}"` },
+      }),
+    removePerson: (siteId: string, personId: string, action: OrganizationAction) =>
+      mutate<void>(`${site(siteId)}/people/${enc(personId)}/remove`, undefined, action),
     site: (id: string, signal?: AbortSignal) => request<SiteSummary>("core", site(id), { signal }),
     models: (id: string, signal?: AbortSignal) =>
       request<SiteModelSummary[]>("core", `${site(id)}/models`, { signal }),
@@ -90,6 +112,28 @@ export function organizationApi(org: string) {
     reportIntervention: (
       id: string, body: { approval_id: string; participant_id: string }, action: OrganizationAction,
     ) => mutate<InvestigationState>(`${investigation(id)}/interventions`, body, action),
+    /** The site's open draft, with the version to send back when saving it. */
+    getDraft: async (siteId: string, signal?: AbortSignal) => {
+      const res = await requestStream("core", `${site(siteId)}/draft`, { signal });
+      return { draft: (await res.json()) as SiteModelDraft, etag: res.headers.get("ETag") };
+    },
+    saveDraft: async (siteId: string, body: SaveDraft, etag: string | null, action: OrganizationAction) => {
+      const headers: Record<string, string> = { "Idempotency-Key": action.key };
+      if (etag) headers["If-Match"] = etag;
+      const res = await requestStream("core", `${site(siteId)}/draft`, {
+        method: "POST",
+        json: body,
+        headers,
+        signal: action.signal,
+      });
+      return { draft: (await res.json()) as SiteModelDraft, etag: res.headers.get("ETag") };
+    },
+    checkDraft: (siteId: string, draftId: string, people: ParticipantSpec[] | null, action: OrganizationAction) =>
+      mutate<SiteModelDraft>(`${site(siteId)}/draft/${enc(draftId)}/health`, people ?? undefined, action),
+    publishDraft: (siteId: string, draftId: string, action: OrganizationAction) =>
+      mutate<SiteModelSummary>(`${site(siteId)}/draft/${enc(draftId)}/publish`, undefined, action),
+    discardDraft: (siteId: string, draftId: string, action: OrganizationAction) =>
+      mutate<void>(`${site(siteId)}/draft/${enc(draftId)}/discard`, undefined, action),
     participantToken: (id: string, participantId: string, action: OrganizationAction) =>
       mutate<ParticipantToken & { org_id: string }>(
         `${investigation(id)}/participants/${enc(participantId)}/token`, undefined, action,

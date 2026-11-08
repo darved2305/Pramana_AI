@@ -1,5 +1,6 @@
 "use client";
 
+import { useInvestigationScope } from "@/lib/data/scope";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -20,11 +21,10 @@ import { BuildingMap } from "@/components/app/BuildingMap";
 import { Avatar } from "@/components/app/Avatar";
 import { DecisionBar, DiagnosisPanel, HypothesisPanel, ReasoningPanel } from "@/components/console/BeliefPanels";
 import { ApprovalPanel, ContradictionPanel, ConversationPanel, EvidenceLedger, TestimonyPanel } from "@/components/console/ActivityPanels";
-import { useInvestigation, usePack } from "@/lib/data/hooks";
+import { useInvestigation, useInvestigationPack } from "@/lib/data/hooks";
 import { useCurrentUser } from "@/lib/data/session";
 import { hasRole } from "@/lib/api/auth";
 import { STATUS_LABEL, STATUS_TONE, findContradictions, locationLabel, outcomeWord, participantName, probeLabel, relative } from "@/lib/data/derive";
-import { core } from "@/lib/api/core";
 import { ApiError, describeError } from "@/lib/api/http";
 import { encodeJoin } from "@/lib/join";
 import type { InvestigationState, SitePack } from "@/lib/api/types";
@@ -36,7 +36,7 @@ export default function CommandCenterPage() {
 
 function CommandCenterRoute({ id }: { id: string }) {
   const feed = useInvestigation(id);
-  const pack = usePack(feed.state?.pack_id);
+  const pack = useInvestigationPack(feed.state);
   const [linksOpen, setLinksOpen] = useState(false);
   const [revealOpen, setRevealOpen] = useState(false);
   const readOnly = feed.source === "preview";
@@ -94,6 +94,7 @@ function CommandCenter({
   onReveal: () => void;
   children: React.ReactNode;
 }) {
+  const scope = useInvestigationScope();
   const [selected, setSelected] = useState<string | null>(null);
   const contradictions = useMemo(() => findContradictions(s.observations), [s.observations]);
   // Only an operator may reveal (the core enforces it); approvers do not see the button.
@@ -132,7 +133,7 @@ function CommandCenter({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <ButtonLink href={`/app/investigations/${s.id}/replay`}>
+          <ButtonLink href={`${scope.base}/investigations/${s.id}/replay`}>
             <IconPlay className="h-4 w-4" /> Replay
           </ButtonLink>
           <Button onClick={onLinks}>
@@ -261,8 +262,9 @@ function PlaceDetail({ id, s, pack, onClose }: { id: string; s: InvestigationSta
 }
 
 function BackLink() {
+  const scope = useInvestigationScope();
   return (
-    <Link href="/app/investigations" className="inline-flex w-fit items-center gap-1.5 text-[14px] text-muted transition-colors hover:text-fg">
+    <Link href={`${scope.base}/investigations`} className="inline-flex w-fit items-center gap-1.5 text-[14px] text-muted transition-colors hover:text-fg">
       <IconArrowLeft className="h-4 w-4" /> Investigations
     </Link>
   );
@@ -283,6 +285,7 @@ function LoadingCenter() {
 }
 
 function LinksDialog({ open, onClose, state, preview }: { open: boolean; onClose: () => void; state: InvestigationState; preview: boolean }) {
+  const scope = useInvestigationScope();
   const [links, setLinks] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -292,8 +295,8 @@ function LinksDialog({ open, onClose, state, preview }: { open: boolean; onClose
     setBusy(pid);
     setErr(null);
     try {
-      const t = await core.participantToken(state.id, pid);
-      const url = `${window.location.origin}/join/${encodeJoin({ i: state.id, p: pid, s: t.scenario_id, t: t.token })}`;
+      const t = await scope.participantToken(state.id, pid);
+      const url = `${window.location.origin}/join/${encodeJoin({ i: state.id, p: pid, s: t.scenario_id, t: t.token, ...(scope.workspace ? { o: scope.workspace } : {}) })}`;
       setLinks((l) => ({ ...l, [pid]: url }));
     } catch (e) {
       setErr(describeError(e));
@@ -359,6 +362,7 @@ function LinksDialog({ open, onClose, state, preview }: { open: boolean; onClose
 }
 
 function RevealDialog({ open, onClose, state, onState }: { open: boolean; onClose: () => void; state: InvestigationState; onState: (s: InvestigationState) => void }) {
+  const scope = useInvestigationScope();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -377,7 +381,7 @@ function RevealDialog({ open, onClose, state, onState }: { open: boolean; onClos
               setBusy(true);
               setErr(null);
               try {
-                onState(await core.reveal(state.id));
+                onState(await scope.reveal(state.id));
                 onClose();
               } catch (e) {
                 setErr(describeError(e));

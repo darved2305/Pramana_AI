@@ -1,5 +1,6 @@
 "use client";
 
+import { useInvestigationScope } from "@/lib/data/scope";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -53,6 +54,7 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 function InvestigationsInner() {
+  const scope = useInvestigationScope();
   const params = useSearchParams();
   const router = useRouter();
   const preview = usePreviewMode();
@@ -75,7 +77,7 @@ function InvestigationsInner() {
         actions={
           <>
             <Button onClick={() => setOpenId(true)}>Open by ID</Button>
-            <ButtonLink href="/app/investigations/new" variant="primary" size="lg">
+            <ButtonLink href={`${scope.base}/investigations/new`} variant="primary" size="lg">
               <IconPlus className="h-4 w-4" /> New investigation
             </ButtonLink>
           </>
@@ -107,7 +109,7 @@ function InvestigationsInner() {
             onChange={(e) => {
               setQ(e.target.value);
               setPage(0);
-              router.replace(`/app/investigations${e.target.value ? `?q=${encodeURIComponent(e.target.value)}` : ""}`, { scroll: false });
+              router.replace(`${scope.base}/investigations${e.target.value ? `?q=${encodeURIComponent(e.target.value)}` : ""}`, { scroll: false });
             }}
             placeholder="Search by report or ID"
             className="w-full bg-transparent text-[14px] outline-none placeholder:text-muted"
@@ -132,7 +134,7 @@ function InvestigationsInner() {
             title="No investigations yet"
             body="Start one from a report. It will be listed here, and you can come back to its command center at any time."
             action={
-              <ButtonLink href="/app/investigations/new" variant="primary">
+              <ButtonLink href={`${scope.base}/investigations/new`} variant="primary">
                 <IconPlus className="h-4 w-4" /> New investigation
               </ButtonLink>
             }
@@ -187,6 +189,7 @@ function InvestigationsInner() {
 }
 
 function InvestigationCard({ r }: { r: InvestigationSummary }) {
+  const scope = useInvestigationScope();
   const people = r.participant_count === 1 ? "1 person" : `${r.participant_count} people`;
   return (
     <li className="card group relative flex flex-col p-4 transition-colors hover:bg-card-2">
@@ -196,7 +199,7 @@ function InvestigationCard({ r }: { r: InvestigationSummary }) {
         </Badge>
         <span className="text-[12px] text-muted">{relative(r.created_at)}</span>
       </div>
-      <Link href={`/app/investigations/${r.id}`} className="mt-3 block text-[16px] leading-snug text-fg after:absolute after:inset-0 after:rounded-[16px]">
+      <Link href={`${scope.base}/investigations/${r.id}`} className="mt-3 block text-[16px] leading-snug text-fg after:absolute after:inset-0 after:rounded-[16px]">
         &ldquo;{r.report_text}&rdquo;
       </Link>
       <p className="mt-1.5 text-[13px] text-muted">
@@ -210,7 +213,7 @@ function InvestigationCard({ r }: { r: InvestigationSummary }) {
       ) : null}
       <div className="relative z-10 mt-4 flex items-center justify-between gap-2 border-t border-line pt-3">
         <span className="truncate font-mono text-[11px] text-muted">{r.id}</span>
-        <Link href={`/app/investigations/${r.id}/replay`} className="rounded-full px-2.5 py-1 text-[12px] text-fg-2 hover:bg-white/[.06]">
+        <Link href={`${scope.base}/investigations/${r.id}/replay`} className="rounded-full px-2.5 py-1 text-[12px] text-fg-2 hover:bg-white/[.06]">
           Replay
         </Link>
       </div>
@@ -219,6 +222,7 @@ function InvestigationCard({ r }: { r: InvestigationSummary }) {
 }
 
 function OpenByIdDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const scope = useInvestigationScope();
   const router = useRouter();
   const [id, setId] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -236,7 +240,7 @@ function OpenByIdDialog({ open, onClose }: { open: boolean; onClose: () => void 
           if (!v) return setErr("Enter an investigation ID.");
           if (!/^[\w-]{3,}$/.test(v)) return setErr("IDs contain only letters, numbers, dashes and underscores.");
           onClose();
-          router.push(`/app/investigations/${encodeURIComponent(v)}`);
+          router.push(`${scope.base}/investigations/${encodeURIComponent(v)}`);
         }}
         className="flex flex-col gap-4"
         noValidate

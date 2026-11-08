@@ -565,6 +565,11 @@
           "title": "Participants",
           "type": "array"
         },
+        "practice": {
+          "default": false,
+          "title": "Practice",
+          "type": "boolean"
+        },
         "presence_checks": {
           "default": false,
           "title": "Presence Checks",
@@ -1504,6 +1509,11 @@
         "plan": {
           "$ref": "#/$defs/PlanDecision"
         },
+        "practice": {
+          "default": true,
+          "title": "Practice",
+          "type": "boolean"
+        },
         "presence_checks": {
           "items": {
             "$ref": "#/$defs/PresenceCheckView"
@@ -1519,6 +1529,13 @@
         "questions_asked": {
           "title": "Questions Asked",
           "type": "integer"
+        },
+        "repair_options": {
+          "items": {
+            "$ref": "#/$defs/RepairOption"
+          },
+          "title": "Repair Options",
+          "type": "array"
         },
         "report": {
           "$ref": "#/$defs/Report"
@@ -2199,6 +2216,10 @@
                 "wifi",
                 "power",
                 "both",
+                "water",
+                "cooling",
+                "lifts",
+                "devices",
                 "other"
               ],
               "type": "string"
@@ -3060,6 +3081,82 @@
       ],
       "title": "QuestionStatus",
       "type": "string"
+    },
+    "RepairOption": {
+      "additionalProperties": false,
+      "description": "A repair the site's model allows for the current decision, on one specific target.",
+      "properties": {
+        "action": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Action",
+          "type": "string"
+        },
+        "action_label": {
+          "title": "Action Label",
+          "type": "string"
+        },
+        "participant_ids": {
+          "items": {
+            "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+            "type": "string"
+          },
+          "title": "Participant Ids",
+          "type": "array"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Place"
+        },
+        "reversible": {
+          "title": "Reversible",
+          "type": "boolean"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Risk",
+          "type": "string"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Roles",
+          "type": "array"
+        },
+        "target": {
+          "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "target_label": {
+          "title": "Target Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "action_label",
+        "target",
+        "target_label",
+        "place",
+        "risk",
+        "reversible",
+        "participant_ids",
+        "roles"
+      ],
+      "title": "RepairOption",
+      "type": "object"
     },
     "RepairState": {
       "additionalProperties": false,

@@ -14,6 +14,7 @@ import { core } from "@/lib/api/core";
 import { sim } from "@/lib/api/sim";
 import { ApiError, describeError } from "@/lib/api/http";
 import { decodeJoin, type JoinPayload } from "@/lib/join";
+import { participantApi } from "@/lib/api/participant";
 import { startRecording, type Recording } from "@/lib/audio/recorder";
 import { QuestionMediaSession } from "@/lib/audio/media";
 import type { AnswerResult, Approval, Extraction, InvestigationState, ParticipantView } from "@/lib/api/types";
@@ -100,14 +101,16 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         setView({ location_label: "the guard desk", items: [{ label: "Hostel Wi-Fi on your phone", value: "connected" }, { label: "Lights", value: "on" }], reachable_locations: [] });
         return;
       }
-      const s = await core.getInvestigation(payload.i, undefined, payload.t);
+      const s = await participantApi(payload).getInvestigation();
       setState(s);
       setError(null);
       sim.view(payload.s, payload.t).then(setView).catch(() => setView(null));
     } catch (e) {
       setError(e);
     }
-  }, [payload.i, payload.s, payload.t, preview]);
+    // payload is decoded from the URL on every render; these fields are its whole identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload.i, payload.s, payload.t, payload.o, payload.p, preview]);
 
   useEffect(() => {
     // load() only sets state after awaiting the network or a dynamic import.
@@ -163,11 +166,11 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     }
     setPhase("sending");
     try {
-      const r = await core.answer(
-        state.id,
-        { question_id: q.id, participant_id: payload.p, ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }) },
-        payload.t,
-      );
+      const r = await participantApi(payload).answer({
+        question_id: q.id,
+        participant_id: payload.p,
+        ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }),
+      });
       setUnderstood(`I understood: ${heardAs(r.extraction)}`);
       setText("");
       setState(r.state);
@@ -600,7 +603,6 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
 }
 
 function Repair({
-  state,
   approval,
   payload,
   preview,
@@ -631,7 +633,7 @@ function Repair({
             setBusy(true);
             setErr(null);
             try {
-              setCap(await core.collectCapability(state.id, approval.id, payload.p, payload.t));
+              setCap(await participantApi(payload).collectCapability(approval.id));
             } catch (e) {
               setErr(describeError(e));
             } finally {
@@ -681,7 +683,7 @@ function Repair({
                   // reloaded after the reset): the action happened, so report it.
                   if (!(e instanceof ApiError && e.code === "CAPABILITY_USED")) throw e;
                 }
-                onState(await core.reportIntervention(state.id, { approval_id: approval.id, participant_id: payload.p }, payload.t));
+                onState(await participantApi(payload).reportIntervention(approval.id));
               } catch (e) {
                 if (e instanceof ApiError && e.status === 403 && /expired/i.test(e.message)) {
                   setCap(null);

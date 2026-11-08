@@ -13,12 +13,26 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly requestId: string | null;
-  constructor(status: number, code: string, message: string, requestId: string | null) {
+  /** Structured detail the core attached, such as ``problems`` for an invalid site. */
+  readonly details: Record<string, unknown> | null;
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    requestId: string | null,
+    details: Record<string, unknown> | null = null,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.requestId = requestId;
+    this.details = details;
+  }
+  /** Readable problems listed by the core (site descriptions), or an empty list. */
+  get problems(): string[] {
+    const list = this.details?.problems;
+    return Array.isArray(list) ? list.filter((p): p is string => typeof p === "string") : [];
   }
   /** The service could not be reached at all (not running, or the proxy failed). */
   get unreachable() {
@@ -85,11 +99,15 @@ async function raw(service: Service, path: string, opts: RequestOptions): Promis
     const rid = res.headers.get("X-Request-ID");
     let code = `HTTP_${res.status}`;
     let message = res.statusText || "Request failed";
+    let details: Record<string, unknown> | null = null;
     try {
       const body = await res.json();
       if (body?.error?.code) {
         code = body.error.code;
         message = body.error.message ?? message;
+        if (body.error.details && typeof body.error.details === "object" && !Array.isArray(body.error.details)) {
+          details = body.error.details as Record<string, unknown>;
+        }
       } else if (Array.isArray(body?.detail)) {
         code = "VALIDATION_ERROR";
         message = body.detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join("; ");
@@ -100,7 +118,7 @@ async function raw(service: Service, path: string, opts: RequestOptions): Promis
       // Non-JSON error body: the Next proxy returns one when the upstream is down.
       if (res.status >= 500) code = "UPSTREAM_DOWN";
     }
-    throw new ApiError(res.status, code, message, rid);
+    throw new ApiError(res.status, code, message, rid, details);
   }
   return res;
 }
@@ -135,6 +153,16 @@ export function describeError(e: unknown): string {
       return "Today's voice budget has been used up.";
     case "VOICE_NOT_CONFIGURED":
       return "Voice is not configured on the core.";
+    case "SITE_DESCRIPTION_INVALID":
+      return e.problems.length ? `Fix these first: ${e.problems.join("; ")}` : e.message;
+    case "DRAFT_CHANGED":
+      return "Someone else changed this draft. Reload it to see their version.";
+    case "HEALTH_CHECK_REQUIRED":
+      return "Run the health check on this version before publishing it.";
+    case "HEALTH_CHECK_FAILED":
+      return "The health check found problems. Fix them, then check again.";
+    case "SANDBOX_READ_ONLY":
+      return "The practice site is fixed. Build your own site instead.";
     default:
       return e.message || `Request failed (${e.code}).`;
   }

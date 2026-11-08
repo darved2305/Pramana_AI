@@ -1460,6 +1460,11 @@ export interface components {
             /** Participants */
             participants: components["schemas"]["ParticipantSpec"][];
             /**
+             * Practice
+             * @default false
+             */
+            practice?: boolean;
+            /**
              * Presence Checks
              * @default false
              */
@@ -1908,6 +1913,11 @@ export interface components {
             /** Pending Questions */
             pending_questions?: components["schemas"]["Question"][];
             plan: components["schemas"]["PlanDecision"];
+            /**
+             * Practice
+             * @default true
+             */
+            practice?: boolean;
             /** Presence Checks */
             presence_checks?: components["schemas"]["PresenceCheckView"][];
             /**
@@ -1917,6 +1927,8 @@ export interface components {
             presence_checks_enabled?: boolean;
             /** Questions Asked */
             questions_asked: number;
+            /** Repair Options */
+            repair_options?: components["schemas"]["RepairOption"][];
             report: components["schemas"]["Report"];
             /** Sealed Commitment */
             sealed_commitment: string;
@@ -2101,7 +2113,7 @@ export interface components {
             /** Other Problem */
             other_problem?: string | null;
             /** Problem */
-            problem?: ("wifi" | "power" | "both" | "other") | null;
+            problem?: ("wifi" | "power" | "both" | "water" | "cooling" | "lifts" | "devices" | "other") | null;
             /**
              * Version
              * @default 1
@@ -2376,6 +2388,33 @@ export interface components {
          * @enum {string}
          */
         QuestionStatus: "pending" | "answered" | "cancelled" | "withdrawn";
+        /**
+         * RepairOption
+         * @description A repair the site's model allows for the current decision, on one specific target.
+         */
+        RepairOption: {
+            /** Action */
+            action: string;
+            /** Action Label */
+            action_label: string;
+            /** Participant Ids */
+            participant_ids: string[];
+            /** Place */
+            place: string | null;
+            /** Reversible */
+            reversible: boolean;
+            /**
+             * Risk
+             * @enum {string}
+             */
+            risk: "low" | "medium" | "high";
+            /** Roles */
+            roles: string[];
+            /** Target */
+            target: string;
+            /** Target Label */
+            target_label: string;
+        };
         /**
          * RepairState
          * @description Belief about a repair that has been carried out.

@@ -10,7 +10,10 @@ import {
   IconUsers,
   IconPhone,
 } from "@/components/ui/icons";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { usePreviewMode } from "@/lib/store/local";
+import { useAccount } from "@/lib/data/account";
 import { useDirectory, useInvestigationList, usePack } from "@/lib/data/hooks";
 import { STATUS_LABEL, STATUS_TONE, relative } from "@/lib/data/derive";
 import type { InvestigationStatus } from "@/lib/api/types";
@@ -21,6 +24,15 @@ const RUNNING = { status: ACTIVE, limit: 4 };
 
 export default function OverviewPage() {
   const preview = usePreviewMode();
+  const account = useAccount();
+  const router = useRouter();
+  // People go where the core says they left off: their workspace, or the next onboarding step.
+  // Accounts with legacy global staff roles keep this single-site console until it is retired.
+  useEffect(() => {
+    if (preview || account.status !== "ready") return;
+    const a = account.account;
+    if (a.memberships.length > 0 || (a.user.roles ?? []).length === 0) router.replace(a.destination);
+  }, [preview, account, router]);
   const pack = usePack("campus_block_c");
   const directory = useDirectory("campus_block_c");
   const people = directory.data ?? [];

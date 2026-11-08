@@ -6,7 +6,7 @@ import asyncio
 import uuid
 import weakref
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from sqlalchemy import select
@@ -26,6 +26,7 @@ class PinnedModel:
     spec_sha256: bytes
     compiled: CompiledModel
     documented_spec: dict[str, Any]
+    sandbox: bool = False
 
 
 class StoredModels:
@@ -130,10 +131,15 @@ class StoredModels:
             self._compiled.move_to_end(digest)
         return PinnedModel(site_id, model_id, row.version, digest, compiled, row.spec)
 
-    async def pin(self, site_id: uuid.UUID) -> PinnedModel:
+    async def pin(self, site_id: uuid.UUID, *, practice: bool = False) -> PinnedModel:
         site = await self.site(site_id)
-        if site.mode != "sandbox":
-            raise ApiError(409, "LIVE_NOT_CONFIGURED", "live investigations are not configured yet")
+        if site.mode != "sandbox" and not practice:
+            raise ApiError(
+                409,
+                "LIVE_NOT_CONFIGURED",
+                "investigations with real people need calls and messages, which are not set up "
+                "yet; run a practice investigation on this site's model instead",
+            )
         if site.current_model_id is None:
             raise ApiError(
                 409, "MODEL_REQUIRED", "publish a model before starting an investigation"
@@ -141,4 +147,5 @@ class StoredModels:
         row = await self.row(site.id, site.current_model_id, allow_draft=True)
         if row.status != "published":
             raise ApiError(409, "MODEL_NOT_PUBLISHED", "choose a published model before starting")
-        return await self.load(site.id, row.id)
+        pinned = await self.load(site.id, row.id)
+        return replace(pinned, sandbox=site.mode == "sandbox")

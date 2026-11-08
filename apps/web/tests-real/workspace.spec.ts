@@ -1,0 +1,102 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/** A brand-new person: mock Google sign-in, then a workspace of their own. */
+async function newWorkspace(page: Page, who: string) {
+  await page.goto("/api/core/v1/auth/google/start?next=/app/account");
+  await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+  await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+  await page.getByRole("button", { name: "Continue with mock account" }).click();
+  await expect(page).toHaveURL(/\/app\/account$/);
+  const created = await page.request.post("/api/core/v1/orgs", {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${who}-workspace-0001` },
+    data: { name: "Riverside Offices", kind: "office" },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  return (await created.json()) as { organization: { slug: string; id: string }; live_site: { id: string } };
+}
+
+test("a new workspace describes its own site, checks it and publishes it", async ({ page }) => {
+  test.setTimeout(120_000);
+  const ws = await newWorkspace(page, `builder-${Date.now()}`);
+  const base = `/app/${ws.organization.slug}`;
+
+  // Home: why each module is there, and what to do next.
+  await page.goto(base);
+  await expect(page.getByRole("heading", { name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
+  const setup = page.getByRole("region", { name: "Set up Pramana" });
+  await expect(setup.getByText("1 of 5 steps done. Next: run a practice investigation.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Workspace: |Riverside Offices/ }).first()).toBeVisible();
+
+  // Sites: start from a template, check the generated model, publish it.
+  await page.getByRole("link", { name: /Your first building/ }).first().click();
+  await expect(page).toHaveURL(new RegExp(`${base}/sites/site_`));
+  await page.getByRole("button", { name: /Office water supply/ }).click();
+  await expect(page.getByRole("heading", { name: "Draft, version 1" })).toBeVisible();
+  await expect(page.getByText(/7 pieces of equipment/)).toBeVisible();
+  await page.getByRole("button", { name: "Check this model" }).click();
+  await expect(page.getByText("Ready to publish")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("table").filter({ hasText: "Simulated investigations per fault" })).toBeVisible();
+  await page.getByRole("button", { name: "Publish version 1" }).click();
+  await expect(page.getByText("Version 1 is published")).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "Version 1" }).getByText("In use")).toBeVisible();
+
+  // Editing after publishing opens a new draft from the same description.
+  await page.getByRole("button", { name: "Edit as a new version" }).click();
+  await expect(page.getByRole("heading", { name: "Draft, version 2" })).toBeVisible();
+  await page.getByRole("tab", { name: /Equipment/ }).click();
+  const name = page.getByRole("textbox", { name: "Equipment name" }).first();
+  await name.fill("main power");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+
+  // People: placed in this site's own places, with this site's own roles.
+  await page.goto(`${base}/people?site=${ws.live_site.id}`);
+  await expect(page.getByText("Nobody listed yet")).toBeVisible();
+  const added = await page.request.post(`/api/core/v1/orgs/${ws.organization.slug}/sites/${ws.live_site.id}/people`, {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${ws.organization.id}-person-0001` },
+    data: {
+      id: "p_ravi",
+      display_name: "Ravi",
+      roles: ["plumber"],
+      skill: "technician",
+      location_id: "LOBBY",
+      languages: { stt_candidates: ["hi-IN"] },
+    },
+  });
+  expect(added.status(), await added.text()).toBe(201);
+  await page.reload();
+  await expect(page.getByText("Ravi", { exact: true })).toBeVisible();
+  await expect(page.getByText("Plumber")).toBeVisible();
+  await expect(page.getByText(/Can make \d+ checks? at this site\./)).toBeVisible();
+
+  // Home now reflects the published site, the added person and the open draft.
+  await page.goto(base);
+  await expect(setup.getByText("3 of 5 steps done. Next: run a practice investigation.")).toBeVisible();
+  await expect(page.getByText("Draft to check")).toBeVisible();
+
+  // A practice investigation on the person's own published site, from the workspace.
+  await page.goto(`${base}/investigations/new?site=${ws.live_site.id}`);
+  await expect(page.getByText("This is a practice run on your own model")).toBeVisible();
+  await page.getByLabel("What is wrong, in the reporter's words").fill("No water on the second floor since morning");
+  await expect(page.getByRole("checkbox", { name: "Include Ravi" })).toBeChecked();
+  await page.getByRole("button", { name: "Start investigation" }).click();
+  await expect(page).toHaveURL(new RegExp(`${base}/investigations/inv_[0-9A-HJKMNP-TV-Z]{26}$`));
+  await expect(page.getByRole("heading", { name: "No water on the second floor since morning" })).toBeVisible();
+  await page.goto(`${base}/investigations`);
+  await expect(page.getByText("No water on the second floor since morning")).toBeVisible();
+
+  // Hiding a module is remembered by the core.
+  await page.goto(base);
+  await page.getByRole("button", { name: "Hide Set up Pramana" }).click();
+  await expect(page.getByRole("region", { name: "Set up Pramana" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Set up Pramana" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show setup" })).toBeVisible();
+});
+
+test("someone else's workspace shows no data", async ({ page }) => {
+  await newWorkspace(page, `outsider-${Date.now()}`);
+  await page.goto("/app/somebody-elses-campus");
+  await expect(page.getByText("You do not have access to this workspace")).toBeVisible();
+});

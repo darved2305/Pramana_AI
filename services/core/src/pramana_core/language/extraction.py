@@ -812,6 +812,174 @@ OUTCOME_LEXICON: dict[str, list[tuple[str, ...]]] = {
         "connect jhala",
     ),
 }
+# Outcomes of the equipment library and starter templates (pramana_domain.library), in the
+# languages questions are asked in. Hindi and Marathi wording needs native review.
+GENERAL_OUTCOMES: dict[str, list[tuple[str, ...]]] = {
+    "running": _phrases(
+        "running",
+        "it is running",
+        "chal raha",
+        "chal rahi",
+        "chalu hai",
+        "चल रहा",
+        "चल रही",
+        "चालू है",
+        "चालू आहे",
+        "suru aahe",
+        "सुरू आहे",
+    ),
+    "stopped": _phrases(
+        "stopped",
+        "not running",
+        "band",
+        "bandh",
+        "band hai",
+        "बंद",
+        "बंद है",
+        "बंद आहे",
+        "ruka",
+        "रुका",
+        "रुकी",
+        "थांबला",
+        "thambla",
+    ),
+    "flowing": _phrases(
+        "flowing",
+        "water is coming",
+        "it is coming",
+        "aa raha",
+        "aa rahi",
+        "paani aa raha",
+        "आ रहा",
+        "आ रही",
+        "पानी आ रहा",
+        "yetay",
+        "yet aahe",
+        "येतंय",
+        "येत आहे",
+        "पाणी येतंय",
+    ),
+    "dry": _phrases(
+        "dry",
+        "no water",
+        "sukha",
+        "sookha",
+        "सूखा",
+        "सुखा",
+        "कोरडा",
+        "कोरडं",
+        "korda",
+    ),
+    "has_water": _phrases(
+        "has water",
+        "there is water",
+        "it has water",
+        "full",
+        "paani hai",
+        "पानी है",
+        "bhara hai",
+        "भरा है",
+        "पाणी आहे",
+        "bharleli",
+        "भरलेली",
+    ),
+    "empty": _phrases(
+        "empty",
+        "khaali",
+        "khali",
+        "ख़ाली",
+        "खाली",
+        "रिकामा",
+        "रिकामी",
+        "रिकामे",
+        "rikama",
+        "rikami",
+    ),
+    "open": _phrases("open", "khula", "khuli", "खुला", "खुली", "ughada", "उघडा", "उघडं"),
+    "closed": _phrases("closed", "shut", "band", "band hai", "बंद", "बंद है", "बंद आहे"),
+    "lit": _phrases(
+        "lit",
+        "it is on",
+        "jal rahi",
+        "jal raha",
+        "जल रही",
+        "जल रहा",
+        "chalu",
+        "चालू",
+        "dikh raha",
+    ),
+    "blank": _phrases(
+        "blank",
+        "dark",
+        "nothing on the screen",
+        "kuch nahi dikh raha",
+        "andhera",
+        "अंधेरा",
+        "कोरी",
+        "बंद",
+        "band",
+    ),
+    "cool": _phrases("cool", "cold", "thanda", "thandi", "ठंडी", "ठंडा", "थंड", "thand"),
+    "warm": _phrases("warm", "hot", "garam", "garm", "गरम", "गर्म"),
+    "approved": _phrases(
+        "approved",
+        "it went through",
+        "successful",
+        "ho gaya",
+        "हो गया",
+        "झालं",
+        "jhala",
+        "manjoor",
+        "मंज़ूर",
+        "मंजूर",
+    ),
+    "failing": _phrases(
+        "failing",
+        "failed",
+        "it fails",
+        "declined",
+        "fail ho raha",
+        "फ़ेल",
+        "फेल",
+        "nahi hua",
+        "नहीं हुआ",
+        "झालं नाही",
+    ),
+    "works": _phrases(
+        "works",
+        "working",
+        "it works",
+        "kaam kar raha",
+        "काम कर रहा",
+        "chal raha",
+        "चल रहा",
+        "चालू आहे",
+    ),
+    "broken": _phrases(
+        "broken",
+        "not working",
+        "kharab",
+        "ख़राब",
+        "खराब",
+        "bigda",
+        "बिगड़ा",
+        "बंद पडलं",
+    ),
+}
+for _outcome, _words in GENERAL_OUTCOMES.items():
+    OUTCOME_LEXICON.setdefault(_outcome, _words)
+
+
+def outcome_phrases(outcome: str) -> list[tuple[str, ...]]:
+    """Words for an outcome. An outcome nobody listed is still matched by its own words, so a
+    site author's new outcome ("flooded", "beeping") is understood when said plainly."""
+    known = OUTCOME_LEXICON.get(outcome)
+    if known:
+        return known
+    own = tuple(tokenize(outcome.replace("_", " ")))
+    return [own] if own else []
+
+
 FLIP = {"yes": "no", "no": "yes", "on": "off", "off": "on", "up": "tripped", "tripped": "up"}
 
 
@@ -833,7 +1001,7 @@ def _polar(question: str | None, outcomes: Sequence[str]) -> str | None:
 def named_outcomes(question: str, outcomes: Sequence[str]) -> set[str]:
     """The outcomes a question names as possible answers ("on or off?" names both)."""
     q = tokenize(question)
-    return {o for o in outcomes if _find(q, OUTCOME_LEXICON.get(o, []), o)}
+    return {o for o in outcomes if _find(q, outcome_phrases(o), o)}
 
 
 def _groups(tokens: Sequence[str]) -> set[str]:
@@ -1439,7 +1607,7 @@ class RuleExtractor:
     ) -> Extraction:
         tokens = tokenize(text)
         taken = [False] * len(tokens)
-        candidates = [m for o in outcomes for m in _find(tokens, OUTCOME_LEXICON.get(o, []), o)]
+        candidates = [m for o in outcomes for m in _find(tokens, outcome_phrases(o), o)]
         # "lagta hai" is "it seems" unless it ends an answer phrase that started earlier:
         # "charge hone lagta hai" is "it starts charging", not a hedge.
         probable = [

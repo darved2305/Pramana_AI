@@ -49,7 +49,9 @@ class OnboardingAnswers(StrictModel):
     ) = None
     organization_kind: OrganizationKind | None = None
     buildings: Literal["one", "two_to_five", "six_to_twenty", "more_than_twenty"] | None = None
-    problem: Literal["wifi", "power", "both", "other"] | None = None
+    problem: (
+        Literal["wifi", "power", "both", "water", "cooling", "lifts", "devices", "other"] | None
+    ) = None
     other_problem: str | None = Field(default=None, max_length=500)
     languages: list[TemplateLanguage] = Field(default_factory=list, max_length=4)
 

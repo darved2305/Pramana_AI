@@ -145,6 +145,10 @@ class CreateInvestigation(InvestigationInput):
 
 class CreateSiteInvestigation(InvestigationInput):
     site_id: str
+    practice: bool = False
+    """Simulate faults on this site's published model. Investigating a live site with real
+    people needs real-world reach (calls, messages, work orders), which is not configured
+    yet; until then a live site can only be practised on."""
 
 
 class QuestionStatus(StrEnum):
@@ -259,6 +263,22 @@ class DisagreementView(StrictModel):
     """A plain-English sentence built only from the numbers above and the pack's names."""
 
 
+class RepairOption(StrictModel):
+    """A repair the site's model allows for the current decision, on one specific target."""
+
+    action: Identifier
+    action_label: str
+    target: Identifier
+    target_label: str
+    place: str | None
+    risk: Literal["low", "medium", "high"]
+    reversible: bool
+    participant_ids: list[Identifier]
+    """People in this investigation whose roles may carry it out."""
+    roles: list[str]
+    """Roles that may carry it out, for when nobody here holds one."""
+
+
 class InvestigationState(StrictModel):
     id: str
     pack_id: Identifier
@@ -285,6 +305,10 @@ class InvestigationState(StrictModel):
     presence_checks_enabled: bool = False
     presence_checks: list[PresenceCheckView] = Field(default_factory=list)
     disagreements: list[DisagreementView] = Field(default_factory=list)
+    practice: bool = True
+    """Simulated: the shared practice site, or practice faults on a site's own model."""
+    repair_options: list[RepairOption] = Field(default_factory=list)
+    """What may be proposed for approval now, from the site's own actions."""
 
 
 class EventEnvelope(StrictModel):

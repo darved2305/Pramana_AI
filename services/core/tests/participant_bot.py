@@ -58,12 +58,15 @@ def answer_pending(
         json={
             "question_id": q["id"],
             "participant_id": a["participant_id"],
-            "text": PHRASES[value],
+            "text": PHRASES.get(value, value.replace("_", " ")),
         },
     )
     assert r.status_code == 200, r.text
     result: dict[str, Any] = r.json()
-    assert result["extraction"]["outcome"] == value, (PHRASES[value], result["extraction"])
+    assert result["extraction"]["outcome"] == value, (
+        PHRASES.get(value, value),
+        result["extraction"],
+    )
     return result
 
 

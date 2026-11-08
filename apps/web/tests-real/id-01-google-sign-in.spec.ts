@@ -6,7 +6,8 @@ test("ID-01: the mock Google flow returns an authenticated browser session", asy
   await page.getByRole("textbox", { name: "Subject", exact: true }).fill("browser-google-new-user");
   await page.getByRole("textbox", { name: "Email", exact: true }).fill("browser-google-new-user@gmail.com");
   await page.getByRole("button", { name: "Continue with mock account" }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  // A new person with no workspace is sent to set one up, where the core says to resume.
+  await expect(page).toHaveURL(/\/onboarding\/welcome$/);
   const response = await page.request.get("/api/core/v1/auth/session");
   expect(response.status()).toBe(200);
   expect(await response.json()).toMatchObject({

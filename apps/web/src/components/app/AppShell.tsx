@@ -26,6 +26,9 @@ import { IconButton } from "@/components/ui";
 import { useCoreHealth } from "@/lib/data/hooks";
 import { previewMode, usePrefs, usePreviewMode } from "@/lib/store/local";
 import { useSession } from "@/lib/data/session";
+import { useAccount } from "@/lib/data/account";
+import { findMembership } from "@/lib/org/context";
+import type { OrganizationSummary } from "@/lib/api/types";
 
 /** The core the web app's proxy forwards to (from PRAMANA_CORE_URL at build or dev start). */
 const CORE_ADDRESS = process.env.NEXT_PUBLIC_CORE_ADDRESS ?? "the core";
@@ -38,6 +41,25 @@ const NAV = [
   { href: "/app/evaluation", label: "Evaluation", icon: IconChart },
   { href: "/app/voice", label: "Voice", icon: IconWave },
 ];
+/** The tabs of one workspace. Voice and Account are personal, so they stay outside it. */
+function workspaceNav(slug: string) {
+  const base = `/app/${slug}`;
+  return {
+    main: [
+      { href: base, label: "Home", icon: IconGrid, exact: true },
+      { href: `${base}/investigations`, label: "Investigations", icon: IconHistory },
+      { href: `${base}/people`, label: "People", icon: IconUsers },
+      { href: `${base}/sites`, label: "Sites", icon: IconBuilding },
+      { href: `${base}/health`, label: "Model health", icon: IconChart },
+    ],
+    more: [
+      { href: `${base}/settings`, label: "Workspace settings", icon: IconSettings },
+      { href: "/app/voice", label: "Voice check", icon: IconWave },
+      { href: "/app/account", label: "Account", icon: IconUser },
+    ],
+  };
+}
+
 const NAV_2 = [
   { href: "/app/settings", label: "Settings", icon: IconSettings },
   { href: "/app/account", label: "Account", icon: IconUser },
@@ -54,6 +76,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { reduceMotion } = usePrefs();
   const session = useSession();
   const router = useRouter();
+  const account = useAccount();
+  const segment = pathname.split("/")[2] ?? "";
+  const workspace = account.status === "ready" && segment ? findMembership(account.account, segment) : null;
+  const memberships = account.status === "ready" ? account.account.memberships : [];
 
   // The core said nobody is signed in: go to sign-in and come back here afterwards.
   // An unreachable core is not a sign-out; the screens show that state themselves.
@@ -87,7 +113,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           collapsed ? "w-[76px]" : "w-[260px]",
         )}
       >
-        <Sidebar collapsed={collapsed} pathname={pathname} />
+        <Sidebar collapsed={collapsed} pathname={pathname} workspace={workspace} memberships={memberships} />
       </aside>
 
       {/* Mobile drawer */}
@@ -116,7 +142,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <IconClose />
             </IconButton>
           </div>
-          <Sidebar collapsed={false} pathname={pathname} inert={!drawer} />
+          <Sidebar collapsed={false} pathname={pathname} inert={!drawer} workspace={workspace} memberships={memberships} />
         </aside>
       </div>
 
@@ -137,14 +163,28 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function Sidebar({ collapsed, pathname, inert }: { collapsed: boolean; pathname: string; inert?: boolean }) {
+function Sidebar({
+  collapsed,
+  pathname,
+  inert,
+  workspace,
+  memberships,
+}: {
+  collapsed: boolean;
+  pathname: string;
+  inert?: boolean;
+  workspace: OrganizationSummary | null;
+  memberships: OrganizationSummary[];
+}) {
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
   const [moreOpen, setMoreOpen] = useState(true);
+  const nav = workspace ? workspaceNav(workspace.slug) : { main: NAV, more: NAV_2 };
+  const home = workspace ? `/app/${workspace.slug}` : "/app";
   return (
     <div className="flex h-full flex-col px-[5px] pb-[10px] pt-[14px]" inert={inert}>
       <Link
-        href="/app"
+        href={home}
         className={clsx("mb-[18px] flex h-9 items-center gap-2.5 px-[7px]", collapsed && "justify-center px-0")}
         aria-label="Pramana overview"
       >
@@ -152,8 +192,12 @@ function Sidebar({ collapsed, pathname, inert }: { collapsed: boolean; pathname:
         {!collapsed ? <span className="font-inter text-[24px] font-light tracking-[-0.035em] text-fg">Pramana</span> : null}
       </Link>
 
+      {workspace && memberships.length ? (
+        <WorkspaceSwitcher current={workspace} memberships={memberships} collapsed={collapsed} />
+      ) : null}
+
       <Link
-        href="/app/investigations/new"
+        href={`${home}/investigations/new`}
         className={clsx(
           "mb-3 flex h-10 items-center gap-2 rounded-full bg-accent text-[14px] font-medium text-accent-ink transition-[filter] duration-300 hover:brightness-110",
           collapsed ? "mx-auto w-10 justify-center" : "mx-[5px] px-4",
@@ -165,7 +209,7 @@ function Sidebar({ collapsed, pathname, inert }: { collapsed: boolean; pathname:
       </Link>
 
       <nav aria-label="Application" className="flex flex-col gap-[2px]">
-        {NAV.map((n) => (
+        {nav.main.map((n) => (
           <NavItem key={n.href} {...n} active={isActive(n.href, n.exact)} collapsed={collapsed} />
         ))}
       </nav>
@@ -186,7 +230,7 @@ function Sidebar({ collapsed, pathname, inert }: { collapsed: boolean; pathname:
         )}
         {moreOpen || collapsed ? (
           <nav aria-label="Workspace" className="flex flex-col gap-[2px]">
-            {NAV_2.map((n) => (
+            {nav.more.map((n) => (
               <NavItem key={n.href} {...n} active={isActive(n.href)} collapsed={collapsed} />
             ))}
           </nav>
@@ -197,6 +241,72 @@ function Sidebar({ collapsed, pathname, inert }: { collapsed: boolean; pathname:
         <ConnectionCard collapsed={collapsed} />
         <AccountPill collapsed={collapsed} />
       </div>
+    </div>
+  );
+}
+
+/** Switch between the workspaces this person belongs to, or start a new one. */
+function WorkspaceSwitcher({
+  current,
+  memberships,
+  collapsed,
+}: {
+  current: OrganizationSummary;
+  memberships: OrganizationSummary[];
+  collapsed: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const initials = current.name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return (
+    <div className="relative mb-3 px-[5px]">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={clsx(
+          "flex h-11 w-full items-center gap-2.5 rounded-[14px] px-2.5 text-left shadow-[inset_0_0_0_0.8px_var(--app-line)] transition-colors hover:bg-white/[.03]",
+          collapsed && "justify-center px-0",
+        )}
+        title={collapsed ? current.name : undefined}
+      >
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[9px] bg-accent-soft text-[12px] font-semibold text-accent">{initials}</span>
+        {!collapsed ? (
+          <>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] font-medium text-fg">{current.name}</span>
+              <span className="block truncate text-[11px] text-muted">{current.roles.join(", ")}</span>
+            </span>
+            <IconChevronDown className={clsx("h-4 w-4 text-muted transition-transform", open && "rotate-180")} />
+          </>
+        ) : (
+          <span className="sr-only">Workspace: {current.name}</span>
+        )}
+      </button>
+      {open ? (
+        <div role="menu" className="absolute left-[5px] right-[5px] top-[48px] z-30 flex min-w-[220px] flex-col gap-[2px] rounded-[14px] bg-app-bg p-1.5 shadow-[0_12px_32px_rgba(0,0,0,.45),inset_0_0_0_0.8px_var(--app-line)]">
+          {memberships.map((m) => (
+            <Link
+              key={m.id}
+              role="menuitem"
+              href={`/app/${m.slug}`}
+              onClick={() => setOpen(false)}
+              aria-current={m.id === current.id ? "true" : undefined}
+              className={clsx("flex h-9 items-center rounded-[10px] px-3 text-[14px]", m.id === current.id ? "bg-white/[.05] text-accent" : "text-fg-2 hover:bg-white/[.04] hover:text-fg")}
+            >
+              <span className="truncate">{m.name}</span>
+            </Link>
+          ))}
+          <Link role="menuitem" href="/onboarding/org" onClick={() => setOpen(false)} className="flex h-9 items-center gap-2 rounded-[10px] px-3 text-[14px] text-muted hover:bg-white/[.04] hover:text-fg">
+            <IconPlus className="h-4 w-4" /> New workspace
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
 }
