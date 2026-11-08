@@ -144,7 +144,7 @@ function NewInvestigation() {
           )}
         </Field>
         <Field label="What is wrong, in the reporter's words">
-          {(a) => <Textarea {...a} rows={3} value={report} onChange={(e) => setReport(e.target.value)} placeholder="No water from the taps on the second floor since morning" />}
+          {(a) => <Textarea {...a} rows={3} value={report} onChange={(e) => setReport(e.target.value)} placeholder="Describe what people are noticing, in their own words" />}
         </Field>
         {spec ? (
           <Field label="Where it was noticed" optional hint="Leave empty if the report does not say.">

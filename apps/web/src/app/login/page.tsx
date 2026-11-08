@@ -256,7 +256,7 @@ function LoginInner() {
           ) : null}
         </div>
 
-        <p className="text-[12px] text-cream/40">Pramana. Accounts are created by your site operator.</p>
+        <p className="text-[12px] text-cream/40">Email sign-in is for accounts your site operator set up.</p>
       </main>
     </div>
   );
