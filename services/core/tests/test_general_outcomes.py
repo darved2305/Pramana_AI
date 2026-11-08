@@ -46,3 +46,11 @@ def test_every_template_outcome_has_words() -> None:
                 said = outcome.replace("_", " ")
                 got = extractor.extract_sync(f"it is {said}", probe.outcomes).outcome
                 assert got == outcome, (tid, probe.id, outcome, got)
+
+
+def test_the_consent_line_names_no_particular_kind_of_fault() -> None:
+    from pramana_core.voice.call import CONSENT_TEXT
+
+    for text in CONSENT_TEXT.values():
+        for word in ("Wi-Fi", "WiFi", "power", "वाई", "बिजली", "वाय", "वीज"):
+            assert word not in text
