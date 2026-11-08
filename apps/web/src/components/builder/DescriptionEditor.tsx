@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { Button, Input, Select, Tabs, Textarea } from "@/components/ui";
 import { IconPlus, IconTrash } from "@/components/ui/icons";
 import type { EquipmentType } from "@/lib/api/types";
+import { csvSample, importEquipment } from "@/lib/builder/csv";
 import {
   LANGS,
   SKILLS,
@@ -195,6 +196,7 @@ function Equipment({ value, set, library }: { value: SiteDescription; set: Sette
         What can break, and what each thing depends on. Write dependencies as ids separated by commas; use{" "}
         <code className="font-mono">A | B</code> when either one is enough (a backup pump).
       </p>
+      <CsvImport value={value} set={set} library={library} />
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] text-[14px]">
           <thead>
@@ -267,6 +269,51 @@ function Equipment({ value, set, library }: { value: SiteDescription; set: Sette
           })
         }
       />
+    </div>
+  );
+}
+
+function CsvImport({ value, set, library }: { value: SiteDescription; set: Setter; library: EquipmentType[] }) {
+  const [result, setResult] = useState<{ ok: boolean; lines: string[] } | null>(null);
+  const read = async (file: File | undefined) => {
+    if (!file) return;
+    const r = importEquipment(value, await file.text(), library);
+    if (!r.description) {
+      setResult({ ok: false, lines: r.errors });
+      return;
+    }
+    set({ places: r.description.places, equipment: r.description.equipment });
+    setResult({
+      ok: true,
+      lines: [`Imported: ${r.added} added, ${r.updated} updated, ${r.newPlaces} new places. Save the draft to keep them.`],
+    });
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-[12px] bg-white/[.02] p-3 text-[13px] text-fg-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2">
+          Import a spreadsheet (CSV)
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            aria-label="Import equipment from CSV"
+            onChange={(e) => {
+              void read(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <a className="underline" download="equipment.csv" href={`data:text/csv;charset=utf-8,${encodeURIComponent(csvSample(library))}`}>
+          Download a sample
+        </a>
+      </div>
+      {result ? (
+        <ul aria-label="Import result" className={result.ok ? "text-fg" : "text-[var(--app-bad,#f87171)]"}>
+          {result.lines.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
