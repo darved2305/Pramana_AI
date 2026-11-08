@@ -22,6 +22,7 @@ from .api import directory as directory_api
 from .api import evaluation as evaluation_api
 from .api import investigations as investigations_api
 from .api import packs as packs_api
+from .api import site_builder as site_builder_api
 from .api import site_investigations as site_investigations_api
 from .api import sites as sites_api
 from .api import stream as stream_api
@@ -43,6 +44,7 @@ from .runtime.broadcast import EventBroadcaster
 from .runtime.recovery import recover
 from .settings import Settings, get_settings
 from .sim_client import SimClient
+from .site_builder import SiteBuilder
 from .site_models import StoredModels
 from .voice.conversation import QuestionAudioCache
 from .voice.gnani import GnaniClient
@@ -135,6 +137,7 @@ def create_app(
         )
         app.state.accounts = AccountService(db)
         app.state.site_models = StoredModels(db)
+        app.state.site_builder = SiteBuilder(db)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)
         app.state.participant_public_key = participant_public_key(
@@ -221,6 +224,8 @@ def create_app(
     app.include_router(auth_api.router)
     app.include_router(accounts_api.router)
     app.include_router(sites_api.router)
+    app.include_router(site_builder_api.library)
+    app.include_router(site_builder_api.router)
     app.include_router(site_investigations_api.router)
     if cfg.mode != "production":
         app.include_router(investigations_api.router)

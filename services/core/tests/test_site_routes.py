@@ -33,6 +33,11 @@ SITE_OPERATIONS = {
     ("get", "/v1/orgs/{org}/sites/{site_id}"),
     ("get", "/v1/orgs/{org}/sites/{site_id}/models"),
     ("get", "/v1/orgs/{org}/sites/{site_id}/models/{model_id}"),
+    ("get", "/v1/orgs/{org}/sites/{site_id}/draft"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/draft"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/health"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/publish"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/discard"),
 }
 
 
@@ -79,7 +84,12 @@ def test_other_member_cannot_read_any_site_operation(
 ) -> None:
     client, a, b = two_workspaces  # Signed in as B, whose legacy global role includes approver.
     for path in (_path(template, a), _path(template, a, org=b["organization"]["slug"])):
-        response = client.request(method, path)
+        # Unsafe methods carry CSRF and a key so the organization boundary itself answers.
+        unsafe = {**CSRF, "Idempotency-Key": "cross-org-probe-0001"}
+        body = {"template_id": "office_water"} if template.endswith("/draft") else None
+        response = client.request(
+            method, path, headers=unsafe if method != "get" else None, json=body
+        )
         if template.endswith("/sites") and b["organization"]["slug"] in path:
             assert response.status_code == 200
             assert {site["org_id"] for site in response.json()} == {b["organization"]["id"]}

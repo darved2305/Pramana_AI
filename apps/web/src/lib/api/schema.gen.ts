@@ -497,6 +497,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/library/equipment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Equipment
+         * @description Equipment types a site author can choose from, with their faults, checks and repairs.
+         */
+        get: operations["equipment_v1_library_equipment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/library/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Site Templates
+         * @description Starter site descriptions to copy into a draft and edit.
+         */
+        get: operations["site_templates_v1_library_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -827,6 +867,84 @@ export interface paths {
         get: operations["site_v1_orgs__org__sites__site_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Draft */
+        get: operations["get_draft_v1_orgs__org__sites__site_id__draft_get"];
+        put?: never;
+        /**
+         * Save Draft
+         * @description Start a draft from a template or description, or replace the current one.
+         */
+        post: operations["save_draft_v1_orgs__org__sites__site_id__draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard Draft */
+        post: operations["discard_draft_v1_orgs__org__sites__site_id__draft__model_id__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Draft
+         * @description Judge the generated model against these people, or one person per role.
+         */
+        post: operations["check_draft_v1_orgs__org__sites__site_id__draft__model_id__health_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Draft
+         * @description Publish the checked draft as the site's current, immutable version.
+         */
+        post: operations["publish_draft_v1_orgs__org__sites__site_id__draft__model_id__publish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1355,6 +1473,51 @@ export interface components {
             /** Reconciling Label */
             reconciling_label: string | null;
         };
+        /** EquipmentCheckView */
+        EquipmentCheckView: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Outcomes */
+            outcomes: string[];
+            skill: components["schemas"]["Skill"];
+        };
+        /** EquipmentFailureView */
+        EquipmentFailureView: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Local */
+            local: boolean;
+            /** Prior */
+            prior: number;
+        };
+        /** EquipmentRepairView */
+        EquipmentRepairView: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Trade */
+            trade: string;
+        };
+        /** EquipmentTypeView */
+        EquipmentTypeView: {
+            /** Checks */
+            checks: components["schemas"]["EquipmentCheckView"][];
+            /** Failure Modes */
+            failure_modes: components["schemas"]["EquipmentFailureView"][];
+            /** Id */
+            id: string;
+            /** Keywords */
+            keywords: string[];
+            /** Label */
+            label: string;
+            /** Repairs */
+            repairs: components["schemas"]["EquipmentRepairView"][];
+        };
         /** EvaluationReport */
         EvaluationReport: {
             /**
@@ -1437,6 +1600,29 @@ export interface components {
             /** Mode */
             mode: string;
         };
+        /** FaultHealth */
+        FaultHealth: {
+            /** Abstained */
+            abstained: number;
+            /** Correct */
+            correct: number;
+            /** Decision */
+            decision: string;
+            /** Episodes */
+            episodes: number;
+            /** Hypothesis */
+            hypothesis: string;
+            /** Label */
+            label: string;
+            /** Mean Effort S */
+            mean_effort_s: number | null;
+            /** Mean Questions */
+            mean_questions: number | null;
+            /** Reportable */
+            reportable: boolean;
+            /** Wrong */
+            wrong: number;
+        };
         /** FaultSpec */
         FaultSpec: {
             /** Faults */
@@ -1458,6 +1644,18 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HealthFinding */
+        HealthFinding: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "error" | "warning";
         };
         /**
          * Hedge
@@ -1653,6 +1851,42 @@ export interface components {
          * @enum {string}
          */
         Modality: "text" | "voice" | "tap" | "simulated";
+        /** ModelCounts */
+        ModelCounts: {
+            /** Checks */
+            checks: number;
+            /** Decisions */
+            decisions: number;
+            /** Equipment */
+            equipment: number;
+            /** Places */
+            places: number;
+            /** Roles */
+            roles: number;
+        };
+        /** ModelHealth */
+        ModelHealth: {
+            /**
+             * Cast
+             * @enum {string}
+             */
+            cast: "directory" | "one_per_role";
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Faults */
+            faults: components["schemas"]["FaultHealth"][];
+            /** Findings */
+            findings: components["schemas"]["HealthFinding"][];
+            /** Ok */
+            ok: boolean;
+            /** People */
+            people: number;
+            /** Spec Sha256 */
+            spec_sha256: string;
+        };
         /** Observation */
         Observation: {
             /**
@@ -2054,6 +2288,18 @@ export interface components {
             scenario_id: string;
         };
         /**
+         * SaveDraft
+         * @description Start or replace a draft from a template or from a full description.
+         */
+        SaveDraft: {
+            /** Description */
+            description?: {
+                [key: string]: unknown;
+            } | null;
+            /** Template Id */
+            template_id?: string | null;
+        };
+        /**
          * ScenarioRequest
          * @description How the simulator should choose the sealed hidden fault.
          */
@@ -2129,6 +2375,36 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** SiteModelDraft */
+        SiteModelDraft: {
+            counts: components["schemas"]["ModelCounts"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: {
+                [key: string]: unknown;
+            };
+            health?: components["schemas"]["ModelHealth"] | null;
+            /** Id */
+            id: string;
+            /** Notes */
+            notes?: string[];
+            /** Site Id */
+            site_id: string;
+            /** Spec Sha256 */
+            spec_sha256: string;
+            /**
+             * Status
+             * @default draft
+             * @constant
+             */
+            status?: "draft";
+            /** Version */
+            version: number;
+        };
         /** SiteModelSummary */
         SiteModelSummary: {
             /**
@@ -2176,6 +2452,21 @@ export interface components {
             name: string;
             /** Org Id */
             org_id: string;
+        };
+        /** SiteTemplateView */
+        SiteTemplateView: {
+            /** Description */
+            description: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
         };
         /**
          * Skill
@@ -3073,6 +3364,46 @@ export interface operations {
             };
         };
     };
+    equipment_v1_library_equipment_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EquipmentTypeView"][];
+                };
+            };
+        };
+    };
+    site_templates_v1_library_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteTemplateView"][];
+                };
+            };
+        };
+    };
     me_v1_me_get: {
         parameters: {
             query?: never;
@@ -3888,6 +4219,258 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_draft_v1_orgs__org__sites__site_id__draft_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteModelDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_draft_v1_orgs__org__sites__site_id__draft_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match"?: string;
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveDraft"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteModelDraft"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The draft changed in another tab */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Replacing a draft needs the version being edited */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    discard_draft_v1_orgs__org__sites__site_id__draft__model_id__discard_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_draft_v1_orgs__org__sites__site_id__draft__model_id__health_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ParticipantSpec"][] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteModelDraft"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_draft_v1_orgs__org__sites__site_id__draft__model_id__publish_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteModelSummary"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
             422: {
                 headers: {
                     [name: string]: unknown;

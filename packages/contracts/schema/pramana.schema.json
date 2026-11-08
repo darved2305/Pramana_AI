@@ -1041,6 +1041,79 @@
       "title": "Fault",
       "type": "object"
     },
+    "FaultHealth": {
+      "additionalProperties": false,
+      "properties": {
+        "abstained": {
+          "title": "Abstained",
+          "type": "integer"
+        },
+        "correct": {
+          "title": "Correct",
+          "type": "integer"
+        },
+        "decision": {
+          "title": "Decision",
+          "type": "string"
+        },
+        "episodes": {
+          "title": "Episodes",
+          "type": "integer"
+        },
+        "hypothesis": {
+          "title": "Hypothesis",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "mean_effort_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Mean Effort S"
+        },
+        "mean_questions": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Mean Questions"
+        },
+        "reportable": {
+          "title": "Reportable",
+          "type": "boolean"
+        },
+        "wrong": {
+          "title": "Wrong",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hypothesis",
+        "label",
+        "decision",
+        "reportable",
+        "episodes",
+        "correct",
+        "abstained",
+        "wrong",
+        "mean_questions",
+        "mean_effort_s"
+      ],
+      "title": "FaultHealth",
+      "type": "object"
+    },
     "FaultSpec": {
       "additionalProperties": false,
       "properties": {
@@ -1107,6 +1180,34 @@
         "correct"
       ],
       "title": "GroundTruthComparison",
+      "type": "object"
+    },
+    "HealthFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "code",
+        "message"
+      ],
+      "title": "HealthFinding",
       "type": "object"
     },
     "Hedge": {
@@ -1835,6 +1936,95 @@
       ],
       "title": "Modality",
       "type": "string"
+    },
+    "ModelCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "title": "Checks",
+          "type": "integer"
+        },
+        "decisions": {
+          "title": "Decisions",
+          "type": "integer"
+        },
+        "equipment": {
+          "title": "Equipment",
+          "type": "integer"
+        },
+        "places": {
+          "title": "Places",
+          "type": "integer"
+        },
+        "roles": {
+          "title": "Roles",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "places",
+        "equipment",
+        "checks",
+        "decisions",
+        "roles"
+      ],
+      "title": "ModelCounts",
+      "type": "object"
+    },
+    "ModelHealth": {
+      "additionalProperties": false,
+      "properties": {
+        "cast": {
+          "enum": [
+            "directory",
+            "one_per_role"
+          ],
+          "title": "Cast",
+          "type": "string"
+        },
+        "checked_at": {
+          "format": "date-time",
+          "title": "Checked At",
+          "type": "string"
+        },
+        "faults": {
+          "items": {
+            "$ref": "#/$defs/FaultHealth"
+          },
+          "title": "Faults",
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/HealthFinding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "people": {
+          "title": "People",
+          "type": "integer"
+        },
+        "spec_sha256": {
+          "title": "Spec Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "spec_sha256",
+        "people",
+        "cast",
+        "checked_at",
+        "findings",
+        "faults"
+      ],
+      "title": "ModelHealth",
+      "type": "object"
     },
     "Observation": {
       "additionalProperties": false,
@@ -3019,6 +3209,40 @@
       "title": "RevealResult",
       "type": "object"
     },
+    "SaveDraft": {
+      "additionalProperties": false,
+      "description": "Start or replace a draft from a template or from a full description.",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "template_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template Id"
+        }
+      },
+      "title": "SaveDraft",
+      "type": "object"
+    },
     "ScenarioRequest": {
       "additionalProperties": false,
       "description": "How the simulator should choose the sealed hidden fault.",
@@ -3176,6 +3400,75 @@
         "spec"
       ],
       "title": "SiteModelDocument",
+      "type": "object"
+    },
+    "SiteModelDraft": {
+      "additionalProperties": false,
+      "properties": {
+        "counts": {
+          "$ref": "#/$defs/ModelCounts"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "description": {
+          "additionalProperties": true,
+          "title": "Description",
+          "type": "object"
+        },
+        "health": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelHealth"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "site_id": {
+          "title": "Site Id",
+          "type": "string"
+        },
+        "spec_sha256": {
+          "title": "Spec Sha256",
+          "type": "string"
+        },
+        "status": {
+          "const": "draft",
+          "default": "draft",
+          "title": "Status",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "site_id",
+        "version",
+        "description",
+        "spec_sha256",
+        "counts",
+        "created_at"
+      ],
+      "title": "SiteModelDraft",
       "type": "object"
     },
     "SiteModelSummary": {
@@ -3679,11 +3972,17 @@
     "RevealResult": {
       "$ref": "#/$defs/RevealResult"
     },
+    "SaveDraft": {
+      "$ref": "#/$defs/SaveDraft"
+    },
     "SessionDevice": {
       "$ref": "#/$defs/SessionDevice"
     },
     "SiteModelDocument": {
       "$ref": "#/$defs/SiteModelDocument"
+    },
+    "SiteModelDraft": {
+      "$ref": "#/$defs/SiteModelDraft"
     },
     "SiteModelSummary": {
       "$ref": "#/$defs/SiteModelSummary"

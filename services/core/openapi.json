@@ -896,6 +896,141 @@
     "title": "DisagreementView",
     "type": "object"
    },
+   "EquipmentCheckView": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "outcomes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Outcomes",
+      "type": "array"
+     },
+     "skill": {
+      "$ref": "#/components/schemas/Skill"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "outcomes",
+     "skill"
+    ],
+    "title": "EquipmentCheckView",
+    "type": "object"
+   },
+   "EquipmentFailureView": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "local": {
+      "title": "Local",
+      "type": "boolean"
+     },
+     "prior": {
+      "title": "Prior",
+      "type": "number"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "prior",
+     "local"
+    ],
+    "title": "EquipmentFailureView",
+    "type": "object"
+   },
+   "EquipmentRepairView": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "trade": {
+      "title": "Trade",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "trade"
+    ],
+    "title": "EquipmentRepairView",
+    "type": "object"
+   },
+   "EquipmentTypeView": {
+    "additionalProperties": false,
+    "properties": {
+     "checks": {
+      "items": {
+       "$ref": "#/components/schemas/EquipmentCheckView"
+      },
+      "title": "Checks",
+      "type": "array"
+     },
+     "failure_modes": {
+      "items": {
+       "$ref": "#/components/schemas/EquipmentFailureView"
+      },
+      "title": "Failure Modes",
+      "type": "array"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "keywords": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Keywords",
+      "type": "array"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "repairs": {
+      "items": {
+       "$ref": "#/components/schemas/EquipmentRepairView"
+      },
+      "title": "Repairs",
+      "type": "array"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "failure_modes",
+     "checks",
+     "repairs",
+     "keywords"
+    ],
+    "title": "EquipmentTypeView",
+    "type": "object"
+   },
    "EvaluationReport": {
     "additionalProperties": false,
     "properties": {
@@ -1082,6 +1217,79 @@
     "title": "Fault",
     "type": "object"
    },
+   "FaultHealth": {
+    "additionalProperties": false,
+    "properties": {
+     "abstained": {
+      "title": "Abstained",
+      "type": "integer"
+     },
+     "correct": {
+      "title": "Correct",
+      "type": "integer"
+     },
+     "decision": {
+      "title": "Decision",
+      "type": "string"
+     },
+     "episodes": {
+      "title": "Episodes",
+      "type": "integer"
+     },
+     "hypothesis": {
+      "title": "Hypothesis",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "mean_effort_s": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mean Effort S"
+     },
+     "mean_questions": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mean Questions"
+     },
+     "reportable": {
+      "title": "Reportable",
+      "type": "boolean"
+     },
+     "wrong": {
+      "title": "Wrong",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "hypothesis",
+     "label",
+     "decision",
+     "reportable",
+     "episodes",
+     "correct",
+     "abstained",
+     "wrong",
+     "mean_questions",
+     "mean_effort_s"
+    ],
+    "title": "FaultHealth",
+    "type": "object"
+   },
    "FaultSpec": {
     "additionalProperties": false,
     "properties": {
@@ -1161,6 +1369,34 @@
      }
     },
     "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "HealthFinding": {
+    "additionalProperties": false,
+    "properties": {
+     "code": {
+      "title": "Code",
+      "type": "string"
+     },
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "severity": {
+      "enum": [
+       "error",
+       "warning"
+      ],
+      "title": "Severity",
+      "type": "string"
+     }
+    },
+    "required": [
+     "severity",
+     "code",
+     "message"
+    ],
+    "title": "HealthFinding",
     "type": "object"
    },
    "Hedge": {
@@ -1718,6 +1954,95 @@
     ],
     "title": "Modality",
     "type": "string"
+   },
+   "ModelCounts": {
+    "additionalProperties": false,
+    "properties": {
+     "checks": {
+      "title": "Checks",
+      "type": "integer"
+     },
+     "decisions": {
+      "title": "Decisions",
+      "type": "integer"
+     },
+     "equipment": {
+      "title": "Equipment",
+      "type": "integer"
+     },
+     "places": {
+      "title": "Places",
+      "type": "integer"
+     },
+     "roles": {
+      "title": "Roles",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "places",
+     "equipment",
+     "checks",
+     "decisions",
+     "roles"
+    ],
+    "title": "ModelCounts",
+    "type": "object"
+   },
+   "ModelHealth": {
+    "additionalProperties": false,
+    "properties": {
+     "cast": {
+      "enum": [
+       "directory",
+       "one_per_role"
+      ],
+      "title": "Cast",
+      "type": "string"
+     },
+     "checked_at": {
+      "format": "date-time",
+      "title": "Checked At",
+      "type": "string"
+     },
+     "faults": {
+      "items": {
+       "$ref": "#/components/schemas/FaultHealth"
+      },
+      "title": "Faults",
+      "type": "array"
+     },
+     "findings": {
+      "items": {
+       "$ref": "#/components/schemas/HealthFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "people": {
+      "title": "People",
+      "type": "integer"
+     },
+     "spec_sha256": {
+      "title": "Spec Sha256",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ok",
+     "spec_sha256",
+     "people",
+     "cast",
+     "checked_at",
+     "findings",
+     "faults"
+    ],
+    "title": "ModelHealth",
+    "type": "object"
    },
    "Observation": {
     "additionalProperties": false,
@@ -2920,6 +3245,38 @@
     "title": "RevealResult",
     "type": "object"
    },
+   "SaveDraft": {
+    "additionalProperties": false,
+    "description": "Start or replace a draft from a template or from a full description.",
+    "properties": {
+     "description": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "template_id": {
+      "anyOf": [
+       {
+        "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Id"
+     }
+    },
+    "title": "SaveDraft",
+    "type": "object"
+   },
    "ScenarioRequest": {
     "additionalProperties": false,
     "description": "How the simulator should choose the sealed hidden fault.",
@@ -3078,6 +3435,74 @@
     "title": "SiteModelDocument",
     "type": "object"
    },
+   "SiteModelDraft": {
+    "additionalProperties": false,
+    "properties": {
+     "counts": {
+      "$ref": "#/components/schemas/ModelCounts"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "description": {
+      "additionalProperties": true,
+      "title": "Description",
+      "type": "object"
+     },
+     "health": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModelHealth"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "notes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+     },
+     "site_id": {
+      "title": "Site Id",
+      "type": "string"
+     },
+     "spec_sha256": {
+      "title": "Spec Sha256",
+      "type": "string"
+     },
+     "status": {
+      "const": "draft",
+      "default": "draft",
+      "title": "Status",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "site_id",
+     "version",
+     "description",
+     "spec_sha256",
+     "counts",
+     "created_at"
+    ],
+    "title": "SiteModelDraft",
+    "type": "object"
+   },
    "SiteModelSummary": {
     "additionalProperties": false,
     "properties": {
@@ -3194,6 +3619,41 @@
      "created_at"
     ],
     "title": "SiteSummary",
+    "type": "object"
+   },
+   "SiteTemplateView": {
+    "additionalProperties": false,
+    "properties": {
+     "description": {
+      "additionalProperties": true,
+      "title": "Description",
+      "type": "object"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "summary": {
+      "title": "Summary",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "kind",
+     "summary",
+     "description"
+    ],
+    "title": "SiteTemplateView",
     "type": "object"
    },
    "Skill": {
@@ -4675,6 +5135,58 @@
     ]
    }
   },
+  "/v1/library/equipment": {
+   "get": {
+    "description": "Equipment types a site author can choose from, with their faults, checks and repairs.",
+    "operationId": "equipment_v1_library_equipment_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/EquipmentTypeView"
+         },
+         "title": "Response Equipment V1 Library Equipment Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Equipment",
+    "tags": [
+     "site builder"
+    ]
+   }
+  },
+  "/v1/library/templates": {
+   "get": {
+    "description": "Starter site descriptions to copy into a draft and edit.",
+    "operationId": "site_templates_v1_library_templates_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SiteTemplateView"
+         },
+         "title": "Response Site Templates V1 Library Templates Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Site Templates",
+    "tags": [
+     "site builder"
+    ]
+   }
+  },
   "/v1/me": {
    "get": {
     "operationId": "me_v1_me_get",
@@ -5867,6 +6379,410 @@
     "summary": "Site",
     "tags": [
      "sites"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/draft": {
+   "get": {
+    "operationId": "get_draft_v1_orgs__org__sites__site_id__draft_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SiteModelDraft"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Draft",
+    "tags": [
+     "site builder"
+    ]
+   },
+   "post": {
+    "description": "Start a draft from a template or description, or replace the current one.",
+    "operationId": "save_draft_v1_orgs__org__sites__site_id__draft_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "If-Match",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "If-Match"
+      }
+     },
+     {
+      "in": "header",
+      "name": "If-Match",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SaveDraft"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SiteModelDraft"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "412": {
+      "description": "The draft changed in another tab"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     },
+     "428": {
+      "description": "Replacing a draft needs the version being edited"
+     }
+    },
+    "summary": "Save Draft",
+    "tags": [
+     "site builder"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/discard": {
+   "post": {
+    "operationId": "discard_draft_v1_orgs__org__sites__site_id__draft__model_id__discard_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "model_id",
+      "required": true,
+      "schema": {
+       "title": "Model Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Discard Draft",
+    "tags": [
+     "site builder"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/health": {
+   "post": {
+    "description": "Judge the generated model against these people, or one person per role.",
+    "operationId": "check_draft_v1_orgs__org__sites__site_id__draft__model_id__health_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "model_id",
+      "required": true,
+      "schema": {
+       "title": "Model Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "items": {
+           "$ref": "#/components/schemas/ParticipantSpec"
+          },
+          "type": "array"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "People"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SiteModelDraft"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Check Draft",
+    "tags": [
+     "site builder"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/draft/{model_id}/publish": {
+   "post": {
+    "description": "Publish the checked draft as the site's current, immutable version.",
+    "operationId": "publish_draft_v1_orgs__org__sites__site_id__draft__model_id__publish_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "model_id",
+      "required": true,
+      "schema": {
+       "title": "Model Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SiteModelSummary"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Publish Draft",
+    "tags": [
+     "site builder"
     ]
    }
   },

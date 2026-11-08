@@ -438,6 +438,8 @@ class SiteModelRow(Base):
     spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
     spec_sha256: Mapped[bytes] = mapped_column(LargeBinary)
     validation: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    source: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    """The site description this version was generated from, when it came from the builder."""
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

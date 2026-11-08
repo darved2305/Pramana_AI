@@ -24,8 +24,22 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | Launch budget and database provider | User decision recorded | INR 1,000/month total GCP ceiling; Supabase Free in specific Mumbai region approved, application on GCP Mumbai, no domain. GCP project access/billing linkage checked read-only; scoped Supabase setup token requested in `.env` |
 | Staging/production deployment | Not run | STOP 2 remains before any cloud apply; no cloud spend or live calls/messages |
 | Onboarding with people | Not run | No usability sessions; no claim against the three-minute target |
+| Slice 4: investigations pinned to saved models, org routes | CI green | `c1a44e7` (Codex's work, verified and committed): full Python suite exit 0; UI 48 passed; real-stack 23 passed after `04dc29c` updated two id patterns to typed UUIDv7 ids. [Run 42448480249](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/actions/runs/42448480249) passed |
+| Any-site models (dependency physics, role catalogues, equipment library, builder, health check) | CI green | `36d398e`, fix `87670a7`; full Python suite exit 0 before the builder files; domain, engine and eval suites pass with them. Run 42448406787 failed on that mypy error; the fix's run 42448480249 passed |
+| Health check measurements | Tested locally | Water template, 40 runs x 2 seeds: 75-95% correct, at most 7.5% wrong per tested fault. False alarms end in a fault decision 12-22% of the time. Generated retail and ward sites: at least 7/10 correct per tested fault |
+| Health check finding on the demo model | Recorded, not changed | `DISPATCH_ELECTRICIAN_DB_C2` spans two breakers (`SPLIT_TARGET_DECISION`); left unchanged to keep replayed beliefs and the submission build |
+| Slice B: site builder API | Tested locally, not committed at the time of writing | Migration 0012 (`source`, frozen with the version; one draft per site), `/v1/library/*`, `/v1/orgs/{org}/sites/{site}/draft` save/health/publish/discard with ETag 428/412; 54 site API and cross-org tests pass (owner and runtime roles); full suite running |
+| Web builder client | Implemented | `organizationApi` draft methods, `libraryApi`, `ApiError.details/problems`; typecheck and lint pass. No pages use them yet |
 
 ## Remaining work
+
+The console and onboarding are the largest gap. The core has `/v1/me` (with `destination`),
+onboarding state, organizations, sites, models, the builder and organization-scoped
+investigations, but every console page still uses the unscoped single-tenant API, four pages
+default to `campus_block_c`, preferences live only in browser storage, and there is no
+`/onboarding` route. The ordered plan is in PRODUCTION.md, "Any-site product conversion".
+The onboarding survey's `problem` field still offers only Wi-Fi and power; widen it additively
+(water, cooling, lifts, payment devices) and use it to choose the starting template.
 
 The uncommitted stored-model loader/cache passes 26 focused checks in 18.58 s using owner and
 runtime roles, plus Ruff, mypy (62 source files) and all three import contracts. Coverage includes

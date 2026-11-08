@@ -22,6 +22,30 @@ submission at risk.
 
 ## 0. Ground rules (read before touching anything)
 
+### Resume checkpoint, 2026-11-08 (latest; supersedes the order below where they differ)
+
+The user's direction: Pramana must work for any kind of site and situation with the same
+vision, real onboarding, saved state for returning users, every button backed by the core,
+and every sidebar tab worth opening. The plan of record is PRODUCTION.md, "Any-site product
+conversion"; evidence is in STATUS_PRODUCTION_2026-11-08.md.
+
+Done and CI green: Slice 4 (`c1a44e7`), any-site models (`36d398e`, `87670a7`): dependency
+physics, per-site role catalogues, equipment library, site builder, model health check, starter
+templates. Slice B (site builder API, migration 0012) was tested locally at the end of the Nov 8
+session; read `git log` and the status report to see whether it was committed and CI-checked.
+
+Next, in order: C people per site; D console foundation (`/app/[org]/...` driven by `/v1/me`
+`destination`, server-side preferences, organization switcher, no `campus_block_c` in product
+code); E onboarding (widen the survey's `problem` additively, template chosen from it, builder
+with health check, guided sandbox); F every tab (adaptive home, live board, people reliability,
+site builder UI, model health per site, voice check, team and invitations). Read the Next.js 16
+docs in `apps/web/node_modules/next/dist/docs/` before writing routes or `proxy.ts`.
+
+Lessons from this session: run `mypy` and read its whole output before pushing (a truncated
+tail hid an error that failed CI once); tenant-leak tests must send CSRF, an Idempotency-Key and
+a valid body so the organization boundary is what answers; the health check needs 30+ runs
+before asserting accuracy bounds.
+
 ### Resume checkpoint, 2026-11-07
 
 STOP 1 is answered: start now on `production` only, GCP `asia-south1`, product name Pramana,
