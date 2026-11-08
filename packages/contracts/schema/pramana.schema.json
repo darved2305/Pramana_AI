@@ -3452,6 +3452,17 @@
           "default": null,
           "title": "Description"
         },
+        "health": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelHealth"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "id": {
           "title": "Id",
           "type": "string"

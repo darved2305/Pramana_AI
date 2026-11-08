@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from .common import StrictModel
+from .site_builder import ModelHealth
 
 
 class SiteModelSummary(StrictModel):
@@ -23,3 +24,5 @@ class SiteModelDocument(SiteModelSummary):
     spec: dict[str, Any]
     description: dict[str, Any] | None = None
     """The site description it was generated from, when made with the builder."""
+    health: ModelHealth | None = None
+    """The health check this exact version passed before it was published, if any."""

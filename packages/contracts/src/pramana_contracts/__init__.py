@@ -82,6 +82,14 @@ from .investigation import (
     SubmitAnswer,
     VoiceAnswerResult,
 )
+from .invitations import (
+    AcceptInvitation,
+    CreateInvitation,
+    InvitationAccepted,
+    InvitationCreated,
+    InvitationView,
+)
+from .members import WorkspaceMember
 from .participants import LanguageProfile, ParticipantSpec
 from .reasoning import (
     BeliefSnapshot,
@@ -141,6 +149,7 @@ __all__ = [
     "CONTRACTS_VERSION",
     "TERMINAL_STATUSES",
     "UNKNOWN_OUTCOME",
+    "AcceptInvitation",
     "AccountPreferences",
     "ActRequest",
     "ActResult",
@@ -154,6 +163,7 @@ __all__ = [
     "CandidateScore",
     "CapabilityGrant",
     "CreateInvestigation",
+    "CreateInvitation",
     "CreateOrganization",
     "CreateScenario",
     "CreateSiteInvestigation",
@@ -190,6 +200,9 @@ __all__ = [
     "InvestigationState",
     "InvestigationStatus",
     "InvestigationSummary",
+    "InvitationAccepted",
+    "InvitationCreated",
+    "InvitationView",
     "JoinSuggestion",
     "LanguageCode",
     "LanguageProfile",
@@ -258,4 +271,5 @@ __all__ = [
     "ViewLabel",
     "VoiceAnswerResult",
     "WorkspaceHome",
+    "WorkspaceMember",
 ]

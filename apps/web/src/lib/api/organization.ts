@@ -19,6 +19,10 @@ import type {
   SiteSummary,
   ParticipantPatch,
   WorkspaceHome,
+  WorkspaceMember,
+  CreateInvitation,
+  InvitationCreated,
+  InvitationView,
   SubmitAnswer,
 } from "./types";
 
@@ -53,6 +57,12 @@ export function organizationApi(org: string) {
   return Object.freeze({
     org,
     home: (signal?: AbortSignal) => request<WorkspaceHome>("core", `${root}/home`, { signal }),
+    members: (signal?: AbortSignal) => request<WorkspaceMember[]>("core", `${root}/members`, { signal }),
+    invitations: (signal?: AbortSignal) => request<InvitationView[]>("core", `${root}/invitations`, { signal }),
+    invite: (body: CreateInvitation, action: OrganizationAction) =>
+      mutate<InvitationCreated>(`${root}/invitations`, body, action),
+    revokeInvitation: (id: string, action: OrganizationAction) =>
+      mutate<void>(`${root}/invitations/${enc(id)}/revoke`, undefined, action),
     sites: (signal?: AbortSignal) => request<SiteSummary[]>("core", `${root}/sites`, { signal }),
     people: (siteId: string, signal?: AbortSignal) =>
       request<SitePerson[]>("core", `${site(siteId)}/people`, { signal }),

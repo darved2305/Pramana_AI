@@ -139,7 +139,7 @@ def test_owner_can_read_saved_model_and_hash_its_exact_spec(account_core: TestCl
     assert body["spec_sha256"] == spec_digest(body["spec"]).hex()
     assert body["status"] == "published"
     assert body["org_id"] == workspace["organization"]["id"]
-    assert set(body) == set(models.json()[0]) | {"spec", "description"}
+    assert set(body) == set(models.json()[0]) | {"spec", "description", "health"}
     assert body["description"] is None  # the frozen sandbox was not made with the builder
     assert document.headers["cache-control"] == "private, no-store"
     assert document.headers["etag"].startswith('"')

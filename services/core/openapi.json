@@ -1,6 +1,22 @@
 {
  "components": {
   "schemas": {
+   "AcceptInvitation": {
+    "additionalProperties": false,
+    "properties": {
+     "token": {
+      "maxLength": 200,
+      "minLength": 20,
+      "title": "Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "token"
+    ],
+    "title": "AcceptInvitation",
+    "type": "object"
+   },
    "AccountPreferences": {
     "additionalProperties": false,
     "properties": {
@@ -543,6 +559,38 @@
      "pack_id"
     ],
     "title": "CreateInvestigation",
+    "type": "object"
+   },
+   "CreateInvitation": {
+    "additionalProperties": false,
+    "properties": {
+     "email": {
+      "maxLength": 254,
+      "minLength": 3,
+      "title": "Email",
+      "type": "string"
+     },
+     "roles": {
+      "items": {
+       "enum": [
+        "admin",
+        "operator",
+        "approver",
+        "viewer"
+       ],
+       "type": "string"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "title": "Roles",
+      "type": "array"
+     }
+    },
+    "required": [
+     "email",
+     "roles"
+    ],
+    "title": "CreateInvitation",
     "type": "object"
    },
    "CreateOrganization": {
@@ -2033,6 +2081,110 @@
      "participant_count"
     ],
     "title": "InvestigationSummary",
+    "type": "object"
+   },
+   "InvitationAccepted": {
+    "additionalProperties": false,
+    "properties": {
+     "destination": {
+      "title": "Destination",
+      "type": "string"
+     },
+     "organization": {
+      "$ref": "#/components/schemas/OrganizationSummary"
+     }
+    },
+    "required": [
+     "organization",
+     "destination"
+    ],
+    "title": "InvitationAccepted",
+    "type": "object"
+   },
+   "InvitationCreated": {
+    "additionalProperties": false,
+    "properties": {
+     "accept_path": {
+      "title": "Accept Path",
+      "type": "string"
+     },
+     "invitation": {
+      "$ref": "#/components/schemas/InvitationView"
+     }
+    },
+    "required": [
+     "invitation",
+     "accept_path"
+    ],
+    "title": "InvitationCreated",
+    "type": "object"
+   },
+   "InvitationView": {
+    "additionalProperties": false,
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "email": {
+      "title": "Email",
+      "type": "string"
+     },
+     "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "invited_by": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Invited By"
+     },
+     "roles": {
+      "items": {
+       "enum": [
+        "admin",
+        "operator",
+        "approver",
+        "viewer"
+       ],
+       "type": "string"
+      },
+      "title": "Roles",
+      "type": "array"
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "accepted",
+       "revoked",
+       "expired"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "email",
+     "roles",
+     "status",
+     "created_at",
+     "expires_at",
+     "invited_by"
+    ],
+    "title": "InvitationView",
     "type": "object"
    },
    "JoinSuggestion": {
@@ -3755,6 +3907,16 @@
       ],
       "title": "Description"
      },
+     "health": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModelHealth"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "id": {
       "title": "Id",
       "type": "string"
@@ -4390,6 +4552,61 @@
      "modules"
     ],
     "title": "WorkspaceHome",
+    "type": "object"
+   },
+   "WorkspaceMember": {
+    "additionalProperties": false,
+    "properties": {
+     "display_name": {
+      "title": "Display Name",
+      "type": "string"
+     },
+     "email": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Email"
+     },
+     "joined_at": {
+      "format": "date-time",
+      "title": "Joined At",
+      "type": "string"
+     },
+     "roles": {
+      "items": {
+       "$ref": "#/components/schemas/OrganizationRole"
+      },
+      "title": "Roles",
+      "type": "array"
+     },
+     "status": {
+      "enum": [
+       "active",
+       "pending",
+       "suspended"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "you": {
+      "title": "You",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "display_name",
+     "email",
+     "roles",
+     "status",
+     "joined_at",
+     "you"
+    ],
+    "title": "WorkspaceMember",
     "type": "object"
    }
   }
@@ -5584,6 +5801,66 @@
     "summary": "Stream Events",
     "tags": [
      "investigations"
+    ]
+   }
+  },
+  "/v1/invitations/accept": {
+   "post": {
+    "operationId": "accept_invitation_v1_invitations_accept_post",
+    "parameters": [
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AcceptInvitation"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationAccepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Accept Invitation",
+    "tags": [
+     "invitations"
     ]
    }
   },
@@ -6837,6 +7114,227 @@
     "summary": "Stream Events",
     "tags": [
      "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/invitations": {
+   "get": {
+    "operationId": "list_invitations_v1_orgs__org__invitations_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/InvitationView"
+         },
+         "title": "Response List Invitations V1 Orgs  Org  Invitations Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Invitations",
+    "tags": [
+     "invitations"
+    ]
+   },
+   "post": {
+    "description": "Returns the link once. Share it with the person; it works for their email only.",
+    "operationId": "create_invitation_v1_orgs__org__invitations_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateInvitation"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Create Invitation",
+    "tags": [
+     "invitations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/invitations/{invite_id}/revoke": {
+   "post": {
+    "operationId": "revoke_invitation_v1_orgs__org__invitations__invite_id__revoke_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "invite_id",
+      "required": true,
+      "schema": {
+       "title": "Invite Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Revoke Invitation",
+    "tags": [
+     "invitations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/members": {
+   "get": {
+    "operationId": "members_v1_orgs__org__members_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/WorkspaceMember"
+         },
+         "title": "Response Members V1 Orgs  Org  Members Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Members",
+    "tags": [
+     "members"
     ]
    }
   },

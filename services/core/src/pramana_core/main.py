@@ -22,6 +22,8 @@ from .api import directory as directory_api
 from .api import evaluation as evaluation_api
 from .api import home as home_api
 from .api import investigations as investigations_api
+from .api import invitations as invitations_api
+from .api import members as members_api
 from .api import packs as packs_api
 from .api import people as people_api
 from .api import site_builder as site_builder_api
@@ -38,6 +40,7 @@ from .db import Database, make_engine
 from .directory import make_queries
 from .errors import install_error_handlers
 from .investigations import InvestigationService
+from .invitations import Invitations
 from .language.extraction import RuleExtractor
 from .language.hybrid import HybridExtractor
 from .llm import LlmClient
@@ -141,6 +144,7 @@ def create_app(
         app.state.accounts = AccountService(db)
         app.state.site_models = StoredModels(db)
         app.state.site_people = SitePeople(db)
+        app.state.invitations = Invitations(db)
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)
@@ -232,6 +236,9 @@ def create_app(
     app.include_router(site_builder_api.router)
     app.include_router(people_api.router)
     app.include_router(home_api.router)
+    app.include_router(members_api.router)
+    app.include_router(invitations_api.router)
+    app.include_router(invitations_api.accept_router)
     app.include_router(site_investigations_api.router)
     if cfg.mode != "production":
         app.include_router(investigations_api.router)

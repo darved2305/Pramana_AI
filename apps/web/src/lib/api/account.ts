@@ -8,6 +8,7 @@ import type {
   OrganizationCreated,
   AccountPreferences,
   PreferencesPatch,
+  InvitationAccepted,
 } from "./types";
 
 /** A fresh idempotency key. Reuse the same key when retrying one action after a lost response. */
@@ -39,6 +40,12 @@ export const accountApi = Object.freeze({
     request<AccountPreferences>("core", "/v1/me/preferences", {
       method: "PATCH",
       json: patch,
+      headers: { "Idempotency-Key": key },
+    }),
+  acceptInvitation: (token: string, key: string) =>
+    request<InvitationAccepted>("core", "/v1/invitations/accept", {
+      method: "POST",
+      json: { token },
       headers: { "Idempotency-Key": key },
     }),
   createOrganization: (body: CreateOrganization, key: string) =>

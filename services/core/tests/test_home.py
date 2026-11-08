@@ -159,3 +159,38 @@ def test_another_workspace_home_is_not_found(account_core: TestClient) -> None:
     client = account_core
     create(client)
     assert client.get("/v1/orgs/not-mine-at-all/home").status_code == 404
+
+
+@pytest.mark.db
+def test_members_show_emails_only_to_owners_and_admins(account_core: TestClient) -> None:
+    client = account_core
+    workspace = create(client).json()
+    members = client.get(f"/v1/orgs/{workspace['organization']['slug']}/members")
+    assert members.status_code == 200, members.text
+    [me] = members.json()
+    assert me["you"] is True
+    assert "owner" in me["roles"]
+    assert me["email"]  # an owner sees addresses
+    assert client.get("/v1/orgs/not-mine-at-all/members").status_code == 404
+
+
+@pytest.mark.db
+def test_a_published_version_carries_the_check_it_passed(account_core: TestClient) -> None:
+    client = account_core
+    workspace = create(client).json()
+    org, site = workspace["organization"]["slug"], workspace["live_site"]["id"]
+    headers = {**CSRF}
+    draft = client.post(
+        f"/v1/orgs/{org}/sites/{site}/draft",
+        json={"template_id": "office_water"},
+        headers={**headers, "Idempotency-Key": "health-carry-0001"},
+    ).json()
+    for step, key in (("health", "health-carry-0002"), ("publish", "health-carry-0003")):
+        r = client.post(
+            f"/v1/orgs/{org}/sites/{site}/draft/{draft['id']}/{step}",
+            headers={**headers, "Idempotency-Key": key},
+        )
+        assert r.status_code == 200, r.text
+    document = client.get(f"/v1/orgs/{org}/sites/{site}/models/{draft['id']}").json()
+    assert document["health"]["ok"] is True
+    assert document["health"]["spec_sha256"] == document["spec_sha256"]

@@ -497,6 +497,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Invitation */
+        post: operations["accept_invitation_v1_invitations_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/library/equipment": {
         parameters: {
             query?: never;
@@ -876,6 +893,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invitations */
+        get: operations["list_invitations_v1_orgs__org__invitations_get"];
+        put?: never;
+        /**
+         * Create Invitation
+         * @description Returns the link once. Share it with the person; it works for their email only.
+         */
+        post: operations["create_invitation_v1_orgs__org__invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/invitations/{invite_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Invitation */
+        post: operations["revoke_invitation_v1_orgs__org__invitations__invite_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Members */
+        get: operations["members_v1_orgs__org__members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org}/sites": {
         parameters: {
             query?: never;
@@ -1235,6 +1307,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcceptInvitation */
+        AcceptInvitation: {
+            /** Token */
+            token: string;
+        };
         /** AccountPreferences */
         AccountPreferences: {
             home_layout?: components["schemas"]["HomeLayout"];
@@ -1441,6 +1518,13 @@ export interface components {
             presence_checks?: boolean;
             report: components["schemas"]["Report"];
             scenario: components["schemas"]["ScenarioRequest"];
+        };
+        /** CreateInvitation */
+        CreateInvitation: {
+            /** Email */
+            email: string;
+            /** Roles */
+            roles: ("admin" | "operator" | "approver" | "viewer")[];
         };
         /** CreateOrganization */
         CreateOrganization: {
@@ -1970,6 +2054,44 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** InvitationAccepted */
+        InvitationAccepted: {
+            /** Destination */
+            destination: string;
+            organization: components["schemas"]["OrganizationSummary"];
+        };
+        /** InvitationCreated */
+        InvitationCreated: {
+            /** Accept Path */
+            accept_path: string;
+            invitation: components["schemas"]["InvitationView"];
+        };
+        /** InvitationView */
+        InvitationView: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Id */
+            id: string;
+            /** Invited By */
+            invited_by: string | null;
+            /** Roles */
+            roles: ("admin" | "operator" | "approver" | "viewer")[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "accepted" | "revoked" | "expired";
         };
         /** JoinSuggestion */
         JoinSuggestion: {
@@ -2583,6 +2705,7 @@ export interface components {
             description?: {
                 [key: string]: unknown;
             } | null;
+            health?: components["schemas"]["ModelHealth"] | null;
             /** Id */
             id: string;
             /** Org Id */
@@ -2822,6 +2945,27 @@ export interface components {
             hidden?: ("approvals" | "active" | "decided" | "setup" | "sites" | "recent")[];
             /** Modules */
             modules: components["schemas"]["HomeModule"][];
+        };
+        /** WorkspaceMember */
+        WorkspaceMember: {
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email: string | null;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /** Roles */
+            roles: components["schemas"]["OrganizationRole"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "pending" | "suspended";
+            /** You */
+            you: boolean;
         };
     };
     responses: never;
@@ -3611,6 +3755,56 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_invitation_v1_invitations_accept_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInvitation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationAccepted"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4491,6 +4685,167 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invitations_v1_orgs__org__invitations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invitation_v1_orgs__org__invitations_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInvitation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationCreated"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invitation_v1_orgs__org__invitations__invite_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    members_v1_orgs__org__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMember"][];
                 };
             };
             /** @description Validation Error */

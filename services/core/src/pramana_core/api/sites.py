@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Request, Response
 
-from pramana_contracts import SiteModelDocument, SiteModelSummary, SiteSummary
+from pramana_contracts import ModelHealth, SiteModelDocument, SiteModelSummary, SiteSummary
 from pramana_domain.spec_storage import spec_digest
 
 from .. import ids
@@ -30,6 +30,13 @@ def _store(request: Request, response: Response) -> StoredModels:
     response.headers["Cache-Control"] = "private, no-store"
     store: StoredModels = request.app.state.site_models
     return store
+
+
+def _health(row: SiteModelRow) -> ModelHealth | None:
+    stored = (row.validation or {}).get("health")
+    if not stored or stored.get("spec_sha256") != row.spec_sha256.hex():
+        return None
+    return ModelHealth.model_validate(stored)
 
 
 def _view(row: SiteModelRow) -> SiteModelSummary:
@@ -78,6 +85,7 @@ async def model(
         **_view(row).model_dump(),
         spec=row.spec,
         description=(row.source or {}).get("description"),
+        health=_health(row),
     )
     response.headers["ETag"] = (
         '"' + hashlib.sha256(document.model_dump_json().encode()).hexdigest() + '"'

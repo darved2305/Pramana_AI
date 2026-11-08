@@ -11,6 +11,7 @@ import { BlurText } from "@/components/motion/BlurText";
 import { auth, validateEmail, validatePassword } from "@/lib/api/auth";
 import { describeError } from "@/lib/api/http";
 import { setSession } from "@/lib/data/session";
+import { refreshAccount } from "@/lib/data/account";
 import { IconEye, IconEyeOff } from "@/components/ui/icons";
 
 /** Only same-site paths are followed after sign-in, never another origin. */
@@ -78,6 +79,7 @@ function LoginInner() {
     setBusy("password");
     try {
       setSession(await auth.signInWithPassword(email.trim(), password));
+      await refreshAccount(); // a different person may have been signed in before
       router.replace(nextPath());
     } catch (x) {
       setFormError(describeError(x));

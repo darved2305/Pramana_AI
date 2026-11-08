@@ -28,18 +28,28 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | Any-site models (dependency physics, role catalogues, equipment library, builder, health check) | CI green | `36d398e`, fix `87670a7`; full Python suite exit 0 before the builder files; domain, engine and eval suites pass with them. Run 42448406787 failed on that mypy error; the fix's run 42448480249 passed |
 | Health check measurements | Tested locally | Water template, 40 runs x 2 seeds: 75-95% correct, at most 7.5% wrong per tested fault. False alarms end in a fault decision 12-22% of the time. Generated retail and ward sites: at least 7/10 correct per tested fault |
 | Health check finding on the demo model | Recorded, not changed | `DISPATCH_ELECTRICIAN_DB_C2` spans two breakers (`SPLIT_TARGET_DECISION`); left unchanged to keep replayed beliefs and the submission build |
-| Slice B: site builder API | Tested locally, not committed at the time of writing | Migration 0012 (`source`, frozen with the version; one draft per site), `/v1/library/*`, `/v1/orgs/{org}/sites/{site}/draft` save/health/publish/discard with ETag 428/412; 54 site API and cross-org tests pass (owner and runtime roles); full suite running |
-| Web builder client | Implemented | `organizationApi` draft methods, `libraryApi`, `ApiError.details/problems`; typecheck and lint pass. No pages use them yet |
+| Slice B: site builder API | CI green | `785955c`: migration 0012, `/v1/library/*`, drafts with ETag 428/412, health, publish, discard; full suite exit 0; run 42450596071 passed |
+| Slices C and D backend: people per site, workspace home, saved preferences | CI green | `75931b5` (+ format fix `a8fbd98`): migration 0013 `site_people` with forced RLS, `/v1/orgs/{org}/home` pure rules with reasons, `PATCH /v1/me/preferences`, reserved console slugs. 84 focused API tests; full suite exit 0. Run 42453588374 failed on formatting; the fix's run 42453668911 passed |
+| Onboarding, workspace console, practice runs, model-driven repairs | CI green | `2f7fa34`: Continue with Google, `/onboarding/[step]` saved server-side, `/app/[org]` home, sites builder, people, investigations under workspace routes, practice on a site's own model (`practice`), `repair_options` from the site's actions, participant links carrying the workspace, general answer vocabulary. Full suite exit 0, UI 48 passed, real-stack 27 passed; CI run for `2f7fa34` passed all jobs |
+| Bugs found by the browser journey and fixed | Fixed | A stale draft overwrote the editor; JSONB key order made every saved draft look unsaved; the home counted the legacy directory; the hostel-only repair dialog and decision ids; the extractor returned unknown for any non-hostel outcome |
+| Team invitations, members, model health page, settings page | Tested locally | Migration 0014 `invitations` (hashed one-time secrets, 7-day expiry, one open link per address, audit entries), `/v1/orgs/{org}/members`, published model documents carry their passed check. 12 invitation tests, 60 home/site tests and the real-browser team journey pass; full suite running at the time of writing |
 
 ## Remaining work
 
-The console and onboarding are the largest gap. The core has `/v1/me` (with `destination`),
-onboarding state, organizations, sites, models, the builder and organization-scoped
-investigations, but every console page still uses the unscoped single-tenant API, four pages
-default to `campus_block_c`, preferences live only in browser storage, and there is no
-`/onboarding` route. The ordered plan is in PRODUCTION.md, "Any-site product conversion".
-The onboarding survey's `problem` field still offers only Wi-Fi and power; widen it additively
-(water, cooling, lifts, payment devices) and use it to choose the starting template.
+Done since the morning plan: onboarding, the workspace console on organization routes, saved
+preferences, people per site, the adaptive home, practice investigations on a workspace's own
+model, team invitations, model health and settings pages. Still open:
+
+- The legacy single-site console pages remain for accounts with global staff roles and their
+  tests; retire them (and `DEFAULT_PACK`) once the real-stack fixtures use workspaces.
+- Live investigations with real people (calls, messages, work orders) are R3; a live site can
+  only be practised on, and the core says so.
+- Voice answers and question audio still use the unscoped routes; give the media sockets their
+  own organization boundary.
+- Member role changes and removal (with the last-owner rule), email delivery of invitations,
+  and showing pending invitations in `/v1/me` are not built.
+- Answer vocabulary for new outcomes falls back to the outcome's own words; site authors cannot
+  yet add synonyms. Hindi and Marathi wording everywhere new needs native review.
 
 The uncommitted stored-model loader/cache passes 26 focused checks in 18.58 s using owner and
 runtime roles, plus Ruff, mypy (62 source files) and all three import contracts. Coverage includes
