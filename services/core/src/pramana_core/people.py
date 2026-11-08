@@ -12,18 +12,35 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, String, func, select
+from sqlalchemy import (
+    DateTime,
+    ForeignKeyConstraint,
+    Integer,
+    LargeBinary,
+    String,
+    func,
+    inspect,
+    select,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from pramana_contracts import ParticipantPatch, ParticipantSpec, SitePerson
+from pramana_contracts import (
+    ConsentRecord,
+    ParticipantPatch,
+    ParticipantSpec,
+    RecordConsent,
+    SitePerson,
+)
 from pramana_domain import DomainPack
 from pramana_domain.spec_storage import load_spec
 
 from . import ids
-from .db import Base, Database, SiteModelRow, SiteRow, current_org
+from .auth.service import Principal
+from .db import AuditLogRow, Base, Database, SiteModelRow, SiteRow, current_org
 from .errors import ApiError, not_found
+from .vault import SEALED, PersonKeyRow, PersonRef, PersonVault
 
 
 class SitePersonRow(Base):
@@ -38,15 +55,54 @@ class SitePersonRow(Base):
     site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    display_name_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ConsentRow(Base):
+    __tablename__ = "consents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    person_id: Mapped[str] = mapped_column(String(64))
+    purpose: Mapped[str] = mapped_column(String(32))
+    notice_version: Mapped[str] = mapped_column(String(32))
+    language: Mapped[str] = mapped_column(String(16))
+    channel: Mapped[str] = mapped_column(String(16))
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+
+def consent_view(row: ConsentRow) -> ConsentRecord:
+    return ConsentRecord.model_validate(
+        {
+            "id": ids.encode("consent", row.id),
+            "purpose": row.purpose,
+            "notice_version": row.notice_version,
+            "language": row.language,
+            "channel": row.channel,
+            "evidence": row.evidence,
+            "granted_at": row.granted_at,
+            "withdrawn_at": row.withdrawn_at,
+        }
+    )
+
+
+def _full_spec(row: SitePersonRow) -> ParticipantSpec:
+    """The stored spec with the real name, which was put on the row when it was read."""
+    name = inspect(row).info.get("name")
+    spec = ParticipantSpec.model_validate(row.spec)
+    return spec.model_copy(update={"display_name": name}) if name else spec
+
+
 def person_view(row: SitePersonRow) -> SitePerson:
     return SitePerson(
         site_id=ids.encode("site", row.site_id),
-        person=ParticipantSpec.model_validate(row.spec),
+        person=_full_spec(row),
         version=row.version,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -66,8 +122,9 @@ def check_fits(pack: DomainPack, spec: ParticipantSpec) -> None:
 
 
 class SitePeople:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, vault: PersonVault) -> None:
         self.db = db
+        self.vault = vault
 
     @staticmethod
     def _org() -> uuid.UUID:
@@ -109,19 +166,42 @@ class SitePeople:
             )
         return load_spec(row.spec)
 
+    async def _reveal(self, session: AsyncSession, rows: list[SitePersonRow]) -> None:
+        if not rows:
+            return
+        keys = await self.vault.site_keys(session, rows[0].org_id, rows[0].site_id)
+        for row in rows:
+            key = keys.get(row.id)
+            if row.display_name_enc is not None and key is not None:
+                ref = PersonRef(row.org_id, row.site_id, row.id)
+                inspect(row).info["name"] = self.vault.decrypt(
+                    key, ref, "display_name", row.display_name_enc
+                )
+
+    async def _seal_name(self, session: AsyncSession, row: SitePersonRow, name: str) -> None:
+        ref = PersonRef(row.org_id, row.site_id, row.id)
+        key = await self.vault.data_key(session, ref)
+        if key is None:
+            raise ApiError(409, "PERSON_ERASED", "this person was erased; use a new id")
+        row.display_name_enc = self.vault.encrypt(key, ref, "display_name", name)
+        row.spec = {**row.spec, "display_name": SEALED}
+        inspect(row).info["name"] = name
+
     async def listing(self, site_id: uuid.UUID) -> list[SitePersonRow]:
         async with self.db.read() as session:
             site = await self._site(session, site_id)
-            return list(
+            rows = list(
                 await session.scalars(
                     select(SitePersonRow)
                     .where(SitePersonRow.org_id == site.org_id, SitePersonRow.site_id == site.id)
                     .order_by(SitePersonRow.id)
                 )
             )
+            await self._reveal(session, rows)
+            return rows
 
     async def specs(self, site_id: uuid.UUID) -> list[ParticipantSpec]:
-        return [ParticipantSpec.model_validate(r.spec) for r in await self.listing(site_id)]
+        return [_full_spec(r) for r in await self.listing(site_id)]
 
     async def add(self, site_id: uuid.UUID, spec: ParticipantSpec) -> SitePersonRow:
         async with self.db.transaction() as session:
@@ -140,6 +220,7 @@ class SitePeople:
                 created_at=now,
                 updated_at=now,
             )
+            await self._seal_name(session, row, spec.display_name)
             session.add(row)
             await session.flush()
             return row
@@ -162,13 +243,20 @@ class SitePeople:
                 raise ApiError(428, "PRECONDITION_REQUIRED", "send the version you are editing")
             if if_match != person_etag(row):
                 raise ApiError(412, "PERSON_CHANGED", "someone else changed this person; reload")
-            merged = {**row.spec, **patch.model_dump(mode="json", exclude_unset=True)}
+            changes = patch.model_dump(mode="json", exclude_unset=True)
+            merged_fields = set(changes)
+            merged = {**row.spec, **changes}
             try:
                 spec = ParticipantSpec.model_validate(merged)
             except ValidationError as exc:
                 raise ApiError(422, "INVALID_PERSON", str(exc.errors()[0]["msg"])) from exc
             check_fits(await self.model_for(session, site), spec)
+            await self._reveal(session, [row])
+            name = spec.display_name if "display_name" in merged_fields else None
             row.spec = spec.model_dump(mode="json")
+            await self._seal_name(
+                session, row, name or inspect(row).info.get("name") or spec.display_name
+            )
             row.version += 1
             row.updated_at = datetime.now(UTC)
             await session.flush()
@@ -178,3 +266,119 @@ class SitePeople:
         async with self.db.transaction() as session:
             site = await self._site(session, site_id)
             await session.delete(await self._locked(session, site, person_id))
+
+    async def erase(self, site_id: uuid.UUID, person_id: str, principal: Principal) -> None:
+        """Delete this person's key and directory entry. Their investigations stay replayable."""
+        async with self.db.transaction() as session:
+            site = await self._site(session, site_id)
+            ref = PersonRef(site.org_id, site.id, person_id)
+            row = await session.get(
+                SitePersonRow, (site.org_id, site.id, person_id), with_for_update=True
+            )
+            known = await session.get(PersonKeyRow, (site.org_id, site.id, person_id))
+            if row is None and known is None:
+                raise not_found("person")
+            await self.vault.erase(session, ref)
+            if row is not None:
+                await session.delete(row)
+            session.add(
+                AuditLogRow(
+                    id=ids.uuid7(),
+                    org_id=site.org_id,
+                    actor_kind="user",
+                    actor_id=principal.id,
+                    action="person.erased",
+                    target_kind="person",
+                    target_id=person_id,
+                    details={"site_id": ids.encode("site", site.id)},
+                )
+            )
+
+    async def consents(self, site_id: uuid.UUID, person_id: str) -> list[ConsentRow]:
+        async with self.db.read() as session:
+            site = await self._site(session, site_id)
+            return list(
+                await session.scalars(
+                    select(ConsentRow)
+                    .where(
+                        ConsentRow.org_id == site.org_id,
+                        ConsentRow.site_id == site.id,
+                        ConsentRow.person_id == person_id,
+                    )
+                    .order_by(ConsentRow.granted_at.desc())
+                )
+            )
+
+    async def grant_consent(
+        self, site_id: uuid.UUID, person_id: str, body: RecordConsent, principal: Principal
+    ) -> ConsentRow:
+        async with self.db.transaction() as session:
+            site = await self._site(session, site_id)
+            await self._locked(session, site, person_id)
+            now = datetime.now(UTC)
+            active = await self._active(session, site, person_id, body.purpose)
+            if active is not None:
+                active.withdrawn_at = now  # the newest notice replaces the earlier one
+                await session.flush()
+            row = ConsentRow(
+                id=ids.uuid7(),
+                org_id=site.org_id,
+                site_id=site.id,
+                person_id=person_id,
+                purpose=body.purpose,
+                notice_version=body.notice_version,
+                language=body.language,
+                channel=body.channel,
+                granted_at=now,
+                evidence=body.evidence,
+            )
+            session.add(row)
+            session.add(
+                self._consent_audit(site, person_id, principal, "consent.granted", body.purpose)
+            )
+            await session.flush()
+            return row
+
+    async def withdraw_consent(
+        self, site_id: uuid.UUID, person_id: str, purpose: str, principal: Principal
+    ) -> None:
+        async with self.db.transaction() as session:
+            site = await self._site(session, site_id)
+            active = await self._active(session, site, person_id, purpose)
+            if active is None:
+                return
+            active.withdrawn_at = datetime.now(UTC)
+            session.add(
+                self._consent_audit(site, person_id, principal, "consent.withdrawn", purpose)
+            )
+
+    @staticmethod
+    async def _active(
+        session: AsyncSession, site: SiteRow, person_id: str, purpose: str
+    ) -> ConsentRow | None:
+        return await session.scalar(
+            select(ConsentRow)
+            .where(
+                ConsentRow.org_id == site.org_id,
+                ConsentRow.site_id == site.id,
+                ConsentRow.person_id == person_id,
+                ConsentRow.purpose == purpose,
+                ConsentRow.withdrawn_at.is_(None),
+            )
+            .with_for_update()
+        )
+
+    @staticmethod
+    def _consent_audit(
+        site: SiteRow, person_id: str, principal: Principal, action: str, purpose: str
+    ) -> AuditLogRow:
+        return AuditLogRow(
+            id=ids.uuid7(),
+            org_id=site.org_id,
+            actor_kind="user",
+            actor_id=principal.id,
+            action=action,
+            target_kind="person",
+            target_id=person_id,
+            details={"site_id": ids.encode("site", site.id), "purpose": purpose},
+        )

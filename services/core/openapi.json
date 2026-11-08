@@ -591,6 +591,88 @@
     "title": "CheckRecord",
     "type": "object"
    },
+   "ConsentRecord": {
+    "additionalProperties": false,
+    "properties": {
+     "channel": {
+      "enum": [
+       "web",
+       "whatsapp",
+       "sms",
+       "pstn",
+       "paper"
+      ],
+      "title": "Channel",
+      "type": "string"
+     },
+     "evidence": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "maxProperties": 8,
+      "title": "Evidence",
+      "type": "object"
+     },
+     "granted_at": {
+      "format": "date-time",
+      "title": "Granted At",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "language": {
+      "maxLength": 16,
+      "minLength": 2,
+      "title": "Language",
+      "type": "string"
+     },
+     "notice_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Notice Version",
+      "type": "string"
+     },
+     "purpose": {
+      "enum": [
+       "contact_for_investigations",
+       "voice_processing"
+      ],
+      "title": "Purpose",
+      "type": "string"
+     },
+     "withdrawn_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Withdrawn At"
+     }
+    },
+    "required": [
+     "purpose",
+     "notice_version",
+     "language",
+     "channel",
+     "id",
+     "granted_at"
+    ],
+    "title": "ConsentRecord",
+    "type": "object"
+   },
    "CreateInvestigation": {
     "additionalProperties": false,
     "description": "Legacy developer/evaluation input. Production creation selects a saved site instead.",
@@ -3523,6 +3605,66 @@
     ],
     "title": "QuestionStatus",
     "type": "string"
+   },
+   "RecordConsent": {
+    "additionalProperties": false,
+    "description": "Proof of what a person agreed to. Evidence holds ids only, never their words.",
+    "properties": {
+     "channel": {
+      "enum": [
+       "web",
+       "whatsapp",
+       "sms",
+       "pstn",
+       "paper"
+      ],
+      "title": "Channel",
+      "type": "string"
+     },
+     "evidence": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "maxProperties": 8,
+      "title": "Evidence",
+      "type": "object"
+     },
+     "language": {
+      "maxLength": 16,
+      "minLength": 2,
+      "title": "Language",
+      "type": "string"
+     },
+     "notice_version": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Notice Version",
+      "type": "string"
+     },
+     "purpose": {
+      "enum": [
+       "contact_for_investigations",
+       "voice_processing"
+      ],
+      "title": "Purpose",
+      "type": "string"
+     }
+    },
+    "required": [
+     "purpose",
+     "notice_version",
+     "language",
+     "channel"
+    ],
+    "title": "RecordConsent",
+    "type": "object"
    },
    "RepairOption": {
     "additionalProperties": false,
@@ -8709,6 +8851,313 @@
      }
     },
     "summary": "Update Person",
+    "tags": [
+     "people"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents": {
+   "get": {
+    "operationId": "list_consents_v1_orgs__org__sites__site_id__people__person_id__consents_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "person_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Person Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ConsentRecord"
+         },
+         "title": "Response List Consents V1 Orgs  Org  Sites  Site Id  People  Person Id  Consents Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Consents",
+    "tags": [
+     "people"
+    ]
+   },
+   "post": {
+    "operationId": "record_consent_v1_orgs__org__sites__site_id__people__person_id__consents_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "person_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Person Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RecordConsent"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsentRecord"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Record Consent",
+    "tags": [
+     "people"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents/{purpose}/withdraw": {
+   "post": {
+    "operationId": "withdraw_consent_v1_orgs__org__sites__site_id__people__person_id__consents__purpose__withdraw_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "person_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Person Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "purpose",
+      "required": true,
+      "schema": {
+       "enum": [
+        "contact_for_investigations",
+        "voice_processing"
+       ],
+       "title": "Purpose",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Withdraw Consent",
+    "tags": [
+     "people"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/erase": {
+   "post": {
+    "description": "Permanently erase this person. Past investigations show \"Erased person\" and still replay.",
+    "operationId": "erase_person_v1_orgs__org__sites__site_id__people__person_id__erase_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "person_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Person Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Erase Person",
     "tags": [
      "people"
     ]

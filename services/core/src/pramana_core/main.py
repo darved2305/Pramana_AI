@@ -53,6 +53,7 @@ from .settings import Settings, get_settings
 from .sim_client import SimClient
 from .site_builder import SiteBuilder
 from .site_models import StoredModels
+from .vault import PersonVault, master_key
 from .voice.conversation import QuestionAudioCache
 from .voice.gnani import GnaniClient
 from .voice.governor import DbLedger, GovernorLimits, VoiceGovernor
@@ -144,7 +145,8 @@ def create_app(
         )
         app.state.accounts = AccountService(db)
         app.state.site_models = StoredModels(db)
-        app.state.site_people = SitePeople(db)
+        app.state.vault = PersonVault(master_key(cfg))
+        app.state.site_people = SitePeople(db, app.state.vault)
         app.state.invitations = Invitations(db)
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)

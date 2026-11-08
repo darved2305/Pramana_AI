@@ -23,6 +23,7 @@ from pramana_core.db import Database
         {"AUTH_REQUIRED": False},
         {"SESSION_COOKIE_SECURE": False},
         {"OIDC_REDIRECT_URL": "http://localhost:3102/callback"},
+        {"PRAMANA_PII_KEY": None},
     ],
 )
 def test_production_refuses_auth_bypasses(override: dict[str, Any]) -> None:
@@ -33,6 +34,7 @@ def test_production_refuses_auth_bypasses(override: dict[str, Any]) -> None:
         "OIDC_DISCOVERY_URL": "https://accounts.google.com/.well-known/openid-configuration",
         "OIDC_REDIRECT_URL": "https://pramana.example/api/core/v1/auth/google/callback",
         "GOOGLE_OAUTH_CLIENT_SECRET": "test-sensitive-value",
+        "PRAMANA_PII_KEY": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
         **override,
     }
     with pytest.raises(ValidationError) as caught:
@@ -46,6 +48,7 @@ def test_production_uses_host_cookies_and_google() -> None:
         PRAMANA_MODE="production",
         CORE_AUTOMATION_KEY="",
         OIDC_REDIRECT_URL="https://pramana.example/api/core/v1/auth/google/callback",
+        PRAMANA_PII_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
     )
     assert cfg.enforce_auth
     assert cfg.secure_cookies

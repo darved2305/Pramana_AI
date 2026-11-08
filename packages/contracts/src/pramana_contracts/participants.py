@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
+
 from pydantic import Field, model_validator
 
 from .common import Identifier, LanguageCode, Role, Skill, StrictModel, TemplateLanguage
@@ -24,6 +27,25 @@ class LanguageProfile(StrictModel):
         if len(set(self.stt_candidates)) != len(self.stt_candidates):
             raise ValueError("stt_candidates must be distinct")
         return self
+
+
+ConsentPurpose = Literal["contact_for_investigations", "voice_processing"]
+
+
+class RecordConsent(StrictModel):
+    """Proof of what a person agreed to. Evidence holds ids only, never their words."""
+
+    purpose: ConsentPurpose
+    notice_version: str = Field(min_length=1, max_length=32)
+    language: str = Field(min_length=2, max_length=16)
+    channel: Literal["web", "whatsapp", "sms", "pstn", "paper"]
+    evidence: dict[str, str | int] = Field(default_factory=dict, max_length=8)
+
+
+class ConsentRecord(RecordConsent):
+    id: str
+    granted_at: datetime
+    withdrawn_at: datetime | None = None
 
 
 class ParticipantSpec(StrictModel):

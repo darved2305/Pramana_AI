@@ -17,7 +17,9 @@ _ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _DECODE = {c: i for i, c in enumerate(_ALPHABET)}
 _DECODE.update({c.lower(): i for c, i in list(_DECODE.items())})
 
-PREFIXES = frozenset({"org", "site", "model", "mem", "inv", "invite", "flow", "ident", "usr"})
+PREFIXES = frozenset(
+    {"org", "site", "model", "mem", "inv", "invite", "flow", "ident", "usr", "consent"}
+)
 
 
 def uuid7(now_ms: int | None = None) -> uuid.UUID:

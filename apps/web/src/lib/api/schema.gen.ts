@@ -1250,6 +1250,61 @@ export interface paths {
         patch: operations["update_person_v1_orgs__org__sites__site_id__people__person_id__patch"];
         trace?: never;
     };
+    "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Consents */
+        get: operations["list_consents_v1_orgs__org__sites__site_id__people__person_id__consents_get"];
+        put?: never;
+        /** Record Consent */
+        post: operations["record_consent_v1_orgs__org__sites__site_id__people__person_id__consents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents/{purpose}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw Consent */
+        post: operations["withdraw_consent_v1_orgs__org__sites__site_id__people__person_id__consents__purpose__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Erase Person
+         * @description Permanently erase this person. Past investigations show "Erased person" and still replay.
+         */
+        post: operations["erase_person_v1_orgs__org__sites__site_id__people__person_id__erase_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/remove": {
         parameters: {
             query?: never;
@@ -1642,6 +1697,36 @@ export interface components {
             kind: "device" | "visual" | "panel";
             /** Matched */
             matched: number;
+        };
+        /** ConsentRecord */
+        ConsentRecord: {
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "web" | "whatsapp" | "sms" | "pstn" | "paper";
+            /** Evidence */
+            evidence?: {
+                [key: string]: string | number;
+            };
+            /**
+             * Granted At
+             * Format: date-time
+             */
+            granted_at: string;
+            /** Id */
+            id: string;
+            /** Language */
+            language: string;
+            /** Notice Version */
+            notice_version: string;
+            /**
+             * Purpose
+             * @enum {string}
+             */
+            purpose: "contact_for_investigations" | "voice_processing";
+            /** Withdrawn At */
+            withdrawn_at?: string | null;
         };
         /**
          * CreateInvestigation
@@ -2673,6 +2758,30 @@ export interface components {
          * @enum {string}
          */
         QuestionStatus: "pending" | "answered" | "cancelled" | "withdrawn";
+        /**
+         * RecordConsent
+         * @description Proof of what a person agreed to. Evidence holds ids only, never their words.
+         */
+        RecordConsent: {
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "web" | "whatsapp" | "sms" | "pstn" | "paper";
+            /** Evidence */
+            evidence?: {
+                [key: string]: string | number;
+            };
+            /** Language */
+            language: string;
+            /** Notice Version */
+            notice_version: string;
+            /**
+             * Purpose
+             * @enum {string}
+             */
+            purpose: "contact_for_investigations" | "voice_processing";
+        };
         /**
          * RepairOption
          * @description A repair the site's model allows for the current decision, on one specific target.
@@ -5789,6 +5898,190 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SitePerson"];
                 };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_consents_v1_orgs__org__sites__site_id__people__person_id__consents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+                site_id: string;
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_consent_v1_orgs__org__sites__site_id__people__person_id__consents_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordConsent"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentRecord"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_consent_v1_orgs__org__sites__site_id__people__person_id__consents__purpose__withdraw_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+                person_id: string;
+                purpose: "contact_for_investigations" | "voice_processing";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    erase_person_v1_orgs__org__sites__site_id__people__person_id__erase_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                site_id: string;
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Missing or invalid idempotency key */
             400: {

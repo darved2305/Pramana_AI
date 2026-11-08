@@ -43,6 +43,10 @@ SITE_OPERATIONS = {
     ("post", "/v1/orgs/{org}/sites/{site_id}/people"),
     ("patch", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/remove"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/erase"),
+    ("get", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents/{purpose}/withdraw"),
 }
 
 
@@ -58,6 +62,12 @@ VALID_BODIES: dict[tuple[str, str], Any] = {
         "languages": {"stt_candidates": ["hi-IN"]},
     },
     ("patch", "/people/{person_id}"): {"display_name": "Probe"},
+    ("post", "/people/{person_id}/consents"): {
+        "purpose": "voice_processing",
+        "notice_version": "1",
+        "language": "en",
+        "channel": "paper",
+    },
 }
 
 
@@ -84,6 +94,7 @@ def _path(template: str, workspace: dict[str, Any], *, org: str | None = None) -
         org=org or workspace["organization"]["slug"],
         site_id=workspace["sandbox_site"]["id"],
         person_id="p_probe",
+        purpose="voice_processing",
         model_id=workspace["sandbox_site"]["current_model_id"],
     )
 

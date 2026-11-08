@@ -91,7 +91,13 @@ from .invitations import (
     InvitationView,
 )
 from .members import UpdateMemberRoles, WorkspaceMember
-from .participants import LanguageProfile, ParticipantSpec
+from .participants import (
+    ConsentPurpose,
+    ConsentRecord,
+    LanguageProfile,
+    ParticipantSpec,
+    RecordConsent,
+)
 from .reasoning import (
     BeliefSnapshot,
     CandidateScore,
@@ -165,6 +171,8 @@ __all__ = [
     "CandidateScore",
     "CapabilityGrant",
     "CheckRecord",
+    "ConsentPurpose",
+    "ConsentRecord",
     "CreateInvestigation",
     "CreateInvitation",
     "CreateOrganization",
@@ -246,6 +254,7 @@ __all__ = [
     "ProbeAction",
     "Question",
     "QuestionStatus",
+    "RecordConsent",
     "RepairOption",
     "RepairState",
     "Report",

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     participant_signing_key: SecretStr = Field(alias="PARTICIPANT_SIGNING_KEY")
     """Ed25519 private key (base64url, raw 32 bytes). The simulator gets the public half."""
 
+    pii_master_key: SecretStr | None = Field(default=None, alias="PRAMANA_PII_KEY")
+    """Wraps per-person data keys (base64url, 32 bytes). Required in production."""
+
     gnani_api_key: SecretStr | None = Field(default=None, alias="GNANI_API_KEY")
     gnani_base_url: str = Field(default="https://api.vachana.ai", alias="GNANI_BASE_URL")
     gnani_timeout_s: float = Field(default=15.0, gt=0, alias="GNANI_TIMEOUT_S")
@@ -112,6 +115,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _production_auth(self) -> Self:
         if self.mode == "production":
+            if self.pii_master_key is None:
+                raise ValueError("production requires PRAMANA_PII_KEY")
             if self.oidc_issuer != "https://accounts.google.com" or self.oidc_discovery_url != (
                 "https://accounts.google.com/.well-known/openid-configuration"
             ):
