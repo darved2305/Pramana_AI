@@ -175,3 +175,48 @@ class Observation(StrictModel):
 
 
 BeliefSnapshot.model_rebuild()
+
+
+class InvestigationForecast(StrictModel):
+    """An estimate of how this investigation will go if it carries on. Advisory only: it is
+    computed on a private copy of the engine and never changes the investigation."""
+
+    advice: Literal[
+        "repair_in_progress",
+        "ready_to_decide",
+        "cannot_settle",
+        "keep_investigating",
+        "could_act_now",
+        "keep_investigating_cautiously",
+    ]
+    rollouts: int
+    expected_questions: float
+    expected_minutes: float
+    p_right_decision: float
+    p_wrong_decision: float
+    p_no_decision: float
+    p_outside_model: float
+    leading_decision: str | None
+    p_leading_decision: float
+    p_wrong_if_acted_now: float
+
+
+class MapDriftFinding(StrictModel):
+    component: str
+    component_label: str
+    documented: str
+    documented_label: str
+    proposed: str
+    proposed_label: str
+    probability: float
+    best_fault: str
+    best_fault_label: str
+
+
+class MapDriftCheck(StrictModel):
+    """Whether the site's own map may be wrong. Advisory only: it proposes a documentation
+    check and changes nothing about the investigation or the model."""
+
+    status: Literal["ok", "not_enough_evidence", "repair_in_progress"]
+    variants_checked: int
+    findings: list[MapDriftFinding]

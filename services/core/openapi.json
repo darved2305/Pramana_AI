@@ -1950,6 +1950,86 @@
     "title": "InfeasibleAction",
     "type": "object"
    },
+   "InvestigationForecast": {
+    "additionalProperties": false,
+    "description": "An estimate of how this investigation will go if it carries on. Advisory only: it is\ncomputed on a private copy of the engine and never changes the investigation.",
+    "properties": {
+     "advice": {
+      "enum": [
+       "repair_in_progress",
+       "ready_to_decide",
+       "cannot_settle",
+       "keep_investigating",
+       "could_act_now",
+       "keep_investigating_cautiously"
+      ],
+      "title": "Advice",
+      "type": "string"
+     },
+     "expected_minutes": {
+      "title": "Expected Minutes",
+      "type": "number"
+     },
+     "expected_questions": {
+      "title": "Expected Questions",
+      "type": "number"
+     },
+     "leading_decision": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Leading Decision"
+     },
+     "p_leading_decision": {
+      "title": "P Leading Decision",
+      "type": "number"
+     },
+     "p_no_decision": {
+      "title": "P No Decision",
+      "type": "number"
+     },
+     "p_outside_model": {
+      "title": "P Outside Model",
+      "type": "number"
+     },
+     "p_right_decision": {
+      "title": "P Right Decision",
+      "type": "number"
+     },
+     "p_wrong_decision": {
+      "title": "P Wrong Decision",
+      "type": "number"
+     },
+     "p_wrong_if_acted_now": {
+      "title": "P Wrong If Acted Now",
+      "type": "number"
+     },
+     "rollouts": {
+      "title": "Rollouts",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "advice",
+     "rollouts",
+     "expected_questions",
+     "expected_minutes",
+     "p_right_decision",
+     "p_wrong_decision",
+     "p_no_decision",
+     "p_outside_model",
+     "leading_decision",
+     "p_leading_decision",
+     "p_wrong_if_acted_now"
+    ],
+    "title": "InvestigationForecast",
+    "type": "object"
+   },
    "InvestigationPage": {
     "additionalProperties": false,
     "properties": {
@@ -2476,6 +2556,93 @@
      "password"
     ],
     "title": "LoginRequest",
+    "type": "object"
+   },
+   "MapDriftCheck": {
+    "additionalProperties": false,
+    "description": "Whether the site's own map may be wrong. Advisory only: it proposes a documentation\ncheck and changes nothing about the investigation or the model.",
+    "properties": {
+     "findings": {
+      "items": {
+       "$ref": "#/components/schemas/MapDriftFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "not_enough_evidence",
+       "repair_in_progress"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "variants_checked": {
+      "title": "Variants Checked",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "status",
+     "variants_checked",
+     "findings"
+    ],
+    "title": "MapDriftCheck",
+    "type": "object"
+   },
+   "MapDriftFinding": {
+    "additionalProperties": false,
+    "properties": {
+     "best_fault": {
+      "title": "Best Fault",
+      "type": "string"
+     },
+     "best_fault_label": {
+      "title": "Best Fault Label",
+      "type": "string"
+     },
+     "component": {
+      "title": "Component",
+      "type": "string"
+     },
+     "component_label": {
+      "title": "Component Label",
+      "type": "string"
+     },
+     "documented": {
+      "title": "Documented",
+      "type": "string"
+     },
+     "documented_label": {
+      "title": "Documented Label",
+      "type": "string"
+     },
+     "probability": {
+      "title": "Probability",
+      "type": "number"
+     },
+     "proposed": {
+      "title": "Proposed",
+      "type": "string"
+     },
+     "proposed_label": {
+      "title": "Proposed Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "component",
+     "component_label",
+     "documented",
+     "documented_label",
+     "proposed",
+     "proposed_label",
+     "probability",
+     "best_fault",
+     "best_fault_label"
+    ],
+    "title": "MapDriftFinding",
     "type": "object"
    },
    "Modality": {
@@ -5780,6 +5947,49 @@
     ]
    }
   },
+  "/v1/investigations/{inv_id}/forecast": {
+   "get": {
+    "description": "An estimate only: computed on a private copy and never changes the investigation.",
+    "operationId": "forecast_investigation_v1_investigations__inv_id__forecast_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationForecast"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Forecast Investigation",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
   "/v1/investigations/{inv_id}/interventions": {
    "post": {
     "description": "The executor reports the action as done; verification questions follow.",
@@ -5828,6 +6038,49 @@
      }
     },
     "summary": "Report Intervention",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/investigations/{inv_id}/map-drift": {
+   "get": {
+    "description": "A documentation suggestion only: it never changes the model or the investigation.",
+    "operationId": "map_drift_check_v1_investigations__inv_id__map_drift_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MapDriftCheck"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Map Drift Check",
     "tags": [
      "investigations"
     ]
@@ -7222,6 +7475,49 @@
     ]
    }
   },
+  "/v1/orgs/{org}/investigations/{inv_id}/forecast": {
+   "get": {
+    "description": "An estimate only: computed on a private copy and never changes the investigation.",
+    "operationId": "forecast_investigation_v1_orgs__org__investigations__inv_id__forecast_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationForecast"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Forecast Investigation",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
   "/v1/orgs/{org}/investigations/{inv_id}/interventions": {
    "post": {
     "description": "The executor reports the action as done; verification questions follow.",
@@ -7287,6 +7583,49 @@
      }
     },
     "summary": "Report Intervention",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/investigations/{inv_id}/map-drift": {
+   "get": {
+    "description": "A documentation suggestion only: it never changes the model or the investigation.",
+    "operationId": "map_drift_check_v1_orgs__org__investigations__inv_id__map_drift_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MapDriftCheck"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Map Drift Check",
     "tags": [
      "investigations"
     ]

@@ -90,6 +90,12 @@ test("a new workspace describes its own site, checks it and publishes it", async
   await page.getByRole("button", { name: "Start investigation" }).click();
   await expect(page).toHaveURL(new RegExp(`${base}/investigations/inv_[0-9A-HJKMNP-TV-Z]{26}$`));
   await expect(page.getByRole("heading", { name: "No water on the second floor since morning" })).toBeVisible();
+  // Estimates are on request and labelled as estimates.
+  await page.getByRole("button", { name: "Estimate the rest of this investigation" }).click();
+  await expect(page.getByText(/simulated runs/)).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Check whether the site's map fits" }).click();
+  await expect(page.getByText(/Not enough answers yet to judge|possible map mistakes|Worth checking the documentation/)).toBeVisible({ timeout: 60_000 });
+
   // A participant link from the workspace works on its own, with no staff session.
   const invId = page.url().split("/").pop() as string;
   const state = await (await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/investigations/${invId}`)).json();

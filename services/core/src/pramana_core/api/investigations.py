@@ -11,9 +11,11 @@ from pramana_contracts import (
     CapabilityGrant,
     CreateInvestigation,
     EventEnvelope,
+    InvestigationForecast,
     InvestigationPage,
     InvestigationState,
     InvestigationStatus,
+    MapDriftCheck,
     ReportIntervention,
     RequestApproval,
     StaffRole,
@@ -80,6 +82,18 @@ async def submit_answer(
 @router.post("/{inv_id}/reveal", dependencies=[Operator])
 async def reveal_ground_truth(inv_id: str, svc: Svc) -> InvestigationState:
     return await svc.reveal(inv_id)
+
+
+@router.get("/{inv_id}/forecast", dependencies=[Depends(require_staff())])
+async def forecast_investigation(inv_id: str, svc: Svc) -> InvestigationForecast:
+    """An estimate only: computed on a private copy and never changes the investigation."""
+    return await svc.forecast(inv_id)
+
+
+@router.get("/{inv_id}/map-drift", dependencies=[Depends(require_staff())])
+async def map_drift_check(inv_id: str, svc: Svc) -> MapDriftCheck:
+    """A documentation suggestion only: it never changes the model or the investigation."""
+    return await svc.map_drift(inv_id)
 
 
 @router.get("/{inv_id}/events")

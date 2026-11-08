@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button, Card, CardHeader, Notice } from "@/components/ui";
 import { describeError } from "@/lib/api/http";
-import type { InvestigationForecast, InvestigationState } from "@/lib/api/types";
+import type { InvestigationForecast, InvestigationState, MapDriftCheck } from "@/lib/api/types";
 import { useInvestigationScope } from "@/lib/data/scope";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -23,6 +23,20 @@ export function ForecastPanel({ state }: { state: InvestigationState }) {
   const [forecast, setForecast] = useState<InvestigationForecast | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [drift, setDrift] = useState<MapDriftCheck | null>(null);
+  const [driftBusy, setDriftBusy] = useState(false);
+
+  async function checkDrift() {
+    setDriftBusy(true);
+    setError(null);
+    try {
+      setDrift(await scope.mapDrift(state.id));
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setDriftBusy(false);
+    }
+  }
 
   const decisionLabel = (id: string | null) =>
     (id && state.belief.decisions.find((d) => d.id === id)?.label) || "no single decision";
@@ -31,7 +45,7 @@ export function ForecastPanel({ state }: { state: InvestigationState }) {
     setBusy(true);
     setError(null);
     try {
-      setForecast(await scope.forecast(state.investigation_id));
+      setForecast(await scope.forecast(state.id));
     } catch (e) {
       setError(describeError(e));
     } finally {
@@ -66,6 +80,31 @@ export function ForecastPanel({ state }: { state: InvestigationState }) {
         <Button size="sm" disabled={busy} onClick={run}>
           {busy ? "Estimating..." : forecast ? "Estimate again" : "Estimate the rest of this investigation"}
         </Button>
+      </div>
+      <div className="flex flex-col gap-2 border-t border-white/[.06] pt-3 text-[13px] text-fg-2">
+        {drift ? (
+          drift.status === "not_enough_evidence" ? (
+            <p>Not enough answers yet to judge whether the site&apos;s map is right.</p>
+          ) : drift.status === "repair_in_progress" ? (
+            <p>A repair is being checked, so the map is not being reviewed.</p>
+          ) : drift.findings.length === 0 ? (
+            <p>Checked {drift.variants_checked} possible map mistakes. The answers fit the documented map.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {drift.findings.map((f) => (
+                <li key={`${f.component}-${f.proposed}`}>
+                  <span className="font-medium text-fg">Worth checking the documentation: </span>
+                  the answers fit one fault ({f.best_fault_label}) if {f.component_label} is actually connected to {f.proposed_label}, not {f.documented_label} as documented ({pct(f.probability)}, an estimate).
+                </li>
+              ))}
+            </ul>
+          )
+        ) : null}
+        <div>
+          <Button size="sm" variant="ghost" disabled={driftBusy} onClick={checkDrift}>
+            {driftBusy ? "Checking..." : "Check whether the site's map fits"}
+          </Button>
+        </div>
       </div>
     </Card>
   );

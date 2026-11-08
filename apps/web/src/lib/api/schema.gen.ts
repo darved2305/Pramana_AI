@@ -374,6 +374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/investigations/{inv_id}/forecast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Forecast Investigation
+         * @description An estimate only: computed on a private copy and never changes the investigation.
+         */
+        get: operations["forecast_investigation_v1_investigations__inv_id__forecast_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/investigations/{inv_id}/interventions": {
         parameters: {
             query?: never;
@@ -388,6 +408,26 @@ export interface paths {
          * @description The executor reports the action as done; verification questions follow.
          */
         post: operations["report_intervention_v1_investigations__inv_id__interventions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/investigations/{inv_id}/map-drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Map Drift Check
+         * @description A documentation suggestion only: it never changes the model or the investigation.
+         */
+        get: operations["map_drift_check_v1_investigations__inv_id__map_drift_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -831,6 +871,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org}/investigations/{inv_id}/forecast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Forecast Investigation
+         * @description An estimate only: computed on a private copy and never changes the investigation.
+         */
+        get: operations["forecast_investigation_v1_orgs__org__investigations__inv_id__forecast_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org}/investigations/{inv_id}/interventions": {
         parameters: {
             query?: never;
@@ -845,6 +905,26 @@ export interface paths {
          * @description The executor reports the action as done; verification questions follow.
          */
         post: operations["report_intervention_v1_orgs__org__investigations__inv_id__interventions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/investigations/{inv_id}/map-drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Map Drift Check
+         * @description A documentation suggestion only: it never changes the model or the investigation.
+         */
+        get: operations["map_drift_check_v1_orgs__org__investigations__inv_id__map_drift_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2185,6 +2265,38 @@ export interface components {
             /** Reasons */
             reasons: string[];
         };
+        /**
+         * InvestigationForecast
+         * @description An estimate of how this investigation will go if it carries on. Advisory only: it is
+         *     computed on a private copy of the engine and never changes the investigation.
+         */
+        InvestigationForecast: {
+            /**
+             * Advice
+             * @enum {string}
+             */
+            advice: "repair_in_progress" | "ready_to_decide" | "cannot_settle" | "keep_investigating" | "could_act_now" | "keep_investigating_cautiously";
+            /** Expected Minutes */
+            expected_minutes: number;
+            /** Expected Questions */
+            expected_questions: number;
+            /** Leading Decision */
+            leading_decision: string | null;
+            /** P Leading Decision */
+            p_leading_decision: number;
+            /** P No Decision */
+            p_no_decision: number;
+            /** P Outside Model */
+            p_outside_model: number;
+            /** P Right Decision */
+            p_right_decision: number;
+            /** P Wrong Decision */
+            p_wrong_decision: number;
+            /** P Wrong If Acted Now */
+            p_wrong_if_acted_now: number;
+            /** Rollouts */
+            rollouts: number;
+        };
         /** InvestigationPage */
         InvestigationPage: {
             /** Items */
@@ -2378,6 +2490,43 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * MapDriftCheck
+         * @description Whether the site's own map may be wrong. Advisory only: it proposes a documentation
+         *     check and changes nothing about the investigation or the model.
+         */
+        MapDriftCheck: {
+            /** Findings */
+            findings: components["schemas"]["MapDriftFinding"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "not_enough_evidence" | "repair_in_progress";
+            /** Variants Checked */
+            variants_checked: number;
+        };
+        /** MapDriftFinding */
+        MapDriftFinding: {
+            /** Best Fault */
+            best_fault: string;
+            /** Best Fault Label */
+            best_fault_label: string;
+            /** Component */
+            component: string;
+            /** Component Label */
+            component_label: string;
+            /** Documented */
+            documented: string;
+            /** Documented Label */
+            documented_label: string;
+            /** Probability */
+            probability: number;
+            /** Proposed */
+            proposed: string;
+            /** Proposed Label */
+            proposed_label: string;
         };
         /**
          * Modality
@@ -3851,6 +4000,37 @@ export interface operations {
             };
         };
     };
+    forecast_investigation_v1_investigations__inv_id__forecast_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvestigationForecast"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     report_intervention_v1_investigations__inv_id__interventions_post: {
         parameters: {
             query?: never;
@@ -3873,6 +4053,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvestigationState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    map_drift_check_v1_investigations__inv_id__map_drift_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MapDriftCheck"];
                 };
             };
             /** @description Validation Error */
@@ -4867,6 +5078,37 @@ export interface operations {
             };
         };
     };
+    forecast_investigation_v1_orgs__org__investigations__inv_id__forecast_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvestigationForecast"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     report_intervention_v1_orgs__org__investigations__inv_id__interventions_post: {
         parameters: {
             query?: never;
@@ -4909,6 +5151,37 @@ export interface operations {
                 content?: never;
             };
             /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    map_drift_check_v1_orgs__org__investigations__inv_id__map_drift_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inv_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MapDriftCheck"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

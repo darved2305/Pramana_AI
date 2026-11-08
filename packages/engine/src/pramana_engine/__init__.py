@@ -2,6 +2,8 @@
 
 from .config import EngineConfig
 from .engine import Engine, Evidence, EvidenceError, ObserveResult, Presence
+from .forecast import Forecast, forecast
+from .mapdrift import map_drift
 from .model import MULTIPLE_FAULTS, CompiledModel, Hypothesis, compile_pack
 from .scheduler import Schedule, schedule
 from .testimony import Disagreement, Side
@@ -21,11 +23,14 @@ __all__ = [
     "EngineConfig",
     "Evidence",
     "EvidenceError",
+    "Forecast",
     "Hypothesis",
     "ObserveResult",
     "Presence",
     "Schedule",
     "Side",
     "compile_pack",
+    "forecast",
+    "map_drift",
     "schedule",
 ]

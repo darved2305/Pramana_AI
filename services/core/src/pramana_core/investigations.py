@@ -49,8 +49,10 @@ from pramana_contracts import (
     Extraction,
     GroundTruthComparison,
     Hedge,
+    InvestigationForecast,
     InvestigationState,
     InvestigationStatus,
+    MapDriftCheck,
     Modality,
     Observation,
     ObservationState,
@@ -92,6 +94,8 @@ from pramana_engine import (
     compile_pack,
     schedule,
 )
+from pramana_engine import forecast as run_forecast
+from pramana_engine import map_drift as run_map_drift
 
 from . import ids
 from .db import (
@@ -225,6 +229,8 @@ class InvestigationService:
         # investigation, its lock can be collected instead of accumulating for process life.
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._cache: OrderedDict[str, tuple[int, Engine]] = OrderedDict()
+        self._forecasts: OrderedDict[str, tuple[int, InvestigationForecast]] = OrderedDict()
+        self._drift_checks: OrderedDict[str, tuple[int, MapDriftCheck]] = OrderedDict()
 
     # -- helpers ---------------------------------------------------------------------------------
 
@@ -1504,6 +1510,43 @@ class InvestigationService:
             if q.kind in ("confirm", "challenge")
             else "probe",
         )
+
+    async def forecast(self, inv_id: str) -> InvestigationForecast:
+        """Advisory estimate. Built on a private engine rebuilt from the log, which is thrown
+        away afterwards: nothing is written and the investigation's own engine is not touched."""
+        async with self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+            version = row.version
+            cached = self._forecasts.get(inv_id)
+            if cached is not None and cached[0] == version:
+                return cached[1]
+            engine, _ = await self._rebuild(session, row)
+        result = InvestigationForecast.model_validate(
+            (await asyncio.to_thread(run_forecast, engine, f"{inv_id}:{version}")).as_dict()
+        )
+        self._forecasts.pop(inv_id, None)
+        self._forecasts[inv_id] = (version, result)
+        while len(self._forecasts) > self.ENGINE_CACHE_MAX:
+            self._forecasts.popitem(last=False)
+        return result
+
+    async def map_drift(self, inv_id: str) -> MapDriftCheck:
+        """Advisory: same isolation as the forecast. Cached until the investigation moves on."""
+        async with self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+            version = row.version
+            cached = self._drift_checks.get(inv_id)
+            if cached is not None and cached[0] == version:
+                return cached[1]
+            engine, _ = await self._rebuild(session, row)
+        result = MapDriftCheck.model_validate(
+            (await asyncio.to_thread(run_map_drift, engine)).as_dict()
+        )
+        self._drift_checks.pop(inv_id, None)
+        self._drift_checks[inv_id] = (version, result)
+        while len(self._drift_checks) > self.ENGINE_CACHE_MAX:
+            self._drift_checks.popitem(last=False)
+        return result
 
     async def events(self, inv_id: str, after_seq: int, limit: int) -> list[EventEnvelope]:
         async with self.db.read() as session:

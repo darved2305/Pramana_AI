@@ -9,10 +9,13 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { actionKey } from "@/lib/api/account";
 import { core, type ListQuery } from "@/lib/api/core";
+import { request } from "@/lib/api/http";
 import type { OrganizationApi } from "@/lib/api/organization";
 import type {
   AnswerResult,
   EventEnvelope,
+  InvestigationForecast,
+  MapDriftCheck,
   InvestigationPage,
   InvestigationState,
   ParticipantToken,
@@ -28,6 +31,8 @@ export interface InvestigationScope {
   /** API path prefix (after ``/api/core``): ``/v1`` or ``/v1/orgs/<workspace>``. */
   apiRoot: string;
   workspace: string | null;
+  forecast(id: string, signal?: AbortSignal): Promise<InvestigationForecast>;
+  mapDrift(id: string, signal?: AbortSignal): Promise<MapDriftCheck>;
   listInvestigations(q: ListQuery, signal?: AbortSignal): Promise<InvestigationPage>;
   getInvestigation(id: string, signal?: AbortSignal): Promise<InvestigationState>;
   events(id: string, afterSeq: number, signal?: AbortSignal, token?: string): Promise<EventEnvelope[]>;
@@ -55,6 +60,8 @@ const legacyScope: InvestigationScope = {
   reveal: (id) => core.reveal(id),
   participantToken: (id, pid) => core.participantToken(id, pid),
   sitePack: (state, signal) => core.pack(state.pack_id, signal),
+  forecast: (id, signal) => request<InvestigationForecast>("core", `/v1/investigations/${encodeURIComponent(id)}/forecast`, { signal }),
+  mapDrift: (id, signal) => request<MapDriftCheck>("core", `/v1/investigations/${encodeURIComponent(id)}/map-drift`, { signal }),
 };
 
 export function workspaceScope(api: OrganizationApi): InvestigationScope {
@@ -66,6 +73,8 @@ export function workspaceScope(api: OrganizationApi): InvestigationScope {
     listInvestigations: (q, signal) => api.listInvestigations(q, signal),
     getInvestigation: (id, signal) => api.getInvestigation(id, signal),
     events: (id, after, signal) => api.events(id, after, signal),
+    forecast: (id, signal) => api.forecast(id, signal),
+    mapDrift: (id, signal) => api.mapDrift(id, signal),
     replayCheck: (id, signal) => api.replayCheck(id, signal),
     answer: (id, body) => api.answer(id, body, key("answer")),
     requestApproval: (id, body) => api.requestApproval(id, body, key("approval")),

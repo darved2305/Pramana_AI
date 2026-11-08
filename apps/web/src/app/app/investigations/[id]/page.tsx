@@ -21,6 +21,7 @@ import { BuildingMap } from "@/components/app/BuildingMap";
 import { Avatar } from "@/components/app/Avatar";
 import { DecisionBar, DiagnosisPanel, HypothesisPanel, ReasoningPanel } from "@/components/console/BeliefPanels";
 import { ApprovalPanel, ContradictionPanel, ConversationPanel, EvidenceLedger, TestimonyPanel } from "@/components/console/ActivityPanels";
+import { ForecastPanel } from "@/components/console/ForecastPanel";
 import { useInvestigation, useInvestigationPack } from "@/lib/data/hooks";
 import { useCurrentUser } from "@/lib/data/session";
 import { hasRole } from "@/lib/api/auth";
@@ -204,6 +205,7 @@ function CommandCenter({
         <div className="flex flex-col gap-4">
           <HypothesisPanel state={s} />
           <DecisionBar state={s} />
+          <ForecastPanel state={s} />
         </div>
       </div>
 

@@ -16,6 +16,8 @@ import type {
   SiteModelDraft,
   SiteModelSummary,
   ConsentRecord,
+  InvestigationForecast,
+  MapDriftCheck,
   RecordConsent,
   SitePerson,
   PersonTrackRecord,
@@ -119,6 +121,10 @@ export function organizationApi(org: string) {
       mutate<InvestigationState>(investigations, body, action),
     getInvestigation: (id: string, signal?: AbortSignal, token?: string) =>
       request<InvestigationState>("core", investigation(id), { signal, token }),
+    mapDrift: (id: string, signal?: AbortSignal) =>
+      request<MapDriftCheck>("core", `${investigation(id)}/map-drift`, { signal }),
+    forecast: (id: string, signal?: AbortSignal) =>
+      request<InvestigationForecast>("core", `${investigation(id)}/forecast`, { signal }),
     replayCheck: (id: string, signal?: AbortSignal) =>
       request<ReplayResult>("core", `${investigation(id)}/replay`, { signal }),
     events: (id: string, afterSeq: number, signal?: AbortSignal) =>
