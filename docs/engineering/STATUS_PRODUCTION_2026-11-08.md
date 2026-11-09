@@ -70,6 +70,19 @@ including the ID-03 and ID-04 journey through mock OIDC with `hd` claims. The fu
 suite passed 4,052 tests (exit 0) on `pramana_dj_test` and `pramana_dj_e2e`; process-level tests
 used ports 8170 and 8270.
 
+Browser follow-up: the parallel journey could see an old "I understood" message while a later
+answer was still being submitted. The participant page now clears that message when a new answer
+starts. `participant-answer.spec.ts` holds the second response open and verifies that the old
+message stays hidden until the new response succeeds. The real-stack parallel test also includes
+rejection details and answer events when reporting an unexpected failure.
+
+Validation after the browser fix: the focused domain API and RLS command passed 31 tests. Web
+typecheck, lint and copy checks passed; the UI browser gate passed 49 tests. The real-stack browser
+gate passed 31 tests with the mock OIDC server and bundled Chromium. Ruff passed, format checked 255
+files, mypy checked 127 source files, and OpenAPI check passed. The full Python command completed at
+100% with exit 0; collection counted 4,056 tests in 91 files, while quiet mode suppressed the
+pass/skip summary.
+
 Known limit of sealing: investigation search matches ids only for sealed reports, because the
 text is encrypted.
 

@@ -1284,7 +1284,7 @@ stateDiagram-v2
 
 Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright with the mock OIDC issuer), **P** process-level end to end, **L** load, **C** chaos. The ids name the tests.
 
-Implementation status, 2026-11-09: ID-03 and ID-04 are implemented in migration `0018_workspace_domain_joins.py` and the onboarding and workspace settings screens. API coverage is in `test_domain_joins.py` and `test_google_auth.py`; `tests-real/domain-join.spec.ts` exercises both policies through the mock OIDC server with `hd` claims.
+Implementation status, 2026-11-09: ID-03 and ID-04 are implemented in migration `0018_workspace_domain_joins.py` and the onboarding and workspace settings screens. API coverage is in `test_domain_joins.py` and `test_google_auth.py`; `tests-real/domain-join.spec.ts` exercises both policies through the mock OIDC server with `hd` claims. The participant page clears an earlier "I understood" message when a new answer is submitted, so feedback cannot be reused while the next answer is still in flight.
 
 **Sign-in and identity**
 
