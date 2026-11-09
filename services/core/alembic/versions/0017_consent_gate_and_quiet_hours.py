@@ -1,6 +1,6 @@
 """Gate site questions on consent and person quiet hours.
 
-Revision ID: 0019
+Revision ID: 0017
 Revises: 0016
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0019"
+revision = "0017"
 down_revision = "0016"
 branch_labels = None
 depends_on = None

@@ -16,7 +16,7 @@ and bypass human consent and quiet hours. Starting a real live investigation is 
 Focused API checks passed under both the database owner and `pramana_app`, including replay,
 withdrawal, override audit, link expiry and reuse, and tenant isolation. The mail test uses a
 fake transport and the live planner test uses the in-process simulator. Hindi and Marathi wording
-still needs native review. Deployment of migration 0019 must repeat the schema revoke for
+still needs native review. Deployment of migration 0017 must repeat the schema revoke for
 `anon` and `authenticated`.
 
 The consent-request idempotency response is encrypted at rest so a retry can return the same
