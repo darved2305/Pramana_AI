@@ -49,8 +49,14 @@ async function capture(page: Page, label: string) {
   await page.screenshot({ path: file(original.width) });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(80);
-  const layout = await page.evaluate(() => ({
+  const layout = await page.evaluate(() => {
+    // On setup pages the brand and the skip button share one header; they must not touch at phone width.
+    const header = document.querySelector("header");
+    const skip = header ? [...header.querySelectorAll("button")].find((b) => /skip setup/i.test(b.textContent ?? "")) : undefined;
+    const brand = header?.querySelector("svg")?.parentElement?.getBoundingClientRect();
+    return {
     width: innerWidth,
+    headerGap: skip && brand ? Math.round(skip.getBoundingClientRect().left - brand.right) : null,
     documentWidth: document.documentElement.scrollWidth,
     offenders: [...document.body.querySelectorAll("*")]
       .filter((element) => {
@@ -79,13 +85,15 @@ async function capture(page: Page, label: string) {
       .filter((element) => element.width > 0 && element.right > innerWidth + 1)
       .sort((a, b) => b.right - a.right)
       .slice(0, 8),
-  }));
+    };
+  });
   const phoneShot = file(390);
   const desktopScrollY = await page.evaluate(() => window.scrollY);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await page.screenshot({ path: phoneShot });
   steps.push({ label, path: safeUrl(page.url()), width: layout.width, documentWidth: layout.documentWidth, screenshot: path.relative(path.resolve(process.cwd(), "../.."), phoneShot) });
+  if (layout.headerGap !== null) expect(layout.headerGap, `${label} header items touch at 390 px`).toBeGreaterThanOrEqual(8);
   expect(layout.documentWidth, `${label} overflows at 390 px: ${JSON.stringify(layout.offenders)}`).toBeLessThanOrEqual(390);
   await page.setViewportSize(original);
   await page.evaluate((y) => window.scrollTo(0, y), desktopScrollY);
