@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -93,6 +95,8 @@ def test_existing_alert_budget_with_wrong_amount_fails_closed() -> None:
         dry_run = False
 
         def run(self, args: list[str], **_kwargs: object):
+            if args[:2] == ["projects", "describe"]:
+                return deploy.subprocess.CompletedProcess(args, 0, "123456789\n", "")
             assert args[:3] == ["billing", "budgets", "list"]
             return deploy.subprocess.CompletedProcess(
                 args,
@@ -106,6 +110,61 @@ def test_existing_alert_budget_with_wrong_amount_fails_closed() -> None:
 
     with pytest.raises(deploy.DeployError, match="different scope or amount"):
         deploy.ensure_budget(ExistingBudgetCloud(), context)
+
+
+def test_existing_alert_budget_with_project_number_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+    budgets = [
+        {
+            "displayName": deploy.ALERT_BUDGET_NAME,
+            "budgetFilter": {
+                "projects": ["projects/123456789"],
+                "calendarPeriod": "MONTH",
+            },
+            "amount": {"specifiedAmount": {"currencyCode": "INR", "units": "1000"}},
+            "thresholdRules": [
+                {"thresholdPercent": value} for value in (0.5, 0.8, 1.0)
+            ],
+        },
+        {
+            "displayName": deploy.SPEND_CAP_NAME,
+            "budgetFilter": {
+                "projects": ["projects/123456789"],
+                "services": [f"services/{deploy.RUN_SERVICE_ID}"],
+                "calendarPeriod": "MONTH",
+            },
+            "amount": {"specifiedAmount": {"currencyCode": "INR", "units": "500"}},
+            "thresholdRules": [
+                {"thresholdPercent": value} for value in (0.5, 0.8, 1.0)
+            ],
+            "spendCap": {"inputState": "CONFIGURED"},
+        },
+    ]
+
+    class ExistingBudgetCloud:
+        dry_run = False
+
+        def run(self, args: list[str], **_kwargs: object):
+            if args[:2] == ["projects", "describe"]:
+                return deploy.subprocess.CompletedProcess(args, 0, "123456789\n", "")
+            if args[:3] == ["billing", "budgets", "list"]:
+                return deploy.subprocess.CompletedProcess(args, 0, json.dumps([budgets[0]]), "")
+            if args[:2] == ["auth", "print-access-token"]:
+                return deploy.subprocess.CompletedProcess(args, 0, "token\n", "")
+            raise AssertionError(f"unexpected gcloud call: {args}")
+
+    monkeypatch.setattr(
+        deploy.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: io.BytesIO(json.dumps({"budgets": [budgets[1]]}).encode()),
+    )
+    deploy.ensure_budget(ExistingBudgetCloud(), context)
+
+    assert "Cloud Run spend cap already has the expected project, service and amount." in (
+        capsys.readouterr().out
+    )
 
 
 def test_private_service_accounts_receive_only_their_database_secret() -> None:

@@ -794,6 +794,19 @@ def secret_bindings(gcloud: Gcloud, ctx: Context) -> None:
 
 
 def ensure_budget(gcloud: Gcloud, ctx: Context) -> None:
+    project_number = gcloud.run(
+        [
+            "projects",
+            "describe",
+            ctx.project,
+            "--format=value(projectNumber)",
+            f"--project={ctx.project}",
+        ],
+        quiet=True,
+    ).stdout.strip()
+    if not project_number:
+        raise DeployError("project number unavailable for Cloud Run spend cap")
+
     found = gcloud.run(
         [
             "billing",
@@ -829,8 +842,11 @@ def ensure_budget(gcloud: Gcloud, ctx: Context) -> None:
         filter_ = alert.get("budgetFilter", {})
         amount = alert.get("amount", {}).get("specifiedAmount", {})
         thresholds = {rule.get("thresholdPercent") for rule in alert.get("thresholdRules", [])}
+        project_scopes = set(filter_.get("projects", []))
         if (
-            f"projects/{ctx.project}" not in filter_.get("projects", [])
+            not project_scopes.intersection(
+                {f"projects/{ctx.project}", f"projects/{project_number}"}
+            )
             or filter_.get("calendarPeriod") != "MONTH"
             or amount.get("currencyCode") != "INR"
             or amount.get("units") != "1000"
@@ -842,18 +858,6 @@ def ensure_budget(gcloud: Gcloud, ctx: Context) -> None:
         print("The project alert budget already has the expected scope, amount and thresholds.")
 
     try:
-        project_number = gcloud.run(
-            [
-                "projects",
-                "describe",
-                ctx.project,
-                "--format=value(projectNumber)",
-                f"--project={ctx.project}",
-            ],
-            quiet=True,
-        ).stdout.strip()
-        if not project_number:
-            raise DeployError("project number unavailable for Cloud Run spend cap")
         url = f"https://billingbudgets.googleapis.com/v1/billingAccounts/{ctx.billing}/budgets"
         body: dict[str, Any] = {
             "displayName": SPEND_CAP_NAME,
