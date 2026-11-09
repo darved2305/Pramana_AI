@@ -16,7 +16,7 @@ export default function NotFound() {
             Home
           </Link>
           <Link href="/app" className="btn-line lg">
-            Console
+            Open the app
           </Link>
         </div>
       </div>
