@@ -2215,6 +2215,15 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /** CursorPage[JoinRequestView] */
+        CursorPage_JoinRequestView_: {
+            /** Items */
+            items: components["schemas"]["JoinRequestView"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
         /** CursorPage[PersonTrackRecord] */
         CursorPage_PersonTrackRecord_: {
             /** Items */
@@ -6667,7 +6676,10 @@ export interface operations {
     };
     list_join_requests_v1_orgs__org__join_requests_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -6682,7 +6694,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JoinRequestView"][];
+                    "application/json": components["schemas"]["CursorPage_JoinRequestView_"];
                 };
             };
             /** @description Validation Error */

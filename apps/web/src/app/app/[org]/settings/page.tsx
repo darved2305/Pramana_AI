@@ -319,7 +319,10 @@ function useActionKeys() {
 /** Requests from people at a verified domain. Shown once anyone has asked. */
 function JoinRequestsPanel() {
   const ws = useWorkspace();
-  const requests = useLoad(`join-requests|${ws.org.id}`, (signal) => ws.api.joinRequests(signal));
+  const requests = useCursorList(
+    `join-requests|${ws.org.id}`,
+    (cursor, signal) => ws.api.joinRequests({ limit: 25, cursor }, signal),
+  );
   const keys = useActionKeys();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -350,24 +353,27 @@ function JoinRequestsPanel() {
       </Card>
     );
   }
-  if (requests.status !== "ready" || requests.data.length === 0) return null;
-  const waiting = requests.data.filter((r) => r.status === "pending").length;
+  if (requests.status !== "ready" || requests.data.items.length === 0) return null;
   return (
     <Card id="join-requests" className="flex flex-col gap-4 p-5">
       <CardHeader
         title="Requests to join"
-        subtitle={
-          waiting
-            ? `${waiting} waiting. Each person signed in with Google using an address at your verified domain. Viewer is the safest role to start with.`
-            : "Nobody is waiting. Earlier requests and automatic joins are listed here."
-        }
+        subtitle="Pending requests appear first, followed by recent decisions. Each person used Google with an address at your verified domain."
       />
       {error ? <p role="alert" className="text-[13px] text-bad">{error}</p> : null}
       <ul className="flex flex-col divide-y divide-white/[.06]" aria-label="Workspace join requests">
-        {requests.data.map((item) => (
+        {requests.data.items.map((item) => (
           <JoinRequestRow key={item.id} item={item} busy={busyId === item.id} disabled={busyId !== null} onDecide={decide} />
         ))}
       </ul>
+      {requests.data.next_cursor ? (
+        <div className="flex justify-center">
+          <Button size="sm" onClick={requests.loadMore} disabled={requests.loadingMore}>
+            {requests.loadingMore ? "Loading..." : "Load more requests"}
+          </Button>
+        </div>
+      ) : null}
+      {requests.moreError ? <p role="alert" className="text-[13px] text-bad">Could not load more requests. <button className="underline" onClick={requests.loadMore}>Try again</button></p> : null}
     </Card>
   );
 }

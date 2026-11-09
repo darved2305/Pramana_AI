@@ -118,8 +118,16 @@ export function organizationApi(org: string) {
         signal: action.signal,
         headers: { "Idempotency-Key": action.key },
       }),
-    joinRequests: (signal?: AbortSignal) =>
-      request<JoinRequestView[]>("core", `${root}/join-requests`, { signal }),
+    joinRequests: (query: { limit?: number; cursor?: string } = {}, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      return request<CursorPage<JoinRequestView>>(
+        "core",
+        `${root}/join-requests${params.size ? `?${params}` : ""}`,
+        { signal },
+      );
+    },
     approveJoinRequest: (id: string, body: JoinRequestDecision, action: OrganizationAction) =>
       mutate<JoinRequestView>(`${root}/join-requests/${enc(id)}/approve`, body, action),
     declineJoinRequest: (id: string, action: OrganizationAction) =>

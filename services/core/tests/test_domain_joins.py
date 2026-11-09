@@ -211,8 +211,51 @@ def test_removing_domain_waits_for_inflight_request(domain_core: TestClient) -> 
     assert created.status_code == 201, created.text
     assert removed.status_code == 204, removed.text
     _as_owner(client)
-    history = client.get(f"/v1/orgs/{org_id}/join-requests").json()
+    history = client.get(f"/v1/orgs/{org_id}/join-requests").json()["items"]
     assert history[0]["status"] == "cancelled"
+
+
+def test_join_request_history_uses_org_bound_cursor_pages(domain_core: TestClient) -> None:
+    client = domain_core
+    org_id = client.org_id  # type: ignore[attr-defined]
+    requester = _as_requester(client)
+    older = _request(client, org_id, "join-history-older-create-01").json()["request"]
+    cancelled = client.post(
+        f"/v1/join-requests/{older['id']}/cancel",
+        headers=_headers("join-history-older-cancel-01"),
+    )
+    assert cancelled.status_code == 204, cancelled.text
+    newer = _request(client, org_id, "join-history-newer-create-01").json()["request"]
+    _as_owner(client)
+
+    first = client.get(f"/v1/orgs/{org_id}/join-requests", params={"limit": 1})
+    assert first.status_code == 200, first.text
+    first_page = first.json()
+    assert [row["id"] for row in first_page["items"]] == [newer["id"]]
+    assert first_page["next_cursor"]
+
+    second = client.get(
+        f"/v1/orgs/{org_id}/join-requests",
+        params={"limit": 1, "cursor": first_page["next_cursor"]},
+    )
+    assert second.status_code == 200, second.text
+    assert [row["id"] for row in second.json()["items"]] == [older["id"]]
+    assert second.json()["next_cursor"] is None
+
+    other = client.post(
+        "/v1/orgs",
+        json={"name": "Other College"},
+        headers=_headers("join-history-other-org-create-01"),
+    )
+    assert other.status_code == 201, other.text
+    other_org = other.json()["organization"]["id"]
+    reused = client.get(
+        f"/v1/orgs/{other_org}/join-requests",
+        params={"limit": 1, "cursor": first_page["next_cursor"]},
+    )
+    assert reused.status_code == 400, reused.text
+    assert reused.json()["error"]["code"] == "CURSOR_INVALID"
+    _use_session(client, requester)
 
 
 def test_dns_verification_rejects_changed_challenge(domain_core: TestClient) -> None:
@@ -284,7 +327,7 @@ def test_verified_domain_suggestions_and_request_approval_notifications(
     _as_owner(client)
     requests = client.get(f"/v1/orgs/{org_id}/join-requests")
     assert requests.status_code == 200, requests.text
-    assert [row["id"] for row in requests.json()] == [pending["id"]]
+    assert [row["id"] for row in requests.json()["items"]] == [pending["id"]]
     outbox = client.app.state.domain_joins.mailer
     assert any("asked to join Nava College" in body for _, _, body in outbox.messages)
 
@@ -372,8 +415,12 @@ def test_pending_request_uses_new_auto_policy_and_joins_as_viewer(domain_core: T
 
     _as_owner(client)
     history = client.get(f"/v1/orgs/{org_id}/join-requests").json()
-    assert any(row["id"] == pending["id"] and row["status"] == "cancelled" for row in history)
-    assert any(row["status"] == "approved" and row["decision_source"] == "auto" for row in history)
+    assert any(
+        row["id"] == pending["id"] and row["status"] == "cancelled" for row in history["items"]
+    )
+    assert any(
+        row["status"] == "approved" and row["decision_source"] == "auto" for row in history["items"]
+    )
     assert any(
         "joined Nava College as a viewer" in body
         for _, _, body in client.app.state.domain_joins.mailer.messages

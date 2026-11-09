@@ -1101,6 +1101,40 @@
     "title": "CursorPage[InvitationView]",
     "type": "object"
    },
+   "CursorPage_JoinRequestView_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/JoinRequestView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[JoinRequestView]",
+    "type": "object"
+   },
    "CursorPage_PersonTrackRecord_": {
     "additionalProperties": false,
     "properties": {
@@ -9886,6 +9920,35 @@
        "title": "Org",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
      }
     ],
     "responses": {
@@ -9893,11 +9956,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/JoinRequestView"
-         },
-         "title": "Response List Join Requests V1 Orgs  Org  Join Requests Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_JoinRequestView_"
         }
        }
       },
