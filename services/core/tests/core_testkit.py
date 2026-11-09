@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pramana_contracts.tokens import generate_private_key_b64
@@ -15,6 +16,15 @@ DEMO_ORG_ID = "019a5e00-0000-7000-8000-000000000001"
 DEMO_SITE_ID = "019a5e00-0000-7000-8000-000000000011"
 DEMO_MODEL_ID = "019a5e00-0000-7000-8000-000000000012"
 """Created by migration 0008; owns every row written without an organization context."""
+
+
+def require_test_database_url(value: str) -> str:
+    if not value:
+        pytest.fail(
+            "TEST_DATABASE_URL is not set. Point it at this checkout's test database "
+            "(PRAMANA_DB_NAMES in .env). The tests truncate that database, so there is no default."
+        )
+    return value
 
 
 def core_settings(db_url: str, **overrides: object) -> Settings:

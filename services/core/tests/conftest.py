@@ -17,7 +17,13 @@ import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
-from core_testkit import OPERATOR_KEY, SIGNING_KEY, core_settings, truncate_all
+from core_testkit import (
+    OPERATOR_KEY,
+    SIGNING_KEY,
+    core_settings,
+    require_test_database_url,
+    truncate_all,
+)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -34,8 +40,8 @@ TEST_DB_URL = os.environ.get("TEST_DATABASE_URL", "")
 CORE_DIR = Path(__file__).resolve().parents[1]
 
 
-async def _reachable() -> bool:
-    engine = create_async_engine(TEST_DB_URL, connect_args={"timeout": 2})
+async def _reachable(database_url: str) -> bool:
+    engine = create_async_engine(database_url, connect_args={"timeout": 2})
     try:
         async with engine.connect() as conn:
             await conn.exec_driver_sql("select 1")
@@ -46,9 +52,9 @@ async def _reachable() -> bool:
         await engine.dispose()
 
 
-async def _ensure_grant_audit_roles() -> None:
+async def _ensure_grant_audit_roles(database_url: str) -> None:
     """Simulate the Supabase roles the deploy grant audit checks."""
-    engine = create_async_engine(TEST_DB_URL)
+    engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
             for name, attributes in (
@@ -72,10 +78,10 @@ async def _ensure_grant_audit_roles() -> None:
         await engine.dispose()
 
 
-def _alembic(action: str) -> None:
+def _alembic(action: str, database_url: str) -> None:
     cfg = Config(str(CORE_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(CORE_DIR / "alembic"))
-    cfg.attributes["url"] = TEST_DB_URL
+    cfg.attributes["url"] = database_url
     if action == "upgrade":
         command.upgrade(cfg, "head")
     else:
@@ -84,21 +90,17 @@ def _alembic(action: str) -> None:
 
 @pytest.fixture(scope="session")
 def migrated_db() -> str:
-    if not TEST_DB_URL:
-        pytest.fail(
-            "TEST_DATABASE_URL is not set. Point it at this checkout's test database "
-            "(PRAMANA_DB_NAMES in .env). The tests truncate that database, so there is no default."
-        )
-    if not asyncio.run(_reachable()):
+    database_url = require_test_database_url(TEST_DB_URL)
+    if not asyncio.run(_reachable(database_url)):
         pytest.skip("PostgreSQL test database unreachable; run `python scripts/dev_db.py start`")
-    asyncio.run(_ensure_grant_audit_roles())
+    asyncio.run(_ensure_grant_audit_roles(database_url))
     # Rows left by an earlier run (a status like "awaiting_approval") would not fit the older,
     # narrower columns the downgrade passes through.
     with contextlib.suppress(Exception):  # a fresh database has no tables yet
-        asyncio.run(truncate_all(TEST_DB_URL))
-    _alembic("downgrade")
-    _alembic("upgrade")
-    return TEST_DB_URL
+        asyncio.run(truncate_all(database_url))
+    _alembic("downgrade", database_url)
+    _alembic("upgrade", database_url)
+    return database_url
 
 
 @pytest.fixture
