@@ -144,7 +144,7 @@ export default function OverviewPage() {
           href="/app/investigations"
           icon={<IconHistory />}
           title="Investigations"
-          body={all.status === "error" ? "List unavailable" : total ? `${total} in the core` : "None yet"}
+          body={all.status === "error" ? "List unavailable" : total ? `${total} so far` : "None yet"}
         />
         <QuickCard
           href="/app/participants"
