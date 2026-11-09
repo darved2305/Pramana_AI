@@ -37,7 +37,9 @@ def core_settings(db_url: str, **overrides: object) -> Settings:
 
 
 async def truncate_all(db_url: str) -> None:
-    engine = create_async_engine(db_url)
+    engine = create_async_engine(
+        db_url, connect_args={"server_settings": {"search_path": "pramana,public"}}
+    )
     async with engine.begin() as conn:
         await conn.exec_driver_sql(
             "truncate events, observations, questions, approvals, investigations, voice_usage, "

@@ -99,10 +99,20 @@ class GoogleOidc:
                 or parsed.port not in (None, 443)
             ):
                 raise OidcError("invalid provider configuration")
-        elif parsed.scheme != "https" and not (
-            self.cfg.mode in {"dev", "test"}
-            and parsed.scheme == "http"
-            and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        elif (
+            parsed.scheme != "https"
+            and not (
+                self.cfg.mode in {"dev", "test"}
+                and parsed.scheme == "http"
+                and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            )
+            and not (
+                self.cfg.mode == "production"
+                and self.cfg.local_production_test
+                and parsed.scheme == "http"
+                and parsed.hostname
+                in {"localhost", "127.0.0.1", "host.docker.internal", "mock-oidc"}
+            )
         ):
             raise OidcError("invalid provider configuration")
         return value

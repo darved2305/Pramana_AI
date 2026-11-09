@@ -110,6 +110,7 @@ def create_app(
             cfg.sim_operator_key.get_secret_value(),
             cfg.sim_timeout_s,
             transport=sim_transport,
+            service_auth=cfg.sim_serverless_auth,
         )
         gnani = GnaniClient(
             api_key=cfg.gnani_api_key.get_secret_value() if cfg.gnani_api_key else None,

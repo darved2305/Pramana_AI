@@ -485,7 +485,10 @@ def make_engine(settings: Settings) -> AsyncEngine:
         max_overflow=settings.db_max_overflow,
         pool_timeout=settings.db_pool_timeout_s,
         pool_pre_ping=True,
-        connect_args={"timeout": settings.db_pool_timeout_s},
+        connect_args={
+            "timeout": settings.db_pool_timeout_s,
+            "server_settings": {"search_path": "pramana"},
+        },
     )
 
 

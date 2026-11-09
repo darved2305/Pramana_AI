@@ -106,8 +106,11 @@ pausing and our own backups. No domain is owned; start with the managed Cloud Ru
 The HA Cloud SQL/load-balancer defaults in `infra/gcp` are now an unapproved larger-tier reference,
 not this launch plan. See [the primary-source budget review](engineering/CLOUD_BUDGET_REVIEW_2026-11-08.md).
 Project access and billing linkage were checked read-only. No cloud resource or API was created
-or enabled, and STOP 2 remains before cloud apply. Private database schema/roles, durable sandbox
-state, service invocation, quotas, backup/restore and spending controls must be verified first.
+or enabled in that review. The Nov 9 budget runbook and deploy script now cover the lean topology,
+regional secrets, migration/audit job, private service invocation, smoke checks and spending
+controls. Local validation is complete; cloud apply is still pending a rotated, approved Mumbai
+database, its backup destination, required local settings and human gcloud sign-in. See
+[the deployment runbook](engineering/DEPLOY_BUDGET_GCP.md) for the current readiness gate.
 
 **Code claims (§1.4).** Every `file:line` cited in §1.4 still matches the tree: `api/directory.py:42,50,57,64`, `main.py:169`, `app/app/page.tsx:24-25`, `lib/api/core.ts:165`, `lib/store/local.ts:77`, `pack.py:344`, `speakable.py:10`, `investigations.py:132,362-366,791,883`, `auth/service.py:53,95`, `voice/governor.py:15`, `voice/media.py:117`, `auth/deps.py:60-67`, `login/page.tsx:204`, `lib/api/auth.ts:55-57`. The inventory holds: 29 HTTP paths, 7 migrations, 9 tables, an engine LRU of 32 (`ENGINE_CACHE_MAX`). No corrections were needed.
 
@@ -1905,6 +1908,12 @@ This is a strong base. The new layers below target tenancy, identity, retries an
 | Artifact Registry | One image per git SHA, for every Python process and for `web` |
 
 **Fixed costs.** The largest are the HA database instance and the minimum instances of `api`, `media` and `worker` [I]. Variable cost is mostly voice, calls and messages (§9.6).
+
+The topology above is the longer-term HA reference. The first budget deployment uses the separate
+Cloud Run and Supabase Free starter in [the deployment runbook](engineering/DEPLOY_BUDGET_GCP.md):
+public `web`, private `core` and `sim`, zero minimum instances, and a Supabase Free database in
+Mumbai. Do not apply `infra/gcp` defaults for the INR 1,000 pilot. Real personal data stays out until
+the database is confirmed in India and its backup restore has been tested.
 
 ### 13.4 Environments
 

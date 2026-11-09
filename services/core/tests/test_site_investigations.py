@@ -349,9 +349,9 @@ def test_database_rejects_foreign_org_model_and_log_references(
         )
 
 
-def test_production_has_no_legacy_file_or_unscoped_investigation_routes(migrated_db: str) -> None:
+def test_production_has_no_legacy_file_or_unscoped_investigation_routes() -> None:
     cfg = core_settings(
-        migrated_db,
+        "postgresql+asyncpg://pramana_app@db.example:5432/pramana_prod_test",
         PRAMANA_MODE="production",
         PRAMANA_PII_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
         AUTH_REQUIRED=True,

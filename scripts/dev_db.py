@@ -29,6 +29,7 @@ DATABASES = tuple(
 APP_ROLE = "pramana_app"
 """The runtime role: not a superuser and without BYPASSRLS, so row-level security applies to it
 (ADR 0015). ``pramana`` stays the owner and runs migrations."""
+SIM_ROLE = "pramana_sim"
 
 
 def data_dir() -> Path:
@@ -121,22 +122,29 @@ def start() -> None:
 
 
 def ensure_app_role() -> None:
-    """Create the non-superuser runtime role once per cluster (additive; never altered)."""
-    run(
-        pg_bin("psql"),
-        "-h",
-        "localhost",
-        "-p",
-        str(PORT),
-        "-U",
-        USER,
-        "-d",
-        "postgres",
-        "-tAc",
-        f"do $$ begin if not exists (select 1 from pg_roles where rolname = '{APP_ROLE}') then "
-        f"create role {APP_ROLE} login nosuperuser nobypassrls nocreatedb nocreaterole; "
-        "end if; end $$",
+    """Create local test roles once per cluster (additive; existing roles are never altered)."""
+    roles = (
+        (APP_ROLE, "login nosuperuser nobypassrls nocreatedb nocreaterole"),
+        (SIM_ROLE, "login nosuperuser nobypassrls nocreatedb nocreaterole"),
+        ("anon", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
+        ("authenticated", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
+        ("service_role", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
     )
+    for name, attributes in roles:
+        run(
+            pg_bin("psql"),
+            "-h",
+            "localhost",
+            "-p",
+            str(PORT),
+            "-U",
+            USER,
+            "-d",
+            "postgres",
+            "-tAc",
+            f"do $$ begin if not exists (select 1 from pg_roles where rolname = '{name}') then "
+            f"create role {name} {attributes}; end if; end $$",
+        )
 
 
 def stop() -> None:

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from pramana_contracts import FaultSpec
 from pramana_contracts.tokens import mint, public_key_b64
@@ -24,6 +24,25 @@ PEOPLE = [
     {"id": "p_riya", "location_id": "F3_R304", "roles": ["student"]},
     {"id": "p_mahesh", "location_id": "GUARD_DESK", "roles": ["guard"]},
 ]
+
+
+def test_local_production_harness_accepts_docker_postgres_service() -> None:
+    settings = SimSettings(
+        mode="production",
+        local_production_test=True,
+        database_url="postgresql+asyncpg://pramana_sim@postgres:5432/pramana_dp_test",
+        operator_key=SecretStr("local-only"),
+        participant_public_key=public_key_b64(KEY),
+    )
+    assert settings.mode == "production"
+    with pytest.raises(ValidationError):
+        SimSettings(
+            mode="production",
+            local_production_test=True,
+            database_url="postgresql+asyncpg://pramana_sim@db.example:5432/pramana_dp_test",
+            operator_key=SecretStr("local-only"),
+            participant_public_key=public_key_b64(KEY),
+        )
 
 
 @pytest.fixture
