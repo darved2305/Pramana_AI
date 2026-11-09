@@ -169,7 +169,7 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
     refused_link = post(client, request_path).json()["link_path"].removeprefix("/consent/")
     refused = client.post("/v1/consent-links/" + refused_link, json={"decision": "refused"})
     assert refused.status_code == 200, refused.text
-    records = client.get(root + "/p_ravi/consents").json()
+    records = client.get(root + "/p_ravi/consents").json()["items"]
     assert records[0]["decision"] == "refused"
     assert records[1]["decision"] == "granted"
     assert records[1]["withdrawn_at"] is not None
@@ -366,7 +366,7 @@ def test_failed_replanning_does_not_consume_the_consent_link(
     monkeypatch.setattr(client.app.state.investigations, "consent_state_changed", fail_replanning)
     assert client.post(public, json={"decision": "granted"}).status_code == 500
     assert client.get(public).status_code == 200
-    assert client.get(root + "/p_ravi/consents").json() == []
+    assert client.get(root + "/p_ravi/consents").json()["items"] == []
 
 
 def test_quiet_hours_override_is_audited_and_replays(
