@@ -38,13 +38,15 @@ def test_production_refuses_auth_bypasses(override: dict[str, Any]) -> None:
         **override,
     }
     with pytest.raises(ValidationError) as caught:
-        core_settings("postgresql+asyncpg://pramana_app@localhost:5433/pramana_prod_test", **values)
+        core_settings(
+            "postgresql+asyncpg://pramana_app@db.example:5432/pramana_prod_test", **values
+        )
     assert "test-sensitive-value" not in str(caught.value)
 
 
 def test_production_uses_host_cookies_and_google() -> None:
     cfg = core_settings(
-        "postgresql+asyncpg://pramana_app@localhost:5433/pramana_prod_test",
+        "postgresql+asyncpg://pramana_app@db.example:5432/pramana_prod_test",
         PRAMANA_MODE="production",
         CORE_AUTOMATION_KEY="",
         OIDC_REDIRECT_URL="https://pramana.example/api/core/v1/auth/google/callback",
@@ -54,6 +56,23 @@ def test_production_uses_host_cookies_and_google() -> None:
     assert cfg.secure_cookies
     assert cfg.session_cookie_name == "__Host-pramana_session"
     assert cfg.auth_flow_cookie_name == "__Host-pramana_auth"
+
+
+def test_local_production_harness_requires_the_docker_only_endpoints() -> None:
+    cfg = core_settings(
+        "postgresql+asyncpg://pramana_app@host.docker.internal:5433/pramana_prod_test",
+        PRAMANA_MODE="production",
+        PRAMANA_LOCAL_PRODUCTION_TEST=True,
+        PRAMANA_PII_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        OIDC_ISSUER="http://localhost:8420",
+        OIDC_DISCOVERY_URL="http://host.docker.internal:8420/.well-known/openid-configuration",
+        OIDC_REDIRECT_URL="http://localhost:3100/api/core/v1/auth/google/callback",
+        SIM_URL="http://sim:8080",
+        SIM_SERVERLESS_AUTH=False,
+    )
+    assert cfg.mode == "production"
+    assert cfg.enforce_auth
+    assert cfg.secure_cookies
 
 
 def test_production_runtime_role_cannot_bypass_rls(migrated_db: str) -> None:
