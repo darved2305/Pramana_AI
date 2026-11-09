@@ -9,6 +9,7 @@ import type {
   AccountPreferences,
   PreferencesPatch,
   InvitationAccepted,
+  JoinRequestCreated,
 } from "./types";
 
 /** A fresh idempotency key. Reuse the same key when retrying one action after a lost response. */
@@ -52,6 +53,17 @@ export const accountApi = Object.freeze({
     request<InvitationAccepted>("core", "/v1/invitations/accept-pending", {
       method: "POST",
       json: { organization_id: organizationId, invitation_id: invitationId },
+      headers: { "Idempotency-Key": key },
+    }),
+  requestJoin: (organizationId: string, key: string) =>
+    request<JoinRequestCreated>("core", "/v1/join-requests", {
+      method: "POST",
+      json: { organization_id: organizationId },
+      headers: { "Idempotency-Key": key },
+    }),
+  cancelJoinRequest: (requestId: string, key: string) =>
+    request<void>("core", `/v1/join-requests/${encodeURIComponent(requestId)}/cancel`, {
+      method: "POST",
       headers: { "Idempotency-Key": key },
     }),
   createOrganization: (body: CreateOrganization, key: string) =>

@@ -58,15 +58,22 @@ across organizations, nothing else."""
 
 current_actor: ContextVar[str | None] = ContextVar("current_actor", default=None)
 
+current_hosted_domain: ContextVar[str | None] = ContextVar("current_hosted_domain", default=None)
+
 
 @contextmanager
 def acting_for(
-    org_id: uuid.UUID | None, user_id: str | None = None, *, actor: str | None = None
+    org_id: uuid.UUID | None,
+    user_id: str | None = None,
+    *,
+    actor: str | None = None,
+    hosted_domain: str | None = None,
 ) -> Iterator[None]:
     """Run the enclosed work in an organization context (and optionally as a user)."""
     org_token = current_org.set(org_id)
     user_token = current_user.set(user_id) if user_id is not None else None
     actor_token = current_actor.set(actor) if actor is not None else None
+    domain_token = current_hosted_domain.set(hosted_domain)
     try:
         yield
     finally:
@@ -75,19 +82,26 @@ def acting_for(
             current_user.reset(user_token)
         if actor_token is not None:
             current_actor.reset(actor_token)
+        current_hosted_domain.reset(domain_token)
 
 
 async def apply_context(session: AsyncSession) -> None:
     """Copy the context into the current transaction (``set_config(..., true)``: transaction-local,
     so a pooled connection never carries one request's organization into the next)."""
-    org, user = current_org.get(), current_user.get()
+    org, user, hosted_domain = current_org.get(), current_user.get(), current_hosted_domain.get()
     actor = current_actor.get() or (f"user:{user}" if user else "")
     await session.execute(
         text(
             "select set_config('app.org_id', :org, true), "
-            "set_config('app.user_id', :user, true), set_config('app.principal', :actor, true)"
+            "set_config('app.user_id', :user, true), set_config('app.principal', :actor, true), "
+            "set_config('app.hosted_domain', :hosted_domain, true)"
         ),
-        {"org": str(org) if org else "", "user": user or "", "actor": actor},
+        {
+            "org": str(org) if org else "",
+            "user": user or "",
+            "actor": actor,
+            "hosted_domain": hosted_domain or "",
+        },
     )
 
 
@@ -299,6 +313,7 @@ class SessionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     auth_method: Mapped[str] = mapped_column(String(16), server_default="password")
+    hosted_domain: Mapped[str | None] = mapped_column(String(253), nullable=True)
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

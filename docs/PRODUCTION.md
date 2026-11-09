@@ -1049,7 +1049,7 @@ create table audit_log (
 );
 ```
 
-Also needed, each designed in the slice that first uses it (review, 2026-11-07): `join_requests` (ID-03), `participant_links` (§5.6), `api_keys` (§5.5), `rate_limits` (§3.9), `media_leases` (§3.4), `llm_cache` (§3.7), and `jobs` if an owned queue is chosen (§3.8). Checklist dismissal lives in `user_preferences.home_layout`.
+`join_requests` (ID-03 and ID-04) was implemented in migration `0018_workspace_domain_joins.py`. Still needed, each designed in the slice that first uses it: `participant_links` (§5.6), `api_keys` (§5.5), `rate_limits` (§3.9), `media_leases` (§3.4), `llm_cache` (§3.7), and `jobs` if an owned queue is chosen (§3.8). Checklist dismissal lives in `user_preferences.home_layout`.
 
 ### 4.4 Row-level security and database roles
 
@@ -1284,6 +1284,8 @@ stateDiagram-v2
 
 Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright with the mock OIDC issuer), **P** process-level end to end, **L** load, **C** chaos. The ids name the tests.
 
+Implementation status, 2026-11-09: ID-03 and ID-04 are implemented in migration `0018_workspace_domain_joins.py` and the onboarding and workspace settings screens. API coverage is in `test_domain_joins.py` and `test_google_auth.py`; `tests-real/domain-join.spec.ts` exercises both policies through the mock OIDC server with `hd` claims. The participant page clears an earlier "I understood" message when a new answer is submitted, so feedback cannot be reused while the next answer is still in flight.
+
 **Sign-in and identity**
 
 | Id | Scenario | Expected behaviour | Tests |
@@ -1291,7 +1293,7 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | ID-01 | New consumer Gmail user, no invitations | Survey, then an automatically created organization and sandbox (§7) | A, B |
 | ID-02 | New Workspace user (`hd=college.edu`); no organization owns that domain | Normal onboarding; later the admin may verify `college.edu` from the `hd` claim | A, B |
 | ID-03 | New Workspace user; an organization verified `college.edu` with `join_policy=request` | "Request to join Nava College" or "Create a separate organization". Admins are notified. Meanwhile the sandbox is available | A, B |
-| ID-04 | Same, with `join_policy=auto` | Joins as **viewer** (least privilege), and admins are notified. The default policy is `request` | A |
+| ID-04 | Same, with `join_policy=auto` | Joins as **viewer** (least privilege), and admins are notified. The default policy is `request` | A, B |
 | ID-05 | Invitation accepted with a matching Google account | Roles from the invitation; lands in that organization with a welcome banner | A, B |
 | ID-06 | Invitation opened while signed in to a different Google account | "This invitation is for a•••@college.edu", plus "Switch account" (`prompt=select_account&login_hint=...`). Never accepted with a mismatched email | A, B |
 | ID-07 | Invitation expired, revoked or already used | A clear message and "Ask Anita for a new invitation". Nothing about the organization is shown to a non-matching account | A, B |

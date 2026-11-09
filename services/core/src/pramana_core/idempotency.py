@@ -247,7 +247,12 @@ class IdempotencyRoute(APIRoute):
             digest = fingerprint(request, body)
             db: Database = request.app.state.db
             nonce = ids.uuid7()
-            with acting_for(org_id, user_id, actor=actor):
+            with acting_for(
+                org_id,
+                user_id,
+                actor=actor,
+                hosted_domain=(principal.hosted_domain if principal.email_verified else None),
+            ):
                 await reap_expired(db)
                 async with db.transaction() as session:
                     now = (await session.execute(select(func.now()))).scalar_one()

@@ -32,4 +32,10 @@ async def home(org: str, request: Request, response: Response) -> WorkspaceHome:
             vault=request.app.state.vault,
         )
     response.headers["Cache-Control"] = "private, no-store"
-    return plan_home(facts)
+    result = plan_home(facts)
+    if {"owner", "admin"}.intersection(principal.roles):
+        requests = await request.app.state.domain_joins.list_join_requests(
+            access.organization.id, principal, limit=10
+        )
+        result = result.model_copy(update={"join_requests": requests})
+    return result

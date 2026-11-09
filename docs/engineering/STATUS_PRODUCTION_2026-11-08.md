@@ -61,7 +61,7 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | Answer words per outcome | Pushed | `e86e800`: `Probe.outcome_words`, `ServicePoint.words`, passed to all extractors. ruff, mypy, API drift and focused suites pass locally |
 | Pending invitations in `/v1/me` | Pushed | `ef29567`: migration 0015 adds read-only policies limited to the signed-in person's verified email; `POST /v1/invitations/accept-pending`; shown on the welcome step. Invitation, account and RLS tests pass as the restricted role; UI 48 passed. The join button has no browser journey of its own yet |
 | Personal data vault, consent, erasure | Pushed | `b7ad488`: migration 0016 `person_keys`, `personal_texts`, `consents`; AES-256-GCM with one data key per person, wrapped by a master key held in the process (`PRAMANA_PII_KEY`, required in production). Cloud KMS is not wired: it replaces `MasterKey` at deployment. Directory names sealed, and for site investigations names, reports and transcripts stay out of events and rows; erasure also scrubs saved idempotent responses. `POST .../people/{id}/erase` and consent routes added. The later consent gate and screens are described in the Nov 9 update above |
-| Cursor list pages and workspace retention | Implemented on `nov9/pagination-deletion` | Migrations 0018 and 0017 add signed, filter- and organization-bound keyset cursors, bounded pages, deletion state and list indexes. Growing workspace lists now return `items`, `limit` and `next_cursor`; owners can export a streamed JSON-per-table ZIP, delete with a 30-day restore window, and restore before scheduled purge. The purge job removes personal rows, redacts mutable personal data, preserves sealed events and audit entries, and aborts on readable personal text. API, RLS, browser and purge evidence is recorded in the C builder report. The daily maintenance job still needs deployment scheduling |
+| Cursor list pages and workspace retention | Implemented on `nov9/pagination-deletion` | Migrations 0017-0019 add consent gates, verified workspace domains, signed organization- and filter-bound keyset cursors, bounded pages, deletion state and list indexes. Growing workspace lists now return `items`, `limit` and `next_cursor`; owners can export a streamed JSON-per-table ZIP, delete with a 30-day restore window, and restore before scheduled purge. The purge job removes personal rows, redacts mutable personal data, preserves sealed events and audit entries, and aborts on readable personal text. API, RLS, browser and purge evidence is recorded in the C builder report. The daily maintenance job still needs deployment scheduling |
 
 | New kinds of site | Tested locally | `test_new_kinds_of_site.py`, through the real core and simulator by API, under owner and restricted database roles: a hospital, an office and a metro station built from empty, each reaching the right decision for two injected faults, with exact replay and seal. Also a contradicting witness, two simultaneous faults, self-approval refused, no hostel wording, nothing personal in the log. Medical gas and nurse call equipment types added. Not driven through the browser |
 | Real Google sign-in | Partly checked | First sign-in with the owner's account verified in the database on `localhost:3102`. Returning user, cancel at Google and wrong-account invitation not yet exercised on real Google |
@@ -74,12 +74,42 @@ Matched by test name and scope, not by re-reading each assertion.
 
 | Result | Rows |
 |---|---|
-| Automated test found | ID-01, 02, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 07, 09, 10; DA-01, 04, 05, 07; PA-09 |
+| Automated test found | ID-01, 02, 03, 04, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 07, 09, 10; DA-01, 04, 05, 07; PA-09 |
 | Partly covered | ID-06 (address check and switch-account prompt; the masked message is not asserted in a browser); ID-11 (disabled sign-in only); OR-01, OR-02 (saved preference, no switcher journey); OR-04 (access ends; stream closing not tested for removal); OR-05 (roles change; mid-session refresh not tested); OR-08 (suggestions; slug change and redirects not built); OR-11 (self-approval refused; "Invite an approver" not tested); DA-02, DA-03, DA-06, DA-08 (server rules; banners not tested) |
-| Not built | ID-03, ID-04 (domain join) |
+| Not built | None of the listed slice rows |
 
 OR-07 has API coverage for export isolation, deleted-route refusal, member access, restore and purge, plus a browser journey for the deleted-workspace notice and owner restore. DA-07 has a 2,000-row SQL-seeded pagination test, insertion-between-pages and cursor-binding checks, restricted-role coverage, and a browser request-count assertion. See the C builder report for exact commands and results.
 
+## 2026-11-09: verified workspace domain joining
+
+Migration `0018_workspace_domain_joins.py` adds verified organization domains and `join_requests`
+with requester and manager RLS policies. Google verification requires the signed-in admin's
+verified email and matching `hd`; DNS verification checks an injected TXT resolver. The welcome
+step offers the request and separate-organization choices, while workspace settings manage domain
+claims and request decisions. Automatic joining grants viewer only. Admin email uses the configured
+Gmail transport or the local outbox.
+
+Focused API, Google auth, route inventory and RLS suites passed (202 tests, exit 0). On the feature
+branch, migration `0018` was tested after `0016` on `pramana_dj_test`. At landing, `0018` was
+re-chained after `0017`; the migration check downgraded `pramana_prod_test` to base and upgraded it
+through `0018` (exit 0). Web static
+checks passed, the UI browser gate passed 48 tests, and the real-stack browser gate passed 31 tests,
+including the ID-03 and ID-04 journey through mock OIDC with `hd` claims. The full Python regression
+suite passed 4,052 tests (exit 0) on `pramana_dj_test` and `pramana_dj_e2e`; process-level tests
+used ports 8170 and 8270.
+
+Browser follow-up: the parallel journey could see an old "I understood" message while a later
+answer was still being submitted. The participant page now clears that message when a new answer
+starts. `participant-answer.spec.ts` holds the second response open and verifies that the old
+message stays hidden until the new response succeeds. The real-stack parallel test also includes
+rejection details and answer events when reporting an unexpected failure.
+
+Validation after the browser fix: the focused domain API and RLS command passed 31 tests. Web
+typecheck, lint and copy checks passed; the UI browser gate passed 49 tests. The real-stack browser
+gate passed 31 tests with the mock OIDC server and bundled Chromium. Ruff passed, format checked 255
+files, mypy checked 127 source files, and OpenAPI check passed. The full Python command completed at
+100% with exit 0; collection counted 4,056 tests in 91 files, while quiet mode suppressed the
+pass/skip summary.
 Known limit of sealing: investigation search matches ids only for sealed reports, because the
 text is encrypted.
 
