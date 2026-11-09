@@ -217,3 +217,29 @@ def test_private_service_accounts_receive_only_their_database_secret() -> None:
     assert any("pramana-database-simulator-url" in entry for entry in sim_bindings)
     assert not any("pramana-database-migrator-url" in entry for entry in sim_bindings)
     assert web_bindings == []
+
+
+def test_images_are_built_by_the_dedicated_build_account_and_bucket() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+
+    class Recorder:
+        dry_run = True
+
+        def __init__(self) -> None:
+            self.commands: list[list[str]] = []
+
+        def run(self, args: list[str], **_kwargs: object) -> None:
+            self.commands.append(args)
+
+    recorder = Recorder()
+    deploy.build_images(recorder, context)
+    builds = [command for command in recorder.commands if command[:2] == ["builds", "submit"]]
+    account = f"pramana-build@{deploy.PROJECT_DEFAULT}.iam.gserviceaccount.com"
+
+    assert len(builds) == 2
+    for command in builds:
+        assert f"--service-account=projects/{deploy.PROJECT_DEFAULT}/serviceAccounts/{account}" in (
+            command
+        )
+        assert f"--gcs-source-staging-dir=gs://{deploy.build_bucket(context)}/source" in command
+        assert f"--gcs-log-dir=gs://{deploy.build_bucket(context)}/logs" in command
