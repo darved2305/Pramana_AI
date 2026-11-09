@@ -36,7 +36,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await page.getByRole("checkbox", { name: /Approver/ }).check();
   await page.getByRole("button", { name: "Create invitation link" }).click();
   const link = await page.locator("code").filter({ hasText: "/invite/org_" }).innerText();
-  await expect(page.getByText("Copy it now and send it to them")).toBeVisible(); // no Gmail set up here
+  await expect(page.getByText("We could not send the email, so please send this link yourself")).toBeVisible(); // no Gmail set up here
   await expect(page.getByRole("list", { name: "Invitations" }).getByText("pending")).toBeVisible();
 
   // Someone else with the link cannot use it.
@@ -85,16 +85,34 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   // because this stack has no Gmail account and never sends a real message.
   for (const [delivery, words] of [
     ["sent", "We emailed this link to"],
-    ["failed", "We could not confirm the email was sent"],
+    ["queued", "The email is queued. Copy the link now if you want to send it yourself"],
+    ["failed", "We could not send the email, so please send this link yourself"],
   ] as const) {
+    let keepQueuedList = delivery === "queued";
     await page.route("**/invitations", async (route) => {
-      if (route.request().method() !== "POST") return route.continue();
+      if (route.request().method() !== "POST") {
+        if (delivery !== "queued" || !keepQueuedList) return route.continue();
+        const response = await route.fetch();
+        const rows = await response.json() as Array<Record<string, unknown>>;
+        await route.fulfill({ response, json: rows.map((row) => ({ ...row, email_delivery: "queued" })) });
+        return;
+      }
       const response = await route.fetch();
       await route.fulfill({ response, json: { ...(await response.json()), email_delivery: delivery } });
     });
-    await page.getByLabel("Their email address").fill(`${delivery}-${stamp}@example.com`);
+    const address = `${delivery}-${stamp}@example.com`;
+    await page.getByLabel("Their email address").fill(address);
+    const createdLink = page.waitForResponse((response) =>
+      response.request().method() === "POST" && response.url().endsWith("/invitations"),
+    );
     await page.getByRole("button", { name: "Create invitation link" }).click();
-    await expect(page.getByText(words)).toBeVisible();
+    await createdLink;
+    const deliveryNotice = page.getByText(`Invitation link for ${address}`, { exact: true }).locator("..");
+    await expect(deliveryNotice.getByText(words)).toBeVisible();
+    if (delivery === "queued") {
+      keepQueuedList = false;
+      await expect(deliveryNotice.getByText("We could not send the email, so please send this link yourself")).toBeVisible();
+    }
     await page.unroute("**/invitations");
   }
 });
