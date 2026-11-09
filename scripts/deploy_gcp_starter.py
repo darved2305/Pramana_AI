@@ -33,10 +33,9 @@ NON_INDIA_DATABASE_ACK = "PRAMANA_ACCEPT_NON_INDIA_DATABASE"
 TRUE_VALUES = frozenset({"true", "1", "yes"})
 REPOSITORY = "pramana"
 SERVICES = ("pramana-web", "pramana-core", "pramana-sim")
-SERVICE_ACCOUNTS = ("web", "core", "sim", "migrate")
-RUN_SERVICE_ID = "152E-C115-5142"
-ALERT_BUDGET_NAME = "Pramana monthly project alert INR 1000"
-SPEND_CAP_NAME = "Pramana Cloud Run spend cap INR 500"
+SERVICE_ACCOUNTS = ("web", "core", "sim", "migrate", "build")
+DEPLOY_ACCOUNT = "nikhilpise2006@gmail.com"
+ALERT_BUDGET_NAME = "pramana-inr-1000"
 LOG_FILTER = (
     '((resource.type="cloud_run_revision" AND resource.labels.location="asia-south1" AND '
     '(resource.labels.service_name="pramana-web" OR resource.labels.service_name="pramana-core" '
@@ -46,7 +45,6 @@ LOG_FILTER = (
 )
 API_SERVICES = (
     "artifactregistry.googleapis.com",
-    "billingbudgets.googleapis.com",
     "cloudbuild.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
@@ -78,6 +76,10 @@ ROTATION_ACKS = {
     "PRAMANA_GOOGLE_OAUTH_CLIENT_SECRET_ROTATED": "Google OAuth client secret",
     "PRAMANA_GMAIL_APP_PASSWORD_ROTATED": "Gmail app password",
 }
+# Stage-only exception: the owner has parked the credential rotations. It is accepted only
+# together with the non-India database acknowledgement, so it can never describe a stage
+# that holds real personal data, and it is printed on every deploy.
+ROTATIONS_PARKED_ACK = "PRAMANA_ROTATIONS_PARKED"
 DEPLOY_ENV_KEYS = frozenset(
     {
         "GCP_PROJECT_ID",
@@ -89,6 +91,7 @@ DEPLOY_ENV_KEYS = frozenset(
         "PRAMANA_SUPABASE_DB_PASSWORD",
         "PRAMANA_SUPABASE_APP_PASSWORD",
         NON_INDIA_DATABASE_ACK,
+        ROTATIONS_PARKED_ACK,
         *ROTATION_ACKS,
         *SECRET_ENV.values(),
     }
@@ -238,9 +241,7 @@ class Gcloud:
     def _dry_result(args: Sequence[str], full: Sequence[str]) -> subprocess.CompletedProcess[str]:
         command = list(args)
         if command[:2] == ["auth", "list"]:
-            return subprocess.CompletedProcess(full, 0, "dry-run-account\n", "")
-        if command[:3] == ["billing", "accounts", "describe"]:
-            return subprocess.CompletedProcess(full, 0, "INR\n", "")
+            return subprocess.CompletedProcess(full, 0, f"{DEPLOY_ACCOUNT}\n", "")
         if command[:2] == ["services", "list"]:
             return subprocess.CompletedProcess(full, 0, "[]\n", "")
         if command[:3] in (
@@ -255,12 +256,8 @@ class Gcloud:
             if len(command) > 3 and command[3] == "_Default":
                 return subprocess.CompletedProcess(full, 0, '{"exclusions": []}\n', "")
             return subprocess.CompletedProcess(full, 1, "", "not found in dry run")
-        if command[:3] == ["billing", "budgets", "list"]:
-            return subprocess.CompletedProcess(full, 0, "[]\n", "")
         if command[:2] == ["projects", "describe"]:
             return subprocess.CompletedProcess(full, 0, "123456789\n", "")
-        if command[:2] == ["auth", "print-access-token"]:
-            return subprocess.CompletedProcess(full, 0, "dry-run-token\n", "")
         if command[:3] == ["run", "services", "describe"] and len(command) > 3:
             service = command[3]
             result = {
@@ -291,7 +288,7 @@ def run_plan(ctx: Context) -> None:
     )
     print("Secrets: 11 regional Secret Manager secrets; values are hidden.")
     print("Images: two Cloud Build SHA tags; keep five rollback versions.")
-    print("Budgets: INR 1,000 project alert and INR 500 Cloud Run spend cap when eligible.")
+    print("Budget: existing INR 1,000 project alert, recorded by name; no spend cap is created.")
     print("Logs: asia-south1 bucket, 180 day retention; only Pramana services routed.")
     print("Not planned: Cloud SQL, load balancer, Cloud Armor, NAT, media or worker services.")
     print("Synthetic settings are used below. --dry-run does not read .env secrets or contact GCP.")
@@ -313,11 +310,24 @@ def validate_environment(ctx: Context) -> None:
             "personal data must not be stored there. For a stage with no real personal data, "
             f"set {NON_INDIA_DATABASE_ACK}=true in .env to accept this explicitly"
         )
-    for setting, label in ROTATION_ACKS.items():
-        if ctx.value(setting).lower() not in TRUE_VALUES:
+    outstanding = [
+        (setting, label)
+        for setting, label in ROTATION_ACKS.items()
+        if ctx.value(setting, required=False).lower() not in TRUE_VALUES
+    ]
+    if outstanding:
+        parked = ctx.value(ROTATIONS_PARKED_ACK, required=False).lower() in TRUE_VALUES
+        if region == INDIA_DATABASE_REGION or not accepted or not parked:
+            setting, label = outstanding[0]
             raise DeployError(
-                f"Darshan must rotate {label} and set {setting}=true before deployment"
+                f"Darshan must rotate {label} and set {setting}=true before deployment. "
+                f"A stage with parked rotations needs {NON_INDIA_DATABASE_ACK}=true and "
+                f"{ROTATIONS_PARKED_ACK}=true, and must hold no real personal data."
             )
+        print(
+            "WARNING: credential rotations are parked; these credentials are still the "
+            "pre-rotation values: " + ", ".join(label for _, label in outstanding) + "."
+        )
     if not re.fullmatch(r"[A-Za-z0-9-]{6,64}", ctx.value("PRAMANA_SUPABASE_REF")):
         raise DeployError("PRAMANA_SUPABASE_REF has an invalid format")
     host = ctx.value("PRAMANA_SUPABASE_POOLER_HOST").lower()
@@ -366,25 +376,15 @@ def database_urls(ctx: Context, sim_password: str) -> dict[str, str]:
 
 
 def check_gcloud_account(gcloud: Gcloud, ctx: Context) -> None:
+    # Read-only: the billing account cannot be described with the deploy identity, so the
+    # INR currency of the existing budget is recorded by the owner, not checked here.
     result = gcloud.run(
         ["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"], quiet=True
     )
-    if not result.stdout.strip():
-        raise DeployError("no active gcloud account; run `gcloud auth login` first")
-    currency = gcloud.run(
-        [
-            "billing",
-            "accounts",
-            "describe",
-            ctx.billing,
-            "--format=value(currencyCode)",
-            f"--project={ctx.project}",
-        ],
-        quiet=True,
-    ).stdout.strip()
-    if currency != "INR":
+    if DEPLOY_ACCOUNT not in result.stdout.split():
         raise DeployError(
-            "the linked billing account must use INR for the configured budget limits"
+            f"the active gcloud account must be {DEPLOY_ACCOUNT}; the owner signs in with "
+            "`gcloud auth login` before deploying"
         )
 
 
@@ -809,147 +809,22 @@ def secret_bindings(gcloud: Gcloud, ctx: Context) -> None:
             )
 
 
-def ensure_budget(gcloud: Gcloud, ctx: Context) -> None:
-    project_number = gcloud.run(
-        [
-            "projects",
-            "describe",
-            ctx.project,
-            "--format=value(projectNumber)",
-            f"--project={ctx.project}",
-        ],
-        quiet=True,
-    ).stdout.strip()
-    if not project_number:
-        raise DeployError("project number unavailable for Cloud Run spend cap")
+def record_budget(ctx: Context) -> None:
+    """Record the owner-created budget. This script never lists, creates or changes budgets.
 
-    found = gcloud.run(
-        [
-            "billing",
-            "budgets",
-            "list",
-            f"--billing-account={ctx.billing}",
-            "--format=json",
-            f"--project={ctx.project}",
-        ],
-        quiet=True,
+    The INR 1,000 project alert was created by the billing owner (issue #7) because the deploy
+    identity has no billing role. A Cloud Run spend cap is not created here for the same reason.
+    """
+    print(
+        f"Budget: existing monthly INR 1,000 alert '{ALERT_BUDGET_NAME}' on billing account "
+        f"{ctx.billing}, scoped to project {ctx.project}, thresholds 50%, 80% and 100% of "
+        "actual spend. Created by the billing owner; not read or changed by this script."
     )
-    budgets = json.loads(found.stdout or "[]")
-    alert = next((item for item in budgets if item.get("displayName") == ALERT_BUDGET_NAME), None)
-    if alert is None:
-        gcloud.run(
-            [
-                "billing",
-                "budgets",
-                "create",
-                f"--billing-account={ctx.billing}",
-                f"--display-name={ALERT_BUDGET_NAME}",
-                "--budget-amount=1000INR",
-                "--calendar-period=month",
-                f"--filter-projects=projects/{ctx.project}",
-                "--threshold-rule=percent=0.50",
-                "--threshold-rule=percent=0.80",
-                "--threshold-rule=percent=1.00",
-                f"--project={ctx.project}",
-                "--quiet",
-            ]
-        )
-    else:
-        filter_ = alert.get("budgetFilter", {})
-        amount = alert.get("amount", {}).get("specifiedAmount", {})
-        thresholds = {rule.get("thresholdPercent") for rule in alert.get("thresholdRules", [])}
-        project_scopes = set(filter_.get("projects", []))
-        if (
-            not project_scopes.intersection(
-                {f"projects/{ctx.project}", f"projects/{project_number}"}
-            )
-            or filter_.get("calendarPeriod") != "MONTH"
-            or amount.get("currencyCode") != "INR"
-            or amount.get("units") != "1000"
-            or thresholds != {0.5, 0.8, 1.0}
-        ):
-            raise DeployError(
-                "existing project alert budget has different scope or amount; review it manually"
-            )
-        print("The project alert budget already has the expected scope, amount and thresholds.")
-
-    try:
-        url = f"https://billingbudgets.googleapis.com/v1/billingAccounts/{ctx.billing}/budgets"
-        body: dict[str, Any] = {
-            "displayName": SPEND_CAP_NAME,
-            "budgetFilter": {
-                "projects": [f"projects/{project_number}"],
-                "services": [f"services/{RUN_SERVICE_ID}"],
-                "creditTypesTreatment": "EXCLUDE_ALL_CREDITS",
-                "calendarPeriod": "MONTH",
-            },
-            "amount": {"specifiedAmount": {"currencyCode": "INR", "units": "500", "nanos": 0}},
-            "thresholdRules": [
-                {"thresholdPercent": 0.5, "spendBasis": "CURRENT_SPEND"},
-                {"thresholdPercent": 0.8, "spendBasis": "CURRENT_SPEND"},
-                {"thresholdPercent": 1.0, "spendBasis": "CURRENT_SPEND"},
-            ],
-            "notificationsRule": {"enableProjectLevelRecipients": True},
-            "ownershipScope": "ALL_USERS",
-            "spendCap": {"inputState": "CONFIGURED"},
-        }
-        if gcloud.dry_run:
-            print(f"REST GET {url} (synthetic dry-run; no network request)")
-            print(f"REST POST {url} (synthetic dry-run; no network request)")
-            print(f"Spend cap request body: {json.dumps(body, sort_keys=True)}")
-        else:
-            token = gcloud.run(["auth", "print-access-token"], quiet=True).stdout.strip()
-            if not token:
-                raise DeployError("access token unavailable for Cloud Run spend cap")
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "x-goog-user-project": ctx.project,
-                "Content-Type": "application/json",
-            }
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=20) as response:
-                existing = json.load(response).get("budgets", [])
-            match = next(
-                (item for item in existing if item.get("displayName") == SPEND_CAP_NAME), None
-            )
-            if match:
-                filter_ = match.get("budgetFilter", {})
-                amount = match.get("amount", {}).get("specifiedAmount", {})
-                thresholds = {
-                    rule.get("thresholdPercent") for rule in match.get("thresholdRules", [])
-                }
-                if (
-                    f"projects/{project_number}" not in filter_.get("projects", [])
-                    or f"services/{RUN_SERVICE_ID}" not in filter_.get("services", [])
-                    or filter_.get("calendarPeriod") != "MONTH"
-                    or amount.get("currencyCode") != "INR"
-                    or amount.get("units") != "500"
-                    or match.get("spendCap", {}).get("inputState") != "CONFIGURED"
-                    or thresholds != {0.5, 0.8, 1.0}
-                ):
-                    raise DeployError(
-                        "existing Cloud Run spend cap has different scope, amount or thresholds; "
-                        "review it manually"
-                    )
-                print("Cloud Run spend cap already has the expected project, service and amount.")
-            else:
-                req = urllib.request.Request(
-                    url, data=json.dumps(body).encode(), headers=headers, method="POST"
-                )
-                with urllib.request.urlopen(req, timeout=30) as response:
-                    response.read()
-                print("Cloud Run spend cap created at INR 500 before tax.")
-    except (
-        urllib.error.HTTPError,
-        urllib.error.URLError,
-        TimeoutError,
-        ValueError,
-        KeyError,
-    ) as exc:
-        print(
-            "Warning: Cloud Run spend cap could not be configured for this billing account "
-            f"({type(exc).__name__}); the INR 1,000 alert remains active."
-        )
+    print(
+        "Cloud Run spend cap: not configured by this script. Cost is bounded by minimum 0 "
+        "instances, maximum 2 per service, request-based billing and the Artifact Registry "
+        "cleanup policy. The alert does not cap spend."
+    )
 
 
 def build_images(gcloud: Gcloud, ctx: Context) -> None:
@@ -1205,7 +1080,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
     ensure_artifact_registry(gcloud, ctx)
     ensure_logging(gcloud, ctx)
     ensure_service_accounts(gcloud, ctx)
-    ensure_budget(gcloud, ctx)
+    record_budget(ctx)
     ensure_secrets(gcloud, ctx)
     secret_bindings(gcloud, ctx)
     remember_traffic(gcloud, ctx)
