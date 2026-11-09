@@ -93,6 +93,10 @@ def test_outbox_rows_are_visible_only_inside_their_organization(migrated_db: str
                     {"first": orgs[0], "second": orgs[1]},
                 )
                 assert set(all_attempts) == set(outbox_ids)
+        with acting_as_job("personal-data-backfill"):
+            async with db.read() as session:
+                assert await session.scalar(text("select count(*) from email_outbox")) == 0
+                assert await session.scalar(text("select count(*) from email_outbox_attempts")) == 0
         await db.dispose()
 
     asyncio.run(run())

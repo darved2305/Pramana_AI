@@ -128,7 +128,7 @@ def upgrade() -> None:
     for table in ("email_outbox", "email_outbox_attempts"):
         op.execute(f"alter table {table} enable row level security")
         op.execute(f"alter table {table} force row level security")
-        job_clause = f"({RELAY_POLICY} or {BACKFILL_POLICY})"
+        job_clause = f"({RELAY_POLICY})"
         op.execute(
             f"create policy tenant_or_job on {table} "
             f"using (org_id = {ORG_CONTEXT} or {job_clause}) "
