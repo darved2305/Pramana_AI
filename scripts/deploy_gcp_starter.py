@@ -1041,7 +1041,9 @@ def deploy_service(
     if secret_map:
         args.append(f"--set-secrets={secret_map}")
     args.append("--allow-unauthenticated" if public else "--no-allow-unauthenticated")
-    if no_traffic:
+    # --no-traffic keeps the serving revision live while a new one is prepared. A brand-new
+    # service has no serving revision to keep, and Cloud Run rejects the flag for it.
+    if no_traffic and service_describe(gcloud, ctx, name) is not None:
         args.append("--no-traffic")
     gcloud.run(args)
     described = service_describe(gcloud, ctx, name)
@@ -1235,7 +1237,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
             "SIM_URL": sim_url,
             "SIM_PUBLIC_URL": f"{web_url}/api/sim",
             "SIM_SERVERLESS_AUTH": "true",
-            "DB_POOL_SIZE": "6",
+            "DB_POOL_SIZE": "3",
             "DB_MAX_OVERFLOW": "0",
             "DB_POOL_TIMEOUT_S": "5",
             "PUBLIC_WEB_URL": web_url,
@@ -1257,7 +1259,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
             "PARTICIPANT_SIGNING_KEY": "participant-signing-key",
         },
         memory="1Gi",
-        concurrency=20,
+        concurrency=8,
         timeout="3600s",
         probe_path="/ready",
         public=False,
