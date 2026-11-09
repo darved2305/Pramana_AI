@@ -1,7 +1,7 @@
 """Queue email transactionally and record durable delivery attempts.
 
 Revision ID: 0020
-Revises: 0018
+Revises: 0019
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
 revision = "0020"
-down_revision = "0018"
+down_revision = "0019"
 branch_labels = None
 depends_on = None
 
