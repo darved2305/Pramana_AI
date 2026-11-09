@@ -28,6 +28,9 @@ from sqlalchemy.engine import URL, make_url
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_DEFAULT = "luminous-slice-514102-f4"
 REGION = "asia-south1"
+INDIA_DATABASE_REGION = "ap-south-1"
+NON_INDIA_DATABASE_ACK = "PRAMANA_ACCEPT_NON_INDIA_DATABASE"
+TRUE_VALUES = frozenset({"true", "1", "yes"})
 REPOSITORY = "pramana"
 SERVICES = ("pramana-web", "pramana-core", "pramana-sim")
 SERVICE_ACCOUNTS = ("web", "core", "sim", "migrate")
@@ -85,6 +88,7 @@ DEPLOY_ENV_KEYS = frozenset(
         "PRAMANA_SUPABASE_DATABASE",
         "PRAMANA_SUPABASE_DB_PASSWORD",
         "PRAMANA_SUPABASE_APP_PASSWORD",
+        NON_INDIA_DATABASE_ACK,
         *ROTATION_ACKS,
         *SECRET_ENV.values(),
     }
@@ -280,7 +284,11 @@ def run_plan(ctx: Context) -> None:
     print(f"Git SHA image tag: {ctx.sha}")
     print("Cloud Run services: public web (0-2), private core (0-2), private simulator (0-2).")
     print("Cloud Run job: private, one migration task, one retry disabled, 30 minute timeout.")
-    print("Database: Supabase Free in Mumbai with separate migrator, core and simulator roles.")
+    print(
+        "Database: Supabase Free in "
+        f"{ctx.env.get('PRAMANA_SUPABASE_REGION', 'an unconfigured region')} with separate "
+        "migrator, core and simulator roles."
+    )
     print("Secrets: 11 regional Secret Manager secrets; values are hidden.")
     print("Images: two Cloud Build SHA tags; keep five rollback versions.")
     print("Budgets: INR 1,000 project alert and INR 500 Cloud Run spend cap when eligible.")
@@ -293,20 +301,28 @@ def run_plan(ctx: Context) -> None:
 def validate_environment(ctx: Context) -> None:
     if ctx.project != PROJECT_DEFAULT:
         raise DeployError(f"GCP_PROJECT_ID must be {PROJECT_DEFAULT}")
-    if ctx.value("PRAMANA_SUPABASE_REGION") != "ap-south-1":
+    region = ctx.value("PRAMANA_SUPABASE_REGION").lower()
+    if not re.fullmatch(r"[a-z]{2}-[a-z]+-[0-9]", region):
         raise DeployError(
-            "move the Pramana Supabase project to ap-south-1 before deploying real data"
+            "PRAMANA_SUPABASE_REGION must be a Supabase AWS region such as ap-south-1"
+        )
+    accepted = ctx.value(NON_INDIA_DATABASE_ACK, required=False).lower() in TRUE_VALUES
+    if region != INDIA_DATABASE_REGION and not accepted:
+        raise DeployError(
+            f"the Supabase project is in {region}, not {INDIA_DATABASE_REGION} (Mumbai). Real "
+            "personal data must not be stored there. For a stage with no real personal data, "
+            f"set {NON_INDIA_DATABASE_ACK}=true in .env to accept this explicitly"
         )
     for setting, label in ROTATION_ACKS.items():
-        if ctx.value(setting).lower() not in {"true", "1", "yes"}:
+        if ctx.value(setting).lower() not in TRUE_VALUES:
             raise DeployError(
                 f"Darshan must rotate {label} and set {setting}=true before deployment"
             )
     if not re.fullmatch(r"[A-Za-z0-9-]{6,64}", ctx.value("PRAMANA_SUPABASE_REF")):
         raise DeployError("PRAMANA_SUPABASE_REF has an invalid format")
     host = ctx.value("PRAMANA_SUPABASE_POOLER_HOST").lower()
-    if not re.fullmatch(r"[a-z0-9.-]+\.pooler\.supabase\.com", host) or "ap-south-1" not in host:
-        raise DeployError("PRAMANA_SUPABASE_POOLER_HOST must be the ap-south-1 session pooler host")
+    if not re.fullmatch(r"[a-z0-9.-]+\.pooler\.supabase\.com", host) or f"-{region}." not in host:
+        raise DeployError(f"PRAMANA_SUPABASE_POOLER_HOST must be the {region} session pooler host")
     if not re.fullmatch(r"[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}", ctx.billing):
         raise DeployError("set GCP_BILLING_ACCOUNT_ID in the local .env file")
     for name in SECRET_ENV.values():
@@ -1166,6 +1182,12 @@ def smoke(gcloud: Gcloud, ctx: Context) -> None:
 
 def execute(gcloud: Gcloud, ctx: Context) -> None:
     validate_environment(ctx)
+    region = ctx.value("PRAMANA_SUPABASE_REGION").lower()
+    if region != INDIA_DATABASE_REGION:
+        print(
+            f"WARNING: the Supabase database is in {region}, outside India. It is accepted by "
+            f"{NON_INDIA_DATABASE_ACK}=true for a stage with no real personal data only."
+        )
     check_gcloud_account(gcloud, ctx)
     status = subprocess.run(
         ["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=False

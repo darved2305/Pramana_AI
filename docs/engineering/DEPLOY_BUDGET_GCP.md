@@ -9,10 +9,12 @@ reference.
 The selected launch shape is a public Cloud Run web service with private Cloud Run core and
 simulator services in Mumbai (`asia-south1`), plus Supabase Free PostgreSQL in Mumbai (`ap-south-1`).
 The Cloud Run URL is the initial site origin. The current Supabase ref in the local environment is
-in Singapore and is not an eligible production database. Do not deploy real personal data until a
-new, approved Mumbai Supabase project exists, its session-pooler settings are in the local `.env`,
-and the required credentials have been rotated. The deploy script refuses a database that does not
-identify as `ap-south-1`.
+in Singapore (`ap-southeast-1`), which is not an eligible home for real personal data. The deploy
+script refuses any database outside `ap-south-1` unless `PRAMANA_ACCEPT_NON_INDIA_DATABASE=true` is
+set in the local `.env`. That acknowledgement is for a stage with no real personal data only, and
+the script prints a warning on every deploy while it is in effect. Do not put real personal data in
+the app until a Mumbai Supabase project exists, its session-pooler settings are in the local `.env`,
+and the required credentials have been rotated.
 
 The worktree `.env` is still missing deployment prerequisites: `GCP_BILLING_ACCOUNT_ID`, the
 approved Mumbai Supabase region/ref/pooler host/database settings, separate rotated migrator and
@@ -81,11 +83,14 @@ warns if it cannot create a cap; verify it in Billing before enabling real-user 
 
 ## First deployment
 
-1. Darshan provisions or selects the approved Mumbai Supabase Free project. Do not reuse the
-   Singapore ref. Set these local `.env` entries from its session-pooler connection settings:
-   `PRAMANA_SUPABASE_REGION=ap-south-1`, `PRAMANA_SUPABASE_REF`,
-   `PRAMANA_SUPABASE_POOLER_HOST`, `PRAMANA_SUPABASE_DATABASE=postgres`,
-   `PRAMANA_SUPABASE_DB_PASSWORD` and `PRAMANA_SUPABASE_APP_PASSWORD`. Use distinct passwords.
+1. Darshan provisions or selects the Supabase Free project for the database. For a Mumbai database
+   (required before real personal data), use the approved Mumbai project and set
+   `PRAMANA_SUPABASE_REGION=ap-south-1`. For the current Singapore project, set
+   `PRAMANA_SUPABASE_REGION=ap-southeast-1` and `PRAMANA_ACCEPT_NON_INDIA_DATABASE=true`; this is
+   accepted only for a stage with no real personal data. Set `PRAMANA_SUPABASE_REF`,
+   `PRAMANA_SUPABASE_POOLER_HOST` (the session pooler host of the same region),
+   `PRAMANA_SUPABASE_DATABASE=postgres`, `PRAMANA_SUPABASE_DB_PASSWORD` and
+   `PRAMANA_SUPABASE_APP_PASSWORD` from its connection settings. Use distinct passwords.
 2. Set `GCP_BILLING_ACCOUNT_ID` to the linked INR billing account. The GCP project ID is fixed to
    `luminous-slice-514102-f4`. Confirm Cloud Run spend-cap eligibility, project access, and the
    billing account's current total usage.
@@ -201,8 +206,9 @@ re-run the migration grant audit before routing traffic.
 
 ## Human handoff and remaining limits
 
-- Provide the approved Mumbai Supabase connection settings and all five rotation acknowledgements
-  in this worktree's local `.env`; do not commit it.
+- Provide the Supabase connection settings (Mumbai, or Singapore with the non-personal-data
+  acknowledgement) and all five rotation acknowledgements in this worktree's local `.env`; do not
+  commit it.
 - Sign in with `gcloud auth login`, check cap eligibility, then run
   `uv run python scripts/deploy_gcp_starter.py` from a clean committed tree.
 - Add the printed callback URI to Google OAuth. Do not put real personal data in the app until the

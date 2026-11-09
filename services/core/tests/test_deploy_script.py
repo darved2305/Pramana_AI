@@ -91,6 +91,31 @@ def test_deployment_requires_the_named_rotation_acknowledgements() -> None:
         deploy.validate_environment(context)
 
 
+def test_non_india_database_needs_an_explicit_acknowledgement() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+    context.env["PRAMANA_SUPABASE_REGION"] = "ap-southeast-1"
+    context.env["PRAMANA_SUPABASE_POOLER_HOST"] = "aws-0-ap-southeast-1.pooler.supabase.com"
+
+    with pytest.raises(deploy.DeployError, match=r"not ap-south-1 .* Real personal data"):
+        deploy.validate_environment(context)
+
+    context.env[deploy.NON_INDIA_DATABASE_ACK] = "false"
+    with pytest.raises(deploy.DeployError, match="Real personal data"):
+        deploy.validate_environment(context)
+
+    context.env[deploy.NON_INDIA_DATABASE_ACK] = "true"
+    deploy.validate_environment(context)
+
+
+def test_pooler_host_must_belong_to_the_configured_database_region() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+    context.env["PRAMANA_SUPABASE_REGION"] = "ap-southeast-1"
+    context.env[deploy.NON_INDIA_DATABASE_ACK] = "true"
+
+    with pytest.raises(deploy.DeployError, match="ap-southeast-1 session pooler host"):
+        deploy.validate_environment(context)
+
+
 def test_existing_alert_budget_with_wrong_amount_fails_closed() -> None:
     context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
 
