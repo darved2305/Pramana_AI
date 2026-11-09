@@ -44,7 +44,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await googleSignIn(page, `stranger-${stamp}`, "/app/account");
   await page.goto(new URL(link).pathname);
   await page.getByRole("button", { name: "Accept invitation" }).click();
-  await expect(page.getByText(/this invitation is for/)).toBeVisible();
+  await expect(page.getByText(/This invitation is for/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Use another account" })).toBeVisible();
 
   // The invited person joins and lands in the workspace with the role they were given.
@@ -76,7 +76,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await me.getByRole("checkbox", { name: "owner" }).uncheck();
   await me.getByRole("checkbox", { name: "admin" }).check();
   await me.getByRole("button", { name: "Save roles" }).click();
-  await expect(me.getByText(/a workspace needs an owner/)).toBeVisible();
+  await expect(me.getByText(/A workspace needs an owner/)).toBeVisible();
   await me.getByRole("button", { name: "Cancel" }).click();
   await row.getByRole("button", { name: "Remove" }).click();
   await expect(memberList.getByRole("listitem").filter({ hasText: `${mate}@gmail.com` })).toHaveCount(0);

@@ -484,7 +484,7 @@ test("real Chrome review: invitations can be withdrawn or joined from welcome", 
   await logout();
   await signIn(`review-wrong-${stamp}`, new URL(activeLink).pathname);
   await page.getByRole("button", { name: "Accept invitation" }).click();
-  await expect(page.locator("main").getByRole("alert")).toContainText("this invitation is for");
+  await expect(page.locator("main").getByRole("alert")).toContainText("This invitation is for");
   await expect(page.getByRole("button", { name: "Use another account" })).toBeVisible();
   await capture(page, "invitation-wrong-account");
   await logout();
@@ -525,10 +525,10 @@ test("real Chrome review: terminal invitations cannot be accepted", async ({ pag
   await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
   await page.getByRole("button", { name: "Continue with mock account" }).click();
   const errors = [
-    { token: "expired", code: "INVITATION_EXPIRED", status: 410, message: "this invitation has expired" },
-    { token: "missing", code: "INVITATION_NOT_FOUND", status: 404, message: "this invitation could not be found" },
-    { token: "revoked", code: "INVITATION_REVOKED", status: 410, message: "this invitation was withdrawn" },
-    { token: "used", code: "INVITATION_USED", status: 410, message: "this invitation has already been used" },
+    { token: "expired", code: "INVITATION_EXPIRED", status: 410, message: "this invitation has expired", shown: "This invitation has expired" },
+    { token: "missing", code: "INVITATION_NOT_FOUND", status: 404, message: "this invitation could not be found", shown: "This invitation could not be found" },
+    { token: "revoked", code: "INVITATION_REVOKED", status: 410, message: "this invitation was withdrawn", shown: "This invitation was withdrawn" },
+    { token: "used", code: "INVITATION_USED", status: 410, message: "this invitation has already been used", shown: "This invitation has already been used" },
   ];
   let activeError = errors[0];
   await page.route("**/api/core/v1/invitations/accept", (route) =>
@@ -542,7 +542,7 @@ test("real Chrome review: terminal invitations cannot be accepted", async ({ pag
     activeError = error;
     await page.goto(`/invite/org_${error.token}-review-token`);
     await page.getByRole("button", { name: "Accept invitation" }).click();
-    await expect(page.locator("main").getByRole("alert")).toHaveText(error.message);
+    await expect(page.locator("main").getByRole("alert")).toHaveText(error.shown);
     await expect(page.getByRole("button", { name: "Invitation unavailable" })).toBeDisabled();
     await capture(page, `invitation-${error.token}`);
   }
@@ -600,7 +600,7 @@ test("real Chrome review: offline messages do not expose internal setup details"
   await page.route(`**/api/core/v1/orgs/${ws.organization.slug}/home`, (route) => route.abort());
   await page.goto(`/app/${ws.organization.slug}`);
   await expect(page.getByRole("complementary").getByText("Offline", { exact: true })).toBeVisible();
-  await expect(page.getByText("Pramana cannot be reached").first()).toBeVisible();
+  await expect(page.getByText("Connection problem").first()).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/uv run|scripts\/dev\.py|127\.0\.0\.1:\d+/i);
   await capture(page, "offline-help");
 });
