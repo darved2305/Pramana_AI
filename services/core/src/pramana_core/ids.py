@@ -18,7 +18,19 @@ _DECODE = {c: i for i, c in enumerate(_ALPHABET)}
 _DECODE.update({c.lower(): i for c, i in list(_DECODE.items())})
 
 PREFIXES = frozenset(
-    {"org", "site", "model", "mem", "inv", "invite", "flow", "ident", "usr", "consent"}
+    {
+        "org",
+        "site",
+        "model",
+        "mem",
+        "inv",
+        "invite",
+        "join",
+        "flow",
+        "ident",
+        "usr",
+        "consent",
+    }
 )
 
 

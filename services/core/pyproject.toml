@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart>=0.0.12",
     "anthropic>=0.40",
     "joserfc>=1.8.0",
+    "dnspython>=2.6,<3",
 ]
 
 [build-system]

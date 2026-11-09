@@ -1,19 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/app/Avatar";
 import { Badge, Button, Card, CardHeader, ErrorState, Field, Input, KeyValue, Notice, PageHeader, Skeleton } from "@/components/ui";
 import { IconCopy } from "@/components/ui/icons";
 import { actionKey } from "@/lib/api/account";
-import { describeError } from "@/lib/api/http";
+import { ApiError, describeError } from "@/lib/api/http";
 import type {
+  CreateDomain,
   CreateInvitation,
+  InvitationCreated,
   InvitationView,
+  JoinRequestDecision,
+  JoinRequestView,
+  OrganizationDomain,
   WorkspaceMember,
 } from "@/lib/api/types";
 import { refreshAccount } from "@/lib/data/account";
-import { relative } from "@/lib/data/derive";
+import { joinRequestLabel, relative } from "@/lib/data/derive";
 import { useLoad } from "@/lib/data/hooks";
 import { useWorkspace } from "@/lib/org/context";
 
@@ -134,6 +139,8 @@ export default function WorkspaceSettingsPage() {
         ) : null}
       </Card>
 
+      {canManage ? <JoinRequestsPanel /> : null}
+
       {canManage ? (
         <Card className="flex flex-col gap-4 p-5">
           <CardHeader
@@ -225,6 +232,8 @@ export default function WorkspaceSettingsPage() {
         </Card>
       ) : null}
 
+      {canManage ? <DomainClaimsPanel /> : null}
+
       <Card className="flex flex-col gap-3 p-5">
         <CardHeader title="What each role may do" subtitle="Separation of duties: the person who proposes a repair can never approve it." />
         <ul className="flex flex-col gap-2 text-[14px]">
@@ -237,6 +246,301 @@ export default function WorkspaceSettingsPage() {
         </ul>
       </Card>
     </div>
+  );
+}
+
+type JoinPolicy = NonNullable<CreateDomain["join_policy"]>;
+
+const POLICY_LABEL: Record<JoinPolicy, string> = {
+  request: "Ask an admin first",
+  auto: "Join automatically as viewer",
+  off: "Off",
+};
+
+/**
+ * One idempotency key per action, reused when the same action is retried after a lost
+ * response, and dropped once the server has given a definite answer.
+ */
+function useActionKeys() {
+  const keys = useRef(new Map<string, string>());
+  return {
+    get(action: string) {
+      const key = keys.current.get(action) ?? actionKey(action.split(":")[0]);
+      keys.current.set(action, key);
+      return key;
+    },
+    settle(action: string, error?: unknown) {
+      const retryable =
+        error !== undefined &&
+        (!(error instanceof ApiError) || error.unreachable || error.code === "IDEMPOTENCY_IN_FLIGHT");
+      if (!retryable) keys.current.delete(action);
+    },
+  };
+}
+
+/** Requests from people at a verified domain. Shown once anyone has asked. */
+function JoinRequestsPanel() {
+  const ws = useWorkspace();
+  const requests = useLoad(`join-requests|${ws.org.id}`, (signal) => ws.api.joinRequests(signal));
+  const keys = useActionKeys();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function decide(item: JoinRequestView, role?: JoinRequestDecision["role"]) {
+    const action = role ? `join-approve:${item.id}:${role}` : `join-decline:${item.id}`;
+    setBusyId(item.id);
+    setError(null);
+    try {
+      if (role) await ws.api.approveJoinRequest(item.id, { role }, { key: keys.get(action) });
+      else await ws.api.declineJoinRequest(item.id, { key: keys.get(action) });
+      keys.settle(action);
+      requests.reload();
+    } catch (e) {
+      keys.settle(action, e);
+      setError(describeError(e));
+      if (e instanceof ApiError && e.status === 404) requests.reload();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (requests.status === "error") {
+    return (
+      <Card id="join-requests" className="flex flex-col gap-4 p-5">
+        <CardHeader title="Requests to join" subtitle="We could not load requests to join this workspace." />
+        <ErrorState error={requests.error} onRetry={requests.reload} />
+      </Card>
+    );
+  }
+  if (requests.status !== "ready" || requests.data.length === 0) return null;
+  const waiting = requests.data.filter((r) => r.status === "pending").length;
+  return (
+    <Card id="join-requests" className="flex flex-col gap-4 p-5">
+      <CardHeader
+        title="Requests to join"
+        subtitle={
+          waiting
+            ? `${waiting} waiting. Each person signed in with Google using an address at your verified domain. Viewer is the safest role to start with.`
+            : "Nobody is waiting. Earlier requests and automatic joins are listed here."
+        }
+      />
+      {error ? <p role="alert" className="text-[13px] text-bad">{error}</p> : null}
+      <ul className="flex flex-col divide-y divide-white/[.06]" aria-label="Workspace join requests">
+        {requests.data.map((item) => (
+          <JoinRequestRow key={item.id} item={item} busy={busyId === item.id} disabled={busyId !== null} onDecide={decide} />
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function JoinRequestRow({
+  item,
+  busy,
+  disabled,
+  onDecide,
+}: {
+  item: JoinRequestView;
+  busy: boolean;
+  disabled: boolean;
+  onDecide: (item: JoinRequestView, role?: JoinRequestDecision["role"]) => void;
+}) {
+  const [role, setRole] = useState<JoinRequestDecision["role"]>("viewer");
+  const { label, tone } = joinRequestLabel(item);
+  const when = item.status === "pending" ? `Asked ${relative(item.requested_at)}` : relative(item.decided_at ?? item.requested_at);
+  const roleName = item.role ? `${item.role[0].toUpperCase()}${item.role.slice(1)}` : null;
+  return (
+    <li className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-[14px] text-fg">
+          {item.requester_name} <span className="text-muted">{item.requester_email}</span>
+        </p>
+        <p className="mt-1 text-[12px] text-muted">{item.status === "approved" && roleName ? `${when} · ${roleName}` : when}</p>
+      </div>
+      {item.status === "pending" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor={`join-role-${item.id}`}>Role for {item.requester_name}</label>
+          <select
+            id={`join-role-${item.id}`}
+            value={role}
+            onChange={(e) => setRole(e.target.value as JoinRequestDecision["role"])}
+            disabled={disabled}
+            className="min-h-10 rounded-[10px] border border-white/20 bg-ink px-3 text-[13px] text-fg"
+          >
+            <option value="viewer">Viewer</option>
+            <option value="operator">Operator</option>
+            <option value="approver">Approver</option>
+            <option value="admin">Admin</option>
+          </select>
+          <Button size="sm" variant="primary" disabled={disabled} onClick={() => onDecide(item, role)}>
+            {busy ? "Saving..." : "Approve"}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onDecide(item)}>
+            Decline
+          </Button>
+        </div>
+      ) : (
+        <Badge tone={tone}>{label}</Badge>
+      )}
+    </li>
+  );
+}
+
+/** Domains this workspace has claimed, how each was proven, and who may join from it. */
+function DomainClaimsPanel() {
+  const ws = useWorkspace();
+  const domains = useLoad(`domains|${ws.org.id}`, (signal) => ws.api.domains(signal));
+  const keys = useActionKeys();
+  const [domain, setDomain] = useState("");
+  const [verification, setVerification] = useState<CreateDomain["verification"]>("google_hd");
+  const [policy, setPolicy] = useState<JoinPolicy>("request");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(busy: string, action: string, call: (key: string) => Promise<unknown>) {
+    setBusyId(busy);
+    setError(null);
+    try {
+      await call(keys.get(action));
+      keys.settle(action);
+      domains.reload();
+      return true;
+    } catch (x) {
+      keys.settle(action, x);
+      setError(describeError(x));
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    const value = domain.trim();
+    if (!value) return;
+    const ok = await run("add", `domain-add:${value}:${verification}:${policy}`, (key) =>
+      ws.api.addDomain({ domain: value, verification, join_policy: policy }, { key }),
+    );
+    if (ok) setDomain("");
+  }
+
+  function remove(item: OrganizationDomain) {
+    if (!window.confirm(`Remove ${item.domain}? People at this domain will no longer see this workspace, and requests still waiting will be closed.`)) return;
+    void run(item.domain, `domain-remove:${item.domain}`, (key) => ws.api.removeDomain(item.domain, { key }));
+  }
+
+  return (
+    <Card className="flex flex-col gap-4 p-5">
+      <CardHeader
+        title="Join by email domain"
+        subtitle="Let colleagues who sign in with Google at your organization's domain find this workspace. First prove the domain is yours."
+      />
+      {error ? <p role="alert" className="text-[13px] text-bad">{error}</p> : null}
+      <form onSubmit={add} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Field label="Email domain" hint="The part after @, for example college.edu">
+          {(a) => (
+            <Input
+              {...a}
+              type="text"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              placeholder="college.edu"
+            />
+          )}
+        </Field>
+        <label className="flex flex-col gap-1.5 text-[13px] text-fg-2">
+          How to prove it is yours
+          <select value={verification} onChange={(e) => setVerification(e.target.value as CreateDomain["verification"])} className="min-h-[44px] rounded-[10px] border border-white/20 bg-ink px-3 text-fg">
+            <option value="google_hd">My Google Workspace sign-in</option>
+            <option value="dns_txt">A DNS TXT record</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5 text-[13px] text-fg-2">
+          Who can join
+          <select value={policy} onChange={(e) => setPolicy(e.target.value as JoinPolicy)} className="min-h-[44px] rounded-[10px] border border-white/20 bg-ink px-3 text-fg">
+            {(Object.keys(POLICY_LABEL) as JoinPolicy[]).map((p) => (
+              <option key={p} value={p}>{POLICY_LABEL[p]}</option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-end">
+          <Button type="submit" variant="primary" disabled={busyId !== null || !domain.trim()}>
+            {busyId === "add" ? "Adding..." : "Add domain"}
+          </Button>
+        </div>
+      </form>
+      <p className="text-[12px] leading-relaxed text-muted">
+        Personal addresses such as Gmail or Outlook cannot be claimed. Automatic joining gives viewer access only, and you need to have signed in with Google in the last 10 minutes to turn it on.
+      </p>
+      {domains.status === "loading" ? <Skeleton className="h-20" /> : null}
+      {domains.status === "error" ? <ErrorState error={domains.error} onRetry={domains.reload} /> : null}
+      {domains.status === "ready" && domains.data.length === 0 ? (
+        <p className="text-[14px] text-muted">No domains yet. Add your organization&apos;s email domain so colleagues can ask to join.</p>
+      ) : null}
+      {domains.status === "ready" && domains.data.length > 0 ? (
+        <ul className="flex flex-col divide-y divide-white/[.06]" aria-label="Workspace domains">
+          {domains.data.map((item) => (
+            <li key={item.domain} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start">
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-2 text-[14px] text-fg">
+                  <span className="break-all">{item.domain}</span>
+                  <Badge tone={item.verified_at ? "ok" : "warn"}>{item.verified_at ? "Verified" : "Not verified yet"}</Badge>
+                </p>
+                {!item.verified_at && item.verification === "dns_txt" && item.verification_name && item.verification_value ? (
+                  <div className="mt-2 flex flex-col gap-1 text-[12px] text-muted">
+                    <p>Add this TXT record at your DNS provider, wait a few minutes, then select Verify domain.</p>
+                    <p className="break-all">Name: <code className="text-fg-2">{item.verification_name}</code></p>
+                    <p className="break-all">Value: <code className="text-fg-2">{item.verification_value}</code></p>
+                  </div>
+                ) : null}
+                {!item.verified_at && item.verification === "google_hd" ? (
+                  <p className="mt-1 text-[12px] text-muted">Works while you are signed in with Google using an address at {item.domain}.</p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {!item.verified_at ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={busyId !== null}
+                    onClick={() => void run(item.domain, `domain-verify:${item.domain}`, (key) => ws.api.verifyDomain(item.domain, { key }))}
+                  >
+                    {busyId === item.domain ? "Checking..." : "Verify domain"}
+                  </Button>
+                ) : (
+                  <label className="flex items-center gap-2 text-[12px] text-muted">
+                    Who can join
+                    <select
+                      aria-label={`Who can join from ${item.domain}`}
+                      value={item.join_policy}
+                      disabled={busyId !== null}
+                      onChange={(e) => {
+                        const next = e.target.value as JoinPolicy;
+                        void run(item.domain, `domain-policy:${item.domain}:${next}`, (key) =>
+                          ws.api.updateDomainPolicy(item.domain, { join_policy: next }, { key }),
+                        );
+                      }}
+                      className="min-h-10 rounded-[10px] border border-white/20 bg-ink px-2 text-[13px] text-fg"
+                    >
+                      {(Object.keys(POLICY_LABEL) as JoinPolicy[]).map((p) => (
+                        <option key={p} value={p}>{POLICY_LABEL[p]}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <Button size="sm" variant="ghost" disabled={busyId !== null} onClick={() => remove(item)}>
+                  Remove
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
   );
 }
 

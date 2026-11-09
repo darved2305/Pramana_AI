@@ -592,6 +592,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/join-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request To Join */
+        post: operations["request_to_join_v1_join_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/join-requests/{request_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Join Request */
+        post: operations["cancel_join_request_v1_join_requests__request_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/library/equipment": {
         parameters: {
             query?: never;
@@ -715,6 +749,59 @@ export interface paths {
         get: operations["organization_v1_orgs__org__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Domains */
+        get: operations["list_domains_v1_orgs__org__domains_get"];
+        put?: never;
+        /** Add Domain */
+        post: operations["add_domain_v1_orgs__org__domains_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/domains/{domain}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Domain */
+        delete: operations["remove_domain_v1_orgs__org__domains__domain__delete"];
+        options?: never;
+        head?: never;
+        /** Set Domain Policy */
+        patch: operations["set_domain_policy_v1_orgs__org__domains__domain__patch"];
+        trace?: never;
+    };
+    "/v1/orgs/{org}/domains/{domain}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Domain */
+        post: operations["verify_domain_v1_orgs__org__domains__domain__verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1118,6 +1205,57 @@ export interface paths {
         put?: never;
         /** Revoke Invitation */
         post: operations["revoke_invitation_v1_orgs__org__invitations__invite_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/join-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Join Requests */
+        get: operations["list_join_requests_v1_orgs__org__join_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/join-requests/{request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Join Request */
+        post: operations["approve_join_request_v1_orgs__org__join_requests__request_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/join-requests/{request_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decline Join Request */
+        post: operations["decline_join_request_v1_orgs__org__join_requests__request_id__decline_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1961,6 +2099,22 @@ export interface components {
              */
             recorded_at: string;
         };
+        /** CreateDomain */
+        CreateDomain: {
+            /** Domain */
+            domain: string;
+            /**
+             * Join Policy
+             * @default request
+             * @enum {string}
+             */
+            join_policy?: "off" | "request" | "auto";
+            /**
+             * Verification
+             * @enum {string}
+             */
+            verification: "google_hd" | "dns_txt";
+        };
         /**
          * CreateInvestigation
          * @description Legacy developer/evaluation input. Production creation selects a saved site instead.
@@ -2601,6 +2755,51 @@ export interface components {
              */
             status: "pending" | "accepted" | "revoked" | "expired";
         };
+        /** JoinRequestCreated */
+        JoinRequestCreated: {
+            /** Destination */
+            destination?: string | null;
+            /** Joined */
+            joined: boolean;
+            request: components["schemas"]["JoinRequestView"];
+        };
+        /** JoinRequestDecision */
+        JoinRequestDecision: {
+            /**
+             * Role
+             * @default viewer
+             * @enum {string}
+             */
+            role?: "admin" | "operator" | "approver" | "viewer";
+        };
+        /** JoinRequestView */
+        JoinRequestView: {
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decision Source */
+            decision_source?: ("admin" | "auto") | null;
+            /** Id */
+            id: string;
+            /** Organization Id */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Requester Email */
+            requester_email: string;
+            /** Requester Name */
+            requester_name: string;
+            role?: components["schemas"]["OrganizationRole"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "declined" | "cancelled";
+        };
         /** JoinSuggestion */
         JoinSuggestion: {
             /** Domain */
@@ -2614,6 +2813,10 @@ export interface components {
              * @enum {string}
              */
             policy: "request" | "auto";
+            /** Request Id */
+            request_id?: string | null;
+            /** Request Status */
+            request_status?: "pending" | null;
         };
         /**
          * LanguageProfile
@@ -2828,6 +3031,27 @@ export interface components {
             onboarding: components["schemas"]["OnboardingState"];
             organization: components["schemas"]["OrganizationSummary"];
             sandbox_site: components["schemas"]["SiteSummary"];
+        };
+        /** OrganizationDomain */
+        OrganizationDomain: {
+            /** Domain */
+            domain: string;
+            /**
+             * Join Policy
+             * @enum {string}
+             */
+            join_policy: "off" | "request" | "auto";
+            /**
+             * Verification
+             * @enum {string}
+             */
+            verification: "google_hd" | "dns_txt";
+            /** Verification Name */
+            verification_name?: string | null;
+            /** Verification Value */
+            verification_value?: string | null;
+            /** Verified At */
+            verified_at: string | null;
         };
         /**
          * OrganizationKind
@@ -3254,6 +3478,11 @@ export interface components {
             /** Target */
             target: string;
         };
+        /** RequestJoin */
+        RequestJoin: {
+            /** Organization Id */
+            organization_id: string;
+        };
         /** RevealResult */
         RevealResult: {
             /** Commitment */
@@ -3593,6 +3822,14 @@ export interface components {
             /** Voice */
             voice?: string | null;
         };
+        /** UpdateDomainPolicy */
+        UpdateDomainPolicy: {
+            /**
+             * Join Policy
+             * @enum {string}
+             */
+            join_policy: "off" | "request" | "auto";
+        };
         /** UpdateMemberRoles */
         UpdateMemberRoles: {
             /** Roles */
@@ -3625,6 +3862,8 @@ export interface components {
             greeting_name: string;
             /** Hidden */
             hidden?: ("approvals" | "active" | "decided" | "setup" | "sites" | "recent")[];
+            /** Join Requests */
+            join_requests?: components["schemas"]["JoinRequestView"][];
             /** Modules */
             modules: components["schemas"]["HomeModule"][];
         };
@@ -4677,6 +4916,102 @@ export interface operations {
             };
         };
     };
+    request_to_join_v1_join_requests_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestJoin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinRequestCreated"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_join_request_v1_join_requests__request_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     equipment_v1_library_equipment_get: {
         parameters: {
             query?: never;
@@ -4943,6 +5278,227 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_domains_v1_orgs__org__domains_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDomain"][];
+                };
+            };
+        };
+    };
+    add_domain_v1_orgs__org__domains_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDomain"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDomain"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_domain_v1_orgs__org__domains__domain__delete: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                domain: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_domain_policy_v1_orgs__org__domains__domain__patch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                domain: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDomainPolicy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDomain"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_domain_v1_orgs__org__domains__domain__verify_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                domain: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDomain"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5912,6 +6468,139 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_join_requests_v1_orgs__org__join_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinRequestView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_join_request_v1_orgs__org__join_requests__request_id__approve_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JoinRequestDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinRequestView"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_join_request_v1_orgs__org__join_requests__request_id__decline_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinRequestView"];
+                };
             };
             /** @description Missing or invalid idempotency key */
             400: {

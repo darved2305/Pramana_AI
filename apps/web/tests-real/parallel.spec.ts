@@ -88,23 +88,63 @@ test("parallel: three people asked at once reach the S1 decision", async ({ page
     );
     // A question can be withdrawn while its person is answering; the others must succeed.
     expect(results.some((r) => r.status === "fulfilled")).toBe(true);
-    const failed = state.pending_questions.filter((_, i) => results[i].status === "rejected").map((q) => q.id);
+    const failed = state.pending_questions.flatMap((q, i) => {
+      const result = results[i];
+      if (result.status !== "rejected") return [];
+      const reason = result.reason;
+      return [
+        {
+          id: q.id,
+          participant_id: q.action.participant_id,
+          probe_id: q.action.probe_id,
+          error: reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason),
+        },
+      ];
+    });
     if (failed.length) {
+      type EventRow = {
+        type: string;
+        payload: {
+          question_id?: string;
+          participant_id?: string;
+          probe_id?: string;
+          evidence?: { participant_id?: string; probe_id?: string };
+        };
+      };
+      // A withdrawal can land a moment after the rejected answer. Wait until every rejected
+      // question is either withdrawn or no longer pending, then judge the outcome strictly.
+      let log: EventRow[] = [];
       await expect
         .poll(
           async () => {
-            const [log, current] = await Promise.all([
-              api<{ type: string; payload: { question_id?: string } }[]>(request, "GET", `/v1/investigations/${invId}/events`),
+            const [events, current] = await Promise.all([
+              api<EventRow[]>(request, "GET", `/v1/investigations/${invId}/events`),
               api<State>(request, "GET", `/v1/investigations/${invId}`),
             ]);
+            log = events;
             state = current;
-            const withdrawn = new Set(log.filter((e) => e.type === "QuestionWithdrawn").map((e) => e.payload.question_id));
+            const withdrawn = new Set(events.filter((e) => e.type === "QuestionWithdrawn").map((e) => e.payload.question_id));
             const pending = new Set(current.pending_questions.map((q) => q.id));
-            return failed.filter((id) => !withdrawn.has(id) && pending.has(id));
+            return failed.filter(({ id }) => !withdrawn.has(id) && pending.has(id)).map(({ id }) => id);
           },
           { timeout: 10_000, intervals: [100, 250, 500, 1000] },
         )
         .toEqual([]);
+      const gone = new Set(log.filter((e) => e.type === "QuestionWithdrawn").map((e) => e.payload.question_id));
+      const unaccounted = failed.filter(({ id }) => !gone.has(id));
+      const answerAndWithdrawalEvents = log
+        .filter((e) => e.type === "ObservationRecorded" || e.type === "QuestionWithdrawn")
+        .map((e) => ({
+          type: e.type,
+          question_id: e.payload.question_id,
+          participant_id: e.payload.participant_id ?? e.payload.evidence?.participant_id,
+          probe_id: e.payload.probe_id ?? e.payload.evidence?.probe_id,
+        }));
+      expect(
+        unaccounted,
+        `only withdrawn questions may go unanswered; rejected answers: ${JSON.stringify(failed)}; ` +
+          `answer and withdrawal events: ${JSON.stringify(answerAndWithdrawalEvents)}`,
+      ).toEqual([]);
     }
     rounds++;
     await expect
