@@ -9,6 +9,10 @@ Built for the Great Indian AI Internship Challenge 2026 (Gnani AI). Product spec
 Engineering plan: `docs/PLAN.md`. Current status and evidence: `docs/engineering/STATUS_2026-11-07.md`.
 Next steps: `docs/engineering/HANDOFF.md`.
 
+The budget Cloud Run starter and its readiness checklist are documented in
+[`docs/engineering/DEPLOY_BUDGET_GCP.md`](docs/engineering/DEPLOY_BUDGET_GCP.md). It is separate from
+the larger `infra/gcp` reference and must use the approved Mumbai database before real data.
+
 ## What is real, what is simulated
 
 | Real | Simulated (and labelled as such) |
