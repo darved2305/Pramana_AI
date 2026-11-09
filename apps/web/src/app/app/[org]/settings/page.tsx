@@ -10,7 +10,6 @@ import { ApiError, describeError } from "@/lib/api/http";
 import type {
   CreateDomain,
   CreateInvitation,
-  InvitationCreated,
   InvitationView,
   JoinRequestDecision,
   JoinRequestView,
