@@ -1249,7 +1249,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
             "SIM_URL": sim_url,
             "SIM_PUBLIC_URL": f"{web_url}/api/sim",
             "SIM_SERVERLESS_AUTH": "true",
-            "DB_POOL_SIZE": "1",
+            "DB_POOL_SIZE": "6",
             "DB_MAX_OVERFLOW": "0",
             "DB_POOL_TIMEOUT_S": "5",
             "PUBLIC_WEB_URL": web_url,
