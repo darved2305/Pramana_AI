@@ -8,7 +8,7 @@ test recovery from the event log.
 
 Settings, all optional:
 
-* ``PRAMANA_E2E_DATABASE_URL`` (default ``postgresql+asyncpg://pramana@localhost:5433/pramana_e2e``)
+* ``PRAMANA_E2E_DATABASE_URL`` (required; an isolated database for end-to-end tests)
 * ``PRAMANA_E2E_CORE_PORT`` (8030) and ``PRAMANA_E2E_SIM_PORT`` (8130)
 * ``PRAMANA_SKIP_E2E=1`` skips these tests.
 
@@ -38,11 +38,18 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = ROOT / "services" / "core"
-DB_URL = os.environ.get(
-    "PRAMANA_E2E_DATABASE_URL", "postgresql+asyncpg://pramana@localhost:5433/pramana_e2e"
-)
+DB_URL = os.environ.get("PRAMANA_E2E_DATABASE_URL", "")
 CORE_PORT = int(os.environ.get("PRAMANA_E2E_CORE_PORT", "8030"))
 SIM_PORT = int(os.environ.get("PRAMANA_E2E_SIM_PORT", "8130"))
+
+
+def require_e2e_database_url(url: str | None) -> str:
+    if not url:
+        raise ValueError(
+            "PRAMANA_E2E_DATABASE_URL is not set. Point it at this checkout's "
+            "isolated E2E database."
+        )
+    return url
 
 
 @contextmanager
