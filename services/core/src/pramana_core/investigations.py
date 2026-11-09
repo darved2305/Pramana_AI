@@ -150,6 +150,22 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _waits_for_people(availability: QuestioningAvailability | None, plan: PlanDecision) -> bool:
+    """A live case with nobody to ask waits when people could still become askable.
+
+    Conclusions the evidence already supports (a confident decision, an open-world abstention,
+    a verification) go ahead. Only the planner's "nobody available can observe anything more"
+    ending waits, and only while someone is held back by missing consent or quiet hours rather
+    than by the roster or their own refusal."""
+    return (
+        availability is not None
+        and availability.eligible_count == 0
+        and availability.no_consent_count + availability.quiet_hours_count > 0
+        and plan.kind in (PlanKind.DECIDE, PlanKind.ABSTAIN)
+        and plan.rule == "no_feasible_action"
+    )
+
+
 def _id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(6)}"
 
@@ -773,18 +789,43 @@ class InvestigationService:
                 },
             )
         if step.plan is not None:
-            self._apply_plan(session, row, engine, step.plan)
-            if (
-                availability is not None
-                and availability.eligible_count == 0
-                and step.plan.kind == PlanKind.ABSTAIN
-            ):
-                # Keep the case open so a new consent or a later availability check can resume it.
-                row.status = InvestigationStatus.INVESTIGATING.value
+            self._apply_plan_or_wait(session, row, engine, step.plan, availability)
         else:
             self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
         for extra in step.ask:
             self._ask(session, row, engine, extra.action, parallel=extra)
+
+    def _apply_plan_or_wait(
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        plan: PlanDecision,
+        availability: QuestioningAvailability | None,
+    ) -> None:
+        if not _waits_for_people(availability, plan):
+            self._apply_plan(session, row, engine, plan)
+            return
+        # Nobody can be asked only because consent is missing or it is quiet time. Do not
+        # conclude from what is known so far: record the plan as computed, keep the case open,
+        # and let a new consent, an override or a later check resume it.
+        assert availability is not None
+        self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
+        self._event(session, row.id, "PlanComputed", plan.model_dump(mode="json"))
+        self._event(
+            session,
+            row.id,
+            "QuestioningPaused",
+            {
+                "no_consent_count": availability.no_consent_count,
+                "quiet_hours_count": availability.quiet_hours_count,
+            },
+        )
+        row.status = (
+            InvestigationStatus.VERIFYING
+            if engine.snapshot().repair is not None
+            else InvestigationStatus.INVESTIGATING
+        ).value
 
     def _apply_plan(
         self, session: AsyncSession, row: InvestigationRow, engine: Engine, plan: PlanDecision
@@ -2158,7 +2199,10 @@ class InvestigationService:
                             "participant_id": report.participant_id,
                         },
                     )
-                    self._apply_plan(session, row, engine, engine.plan())
+                    availability, _ = await self._evaluate_questioning_availability(
+                        session, row, engine
+                    )
+                    self._apply_plan_or_wait(session, row, engine, engine.plan(), availability)
                     row.version += 1
                     version = row.version
             except BaseException:

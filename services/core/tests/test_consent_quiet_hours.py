@@ -17,10 +17,12 @@ from test_google_auth import sql
 from test_practice import published_water_site
 from test_practice import request as investigation_request
 
-from pramana_contracts import QuietHours
+from pramana_contracts import PlanDecision, PlanKind, QuestioningAvailability, QuietHours
 from pramana_core import ids
+from pramana_core.investigations import _waits_for_people
 from pramana_core.mail import FakeMailer
 from pramana_core.questioning import decide_availability, in_quiet_hours
+from pramana_engine import EngineConfig
 
 pytestmark = pytest.mark.db
 
@@ -195,6 +197,73 @@ def test_no_consent_then_withdrawal_cancels_question_and_replays(
     events = client.get(path + "/events").json()
     assert any(e["type"] == "QuestionCancelled" for e in events)
     assert "synthetic@example.test" not in json.dumps(events)
+
+
+def test_nobody_eligible_waits_instead_of_deciding_from_priors(
+    account_core: TestClient, monkeypatch: pytest.MonkeyPatch, migrated_db: str
+) -> None:
+    """With nobody consenting, a low decision bar must not let the case conclude unasked."""
+    client = account_core
+    workspace, investigations = published_water_site(client)
+    synthetic_live(client, monkeypatch)
+    service = client.app.state.investigations
+    # A decision bar this low would decide at once from the priors if nobody could be asked.
+    monkeypatch.setattr(service, "_engine_config", EngineConfig(tau_lo=0.01))
+    initial = start_live(client, workspace, investigations)
+    path = f"{investigations}/{initial['id']}"
+    assert initial["status"] == "investigating"
+    outcome = sql(
+        migrated_db, "select outcome from investigations where id=:id", {"id": initial["id"]}
+    )
+    assert outcome[0]["outcome"] is None
+    assert initial["plan"]["rule"] == "no_feasible_action"
+    assert initial["questioning_availability"]["no_consent_count"] == 4
+    types = [e["type"] for e in client.get(path + "/events").json()]
+    assert "QuestioningPaused" in types
+    assert "DecisionReached" not in types
+    assert "Abstained" not in types
+    service._cache.clear()
+    assert client.get(path + "/replay").json()["identical"] is True
+
+    people = people_root(workspace)
+    link = post(client, people + "/p_ravi/consent-requests").json()["link_path"]
+    granted = client.post(
+        "/v1/consent-links/" + link.removeprefix("/consent/"), json={"decision": "granted"}
+    )
+    assert granted.status_code == 200, granted.text
+    resumed = client.get(path).json()
+    assert resumed["questioning_availability"]["eligible_count"] == 1
+    assert resumed["status"] != "investigating" or resumed["pending_questions"]
+    service._cache.clear()
+    assert client.get(path + "/replay").json()["identical"] is True
+
+
+def test_everyone_declining_still_lets_the_case_conclude() -> None:
+    """Only people who could still become askable hold a case open."""
+    plan = PlanDecision(
+        kind=PlanKind.ABSTAIN,
+        action=None,
+        decision_class=None,
+        decision_probability=0.4,
+        reason="nobody available",
+        rule="no_feasible_action",
+        candidates=[],
+        infeasible=[],
+    )
+    at = datetime(2026, 11, 9, 12, tzinfo=UTC)
+    declined = QuestioningAvailability(
+        evaluated_at=at,
+        eligible_count=0,
+        no_consent_count=0,
+        quiet_hours_count=0,
+        unavailable_count=3,
+    )
+    waiting = declined.model_copy(update={"no_consent_count": 1, "unavailable_count": 2})
+    assert not _waits_for_people(declined, plan)
+    assert _waits_for_people(waiting, plan)
+    assert not _waits_for_people(None, plan)
+    confident = plan.model_copy(update={"kind": PlanKind.DECIDE, "rule": "confident"})
+    assert not _waits_for_people(waiting, confident)
 
 
 def test_failed_replanning_does_not_consume_the_consent_link(
