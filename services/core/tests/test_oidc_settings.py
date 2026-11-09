@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from pramana_core.auth.oidc import GoogleOidc, OidcError
 from pramana_core.db import Database
 
 
@@ -90,6 +91,38 @@ def test_local_production_harness_accepts_isolated_docker_service_names() -> Non
     assert cfg.mode == "production"
     assert cfg.enforce_auth
     assert cfg.secure_cookies
+
+
+def test_only_local_production_harness_accepts_mock_oidc_service_endpoint() -> None:
+    cfg = core_settings(
+        "postgresql+asyncpg://pramana_app@postgres:5432/pramana_prod_test",
+        PRAMANA_MODE="production",
+        PRAMANA_LOCAL_PRODUCTION_TEST=True,
+        PRAMANA_PII_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        OIDC_ISSUER="http://localhost:8420",
+        OIDC_DISCOVERY_URL="http://mock-oidc:8420/.well-known/openid-configuration",
+        OIDC_REDIRECT_URL="http://localhost:3100/api/core/v1/auth/google/callback",
+        SIM_URL="http://sim:8080",
+        SIM_SERVERLESS_AUTH=False,
+    )
+    oidc = GoogleOidc(cfg)
+    try:
+        assert oidc._endpoint("http://mock-oidc:8420/token") == "http://mock-oidc:8420/token"
+    finally:
+        asyncio.run(oidc.aclose())
+
+    production = core_settings(
+        "postgresql+asyncpg://pramana_app@db.example:5432/pramana_prod_test",
+        PRAMANA_MODE="production",
+        OIDC_REDIRECT_URL="https://pramana.example/api/core/v1/auth/google/callback",
+        PRAMANA_PII_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    )
+    oidc = GoogleOidc(production)
+    try:
+        with pytest.raises(OidcError, match="invalid provider configuration"):
+            oidc._endpoint("http://mock-oidc:8420/token")
+    finally:
+        asyncio.run(oidc.aclose())
 
 
 def test_production_runtime_role_cannot_bypass_rls(migrated_db: str) -> None:
