@@ -66,6 +66,21 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await expect(page).toHaveURL(new RegExp(`${base}/settings$`));
   const memberList = page.getByRole("list", { name: "Members" });
   const row = memberList.getByRole("listitem").filter({ hasText: `${mate}@gmail.com` });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await row.scrollIntoViewIfNeeded();
+  const memberAddress = row.locator(".break-all");
+  const memberRole = row.getByText("approver", { exact: true });
+  const memberAddressBox = await memberAddress.boundingBox();
+  const memberRoleBox = await memberRole.boundingBox();
+  if (!memberAddressBox || !memberRoleBox) throw new Error("member address or role is not visible");
+  const memberOverlap =
+    memberAddressBox.x < memberRoleBox.x + memberRoleBox.width &&
+    memberAddressBox.x + memberAddressBox.width > memberRoleBox.x &&
+    memberAddressBox.y < memberRoleBox.y + memberRoleBox.height &&
+    memberAddressBox.y + memberAddressBox.height > memberRoleBox.y;
+  expect(memberOverlap).toBe(false);
+  expect(await memberAddress.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await row.getByRole("button", { name: "Change roles" }).click();
   await row.getByRole("checkbox", { name: "operator" }).check();
   await row.getByRole("button", { name: "Save roles" }).click();
@@ -124,5 +139,19 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   });
   await page.reload();
   await expect(page.getByText("Email status unavailable").first()).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const latestInvitation = page.getByRole("list", { name: "Invitations" }).getByRole("listitem").first();
+  await latestInvitation.scrollIntoViewIfNeeded();
+  const invitationEmail = latestInvitation.locator(":scope > span").first();
+  const invitationRoles = latestInvitation.locator(":scope > span").nth(1);
+  const invitationEmailBox = await invitationEmail.boundingBox();
+  const invitationRolesBox = await invitationRoles.boundingBox();
+  if (!invitationEmailBox || !invitationRolesBox) {
+    throw new Error("invitation address or roles are not visible");
+  }
+  expect(invitationRolesBox.y).toBeGreaterThanOrEqual(
+    invitationEmailBox.y + invitationEmailBox.height - 1,
+  );
+  expect(await invitationEmail.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.unroute("**/invitations");
 });
