@@ -111,6 +111,8 @@ class JoinSuggestion(StrictModel):
     organization_name: str
     domain: str
     policy: Literal["request", "auto"]
+    request_id: str | None = None
+    request_status: Literal["pending"] | None = None
 
 
 class HomeLayout(StrictModel):

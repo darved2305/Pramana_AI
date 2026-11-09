@@ -40,6 +40,9 @@ class Principal:
     participant_id: str | None = None
     scenario_id: str | None = None
     email_verified: bool = False
+    auth_method: str | None = None
+    hosted_domain: str | None = None
+    authenticated_at: datetime | None = None
     organization_id: str | None = None
     token_id: str | None = None
 
@@ -162,6 +165,7 @@ class AuthService:
         *,
         auth_method: str,
         user_agent: str | None = None,
+        hosted_domain: str | None = None,
     ) -> tuple[str, Principal]:
         token = secrets.token_urlsafe(32)
         now = datetime.now(UTC)
@@ -186,10 +190,17 @@ class AuthService:
                 absolute_expires_at=absolute,
                 idle_expires_at=idle,
                 auth_method=auth_method,
+                hosted_domain=hosted_domain if auth_method == "google" else None,
                 user_agent=user_agent[:512] if user_agent else None,
             )
         )
-        return token, self._principal(user, idle)
+        return token, self._principal(
+            user,
+            idle,
+            auth_method=auth_method,
+            hosted_domain=hosted_domain,
+            authenticated_at=now,
+        )
 
     async def resolve(self, token: str, *, touch: bool = True) -> Principal | None:
         if len(token) > 256:
@@ -216,7 +227,13 @@ class AuthService:
                     sess.expires_at, sess.absolute_expires_at, now + timedelta(seconds=self.idle_s)
                 )
                 deadline = sess.idle_expires_at
-            return self._principal(user, deadline)
+            return self._principal(
+                user,
+                deadline,
+                auth_method=sess.auth_method,
+                hosted_domain=sess.hosted_domain,
+                authenticated_at=sess.created_at,
+            )
 
     async def logout(self, token: str) -> None:
         async with self.db.transaction() as session:
@@ -257,7 +274,14 @@ class AuthService:
             )
 
     @staticmethod
-    def _principal(user: UserRow, expires: datetime) -> Principal:
+    def _principal(
+        user: UserRow,
+        expires: datetime,
+        *,
+        auth_method: str | None = None,
+        hosted_domain: str | None = None,
+        authenticated_at: datetime | None = None,
+    ) -> Principal:
         return Principal(
             kind="user",
             id=user.id,
@@ -266,4 +290,7 @@ class AuthService:
             roles=frozenset(user.roles) if user.email_verified_at else frozenset(),
             expires_at=expires,
             email_verified=user.email_verified_at is not None,
+            auth_method=auth_method,
+            hosted_domain=hosted_domain if auth_method == "google" else None,
+            authenticated_at=authenticated_at,
         )
