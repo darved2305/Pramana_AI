@@ -3,7 +3,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Request, Response
 
 from pramana_contracts import (
     AcceptInvitation,
@@ -17,7 +17,7 @@ from pramana_contracts import (
 from .. import ids
 from ..errors import not_found
 from ..idempotency import IdempotencyRoute, idempotent
-from ..invitations import Invitations, email_invitation, invitation_view
+from ..invitations import Invitations, invitation_view
 from ..org_access import require_user
 from ..tenant_routes import OrganizationRoute
 
@@ -42,31 +42,37 @@ async def list_invitations(org: str, request: Request, response: Response) -> li
     if not set(MANAGERS) & set(access.roles):
         return []  # members who cannot invite do not see who else was invited
     rows = await _service(request, response).listing(access.organization.id)
-    return [invitation_view(row, name) for row, name in rows]
+    return [invitation_view(row, name, delivery) for row, name, delivery in rows]
 
 
 @router.post("", status_code=201)
 @idempotent("org", roles=MANAGERS)
 async def create_invitation(
-    org: str, body: CreateInvitation, request: Request, response: Response
+    org: str,
+    body: CreateInvitation,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
 ) -> InvitationCreated:
-    """Returns the link once, and emails it when Gmail is set up. It works for their email only."""
+    """Commit the invitation and email intent, then let the response-triggered relay deliver it."""
     access = request.state.organization
-    row, token = await _service(request, response).create(
-        access.organization.id, request.state.principal, body
-    )
     name = request.state.principal.display_name
-    accept_path = f"/invite/{token}"
-    delivery = await email_invitation(
-        request.app.state.mailer,
-        request.app.state.settings.invitation_link_base,
-        row,
-        access.organization.name,
-        name,
-        accept_path,
+    mailer = request.app.state.mailer
+    row, token, delivery = await _service(request, response).create(
+        access.organization.id,
+        request.state.principal,
+        body,
+        workspace=access.organization.name,
+        inviter=name,
+        link_base=request.app.state.settings.invitation_link_base if mailer is not None else None,
     )
+    accept_path = f"/invite/{token}"
+    if delivery == "queued":
+        background_tasks.add_task(request.app.state.email_relay.drain)
     return InvitationCreated(
-        invitation=invitation_view(row, name), accept_path=accept_path, email_delivery=delivery
+        invitation=invitation_view(row, name, delivery),
+        accept_path=accept_path,
+        email_delivery=delivery,
     )
 
 

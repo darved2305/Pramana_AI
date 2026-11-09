@@ -546,6 +546,8 @@ Browser                         api                                   provider /
    - Retention: 72 hours. The implemented scoped reaper skips active row locks and runs during
      mutations or via `scripts/reap_idempotency.py`; a scheduled worker remains deployment work.
 3. **Commands with external effects** ("approve and notify the technician", "place a call"). One local transaction commits the state change and an outbox row. The worker calls the provider with a provider-side idempotency key derived from the outbox id, where the provider supports one. Where it does not, record the attempt and reconcile through status APIs or webhooks; never retry a non-idempotent call blindly (brandur).
+
+   Invitation email commits its outbox row with the invitation. The API starts a drain after it sends the HTTP response, and `scripts/drain_email_outbox.py` is the repeatable Cloud Run Job entry point. A PostgreSQL advisory lock elects one relay. Attempts are recorded before SMTP, retry uses exponential backoff with jitter, and delivery stops after five attempts. A stable `Message-ID` and outbox id help correlate delivery, but SMTP has no idempotency key: if SMTP accepts a message and the process crashes before recording success, a later attempt can send it again. This is at-least-once delivery. The uncertain attempt remains in `email_outbox_attempts`; SMTP error text and message bodies are never logged. Recipient, subject and body are cleared after success or after the row becomes dead.
 4. **Webhooks.** Verify the signature and timestamp, then `INSERT` into `inbox (provider, event_id)` under a unique constraint in the same transaction as the effect. Answer 2xx quickly and process asynchronously.
 5. **Events.** `idempotency_key` becomes unique per investigation, not globally.
 6. **Answers.** Duplicates are rejected today (`409 QUESTION_NOT_PENDING`). With idempotency keys, a retried answer gets its original `200` instead of a confusing conflict, and a second, different answer still gets the 409.
@@ -574,14 +576,14 @@ A Postgres-backed queue (Procrastinate, or a small owned `jobs` table processed 
 | `call.retry` | Participant unavailable; ring again once after 60 s (PRODUCT C3 failure path) | `(question_id, attempt)` |
 | `participant.cooldown_end` | "Later" answered; 15-minute cool-down | `(investigation_id, person_id)` |
 | `approval.expire`, `work_order.expire` | Expiry time | Approval or work-order id |
-| `notify.send` | Outbox row (WhatsApp, SMS, email) | Outbox id |
+| `notify.send` | Outbox row (email today; later WhatsApp or SMS) | Outbox id |
 | `tts.prefetch` | Likely next questions (D19 speculative synthesis), only if measured start latency calls for it | Audio cache key |
 | `investigation.nudge` | Waiting too long for answers or approval | `(investigation_id, kind, window)` |
 | `model.health_check` | Draft site model saved (§8.6) | `spec_sha256` |
 | `idempotency.reap`, `sessions.reap`, `auth_flows.reap` | Hourly | None needed |
 | `utterances.purge`, `person.erase` | Retention schedule, erasure request (§4.6) | Person or partition |
 | `export.build` | Data access request, organization export | Request id |
-| `outbox.relay` | Continuous (singleton) | Outbox id |
+| `outbox.relay` | After the email request response, plus a scheduled Cloud Run Job | Outbox id; `pg_try_advisory_lock` singleton |
 | `eval.nightly` | Adversarial state test with more examples, benchmark drift check (ARCHITECTURE_REVIEW item 6) | Date |
 
 ### 3.9 Limits, quotas and fairness
@@ -981,19 +983,35 @@ create table idempotency_keys (
   primary key (scope, principal, key)
 );
 
-create table outbox (
-  id               bigint generated always as identity primary key,
-  org_id           uuid not null,
-  topic            text not null,                    -- notify.send, call.place, webhook.deliver, ...
-  payload          jsonb not null,
-  dedupe_key       text unique,
+create table email_outbox (
+  id               uuid primary key,                 -- stable SMTP Message-ID and dedupe identity
+  org_id           uuid not null references organizations(id),
+  kind             text not null default 'invitation',
+  invitation_id    uuid unique references invitations(id), -- set for invitations; other email kinds may omit it
+  state            text not null check (state in ('queued', 'sending', 'sent', 'dead')),
+  recipient        text,                              -- needed only until success or dead letter
+  subject          text,
+  body             text,                              -- contains the one-time link; purged on success/dead
+  attempts         int not null default 0 check (attempts between 0 and 5),
   available_at     timestamptz not null default now(),
-  attempts         int not null default 0,
   locked_until     timestamptz,
-  done_at          timestamptz,
-  last_error       text
+  sent_at          timestamptz,
+  dead_at          timestamptz,
+  last_error       text                               -- reason code only, never provider text
 );
-create index outbox_ready on outbox (available_at) where done_at is null;
+create index email_outbox_ready on email_outbox (available_at, created_at) where state = 'queued';
+
+create table email_outbox_attempts (
+  org_id           uuid not null,
+  outbox_id        uuid not null,
+  attempt          int not null,
+  started_at       timestamptz not null default now(),
+  finished_at      timestamptz,
+  result           text not null,                     -- sending, sent, retry, dead, uncertain
+  error_type       text,                              -- exception class only
+  primary key (org_id, outbox_id, attempt),
+  foreign key (org_id, outbox_id) references email_outbox(org_id, id)
+);
 
 create table inbox (                                 -- provider webhooks, each processed once
   provider         text not null,

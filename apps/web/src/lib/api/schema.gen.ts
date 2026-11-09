@@ -1046,7 +1046,7 @@ export interface paths {
         put?: never;
         /**
          * Create Invitation
-         * @description Returns the link once, and emails it when Gmail is set up. It works for their email only.
+         * @description Commit the invitation and email intent, then let the response-triggered relay deliver it.
          */
         post: operations["create_invitation_v1_orgs__org__invitations_post"];
         delete?: never;
@@ -2412,7 +2412,7 @@ export interface components {
              * Email Delivery
              * @enum {string}
              */
-            email_delivery: "sent" | "failed" | "not_configured";
+            email_delivery: "sent" | "queued" | "failed";
             invitation: components["schemas"]["InvitationView"];
         };
         /** InvitationView */
@@ -2424,6 +2424,11 @@ export interface components {
             created_at: string;
             /** Email */
             email: string;
+            /**
+             * Email Delivery
+             * @enum {string}
+             */
+            email_delivery: "sent" | "queued" | "failed";
             /**
              * Expires At
              * Format: date-time

@@ -2349,8 +2349,8 @@
      "email_delivery": {
       "enum": [
        "sent",
-       "failed",
-       "not_configured"
+       "queued",
+       "failed"
       ],
       "title": "Email Delivery",
       "type": "string"
@@ -2377,6 +2377,15 @@
      },
      "email": {
       "title": "Email",
+      "type": "string"
+     },
+     "email_delivery": {
+      "enum": [
+       "sent",
+       "queued",
+       "failed"
+      ],
+      "title": "Email Delivery",
       "type": "string"
      },
      "expires_at": {
@@ -2428,6 +2437,7 @@
      "email",
      "roles",
      "status",
+     "email_delivery",
      "created_at",
      "expires_at",
      "invited_by"
@@ -7972,7 +7982,7 @@
     ]
    },
    "post": {
-    "description": "Returns the link once, and emails it when Gmail is set up. It works for their email only.",
+    "description": "Commit the invitation and email intent, then let the response-triggered relay deliver it.",
     "operationId": "create_invitation_v1_orgs__org__invitations_post",
     "parameters": [
      {

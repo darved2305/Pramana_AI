@@ -47,6 +47,7 @@ from .language.hybrid import HybridExtractor
 from .llm import LlmClient
 from .mail import GmailSmtp
 from .observability import RequestContextMiddleware, configure_logging, log
+from .outbox import EmailRelay
 from .people import SitePeople
 from .runtime.broadcast import EventBroadcaster
 from .runtime.recovery import recover
@@ -155,6 +156,7 @@ def create_app(
             if cfg.invitation_link_base and cfg.gmail_address and cfg.gmail_app_password
             else None
         )
+        app.state.email_relay = EmailRelay(db, app.state.mailer)
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)

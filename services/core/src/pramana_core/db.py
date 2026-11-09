@@ -57,6 +57,7 @@ current_user: ContextVar[str | None] = ContextVar("current_user", default=None)
 across organizations, nothing else."""
 
 current_actor: ContextVar[str | None] = ContextVar("current_actor", default=None)
+current_job: ContextVar[str | None] = ContextVar("current_job", default=None)
 
 
 @contextmanager
@@ -80,15 +81,26 @@ def acting_for(
 async def apply_context(session: AsyncSession) -> None:
     """Copy the context into the current transaction (``set_config(..., true)``: transaction-local,
     so a pooled connection never carries one request's organization into the next)."""
-    org, user = current_org.get(), current_user.get()
+    org, user, job = current_org.get(), current_user.get(), current_job.get()
     actor = current_actor.get() or (f"user:{user}" if user else "")
     await session.execute(
         text(
             "select set_config('app.org_id', :org, true), "
-            "set_config('app.user_id', :user, true), set_config('app.principal', :actor, true)"
+            "set_config('app.user_id', :user, true), set_config('app.principal', :actor, true), "
+            "set_config('app.job', :job, true)"
         ),
-        {"org": str(org) if org else "", "user": user or "", "actor": actor},
+        {"org": str(org) if org else "", "user": user or "", "actor": actor, "job": job or ""},
     )
+
+
+@contextmanager
+def acting_as_job(name: str) -> Iterator[None]:
+    """Set the transaction-local job identity used by narrowly scoped worker RLS policies."""
+    token = current_job.set(name)
+    try:
+        yield
+    finally:
+        current_job.reset(token)
 
 
 class Base(DeclarativeBase):
