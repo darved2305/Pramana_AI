@@ -77,9 +77,9 @@ def test_people_use_the_site_roles_and_places(account_core: TestClient) -> None:
     assert again.status_code == 409
 
     listed = client.get(root)
-    assert [p["person"]["id"] for p in listed.json()] == ["p_ravi"]
+    assert [p["person"]["id"] for p in listed.json()["items"]] == ["p_ravi"]
     # The practice site has its own, separate list.
-    assert client.get(site_root(workspace, "sandbox_site") + "/people").json() == []
+    assert client.get(site_root(workspace, "sandbox_site") + "/people").json()["items"] == []
 
 
 def test_edits_need_the_version_being_edited(account_core: TestClient) -> None:

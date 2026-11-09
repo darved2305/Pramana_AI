@@ -4,11 +4,13 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Path, Request, Response
+from fastapi import APIRouter, Header, Path, Query, Request, Response
+from sqlalchemy import select
 
 from pramana_contracts import (
     ConsentPurpose,
     ConsentRecord,
+    CursorPage,
     ParticipantPatch,
     ParticipantSpec,
     PersonTrackRecord,
@@ -17,8 +19,9 @@ from pramana_contracts import (
 )
 
 from .. import ids
-from ..db import Database
-from ..errors import not_found
+from ..cursors import CursorCodec
+from ..db import Database, InvestigationRow, ObservationRow
+from ..errors import ApiError, not_found
 from ..idempotency import idempotent
 from ..people import SitePeople, consent_view, person_etag, person_view
 from ..tenant_routes import OrganizationRoute
@@ -49,21 +52,87 @@ def _people(request: Request, response: Response) -> SitePeople:
 
 @router.get("")
 async def list_people(
-    org: str, site_id: str, request: Request, response: Response
-) -> list[SitePerson]:
-    return [person_view(r) for r in await _people(request, response).listing(_site(site_id))]
+    org: str,
+    site_id: str,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+) -> CursorPage[SitePerson]:
+    rows, next_cursor = await _people(request, response).listing_page(
+        _site(site_id),
+        limit=limit,
+        cursor=cursor,
+        q=q,
+        codec=request.app.state.cursor_codec,
+    )
+    return CursorPage[SitePerson](
+        items=[person_view(r) for r in rows], limit=limit, next_cursor=next_cursor
+    )
 
 
 @router.get("/track-record")
 async def track_record(
-    org: str, site_id: str, request: Request, response: Response
-) -> list[PersonTrackRecord]:
+    org: str,
+    site_id: str,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
+    person_id: Annotated[list[str] | None, Query()] = None,
+) -> CursorPage[PersonTrackRecord]:
     """How often each person's answers matched causes that were later revealed or confirmed."""
     site = _site(site_id)
-    await _people(request, response).listing(site)  # 404 for a site outside this workspace
+    await _people(request, response).require_site(site)
+    if person_id is not None and len(person_id) > 100:
+        raise ApiError(422, "TOO_MANY_PEOPLE", "request track records for at most 100 people")
     db: Database = request.app.state.db
+    codec: CursorCodec = request.app.state.cursor_codec
+    org_id = request.state.organization.organization.id
+    person_filter = sorted(set(person_id or []))
+    filters = {"person_id": person_filter}
+    scope = f"track-record:{site}"
+    sort = codec.decode(cursor, scope=scope, org_id=str(org_id), filters=filters, sort_fields=1)
     async with db.read() as session:
-        return await track_records(session, request.state.organization.organization.id, site)
+        people_query = (
+            select(ObservationRow.participant_id)
+            .join(
+                InvestigationRow,
+                (InvestigationRow.org_id == ObservationRow.org_id)
+                & (InvestigationRow.id == ObservationRow.investigation_id),
+            )
+            .where(
+                ObservationRow.org_id == org_id,
+                ObservationRow.state.in_(("committed", "superseded")),
+                InvestigationRow.org_id == org_id,
+                InvestigationRow.site_id == site,
+                InvestigationRow.ground_truth.is_not(None),
+            )
+        )
+        if person_id is not None:
+            people_query = people_query.where(ObservationRow.participant_id.in_(person_filter))
+        if sort is not None:
+            people_query = people_query.where(ObservationRow.participant_id > str(sort[0]))
+        page_ids = list(
+            await session.scalars(
+                people_query.distinct().order_by(ObservationRow.participant_id).limit(limit + 1)
+            )
+        )
+        has_more = len(page_ids) > limit
+        page_ids = page_ids[:limit]
+        rows = await track_records(session, org_id, site, person_ids=set(page_ids))
+    next_cursor = (
+        codec.encode(
+            scope=scope,
+            org_id=str(org_id),
+            filters=filters,
+            sort=[page_ids[-1]],
+        )
+        if has_more and page_ids
+        else None
+    )
+    return CursorPage[PersonTrackRecord](items=rows, limit=limit, next_cursor=next_cursor)
 
 
 @router.post("", status_code=201)
@@ -122,10 +191,20 @@ async def erase_person(
 
 @router.get("/{person_id}/consents")
 async def list_consents(
-    org: str, site_id: str, person_id: PersonId, request: Request, response: Response
-) -> list[ConsentRecord]:
-    rows = await _people(request, response).consents(_site(site_id), person_id)
-    return [consent_view(r) for r in rows]
+    org: str,
+    site_id: str,
+    person_id: PersonId,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
+) -> CursorPage[ConsentRecord]:
+    rows, next_cursor = await _people(request, response).consent_page(
+        _site(site_id), person_id, limit=limit, cursor=cursor, codec=request.app.state.cursor_codec
+    )
+    return CursorPage[ConsentRecord](
+        items=[consent_view(r) for r in rows], limit=limit, next_cursor=next_cursor
+    )
 
 
 @router.post("/{person_id}/consents", status_code=201)

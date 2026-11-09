@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, TypeVar
 
 from fastapi import APIRouter, Request
 from fastapi.routing import APIRoute
@@ -15,6 +17,8 @@ from .db import Database, InvestigationRow, acting_for
 from .errors import ApiError, not_found
 from .idempotency import IdempotencyRoute, MutationPolicy
 from .org_access import participant_organization, require_organization, require_user
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 class OrganizationRoute(IdempotencyRoute):
@@ -37,11 +41,37 @@ class OrganizationRoute(IdempotencyRoute):
             user_id = None
         else:
             principal = await require_user(request)
-            access = await require_organization(request, principal)
+            access = await require_organization(request, principal, include_deleted=True)
             actor, user_id = f"user:{principal.id}", principal.id
         roles = set(access.roles)
         if roles.intersection({"owner", "admin"}):
             roles.add("operator")
+        deleted_access = self.endpoint.__dict__.get("pramana_deleted_access")
+        if principal.kind != "participant" and access.organization.deleted_at is not None:
+            if deleted_access is None:
+                raise ApiError(
+                    410,
+                    "WORKSPACE_DELETED",
+                    "This workspace was deleted. Restore it within 30 days or download its export.",
+                    details={
+                        "deleted_at": access.organization.deleted_at.isoformat(),
+                        "purge_after": access.organization.purge_after.isoformat()
+                        if access.organization.purge_after
+                        else None,
+                    },
+                )
+            if "owner" not in access.roles:
+                raise ApiError(403, "OWNER_ONLY", "only a workspace owner can do this")
+            if (
+                deleted_access in {"export", "restore"}
+                and access.organization.purge_after is not None
+                and access.organization.purge_after < datetime.now(UTC)
+            ):
+                raise ApiError(
+                    410,
+                    "RESTORE_WINDOW_CLOSED",
+                    "The 30-day restore and export window has ended.",
+                )
         request.state.organization = access
         request.state.principal = replace(principal, roles=frozenset(roles))
         try:
@@ -120,3 +150,15 @@ def organization_router(
         }
         router.add_api_route(path, route.endpoint, **options)
     return router
+
+
+def deleted_workspace_access(action: str) -> Callable[[F], F]:
+    """Mark an owner-only route that remains available after workspace deletion."""
+    if action not in {"delete", "export", "restore"}:
+        raise ValueError("unknown deleted workspace operation")
+
+    def decorate(endpoint: F) -> F:
+        endpoint.__dict__["pramana_deleted_access"] = action
+        return endpoint
+
+    return decorate

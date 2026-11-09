@@ -65,7 +65,7 @@ def test_a_name_is_stored_only_sealed(account_core: TestClient, migrated_db: str
     assert NAME not in stored[0]["spec"]
     assert NAME.encode() not in bytes(stored[0]["display_name_enc"])
 
-    listed = client.get(f"/v1/orgs/{org}/sites/{site}/people").json()
+    listed = client.get(f"/v1/orgs/{org}/sites/{site}/people").json()["items"]
     assert [p["person"]["display_name"] for p in listed] == [NAME]
 
     patched = client.patch(
@@ -84,7 +84,7 @@ def test_erasure_is_permanent_and_blocks_reuse(account_core: TestClient, migrate
     add_person(client, org, site)
 
     assert post(client, f"/v1/orgs/{org}/sites/{site}/people/ananya/erase").status_code == 204
-    assert client.get(f"/v1/orgs/{org}/sites/{site}/people").json() == []
+    assert client.get(f"/v1/orgs/{org}/sites/{site}/people").json()["items"] == []
     key = sql(
         migrated_db, "select wrapped_key, erased_at from person_keys where person_id = 'ananya'"
     )
@@ -131,17 +131,17 @@ def test_consent_is_recorded_replaced_and_withdrawn(account_core: TestClient) ->
     }
     assert post(client, base, grant).status_code == 201
     assert post(client, base, {**grant, "notice_version": "2026-12"}).status_code == 201
-    records = client.get(base).json()
+    records = client.get(base).json()["items"]
     assert [r["notice_version"] for r in records] == ["2026-12", "2026-11"]
     assert records[0]["withdrawn_at"] is None
     assert records[1]["withdrawn_at"] is not None
 
     assert post(client, f"{base}/voice_processing/withdraw").status_code == 204
-    assert all(r["withdrawn_at"] is not None for r in client.get(base).json())
+    assert all(r["withdrawn_at"] is not None for r in client.get(base).json()["items"])
 
     # The proof of consent outlives the person's name.
     assert post(client, f"/v1/orgs/{org}/sites/{site}/people/ananya/erase").status_code == 204
-    assert len(client.get(base).json()) == 2
+    assert len(client.get(base).json()["items"]) == 2
 
 
 def test_a_ciphertext_cannot_be_moved_to_another_person() -> None:

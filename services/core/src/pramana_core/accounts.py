@@ -97,6 +97,8 @@ def organization_view(
         timezone=row.timezone,
         version=row.version,
         created_at=row.created_at,
+        deleted_at=row.deleted_at,
+        purge_after=row.purge_after,
     )
 
 
@@ -131,8 +133,9 @@ def destination(
         }
     ):
         return f"/onboarding/{state.step.value}"
-    if organizations:
-        chosen = next((org for org in organizations if org.id == preferred), organizations[0])
+    active = [org for org in organizations if org.deleted_at is None]
+    if active:
+        chosen = next((org for org in active if org.id == preferred), active[0])
         return f"/app/{chosen.slug}"
     return "/onboarding/welcome"
 
@@ -195,13 +198,12 @@ class AccountService:
                             .where(
                                 MembershipRow.user_id == principal.id,
                                 MembershipRow.status == "active",
-                                OrganizationRow.deleted_at.is_(None),
                             )
                             .order_by(OrganizationRow.created_at, OrganizationRow.id)
                         )
                     ).all()
                 )
-                active_ids = {org.id for org, _ in memberships}
+                active_ids = {org.id for org, _ in memberships if org.deleted_at is None}
                 if state.org_id is not None and state.org_id not in active_ids:
                     state.org_id = None
                     if state.completed_at is None:

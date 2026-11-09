@@ -88,6 +88,8 @@ class OrganizationSummary(StrictModel):
     timezone: str
     version: int
     created_at: datetime
+    deleted_at: datetime | None = None
+    purge_after: datetime | None = None
 
 
 class IdentitySummary(StrictModel):
@@ -155,6 +157,16 @@ class CreateOrganization(StrictModel):
         default=None, min_length=3, max_length=40, pattern=r"^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
     )
     kind: OrganizationKind | None = None
+
+
+class DeleteOrganization(StrictModel):
+    confirmation: str = Field(min_length=1, max_length=120)
+
+
+class OrganizationDeletion(StrictModel):
+    organization_id: str
+    deleted_at: datetime
+    purge_after: datetime
 
 
 class SiteSummary(StrictModel):

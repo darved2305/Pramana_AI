@@ -23,6 +23,7 @@ from . import (
     CreateOrganization,
     CreateSiteInvestigation,
     CurrentAccount,
+    DeleteOrganization,
     DirectoryParticipant,
     EvaluationReport,
     EvaluationReportSummary,
@@ -35,6 +36,7 @@ from . import (
     OnboardingPatch,
     OnboardingState,
     OrganizationCreated,
+    OrganizationDeletion,
     PackSummary,
     ParticipantPatch,
     ParticipantView,
@@ -54,6 +56,7 @@ from . import (
 
 EXPORTED: tuple[type[BaseModel], ...] = (
     CreateOrganization,
+    DeleteOrganization,
     CreateSiteInvestigation,
     SaveDraft,
     SiteModelDraft,
@@ -63,6 +66,7 @@ EXPORTED: tuple[type[BaseModel], ...] = (
     OnboardingPatch,
     OnboardingState,
     OrganizationCreated,
+    OrganizationDeletion,
     CreateInvestigation,
     InvestigationState,
     SubmitAnswer,

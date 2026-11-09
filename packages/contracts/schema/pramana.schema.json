@@ -677,6 +677,22 @@
       "title": "DecisionBelief",
       "type": "object"
     },
+    "DeleteOrganization": {
+      "additionalProperties": false,
+      "properties": {
+        "confirmation": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Confirmation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "confirmation"
+      ],
+      "title": "DeleteOrganization",
+      "type": "object"
+    },
     "DependsOn": {
       "additionalProperties": false,
       "properties": {
@@ -1395,20 +1411,22 @@
           "title": "Limit",
           "type": "integer"
         },
-        "offset": {
-          "title": "Offset",
-          "type": "integer"
-        },
-        "total": {
-          "title": "Total",
-          "type": "integer"
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Cursor"
         }
       },
       "required": [
         "items",
-        "total",
-        "limit",
-        "offset"
+        "limit"
       ],
       "title": "InvestigationPage",
       "type": "object"
@@ -2414,6 +2432,32 @@
       "title": "OrganizationCreated",
       "type": "object"
     },
+    "OrganizationDeletion": {
+      "additionalProperties": false,
+      "properties": {
+        "deleted_at": {
+          "format": "date-time",
+          "title": "Deleted At",
+          "type": "string"
+        },
+        "organization_id": {
+          "title": "Organization Id",
+          "type": "string"
+        },
+        "purge_after": {
+          "format": "date-time",
+          "title": "Purge After",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organization_id",
+        "deleted_at",
+        "purge_after"
+      ],
+      "title": "OrganizationDeletion",
+      "type": "object"
+    },
     "OrganizationKind": {
       "enum": [
         "campus",
@@ -2445,6 +2489,19 @@
           "title": "Created At",
           "type": "string"
         },
+        "deleted_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deleted At"
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -2455,6 +2512,19 @@
         "name": {
           "title": "Name",
           "type": "string"
+        },
+        "purge_after": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Purge After"
         },
         "roles": {
           "items": {
@@ -4039,6 +4109,9 @@
     "CurrentAccount": {
       "$ref": "#/$defs/CurrentAccount"
     },
+    "DeleteOrganization": {
+      "$ref": "#/$defs/DeleteOrganization"
+    },
     "DirectoryParticipant": {
       "$ref": "#/$defs/DirectoryParticipant"
     },
@@ -4074,6 +4147,9 @@
     },
     "OrganizationCreated": {
       "$ref": "#/$defs/OrganizationCreated"
+    },
+    "OrganizationDeletion": {
+      "$ref": "#/$defs/OrganizationDeletion"
     },
     "PackSummary": {
       "$ref": "#/$defs/PackSummary"

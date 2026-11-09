@@ -107,7 +107,7 @@ def test_a_send_failure_keeps_the_invitation_and_never_logs_the_secret(
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["email_delivery"] == "failed"
-    listed = client.get(f"/v1/orgs/{org}/invitations").json()
+    listed = client.get(f"/v1/orgs/{org}/invitations").json()["items"]
     assert [i["status"] for i in listed] == ["pending"]
     secret = str(body["accept_path"]).rpartition(".")[2]
     text = repr(logged)

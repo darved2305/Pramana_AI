@@ -3,10 +3,17 @@
 
 import hashlib
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 
-from pramana_contracts import ModelHealth, SiteModelDocument, SiteModelSummary, SiteSummary
+from pramana_contracts import (
+    CursorPage,
+    ModelHealth,
+    SiteModelDocument,
+    SiteModelSummary,
+    SiteSummary,
+)
 from pramana_domain.spec_storage import spec_digest
 
 from .. import ids
@@ -55,8 +62,19 @@ def _view(row: SiteModelRow) -> SiteModelSummary:
 
 
 @router.get("")
-async def sites(org: str, request: Request, response: Response) -> list[SiteSummary]:
-    return [site_view(row) for row in await _store(request, response).sites()]
+async def sites(
+    org: str,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
+) -> CursorPage[SiteSummary]:
+    rows, next_cursor = await _store(request, response).sites(
+        limit, cursor, request.app.state.cursor_codec
+    )
+    return CursorPage[SiteSummary](
+        items=[site_view(row) for row in rows], limit=limit, next_cursor=next_cursor
+    )
 
 
 @router.get("/{site_id}")
@@ -66,9 +84,19 @@ async def site(org: str, site_id: str, request: Request, response: Response) -> 
 
 @router.get("/{site_id}/models")
 async def models(
-    org: str, site_id: str, request: Request, response: Response
-) -> list[SiteModelSummary]:
-    return [_view(row) for row in await _store(request, response).versions(_id("site", site_id))]
+    org: str,
+    site_id: str,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
+) -> CursorPage[SiteModelSummary]:
+    rows, next_cursor = await _store(request, response).versions(
+        _id("site", site_id), limit, cursor, request.app.state.cursor_codec
+    )
+    return CursorPage[SiteModelSummary](
+        items=[_view(row) for row in rows], limit=limit, next_cursor=next_cursor
+    )
 
 
 @router.get("/{site_id}/models/{model_id}")
