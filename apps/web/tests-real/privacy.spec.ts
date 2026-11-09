@@ -142,4 +142,30 @@ test("staff record and withdraw consent, and only owners or admins can erase, wi
   await expect(page.getByRole("button", { name: "Erase", exact: true })).toHaveCount(0);
   const denied = await page.request.post(`${people}/p_ravi/erase`, { headers: csrf(`${operator}-erase-key`) });
   expect(denied.status()).toBe(403);
+
+  // A queued consent email is checked a bounded number of times. The dialog then says it is still
+  // queued instead of polling for as long as it stays open.
+  let statusChecks = 0;
+  await page.route(`**${people}/p_ravi/consent-requests`, (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    return route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      json: { request_id: "consent_queued_stub", link_path: "/consent/queued.stub", expires_at: "2099-01-01T00:00:00Z", email_delivery: "queued" },
+    });
+  });
+  await page.route(`**${people}/p_ravi/consent-requests/consent_queued_stub`, (route) => {
+    statusChecks += 1;
+    return route.fulfill({ status: 200, contentType: "application/json", json: { email_delivery: "queued" } });
+  });
+  await ravi.getByRole("button", { name: "Consent" }).click();
+  const queuedDialog = page.getByRole("dialog", { name: "Consent for Ravi" });
+  await queuedDialog.getByRole("button", { name: "Send consent request" }).click();
+  await expect(queuedDialog.getByText("Email is queued. You can copy and share the link while it sends.")).toBeVisible();
+  await expect(queuedDialog.getByText("Email is still queued. Copy and share the link if it does not arrive.")).toBeVisible({ timeout: 60_000 });
+  expect(statusChecks).toBe(20);
+  await page.waitForTimeout(3_000);
+  expect(statusChecks).toBe(20);
+  await page.unroute(`**${people}/p_ravi/consent-requests/consent_queued_stub`);
+  await page.unroute(`**${people}/p_ravi/consent-requests`);
 });

@@ -19,6 +19,9 @@ import type {
 import { relative } from "@/lib/data/derive";
 
 type Purpose = RecordConsent["purpose"];
+
+// A queued consent email normally leaves within seconds. Stop checking after about 20 seconds.
+const DELIVERY_CHECKS = 20;
 type Channel = RecordConsent["channel"];
 
 export const PURPOSES: { id: Purpose; label: string; meaning: string }[] = [
@@ -112,7 +115,8 @@ export function ConsentDialog({
   const [requestLink, setRequestLink] = useState<{
     requestId: string;
     path: string;
-    delivery: ConsentRequestDelivery["email_delivery"];
+    delivery: ConsentRequestDelivery["email_delivery"] | "unavailable";
+    checks: number;
   } | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
 
@@ -122,15 +126,17 @@ export function ConsentDialog({
 
   useEffect(() => {
     if (!personId || !requestLink || requestLink.delivery !== "queued") return;
+    if (requestLink.checks >= DELIVERY_CHECKS) return;
+    const { requestId } = requestLink;
     let active = true;
     const timer = window.setTimeout(() => {
       void api
-        .consentRequestDelivery(siteId, personId, requestLink.requestId)
+        .consentRequestDelivery(siteId, personId, requestId)
         .then(({ email_delivery }) => {
           if (active) {
             setRequestLink((current) =>
-              current?.requestId === requestLink.requestId
-                ? { ...current, delivery: email_delivery }
+              current?.requestId === requestId
+                ? { ...current, delivery: email_delivery, checks: current.checks + 1 }
                 : current,
             );
           }
@@ -138,7 +144,9 @@ export function ConsentDialog({
         .catch(() => {
           if (active) {
             setRequestLink((current) =>
-              current?.requestId === requestLink.requestId ? { ...current } : current,
+              current?.requestId === requestId
+                ? { ...current, delivery: "unavailable", checks: DELIVERY_CHECKS }
+                : current,
             );
           }
         });
@@ -215,6 +223,7 @@ export function ConsentDialog({
                               requestId: created.request_id,
                               path: created.link_path,
                               delivery: created.email_delivery,
+                              checks: 0,
                             });
                           } catch (e) {
                             setError(privacyError(e));
@@ -231,8 +240,10 @@ export function ConsentDialog({
                             {requestLink.delivery === "sent"
                               ? "Email sent. You can also copy the link."
                               : requestLink.delivery === "queued"
-                                ? "Email is queued. You can copy and share the link while it sends."
-                              : requestLink.delivery === "no_email"
+                                ? requestLink.checks >= DELIVERY_CHECKS
+                                  ? "Email is still queued. Copy and share the link if it does not arrive."
+                                  : "Email is queued. You can copy and share the link while it sends."
+                                : requestLink.delivery === "no_email"
                                 ? "No email is saved for this person. Copy and share the link."
                                 : requestLink.delivery === "failed"
                                   ? "Email was not sent. Copy and share the link."
