@@ -7,6 +7,7 @@ import type {
   CreateSiteInvestigation,
   EventEnvelope,
   InvestigationPage,
+  CursorPage,
   InvestigationState,
   ParticipantToken,
   ReplayResult,
@@ -16,6 +17,7 @@ import type {
   SiteModelDraft,
   SiteModelSummary,
   ConsentRecord,
+  DeleteOrganization,
   ConsentRequestCreated,
   InvestigationForecast,
   MapDriftCheck,
@@ -23,9 +25,11 @@ import type {
   SitePerson,
   PersonTrackRecord,
   SiteSummary,
+  OrganizationSummary,
   SitePersonPatch,
   WorkspaceHome,
   WorkspaceMember,
+  OrganizationDeletion,
   CreateInvitation,
   InvitationCreated,
   InvitationView,
@@ -67,9 +71,33 @@ export function organizationApi(org: string) {
   // different instances without redirecting one person's requests into another workspace.
   return Object.freeze({
     org,
+    exportHref: `${root}/export`,
+    deleteWorkspace: (body: DeleteOrganization, action: OrganizationAction) =>
+      request<OrganizationDeletion>("core", root, {
+        method: "DELETE",
+        json: body,
+        signal: action.signal,
+        headers: { "Idempotency-Key": action.key },
+      }),
+    restoreWorkspace: (action: OrganizationAction) =>
+      request<OrganizationSummary>("core", `${root}/restore`, {
+        method: "POST",
+        signal: action.signal,
+        headers: { "Idempotency-Key": action.key },
+      }),
     home: (signal?: AbortSignal) => request<WorkspaceHome>("core", `${root}/home`, { signal }),
-    members: (signal?: AbortSignal) => request<WorkspaceMember[]>("core", `${root}/members`, { signal }),
-    invitations: (signal?: AbortSignal) => request<InvitationView[]>("core", `${root}/invitations`, { signal }),
+    members: (query: { limit?: number; cursor?: string } = {}, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      return request<CursorPage<WorkspaceMember>>("core", `${root}/members${params.size ? `?${params}` : ""}`, { signal });
+    },
+    invitations: (query: { limit?: number; cursor?: string } = {}, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      return request<CursorPage<InvitationView>>("core", `${root}/invitations${params.size ? `?${params}` : ""}`, { signal });
+    },
     domains: (signal?: AbortSignal) => request<OrganizationDomain[]>("core", `${root}/domains`, { signal }),
     addDomain: (body: CreateDomain, action: OrganizationAction) =>
       mutate<OrganizationDomain>(`${root}/domains`, body, action),
@@ -90,8 +118,16 @@ export function organizationApi(org: string) {
         signal: action.signal,
         headers: { "Idempotency-Key": action.key },
       }),
-    joinRequests: (signal?: AbortSignal) =>
-      request<JoinRequestView[]>("core", `${root}/join-requests`, { signal }),
+    joinRequests: (query: { limit?: number; cursor?: string } = {}, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      return request<CursorPage<JoinRequestView>>(
+        "core",
+        `${root}/join-requests${params.size ? `?${params}` : ""}`,
+        { signal },
+      );
+    },
     approveJoinRequest: (id: string, body: JoinRequestDecision, action: OrganizationAction) =>
       mutate<JoinRequestView>(`${root}/join-requests/${enc(id)}/approve`, body, action),
     declineJoinRequest: (id: string, action: OrganizationAction) =>
@@ -109,11 +145,25 @@ export function organizationApi(org: string) {
       mutate<InvitationCreated>(`${root}/invitations`, body, action),
     revokeInvitation: (id: string, action: OrganizationAction) =>
       mutate<void>(`${root}/invitations/${enc(id)}/revoke`, undefined, action),
-    sites: (signal?: AbortSignal) => request<SiteSummary[]>("core", `${root}/sites`, { signal }),
-    trackRecord: (siteId: string, signal?: AbortSignal) =>
-      request<PersonTrackRecord[]>("core", `${site(siteId)}/people/track-record`, { signal }),
-    people: (siteId: string, signal?: AbortSignal) =>
-      request<SitePerson[]>("core", `${site(siteId)}/people`, { signal }),
+    sites: (query: { limit?: number; cursor?: string } = {}, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      return request<CursorPage<SiteSummary>>("core", `${root}/sites${params.size ? `?${params}` : ""}`, { signal });
+    },
+    trackRecord: (siteId: string, personIds: string[] = [], signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      params.set("limit", "100");
+      personIds.forEach((id) => params.append("person_id", id));
+      return request<CursorPage<PersonTrackRecord>>("core", `${site(siteId)}/people/track-record?${params}`, { signal });
+    },
+    people: (siteId: string, query: { limit?: number; cursor?: string; q?: string } = {}, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      if (query.q?.trim()) params.set("q", query.q.trim());
+      return request<CursorPage<SitePerson>>("core", `${site(siteId)}/people${params.size ? `?${params}` : ""}`, { signal });
+    },
     addPerson: (siteId: string, person: ParticipantSpec, action: OrganizationAction) =>
       mutate<SitePerson>(`${site(siteId)}/people`, person, action),
     updatePerson: (
@@ -129,8 +179,22 @@ export function organizationApi(org: string) {
       mutate<void>(`${site(siteId)}/people/${enc(personId)}/remove`, undefined, action),
     erasePerson: (siteId: string, personId: string, action: OrganizationAction) =>
       mutate<void>(`${site(siteId)}/people/${enc(personId)}/erase`, undefined, action),
-    consents: (siteId: string, personId: string, signal?: AbortSignal) =>
-      request<ConsentRecord[]>("core", `${site(siteId)}/people/${enc(personId)}/consents`, { signal }),
+    consents: (
+      siteId: string,
+      personId: string,
+      query: { limit?: number; cursor?: string; purpose?: ConsentRecord["purpose"] } = {},
+      signal?: AbortSignal,
+    ) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      if (query.purpose) params.set("purpose", query.purpose);
+      return request<CursorPage<ConsentRecord>>(
+        "core",
+        `${site(siteId)}/people/${enc(personId)}/consents${params.size ? `?${params}` : ""}`,
+        { signal },
+      );
+    },
     recordConsent: (siteId: string, personId: string, body: RecordConsent, action: OrganizationAction) =>
       mutate<ConsentRecord>(`${site(siteId)}/people/${enc(personId)}/consents`, body, action),
     withdrawConsent: (siteId: string, personId: string, purpose: RecordConsent["purpose"], action: OrganizationAction) =>
@@ -138,8 +202,12 @@ export function organizationApi(org: string) {
     requestConsent: (siteId: string, personId: string, action: OrganizationAction) =>
       mutate<ConsentRequestCreated>(`${site(siteId)}/people/${enc(personId)}/consent-requests`, undefined, action),
     site: (id: string, signal?: AbortSignal) => request<SiteSummary>("core", site(id), { signal }),
-    models: (id: string, signal?: AbortSignal) =>
-      request<SiteModelSummary[]>("core", `${site(id)}/models`, { signal }),
+    models: (id: string, query: { limit?: number; cursor?: string } = {}, signal?: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      return request<CursorPage<SiteModelSummary>>("core", `${site(id)}/models${params.size ? `?${params}` : ""}`, { signal });
+    },
     model: (siteId: string, modelId: string, signal?: AbortSignal) =>
       request<SiteModelDocument>("core", `${site(siteId)}/models/${enc(modelId)}`, { signal }),
     listInvestigations: (query: ListQuery = {}, signal?: AbortSignal) => {
@@ -147,7 +215,7 @@ export function organizationApi(org: string) {
       query.status?.forEach((status) => params.append("status", status));
       if (query.q?.trim()) params.set("q", query.q.trim());
       if (query.limit !== undefined) params.set("limit", String(query.limit));
-      if (query.offset !== undefined) params.set("offset", String(query.offset));
+      if (query.cursor) params.set("cursor", query.cursor);
       const suffix = params.size ? `?${params}` : "";
       return request<InvestigationPage>("core", investigations + suffix, { signal });
     },

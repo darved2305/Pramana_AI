@@ -1318,7 +1318,7 @@ Implementation status, 2026-11-09: ID-03 and ID-04 are implemented in migration 
 | OR-04 | Membership removed while the user is active | The next call fails; the event stream closes; "You no longer have access to Nava College" | A, B |
 | OR-05 | Role reduced (operator to viewer) mid-session | The server refuses at once; the UI refreshes its permissions on the next response | A, B |
 | OR-06 | The last owner tries to leave or step down | Refused: "Make someone else an owner first" (Sarvam enforces the same rule) | A |
-| OR-07 | Organization deleted | Soft-deleted with 30-day restore; members see a notice; an export is offered first; purge afterwards | A |
+| OR-07 | Organization deleted | Soft-deleted with 30-day restore; members see a notice; an export is offered first; purge afterwards | A, B |
 | OR-08 | Slug already taken | Suggestions offered; a later slug change keeps redirects | A |
 | OR-09 | "Create organization" double-clicked, or retried after a timeout | Exactly one organization (idempotency key) | A, B, C |
 | OR-10 | Onboarding open in two tabs | State is server-side; the second tab moves to the current step | B |
@@ -1334,7 +1334,7 @@ Implementation status, 2026-11-09: ID-03 and ID-04 are implemented in migration 
 | DA-04 | People added, nobody has consented yet | Investigations may start, but questions go only to people who consented; consent chips and "Send consent request" | A, B |
 | DA-05 | Returning user with history | Home leads with active work; history is paginated; unfinished checklist items stay, and can be dismissed | B |
 | DA-06 | Sandbox data alongside live data | Separate `mode`; sandbox never counts in live metrics; a badge on every sandbox screen; "Delete sample site" | A, B |
-| DA-07 | Thousands of investigations | Cursor pagination, server-side search and filters; no client-side full loads | A, L |
+| DA-07 | Thousands of investigations | Cursor pagination, server-side search and filters; no client-side full loads | A, B, L |
 | DA-08 | The site model changes while an investigation is open | The investigation stays on its pinned version: "A newer model (v8) exists; new investigations use it" | A |
 
 DA-04 status, 2026-11-09: saved-site investigations only plan web questions for people with
@@ -1343,6 +1343,17 @@ request. If no one is eligible only because consent is missing or it is quiet ho
 stays open and tells the operator what to do. Practice runs use synthetic participants and do not
 require contact consent. Starting an actual live investigation remains disabled until live
 delivery is configured.
+
+OR-07 status, 2026-11-09: an owner can download a streamed workspace archive before deletion,
+then soft-delete the workspace after typing its name. Members see a restore notice; owners can
+export or restore it for 30 days. The purge job removes tenant data after that window, shreds
+person keys, and preserves sealed events and append-only audit records. The scheduled job and its
+maintenance role are a deployment step that has not been run yet (`docs/engineering/WORKSPACE_RETENTION.md`).
+
+DA-07 status, 2026-11-09: growing organization lists, including workspace join-request history,
+use bounded keyset pages with cursors bound to the organization and active filters. Search and
+filters run on the server, and pages expose a keyboard-accessible Load more action. Sealed
+investigation reports continue to match ids only.
 
 **Participants and live investigations**
 

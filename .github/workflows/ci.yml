@@ -42,6 +42,8 @@ jobs:
       - name: Tests (PostgreSQL, simulator in-process, Gnani protocol emulation)
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://pramana@localhost:5433/pramana_test
+          PRAMANA_E2E_DATABASE_URL: postgresql+asyncpg://pramana@localhost:5433/pramana_e2e
+          PRAMANA_DB_NAMES: pramana_test,pramana_e2e
           PRAMANA_REQUIRE_APP_ROLE: "1"
         run: uv run pytest
 
@@ -59,7 +61,7 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - name: Types, lint and copy rules
-        run: npm run typecheck && npm run lint && npm run check:copy && npm run check:worklet
+        run: npm run typecheck && npm run lint && npm run check:copy && npm run check:worklet && npm run check:e2e-safety
       - name: API types match the core OpenAPI spec
         run: npm run gen:api && git diff --exit-code -- src/lib/api/schema.gen.ts
       - name: Build
@@ -102,6 +104,9 @@ jobs:
       - run: uv sync --frozen
       - run: npm ci
       - name: Playwright (real core, simulator and PostgreSQL)
+        env:
+          E2E_DATABASE: pramana_web_e2e
+          PRAMANA_DB_NAMES: pramana_web_e2e
         run: npm run test:e2e:real
       - name: Browser failure evidence
         if: failure()

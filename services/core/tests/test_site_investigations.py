@@ -110,7 +110,101 @@ def test_creation_retries_return_one_pinned_investigation(account_core: TestClie
     assert retry.headers["idempotent-replayed"] == "true"
     listed = client.get("/v1/investigations")
     assert listed.status_code == 200, listed.text
-    assert listed.json()["total"] == 1
+    assert len(listed.json()["items"]) == 1
+
+
+def test_cursor_pages_are_stable_bounded_and_bound_to_tenant_and_filters(
+    account_core: TestClient, migrated_db: str
+) -> None:
+    raw = account_core
+    workspace = create(raw, name="Cursor Campus", slug="cursor-campus").json()
+    scoped = TenantClient(raw, workspace)
+    base = scoped.start()
+    org_id = ids.decode("org", workspace["organization"]["id"])
+
+    # Two thousand fixtures are inserted in one statement. They copy a valid pinned investigation
+    # but need no event log because the list reads its bounded projection only.
+    sql(
+        migrated_db,
+        """
+        insert into investigations
+          (id, org_id, pack_id, site_id, site_model_id, status, scenario_id,
+           commitment, request, outcome, ground_truth, version, created_at, updated_at)
+        select 'inv_cursor_' || lpad(g::text, 8, '0'), source.org_id, source.pack_id,
+          source.site_id, source.site_model_id, source.status, source.scenario_id,
+          source.commitment, source.request, source.outcome, source.ground_truth,
+          source.version, source.created_at - make_interval(secs => g),
+          source.updated_at - make_interval(secs => g)
+        from investigations source cross join generate_series(1, 2000) g
+        where source.id = :base and source.org_id = :org
+        """,
+        {"base": base["id"], "org": org_id},
+    )
+    expected = [
+        row["id"]
+        for row in sql(
+            migrated_db,
+            "select id from investigations where org_id=:org order by created_at desc, id desc",
+            {"org": org_id},
+        )
+    ]
+
+    first = scoped.get("/v1/investigations", params={"limit": 100})
+    assert first.status_code == 200, first.text
+    first_page = first.json()
+    assert len(first_page["items"]) == 100
+    assert first_page["next_cursor"]
+
+    # A row inserted ahead of the current position belongs to a fresh traversal, not this one.
+    sql(
+        migrated_db,
+        """
+        insert into investigations
+          (id, org_id, pack_id, site_id, site_model_id, status, scenario_id,
+           commitment, request, outcome, ground_truth, version, created_at, updated_at)
+        select 'inv_cursor_newest', org_id, pack_id, site_id, site_model_id, status,
+          scenario_id, commitment, request, outcome, ground_truth, version,
+          now() + interval '1 day', now() + interval '1 day'
+        from investigations where id=:base and org_id=:org
+        """,
+        {"base": base["id"], "org": org_id},
+    )
+    received = [item["id"] for item in first_page["items"]]
+    cursor = first_page["next_cursor"]
+    while cursor:
+        response = scoped.get("/v1/investigations", params={"limit": 100, "cursor": cursor})
+        assert response.status_code == 200, response.text
+        page = response.json()
+        assert len(page["items"]) <= 100
+        received.extend(item["id"] for item in page["items"])
+        cursor = page["next_cursor"]
+    assert received == expected
+    assert len(received) == len(set(received)) == 2001
+    assert "inv_cursor_newest" not in received
+
+    filtered = scoped.get(
+        "/v1/investigations", params={"limit": 1, "status": "investigating"}
+    ).json()
+    assert filtered["next_cursor"]
+    other_filter = scoped.get(
+        "/v1/investigations",
+        params={"limit": 1, "status": "decided", "cursor": filtered["next_cursor"]},
+    )
+    assert other_filter.status_code == 400, other_filter.text
+    assert other_filter.json()["error"]["code"] == "CURSOR_INVALID"
+
+    second = raw.post(
+        "/v1/orgs",
+        json={"name": "Other Cursor Campus", "slug": "other-cursor-campus"},
+        headers={**CSRF, "Idempotency-Key": "second-cursor-workspace-0001"},
+    )
+    assert second.status_code == 201, second.text
+    foreign = raw.get(
+        f"/v1/orgs/{second.json()['organization']['slug']}/investigations",
+        params={"limit": 1, "cursor": filtered["next_cursor"]},
+    )
+    assert foreign.status_code == 400, foreign.text
+    assert foreign.json()["error"]["code"] == "CURSOR_INVALID"
 
 
 def test_live_or_unknown_site_is_rejected_before_simulator_access(

@@ -8,7 +8,8 @@ test recovery from the event log.
 
 Settings, all optional:
 
-* ``PRAMANA_E2E_DATABASE_URL`` (default ``postgresql+asyncpg://pramana@localhost:5433/pramana_e2e``)
+* ``PRAMANA_E2E_DATABASE_URL`` (required; the database it names must be listed in
+  ``PRAMANA_DB_NAMES``, see ``scripts/db_guard.py``; there is no default database)
 * ``PRAMANA_E2E_CORE_PORT`` (8030) and ``PRAMANA_E2E_SIM_PORT`` (8130)
 * ``PRAMANA_SKIP_E2E=1`` skips these tests.
 
@@ -32,17 +33,20 @@ from typing import IO
 import httpx
 from alembic import command
 from alembic.config import Config
+from db_guard import require_listed_url, setting_database_url
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = ROOT / "services" / "core"
-DB_URL = os.environ.get(
-    "PRAMANA_E2E_DATABASE_URL", "postgresql+asyncpg://pramana@localhost:5433/pramana_e2e"
-)
 CORE_PORT = int(os.environ.get("PRAMANA_E2E_CORE_PORT", "8030"))
 SIM_PORT = int(os.environ.get("PRAMANA_E2E_SIM_PORT", "8130"))
+
+
+def e2e_database_url() -> str:
+    """The e2e database URL. Refused when unset or when its database is not allowlisted."""
+    return setting_database_url("PRAMANA_E2E_DATABASE_URL")
 
 
 @contextmanager
@@ -54,6 +58,7 @@ def temporary_work_directory(*, parent: Path | None = None) -> Iterator[Path]:
 
 async def ensure_database(url: str) -> None:
     """Create the e2e database if it is missing (connects to the server's ``postgres`` db)."""
+    require_listed_url(url)
     target = make_url(url)
     admin = create_async_engine(
         target.set(database="postgres"), isolation_level="AUTOCOMMIT", connect_args={"timeout": 3}
@@ -72,7 +77,7 @@ async def ensure_database(url: str) -> None:
 def migrate(url: str) -> None:
     cfg = Config(str(CORE_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(CORE_DIR / "alembic"))
-    cfg.attributes["url"] = url
+    cfg.attributes["url"] = require_listed_url(url)
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
 

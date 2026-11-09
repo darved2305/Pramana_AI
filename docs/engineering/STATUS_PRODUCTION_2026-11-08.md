@@ -16,8 +16,8 @@ and bypass human consent and quiet hours. Starting a real live investigation is 
 Focused API checks passed under both the database owner and `pramana_app`, including replay,
 withdrawal, override audit, link expiry and reuse, and tenant isolation. The mail test uses a
 fake transport and the live planner test uses the in-process simulator. Hindi and Marathi wording
-still needs native review. Deployment of migration 0017 must repeat the schema revoke for
-`anon` and `authenticated`.
+still needs native review. Deployment of any migration on this branch (0017 to 0019, the last one
+adds workspace deletion) must repeat the schema revoke for `anon` and `authenticated`.
 
 The consent-request idempotency response is encrypted at rest so a retry can return the same
 link without leaving its bearer secret in plaintext in the database. On migration rollback,
@@ -61,6 +61,7 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | Answer words per outcome | Pushed | `e86e800`: `Probe.outcome_words`, `ServicePoint.words`, passed to all extractors. ruff, mypy, API drift and focused suites pass locally |
 | Pending invitations in `/v1/me` | Pushed | `ef29567`: migration 0015 adds read-only policies limited to the signed-in person's verified email; `POST /v1/invitations/accept-pending`; shown on the welcome step. Invitation, account and RLS tests pass as the restricted role; UI 48 passed. The join button has no browser journey of its own yet |
 | Personal data vault, consent, erasure | Pushed | `b7ad488`: migration 0016 `person_keys`, `personal_texts`, `consents`; AES-256-GCM with one data key per person, wrapped by a master key held in the process (`PRAMANA_PII_KEY`, required in production). Cloud KMS is not wired: it replaces `MasterKey` at deployment. Directory names sealed, and for site investigations names, reports and transcripts stay out of events and rows; erasure also scrubs saved idempotent responses. `POST .../people/{id}/erase` and consent routes added. The later consent gate and screens are described in the Nov 9 update above |
+| Cursor list pages and workspace retention | Implemented on `nov9/pagination-deletion` | Migrations 0017-0019 add consent gates, verified workspace domains, signed organization- and filter-bound keyset cursors, bounded pages, deletion state and list indexes. Growing workspace lists and join-request history now return `items`, `limit` and `next_cursor`; owners can export a streamed JSON-per-table ZIP, delete with a 30-day restore window, and restore before scheduled purge. The purge job removes personal rows, redacts mutable personal data, preserves sealed events and audit entries, and aborts on readable personal text. API, RLS, browser and purge evidence is recorded in the C builder report. The daily maintenance job still needs deployment scheduling |
 
 | New kinds of site | Tested locally | `test_new_kinds_of_site.py`, through the real core and simulator by API, under owner and restricted database roles: a hospital, an office and a metro station built from empty, each reaching the right decision for two injected faults, with exact replay and seal. Also a contradicting witness, two simultaneous faults, self-approval refused, no hostel wording, nothing personal in the log. Medical gas and nurse call equipment types added. Not driven through the browser |
 | Real Google sign-in | Partly checked | First sign-in with the owner's account verified in the database on `localhost:3102`. Returning user, cancel at Google and wrong-account invitation not yet exercised on real Google |
@@ -73,9 +74,11 @@ Matched by test name and scope, not by re-reading each assertion.
 
 | Result | Rows |
 |---|---|
-| Automated test found | ID-01, 02, 03, 04, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 09, 10; DA-01, 04, 05; PA-09 |
+| Automated test found | ID-01, 02, 03, 04, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 07, 09, 10; DA-01, 04, 05, 07; PA-09 |
 | Partly covered | ID-06 (address check and switch-account prompt; the masked message is not asserted in a browser); ID-11 (disabled sign-in only); OR-01, OR-02 (saved preference, no switcher journey); OR-04 (access ends; stream closing not tested for removal); OR-05 (roles change; mid-session refresh not tested); OR-08 (suggestions; slug change and redirects not built); OR-11 (self-approval refused; "Invite an approver" not tested); DA-02, DA-03, DA-06, DA-08 (server rules; banners not tested) |
-| Not built | OR-07 (organization deletion, R3); DA-07 (list pages use offset, not cursor) |
+| Not built | None of the listed slice rows |
+
+OR-07 has API coverage for export isolation, deleted-route refusal, member access, restore and purge, plus a browser journey for the deleted-workspace notice and owner restore. DA-07 has a 2,000-row SQL-seeded pagination test, insertion-between-pages and cursor-binding checks, restricted-role coverage, and a browser request-count assertion. See the C builder report for exact commands and results.
 
 ## 2026-11-09: verified workspace domain joining
 
@@ -128,6 +131,11 @@ Done since the morning plan: onboarding, the workspace console on organization r
 preferences, people per site, the adaptive home, practice investigations on a workspace's own
 model, team invitations, model health and settings pages. Still open:
 
+- Deployment of the cursor and deletion work (not done): apply migrations 0017 to 0019, repeat the
+  revoke of `anon` and `authenticated` on the Pramana schema, provision the non-superuser
+  maintenance role described in `WORKSPACE_RETENTION.md`, then schedule
+  `scripts/purge_deleted_workspaces.py` as a daily job. Until the job runs, workspaces past their
+  30-day window are not purged.
 - The legacy single-site console pages remain for accounts with global staff roles and their
   tests; retire them (and `DEFAULT_PACK`) once the real-stack fixtures use workspaces.
 - Live investigations with real people (calls, messages, work orders) are R3; a live site can
@@ -178,3 +186,9 @@ membership to model removal. During iteration on the uncommitted migration, the 
 database still had the earlier event-key constraint. It was aligned with the revised test schema
 before rerunning the full downgrade/upgrade and security checks. All 80 checks then passed. No
 committed migration was rewritten, and no demo or deployed database was involved.
+
+A local browser run could fall back to a database that the checkout's `PRAMANA_DB_NAMES` did not
+list, and reset it. The real-stack runner now refuses unless `E2E_DATABASE` is explicit and
+allowlisted, and the Python suites, the e2e harness and the load test use the same check
+(`scripts/db_guard.py`). The Python suites no longer default to any database, and CI runs the
+safety tests in both the web and Python jobs.

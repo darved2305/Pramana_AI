@@ -497,6 +497,52 @@ def test_published_site_models_are_immutable(db_urls: tuple[str, str]) -> None:
     _run(check)
 
 
+def test_runtime_role_cannot_use_purge_flag_to_edit_a_published_model(
+    db_urls: tuple[str, str],
+) -> None:
+    async def check() -> None:
+        org, _ = await _seed_two_orgs(db_urls[0])
+        db = Database(create_async_engine(db_urls[1]))
+        owner = create_async_engine(db_urls[0])
+        try:
+            with acting_for(org):
+                async with db.transaction() as session:
+                    site = (await session.execute(text("select id from sites"))).scalar_one()
+                    await session.execute(
+                        text(
+                            "insert into site_models (id,org_id,site_id,version,status,spec,"
+                            "spec_sha256,source,validation) values "
+                            "(:id,:org,:site,1,'published','{}','\\x00','{}','{}')"
+                        ),
+                        {"id": ids.uuid7(), "org": org, "site": site},
+                    )
+                async with owner.begin() as conn:
+                    await conn.execute(
+                        text(
+                            "update organizations set deleted_at=now()-interval '31 days', "
+                            "purge_after=now()-interval '1 day' where id=:org"
+                        ),
+                        {"org": org},
+                    )
+
+                async def mutate() -> None:
+                    async with db.transaction() as session:
+                        await session.execute(
+                            text("select set_config('app.purge_personal_data','on',true)")
+                        )
+                        await session.execute(
+                            text("update site_models set source=null, validation=null")
+                        )
+
+                with pytest.raises(DBAPIError, match="immutable"):
+                    await mutate()
+        finally:
+            await owner.dispose()
+            await db.dispose()
+
+    _run(check)
+
+
 @pytest.mark.parametrize(
     "statement",
     [

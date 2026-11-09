@@ -159,10 +159,10 @@ def test_track_record_counts_only_revealed_truth(account_core: TestClient) -> No
     with TestClient(client.app.state.sim._http._transport.app) as sim:
         final, _ = run_to_conclusion(Scoped(), sim, initial)  # type: ignore[arg-type]
     # Nothing is known until the truth is: Pramana's own conclusion is not evidence.
-    assert client.get(record_path).json() == []
+    assert client.get(record_path).json()["items"] == []
     revealed = post(client, f"{investigations}/{final['id']}/reveal")
     assert revealed.status_code == 200, revealed.text
-    records = {r["person_id"]: r for r in client.get(record_path).json()}
+    records = {r["person_id"]: r for r in client.get(record_path).json()["items"]}
     assert records, "someone answered"
     for r in records.values():
         assert r["matched"] == r["checked"] > 0  # the bot answered truthfully

@@ -123,7 +123,7 @@ test("staff record and withdraw consent, and only owners or admins can erase, wi
   await expect(page.getByText("Meena was erased")).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit" })).toHaveCount(1);
   const listed = await (await page.request.get(people)).json();
-  expect(listed.map((x: { person: { id: string } }) => x.person.id)).toEqual(["p_ravi"]);
+  expect(listed.items.map((x: { person: { id: string } }) => x.person.id)).toEqual(["p_ravi"]);
 
   // An operator can manage consent, but is never offered erasure and the server refuses it too.
   const invited = await page.request.post(`/api/core/v1/orgs/${ws.organization.slug}/invitations`, {

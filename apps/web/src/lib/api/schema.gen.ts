@@ -250,7 +250,7 @@ export interface paths {
         };
         /**
          * List Investigations
-         * @description Newest first. ``status`` may repeat; ``q`` searches the report text and the id.
+         * @description Newest first with a stable keyset; sealed reports match by ID only.
          */
         get: operations["list_investigations_v1_investigations_get"];
         put?: never;
@@ -749,7 +749,8 @@ export interface paths {
         get: operations["organization_v1_orgs__org__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Workspace */
+        delete: operations["delete_workspace_v1_orgs__org__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -808,6 +809,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{org}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Workspace */
+        get: operations["export_workspace_v1_orgs__org__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{org}/home": {
         parameters: {
             query?: never;
@@ -834,7 +852,7 @@ export interface paths {
         };
         /**
          * List Investigations
-         * @description Newest first. ``status`` may repeat; ``q`` searches the report text and the id.
+         * @description Newest first with a stable keyset; sealed reports match by ID only.
          */
         get: operations["list_investigations_v1_orgs__org__investigations_get"];
         put?: never;
@@ -1310,6 +1328,23 @@ export interface paths {
          * @description Owners and admins remove anyone; everyone may remove themselves (leave).
          */
         post: operations["remove_member_v1_orgs__org__members__member_id__remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Workspace */
+        post: operations["restore_workspace_v1_orgs__org__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2162,6 +2197,78 @@ export interface components {
             preferences: components["schemas"]["AccountPreferences"];
             user: components["schemas"]["AuthSession"];
         };
+        /** CursorPage[ConsentRecord] */
+        CursorPage_ConsentRecord_: {
+            /** Items */
+            items: components["schemas"]["ConsentRecord"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPage[InvitationView] */
+        CursorPage_InvitationView_: {
+            /** Items */
+            items: components["schemas"]["InvitationView"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPage[JoinRequestView] */
+        CursorPage_JoinRequestView_: {
+            /** Items */
+            items: components["schemas"]["JoinRequestView"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPage[PersonTrackRecord] */
+        CursorPage_PersonTrackRecord_: {
+            /** Items */
+            items: components["schemas"]["PersonTrackRecord"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPage[SiteModelSummary] */
+        CursorPage_SiteModelSummary_: {
+            /** Items */
+            items: components["schemas"]["SiteModelSummary"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPage[SitePerson] */
+        CursorPage_SitePerson_: {
+            /** Items */
+            items: components["schemas"]["SitePerson"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPage[SiteSummary] */
+        CursorPage_SiteSummary_: {
+            /** Items */
+            items: components["schemas"]["SiteSummary"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** CursorPage[WorkspaceMember] */
+        CursorPage_WorkspaceMember_: {
+            /** Items */
+            items: components["schemas"]["WorkspaceMember"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
         /** DecisionBelief */
         DecisionBelief: {
             /** Id */
@@ -2170,6 +2277,11 @@ export interface components {
             label: string;
             /** Probability */
             probability: number;
+        };
+        /** DeleteOrganization */
+        DeleteOrganization: {
+            /** Confirmation */
+            confirmation: string;
         };
         /** DependsOn */
         DependsOn: {
@@ -2580,10 +2692,8 @@ export interface components {
             items: components["schemas"]["InvestigationSummary"][];
             /** Limit */
             limit: number;
-            /** Offset */
-            offset: number;
-            /** Total */
-            total: number;
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** InvestigationState */
         InvestigationState: {
@@ -2997,6 +3107,21 @@ export interface components {
             organization: components["schemas"]["OrganizationSummary"];
             sandbox_site: components["schemas"]["SiteSummary"];
         };
+        /** OrganizationDeletion */
+        OrganizationDeletion: {
+            /**
+             * Deleted At
+             * Format: date-time
+             */
+            deleted_at: string;
+            /** Organization Id */
+            organization_id: string;
+            /**
+             * Purge After
+             * Format: date-time
+             */
+            purge_after: string;
+        };
         /** OrganizationDomain */
         OrganizationDomain: {
             /** Domain */
@@ -3035,11 +3160,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Deleted At */
+            deleted_at?: string | null;
             /** Id */
             id: string;
             kind: components["schemas"]["OrganizationKind"];
             /** Name */
             name: string;
+            /** Purge After */
+            purge_after?: string | null;
             /** Roles */
             roles: components["schemas"]["OrganizationRole"][];
             /** Slug */
@@ -4220,7 +4349,7 @@ export interface operations {
                 status?: components["schemas"]["InvestigationStatus"][] | null;
                 q?: string | null;
                 limit?: number;
-                offset?: number;
+                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -5253,6 +5382,58 @@ export interface operations {
             };
         };
     };
+    delete_workspace_v1_orgs__org__delete: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteOrganization"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDeletion"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_domains_v1_orgs__org__domains_get: {
         parameters: {
             query?: never;
@@ -5474,6 +5655,37 @@ export interface operations {
             };
         };
     };
+    export_workspace_v1_orgs__org__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     home_v1_orgs__org__home_get: {
         parameters: {
             query?: never;
@@ -5511,7 +5723,7 @@ export interface operations {
                 status?: components["schemas"]["InvestigationStatus"][] | null;
                 q?: string | null;
                 limit?: number;
-                offset?: number;
+                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -6331,7 +6543,10 @@ export interface operations {
     };
     list_invitations_v1_orgs__org__invitations_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -6346,7 +6561,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InvitationView"][];
+                    "application/json": components["schemas"]["CursorPage_InvitationView_"];
                 };
             };
             /** @description Validation Error */
@@ -6461,7 +6676,10 @@ export interface operations {
     };
     list_join_requests_v1_orgs__org__join_requests_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -6476,7 +6694,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JoinRequestView"][];
+                    "application/json": components["schemas"]["CursorPage_JoinRequestView_"];
                 };
             };
             /** @description Validation Error */
@@ -6594,7 +6812,10 @@ export interface operations {
     };
     members_v1_orgs__org__members_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -6609,7 +6830,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkspaceMember"][];
+                    "application/json": components["schemas"]["CursorPage_WorkspaceMember_"];
                 };
             };
             /** @description Validation Error */
@@ -6723,9 +6944,60 @@ export interface operations {
             };
         };
     };
-    sites_v1_orgs__org__sites_get: {
+    restore_workspace_v1_orgs__org__restore_post: {
         parameters: {
             query?: never;
+            header: {
+                /** @description Reuse this key only when retrying the same action. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSummary"];
+                };
+            };
+            /** @description Missing or invalid idempotency key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Action in flight or business conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sites_v1_orgs__org__sites_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -6740,7 +7012,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SiteSummary"][];
+                    "application/json": components["schemas"]["CursorPage_SiteSummary_"];
                 };
             };
             /** @description Validation Error */
@@ -7040,7 +7312,10 @@ export interface operations {
     };
     models_v1_orgs__org__sites__site_id__models_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -7056,7 +7331,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SiteModelSummary"][];
+                    "application/json": components["schemas"]["CursorPage_SiteModelSummary_"];
                 };
             };
             /** @description Validation Error */
@@ -7105,7 +7380,11 @@ export interface operations {
     };
     list_people_v1_orgs__org__sites__site_id__people_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                q?: string | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -7121,7 +7400,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SitePerson"][];
+                    "application/json": components["schemas"]["CursorPage_SitePerson_"];
                 };
             };
             /** @description Validation Error */
@@ -7190,7 +7469,11 @@ export interface operations {
     };
     track_record_v1_orgs__org__sites__site_id__people_track_record_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                person_id?: string[] | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -7206,7 +7489,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PersonTrackRecord"][];
+                    "application/json": components["schemas"]["CursorPage_PersonTrackRecord_"];
                 };
             };
             /** @description Validation Error */
@@ -7327,7 +7610,11 @@ export interface operations {
     };
     list_consents_v1_orgs__org__sites__site_id__people__person_id__consents_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                purpose?: ("contact_for_investigations" | "voice_processing") | null;
+            };
             header?: never;
             path: {
                 org: string;
@@ -7344,7 +7631,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConsentRecord"][];
+                    "application/json": components["schemas"]["CursorPage_ConsentRecord_"];
                 };
             };
             /** @description Validation Error */
