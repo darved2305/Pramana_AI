@@ -179,7 +179,10 @@ database still had the earlier event-key constraint. It was aligned with the rev
 before rerunning the full downgrade/upgrade and security checks. All 80 checks then passed. No
 committed migration was rewritten, and no demo or deployed database was involved.
 
-## Nov 9 budget deployment preparation
+## Nov 9 budget deployment preparation (historical)
+
+The following records the state before Task G and is superseded by the final live deployment update
+below.
 
 Task B is locally ready for the human deploy gate on branch `nov9/budget-deploy`. Commit `432d71a`
 adds durable simulator state and restart/replay checks. Commit `27dde03` adds the standalone budget
@@ -221,3 +224,48 @@ which this checkout does not contain, and stopped before applying a migration or
 query or cleanup targeted that database. The passing whole-suite rerun explicitly used the allowlisted
 `pramana_dp_e2e`. The owner of the shared cluster should review the stale `pramana_e2e` migration
 state; this work did not inspect or alter that database further.
+
+## Task G live deployment update, 2026-11-09
+
+The budget deployment is live in GCP project luminous-slice-514102-f4, region
+asia-south1. Commit 980bf4d adds security headers and deploys the final stage image.
+The URL is https://pramana-web-nzxslh75pq-el.a.run.app and must remain team-only.
+The three Cloud Run services are ready with 100% traffic on these revisions:
+
+| Service | Revision | Image digest |
+|---|---|---|
+| pramana-web | pramana-web-00009-k6j | pramana-web@sha256:c4de3687d6b0f1181f54b028b47cde1a451b443d3560d25ed8e9e12b4b4c64c6 |
+| pramana-core | pramana-core-00004-ctb | pramana-py@sha256:350168dbe5dfd27bd5e340897df5292292696926c2ecaa3ac567c75f9f762bc3 |
+| pramana-sim | pramana-sim-00005-5dk | pramana-py@sha256:350168dbe5dfd27bd5e340897df5292292696926c2ecaa3ac567c75f9f762bc3 |
+
+The migration job and grant audit completed successfully at schema revision 0019.
+Read-only database checks confirmed the runtime roles cannot superuser, bypass row
+security, create databases or create roles. No tenant or personal-data rows were read
+or added. Supabase remains in Singapore under the owner's staging-only exception. The
+database move and five credential rotations are still parked, and the migrator password
+remains shorter than the documented 16-character minimum. Do not put real personal data
+in the app and do not share the URL outside the team.
+
+The public smoke passed the landing page, login page, Next static asset, core health
+through the web proxy and /ready. Follow-up checks confirmed the unknown route returns
+404; HSTS, CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy and
+Permissions-Policy are present on pages and 404s. Bundled headless Chromium rendered the
+landing and login pages with no browser errors and showed the Google sign-in button.
+The HTTP-only Google start request returned a 302 to accounts.google.com; its configured
+client ID and callback matched, and its flow cookie had Secure, HttpOnly, SameSite and
+Path attributes. The redirect was not followed. No real Google sign-in, email or
+personal-data operation was attempted. Nikhil must add this callback manually to the
+existing OAuth client's authorized redirect URIs:
+
+https://pramana-web-nzxslh75pq-el.a.run.app/api/core/v1/auth/google/callback
+
+No JavaScript origin is used by this server-side authorization-code flow. Budget listing,
+billing report reads and budget changes were not performed. The owner-confirmed INR 1,000
+monthly alert is not a spend cap.
+
+After the security-header update, web typecheck, lint, copy check, worklet check and the
+one-worker Playwright suite all passed; the suite had 53 tests. The full Python suite
+passed 4,127 tests before this web-only change. The exact commands, earlier build fixes,
+rollout details and teardown steps are in the report at
+C:\Dev\Pramana-AI\.claude\worktrees\production\.cache\nov9\out\G-report.md
+and in [DEPLOY_BUDGET_GCP.md](DEPLOY_BUDGET_GCP.md).
