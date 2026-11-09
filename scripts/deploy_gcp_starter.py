@@ -1364,6 +1364,19 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
         probe_path="/",
         public=True,
     )
+    # --no-traffic pins the previous revision. Restore traffic to latest after backend URLs are set.
+    gcloud.run(
+        [
+            "run",
+            "services",
+            "update-traffic",
+            "pramana-web",
+            "--to-latest",
+            f"--region={REGION}",
+            f"--project={ctx.project}",
+            "--quiet",
+        ]
+    )
     smoke(gcloud, ctx)
     print(f"Web URL: {web_url}")
     print(f"Google OAuth authorized redirect URI: {web_url}/api/core/v1/auth/google/callback")
