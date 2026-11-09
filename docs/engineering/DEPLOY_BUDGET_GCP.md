@@ -29,7 +29,7 @@ usage and regional prices in its [pricing table](https://cloud.google.com/run/pr
 
 | Resource | Configuration | Planning cost per month |
 |---|---|---:|
-| Cloud Run web, core and simulator | `asia-south1`, request billing, minimum 0 and maximum 2 instances each; one CPU each; 512 MiB web/sim and 1 GiB core; migration job runs only for deploys | INR 0 within the account-wide monthly allowance of 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests; otherwise metered by region. One service has an INR 500 monthly spend cap when eligible |
+| Cloud Run web, core and simulator | `asia-south1`, request billing, minimum 0 and maximum 2 instances each; one CPU each; 512 MiB web/sim and 1 GiB core; migration job runs only for deploys | INR 0 within the account-wide monthly allowance of 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests; otherwise metered by region. A project-scoped Cloud Run spend cap covers all Cloud Run workloads when eligible |
 | Supabase PostgreSQL | Free plan in `ap-south-1`; one project, separate migrator, `pramana_app` and `pramana_sim` roles | INR 0 within Free limits; 500 MB database, may pause after inactivity, and no automatic backup guarantee |
 | Cloud Build | Two SHA-tagged images, default `e2-standard-2` workers | INR 0 for the first 2,500 build minutes per billing account each month; then about INR 0.50 per minute at the planning conversion ([pricing](https://cloud.google.com/build/pricing)) |
 | Artifact Registry | One regional Docker repository; delete untagged images after 7 days, tagged images after 90 days, keep the five newest versions per image package | INR 0 for the first 0.5 GiB of storage; about INR 8.40 per GiB-month above that, before tax ([pricing](https://cloud.google.com/artifact-registry/pricing)) |
@@ -46,13 +46,13 @@ for unmodelled usage. Measure the first month's bill before accepting real users
 allowance are controls, not a promise that the whole project cannot exceed INR 1,000.
 
 The project alert budget is scoped to `luminous-slice-514102-f4` with 50%, 80% and 100% thresholds.
-The Cloud Run spend cap uses the Cloud Run service ID `152E-C115-5142`, with the same notification
-thresholds. Google says spend caps apply only to one project and one service, pause that service
-for the rest of the monthly period when gross estimated spend reaches the cap, and can overshoot
-because enforcement is not instant and in-flight requests can finish. The cap resets at the next
-month. Manually lifting it disables re-triggering for the rest of that month. Other services and
-projects keep running. Reseller billing accounts are out of scope. The deploy script warns if it
-cannot create a cap; verify it in Billing before enabling real-user traffic.
+The Cloud Run spend cap uses service ID `152E-C115-5142` and applies to all Cloud Run resource types
+in the selected project, including services and jobs. It pauses Cloud Run workloads in that project
+for the rest of the monthly period when gross estimated spend reaches the cap. Enforcement can
+overshoot because it is not instant and in-flight requests can finish. The cap resets at the next
+month. Manually lifting it disables re-triggering for the rest of that month. Other Google Cloud
+products and projects keep running. Reseller billing accounts are out of scope. The deploy script
+warns if it cannot create a cap; verify it in Billing before enabling real-user traffic.
 
 ## What the deploy script creates
 
@@ -156,8 +156,10 @@ pg_dump --host $env:PRAMANA_SUPABASE_POOLER_HOST --port 5432 `
   --username "postgres.$env:PRAMANA_SUPABASE_REF" `
   --dbname $env:PRAMANA_SUPABASE_DATABASE --format=custom `
   --no-owner --no-acl --password --file $dump
+if ($LASTEXITCODE -ne 0) { throw 'pg_dump failed; no backup was created.' }
 age --encrypt --recipient-file $env:PRAMANA_BACKUP_RECIPIENT_FILE `
   --output $archive $dump
+if ($LASTEXITCODE -ne 0) { throw 'age encryption failed; the plaintext dump was kept.' }
 Remove-Item -LiteralPath $dump
 ```
 
@@ -173,10 +175,13 @@ $dump = Join-Path $staging 'pramana-mumbai-restore-drill.dump'
 $archive = Join-Path $staging 'pramana-mumbai-restore-drill.dump.age'
 age --decrypt --identity-file $env:PRAMANA_BACKUP_IDENTITY_FILE `
   --output $dump $archive
+if ($LASTEXITCODE -ne 0) { throw 'age decryption failed; restore was not started.' }
 pg_restore --clean --if-exists --no-owner --no-acl `
   --dbname 'postgresql://pramana@localhost:5433/pramana_dp_test' $dump
+if ($LASTEXITCODE -ne 0) { throw 'pg_restore failed; the restored database needs review.' }
 $env:DATABASE_URL = 'postgresql+asyncpg://pramana@localhost:5433/pramana_dp_test'
 uv run python -m pramana_core.grant_audit --apply-revokes
+if ($LASTEXITCODE -ne 0) { throw 'grant audit failed; do not route traffic to this restore.' }
 Remove-Item -LiteralPath $dump
 ```
 
