@@ -918,7 +918,7 @@ def ensure_build_identity(gcloud: Gcloud, ctx: Context) -> None:
                 f"--project={ctx.project}",
             ]
         )
-    lifecycle = [{"action": {"type": "Delete"}, "condition": {"age": 7}}]
+    lifecycle = {"rule": [{"action": {"type": "Delete"}, "condition": {"age": 7}}]}
     lifecycle_path = write_temp_json(lifecycle)
     try:
         gcloud.run(

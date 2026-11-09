@@ -300,6 +300,29 @@ def test_images_are_built_by_the_dedicated_build_account_and_bucket() -> None:
         assert f"--gcs-log-dir=gs://{deploy.build_bucket(context)}/logs" in command
 
 
+def test_build_bucket_lifecycle_uses_cloud_storage_json_shape() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+
+    class Recorder:
+        dry_run = True
+
+        def __init__(self) -> None:
+            self.lifecycle: dict[str, object] | None = None
+
+        def run(
+            self, args: list[str], **_kwargs: object
+        ) -> deploy.subprocess.CompletedProcess[str]:
+            if args[:3] == ["storage", "buckets", "update"]:
+                path = Path(args[4].split("=", 1)[1])
+                self.lifecycle = deploy.json.loads(path.read_text(encoding="utf-8"))
+            return deploy.subprocess.CompletedProcess(args, 0, "{}", "")
+
+    recorder = Recorder()
+    deploy.ensure_build_identity(recorder, context)
+
+    assert recorder.lifecycle == {"rule": [{"action": {"type": "Delete"}, "condition": {"age": 7}}]}
+
+
 def test_short_parked_passwords_warn_but_rotated_passwords_must_be_long(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
