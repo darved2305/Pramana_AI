@@ -9,9 +9,10 @@ from auth_testkit import AUTO, CSRF, PASSWORD, login, secure_core
 from core_testkit import body
 from fastapi.testclient import TestClient
 from participant_bot import PHRASES
+from test_google_auth import sql
 
 from pramana_core.auth.passwords import hash_password, verify_password
-from pramana_core.auth.service import LoginThrottle
+from pramana_core.auth.service import LoginThrottle, token_hash
 
 pytestmark = pytest.mark.db
 __all__ = ["secure_core"]
@@ -65,6 +66,21 @@ def test_logged_out_cookie_is_dead_even_if_replayed(secure_core: TestClient) -> 
     assert c.post("/v1/auth/logout", headers=CSRF).status_code == 204
     c.cookies.set("pramana_session", stolen)
     assert c.get("/v1/auth/session").status_code == 401
+
+
+def test_expired_session_is_not_renewed(secure_core: TestClient, migrated_db: str) -> None:
+    c = login(secure_core, "operator")
+    cookie = c.cookies.get("pramana_session")
+    assert cookie is not None
+    sql(
+        migrated_db,
+        "update sessions set expires_at=now()-interval '1 second', "
+        "absolute_expires_at=now()-interval '1 second', idle_expires_at=now()-interval '1 second' "
+        "where token_hash=:token_hash",
+        {"token_hash": token_hash(cookie)},
+    )
+    assert c.get("/v1/auth/session").status_code == 401
+    assert c.get("/v1/investigations").status_code == 401
 
 
 def test_wrong_password_unknown_user_and_lockout(secure_core: TestClient) -> None:
