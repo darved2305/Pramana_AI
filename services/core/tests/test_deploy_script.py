@@ -260,17 +260,17 @@ def test_logging_bucket_location_is_read_from_its_resource_name() -> None:
         deploy.validate_logging_bucket(parsed, context)
 
 
-def test_cloud_run_log_filters_drop_auth_and_consent_capability_urls() -> None:
-    for path_pattern in ("auth/google/(start|callback)", "consent-links/", "/consent/"):
-        assert path_pattern in deploy.SENSITIVE_REQUEST_URL_FILTER
-        assert path_pattern in deploy.SENSITIVE_REQUEST_LOGS_FILTER
+def test_cloud_run_request_logs_with_visitor_metadata_are_excluded() -> None:
+    assert deploy.CLOUD_RUN_REQUEST_LOG_FILTER in deploy.REQUEST_METADATA_LOGS_FILTER
+    assert "run.googleapis.com%2Frequests" in deploy.REQUEST_METADATA_LOGS_FILTER
+    assert f"NOT ({deploy.CLOUD_RUN_REQUEST_LOG_FILTER})" in deploy.LOG_FILTER
+    assert 'resource.labels.service_name="pramana-web"' in deploy.REQUEST_METADATA_LOGS_FILTER
+    assert 'resource.labels.service_name="pramana-core"' in deploy.REQUEST_METADATA_LOGS_FILTER
+    assert 'resource.labels.service_name="pramana-sim"' in deploy.REQUEST_METADATA_LOGS_FILTER
+    assert deploy.MIGRATION_LOGS_FILTER in deploy.LOG_FILTER
 
-    assert f"NOT ({deploy.SENSITIVE_REQUEST_URL_FILTER})" in deploy.LOG_FILTER
-    assert 'resource.labels.service_name="pramana-web"' in deploy.SENSITIVE_REQUEST_LOGS_FILTER
-    assert 'resource.labels.service_name="pramana-core"' in deploy.SENSITIVE_REQUEST_LOGS_FILTER
 
-
-def test_logging_sink_and_default_sink_exclude_sensitive_request_urls() -> None:
+def test_logging_sink_and_default_sink_exclude_visitor_request_metadata() -> None:
     context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
     destination = (
         f"logging.googleapis.com/projects/{context.project}/locations/"
@@ -329,7 +329,7 @@ def test_logging_sink_and_default_sink_exclude_sensitive_request_urls() -> None:
     )
     assert any(
         "--update-exclusion=name=pramana-sensitive-requests" in command
-        and f"filter={deploy.SENSITIVE_REQUEST_LOGS_FILTER},disabled=" in command
+        and f"filter={deploy.REQUEST_METADATA_LOGS_FILTER},disabled=" in command
         for command in commands
     )
 

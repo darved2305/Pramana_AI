@@ -40,10 +40,11 @@ usage and regional prices in its [pricing table](https://cloud.google.com/run/pr
 | Billing budget | Existing INR 1,000 monthly project alert `pramana-inr-1000` (created by the billing owner, issue #7) at 50%, 80% and 100% of actual spend. No Cloud Run spend cap is configured | No separate budget-resource charge. An alert notifies; it does not stop spend, and it does not cover Supabase ([budgets](https://docs.cloud.google.com/billing/docs/how-to/budgets)) |
 | Database backups | Supabase Free has no automatic backup guarantee. A pg_dump-based backup and restore drill is required below | Not priced until an approved India storage destination and schedule are chosen. Reserve part of the non-Run allowance |
 
-Cloud Run request logs include the full request URL. The `pramana-run` sink excludes Google OAuth
-start and callback URLs, consent-link URLs and `/consent/` capability URLs. A matching exclusion on
-the `_Default` sink drops those request records instead of storing them in its default destination.
-Other Cloud Run request logs and the migration job logs remain in the regional bucket for 180 days.
+Cloud Run managed request records include full URLs, client IP addresses and user-agent headers.
+The `pramana-run` sink excludes every request record for the three services, and a matching
+`_Default` exclusion drops them instead of storing them in its default destination. Container logs
+and migration job logs remain in the regional bucket for 180 days. These filters apply to new log
+entries; previously stored request records remain subject to their existing bucket retention.
 
 The deployed core uses a pool size of three and zero overflow, with a service-level maximum of two
 instances, for up to six `pramana_app` sessions. The simulator uses one connection per instance,
