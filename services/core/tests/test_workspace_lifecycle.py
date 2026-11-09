@@ -50,7 +50,8 @@ def test_workspace_lifecycle_and_lists_hide_other_organizations(account_core: Te
         if path.startswith("/v1/orgs/{org}")
         and any(p["name"] == "cursor" for p in definition.get("get", {}).get("parameters", []))
     )
-    assert len(paged) == 8, paged
+    assert len(paged) == 9, paged
+    assert "/v1/orgs/{org}/join-requests" in paged
     operations = [
         ("GET", f"{root}/export"),
         ("DELETE", root),
