@@ -29,6 +29,7 @@ export default function WorkspaceSettingsPage() {
   const canManage = ws.roles.has("owner") || ws.roles.has("admin");
   const members = useLoad(`members|${ws.org.id}`, (s) => ws.api.members(s));
   const invitations = useLoad(canManage ? `invitations|${ws.org.id}` : null, (s) => ws.api.invitations(s));
+  const reloadInvitations = invitations.reload;
   const [email, setEmail] = useState("");
   const [roles, setRoles] = useState<InvitedRole[]>(["operator"]);
   const [busy, setBusy] = useState(false);
@@ -51,7 +52,7 @@ export default function WorkspaceSettingsPage() {
       });
       setCopied(false);
       setEmail("");
-      invitations.reload();
+      reloadInvitations();
     } catch (x) {
       setError(describeError(x));
     } finally {
@@ -72,7 +73,7 @@ export default function WorkspaceSettingsPage() {
           setLink((value) => value?.id === current.id
             ? { ...value, delivery: current.email_delivery }
             : value);
-          invitations.reload();
+          reloadInvitations();
           return;
         }
       } catch {
@@ -85,7 +86,7 @@ export default function WorkspaceSettingsPage() {
       active = false;
       clearTimeout(timer);
     };
-  }, [invitations.reload, link, ws.api]);
+  }, [reloadInvitations, link, ws.api]);
 
   return (
     <div className="flex flex-col gap-6 pt-4">
