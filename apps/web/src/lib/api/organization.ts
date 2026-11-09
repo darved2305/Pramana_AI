@@ -26,7 +26,6 @@ import type {
   PersonTrackRecord,
   SiteSummary,
   OrganizationSummary,
-  ParticipantPatch,
   SitePersonPatch,
   WorkspaceHome,
   WorkspaceMember,

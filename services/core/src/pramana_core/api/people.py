@@ -10,9 +10,8 @@ from sqlalchemy import select
 from pramana_contracts import (
     ConsentPurpose,
     ConsentRecord,
-    CursorPage,
-    ParticipantPatch,
     ConsentRequestCreated,
+    CursorPage,
     ParticipantSpec,
     PersonTrackRecord,
     RecordConsent,
@@ -21,10 +20,10 @@ from pramana_contracts import (
 )
 
 from .. import ids
+from ..consent import email_consent_request
 from ..cursors import CursorCodec
 from ..db import Database, InvestigationRow, ObservationRow
 from ..errors import ApiError, not_found
-from ..consent import email_consent_request
 from ..idempotency import idempotent
 from ..people import SitePeople, consent_view, person_etag, person_view
 from ..tenant_routes import OrganizationRoute
