@@ -549,6 +549,12 @@ Browser                         api                                   provider /
    - Retention: 72 hours. The implemented scoped reaper skips active row locks and runs during
      mutations or via `scripts/reap_idempotency.py`; a scheduled worker remains deployment work.
 3. **Commands with external effects** ("approve and notify the technician", "place a call"). One local transaction commits the state change and an outbox row. The worker calls the provider with a provider-side idempotency key derived from the outbox id, where the provider supports one. Where it does not, record the attempt and reconcile through status APIs or webhooks; never retry a non-idempotent call blindly (brandur).
+
+   Invitation, consent request, and domain join emails commit an encrypted outbox payload with the state change that requested the message. The payload contains only the recipient, subject and body, sealed with AES-GCM under `PRAMANA_PII_KEY`; organization id and outbox id are authenticated as context. The API starts a bounded drain after it sends the HTTP response, and `scripts/drain_email_outbox.py` repeats bounded drains until the due queue is empty for a Cloud Run Job. A PostgreSQL advisory lock elects one relay. A per-message advisory lock stays held through SMTP and result recording. A contact change, link replacement or revocation, or person removal waits for an active send before committing the invalidation; SMTP cannot recall a message it has already accepted. Attempts are recorded before SMTP, retry uses exponential backoff with jitter, and delivery stops after five attempts. A stable `Message-ID` and outbox id help correlate delivery, but SMTP has no idempotency key: if SMTP accepts a message and the process crashes before recording success, a later attempt can send it again. This is at-least-once delivery. The uncertain attempt remains in `email_outbox_attempts`; SMTP error text and message bodies are never logged. The encrypted payload is cleared after success or after the row becomes dead. Consent emails are cancelled and purged when their link is replaced, consumed, revoked or found expired before delivery, and when the person's contact address changes. Removing or erasing a person deletes their consent links, and the queued email row goes with them.
+
+   The consent-request response returns `queued` when the email intent is durable. Managers can poll the site and person scoped `GET /consent-requests/{request_id}` route for sent, queued, failed or no-email status; the bearer link itself is returned only by the create request. The dialog checks at most 20 times, about 20 seconds, and then tells the operator to copy the link if the email has still not arrived.
+
+   Invitations created before the outbox have no recorded delivery result. Settings shows their email status as unavailable instead of guessing that delivery failed.
 4. **Webhooks.** Verify the signature and timestamp, then `INSERT` into `inbox (provider, event_id)` under a unique constraint in the same transaction as the effect. Answer 2xx quickly and process asynchronously.
 5. **Events.** `idempotency_key` becomes unique per investigation, not globally.
 6. **Answers.** Duplicates are rejected today (`409 QUESTION_NOT_PENDING`). With idempotency keys, a retried answer gets its original `200` instead of a confusing conflict, and a second, different answer still gets the 409.
@@ -577,14 +583,14 @@ A Postgres-backed queue (Procrastinate, or a small owned `jobs` table processed 
 | `call.retry` | Participant unavailable; ring again once after 60 s (PRODUCT C3 failure path) | `(question_id, attempt)` |
 | `participant.cooldown_end` | "Later" answered; 15-minute cool-down | `(investigation_id, person_id)` |
 | `approval.expire`, `work_order.expire` | Expiry time | Approval or work-order id |
-| `notify.send` | Outbox row (WhatsApp, SMS, email) | Outbox id |
+| `notify.send` | Outbox row (email today; later WhatsApp or SMS) | Outbox id |
 | `tts.prefetch` | Likely next questions (D19 speculative synthesis), only if measured start latency calls for it | Audio cache key |
 | `investigation.nudge` | Waiting too long for answers or approval | `(investigation_id, kind, window)` |
 | `model.health_check` | Draft site model saved (§8.6) | `spec_sha256` |
 | `idempotency.reap`, `sessions.reap`, `auth_flows.reap` | Hourly | None needed |
 | `utterances.purge`, `person.erase` | Retention schedule, erasure request (§4.6) | Person or partition |
 | `export.build` | Data access request, organization export | Request id |
-| `outbox.relay` | Continuous (singleton) | Outbox id |
+| `outbox.relay` | After the email request response, plus a scheduled Cloud Run Job | Outbox id; `pg_try_advisory_lock` singleton |
 | `eval.nightly` | Adversarial state test with more examples, benchmark drift check (ARCHITECTURE_REVIEW item 6) | Date |
 
 ### 3.9 Limits, quotas and fairness
@@ -984,19 +990,40 @@ create table idempotency_keys (
   primary key (scope, principal, key)
 );
 
-create table outbox (
-  id               bigint generated always as identity primary key,
-  org_id           uuid not null,
-  topic            text not null,                    -- notify.send, call.place, webhook.deliver, ...
-  payload          jsonb not null,
-  dedupe_key       text unique,
+create table email_outbox (
+  id               uuid primary key,                 -- stable SMTP Message-ID and dedupe identity
+  org_id           uuid not null references organizations(id),
+  kind             text not null default 'invitation',
+  invitation_id    uuid unique references invitations(id), -- set for invitations
+  consent_link_id  uuid unique references consent_links(id), -- set for consent request email
+  state            text not null check (state in ('queued', 'sending', 'sent', 'dead')),
+  payload_enc      bytea,                              -- AEAD recipient, subject and body; purged on success/dead
+  attempts         int not null default 0 check (attempts between 0 and 5),
   available_at     timestamptz not null default now(),
-  attempts         int not null default 0,
   locked_until     timestamptz,
-  done_at          timestamptz,
-  last_error       text
+  sent_at          timestamptz,
+  dead_at          timestamptz,
+  last_error       text,                              -- reason code only, never provider text
+  created_at       timestamptz not null default now(),
+  check ((kind = 'invitation' and invitation_id is not null and consent_link_id is null)
+      or (kind = 'consent_request' and consent_link_id is not null and invitation_id is null)
+      or (kind not in ('invitation', 'consent_request') and invitation_id is null and consent_link_id is null)),
+  check (((state in ('queued', 'sending')) and payload_enc is not null)
+      or ((state in ('sent', 'dead')) and payload_enc is null))
 );
-create index outbox_ready on outbox (available_at) where done_at is null;
+create index email_outbox_ready on email_outbox (available_at, created_at) where state = 'queued';
+
+create table email_outbox_attempts (
+  org_id           uuid not null,
+  outbox_id        uuid not null,
+  attempt          int not null,
+  started_at       timestamptz not null default now(),
+  finished_at      timestamptz,
+  result           text not null,                     -- sending, sent, retry, dead, uncertain
+  error_type       text,                              -- exception class only
+  primary key (org_id, outbox_id, attempt),
+  foreign key (org_id, outbox_id) references email_outbox(org_id, id)
+);
 
 create table inbox (                                 -- provider webhooks, each processed once
   provider         text not null,
@@ -1100,9 +1127,9 @@ If an in-place migration is ever needed, use expand and contract:
 | Data | Where | Retention [T] | Erasure |
 |---|---|---|---|
 | Staff accounts | `users`, `user_identities`, `sessions` | Life of the account plus 30 days | Delete identities and sessions; audit entries keep a hashed actor id |
-| People directory (names, phone numbers) | `people`, encrypted per person | While active, plus 90 days after last use | Delete the person's data key (crypto-shredding); the row stays as a tombstone |
+| People directory (names, phone numbers) | `site_people` and `personal_texts`, encrypted per person | While active, plus 90 days after last use | Delete the person's data key (crypto-shredding); the row stays as a tombstone |
 | Consent records | `consents` | As long as needed to prove consent | Keep the minimal proof |
-| Reports, transcripts, readings | `utterances`, encrypted per person | 30 days (the prototype's NFR-07 said 7 days in development) | Purge job, or key deletion |
+| Reports and transcripts | `personal_texts`, encrypted per person | 30 days (the prototype's NFR-07 said 7 days in development) | Purge job, or key deletion |
 | Raw audio | Not stored (NFR-07) | None | Nothing to erase |
 | Event log | `events`: ids, outcomes, numbers | Life of the organization | Survives erasure; names render as "Erased person" |
 | Audit and security logs | `audit_log`, Cloud Logging | At least 180 days in India (CERT-In); 1 year [T] | Pseudonymized actor |
@@ -1912,11 +1939,13 @@ the database is confirmed in India and its backup restore has been tested.
 
 1. Pull request: the existing gates, plus the tenant-leak generator, migration tests and Schemathesis.
 2. Merge to `main`: build images once, tagged by SHA. GitHub Actions authenticates to Google Cloud with Workload Identity Federation, so no long-lived keys exist.
-3. Deploy to staging: run the migration job (expand only), deploy new revisions, run smoke tests (preflight adapted for staging) and the synthetic checks.
-4. Promote to production with manual approval: migrate (expand), then send 10% of traffic to the new revision, watch SLO burn for 30 minutes, then go to 100%. Roll back automatically by shifting traffic to the previous revision.
+3. Deploy to staging: run the migration job (expand only), run the personal data backfill with `uv run python scripts/backfill_personal_data.py --batch-size 100`, deploy new revisions, run smoke tests (preflight adapted for staging) and the synthetic checks.
+4. Promote to production with manual approval: migrate (expand), re-run the `REVOKE ALL` statements for `anon` and `authenticated` on the private `pramana` schema, run the resumable personal data backfill, then send 10% of traffic to the new revision, watch SLO burn for 30 minutes, then go to 100%. Roll back automatically by shifting traffic to the previous revision.
 5. Contract migrations (drops) ship in a later release, once no revision needs the old shape.
 
 Infrastructure is code (Terraform or OpenTofu), one workspace per environment. Feature flags decouple deploying from releasing.
+
+After every migration on Supabase, run `REVOKE ALL ON SCHEMA pramana FROM anon, authenticated`, `REVOKE ALL ON ALL TABLES IN SCHEMA pramana FROM anon, authenticated`, and the matching revoke on sequences and functions. Migration 0020 repeats these revokes against its current schema as a guard. The personal data backfill is a separate command rather than an Alembic data migration because it requires `PRAMANA_PII_KEY`, needs bounded transactions and resumable progress, and must not put personal values in migration output. Run it with the schema-owner migration connection before the new core revision receives traffic.
 
 ### 13.6 Secrets and keys
 

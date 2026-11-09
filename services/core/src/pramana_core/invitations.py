@@ -8,12 +8,10 @@ The invited address must be the signed-in person's verified email.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Literal
 
 from sqlalchemy import ColumnElement, func, select, tuple_
 
@@ -26,11 +24,17 @@ from .auth.service import Principal
 from .cursors import CursorCodec
 from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, acting_for
 from .errors import ApiError, not_found
-from .mail import Mailer
-from .observability import log
+from .outbox import (
+    EmailEnvelope,
+    EmailOutboxRow,
+    cancel_outbox_email,
+    delivery_status,
+    invitation_email,
+    seal_envelope,
+)
+from .vault import MasterKey
 
 LIFETIME = timedelta(days=7)
-SEND_TIMEOUT_S = 6.0
 INVALID = "this invitation link is not valid"
 
 
@@ -46,13 +50,14 @@ def _status(row: InvitationRow, now: datetime) -> str:
     return "expired" if row.expires_at <= now else "pending"
 
 
-def invitation_view(row: InvitationRow, inviter: str | None) -> InvitationView:
+def invitation_view(row: InvitationRow, inviter: str | None, delivery: str) -> InvitationView:
     return InvitationView.model_validate(
         {
             "id": ids.encode("invite", row.id),
             "email": row.email,
             "roles": sorted(row.roles),
             "status": _status(row, datetime.now(UTC)),
+            "email_delivery": delivery,
             "created_at": row.created_at,
             "expires_at": row.expires_at,
             "invited_by": inviter,
@@ -73,43 +78,15 @@ def _audit(org_id: uuid.UUID, actor: str, action: str, row: InvitationRow) -> Au
     )
 
 
-Delivery = Literal["sent", "failed", "not_configured"]
-
-
-async def email_invitation(
-    mailer: Mailer | None,
-    link_base: str | None,
-    row: InvitationRow,
-    workspace: str,
-    inviter: str,
-    accept_path: str,
-) -> Delivery:
-    """Email the accept link. Never raises: the invitation stands whatever happens here.
-
-    The link holds the secret, so failures are logged by type only, without the message.
-    On a timeout the worker thread may still finish, so "failed" means "not confirmed".
-    """
-    if mailer is None or not link_base:
-        return "not_configured"
-    subject = " ".join(f"Join {workspace} on Pramana".split())
-    text = (
-        f"{inviter} invited you to join {workspace} on Pramana.\n\n"
-        f"Open this link to accept:\n{link_base}{accept_path}\n\n"
-        f"It works for 7 days and only when you sign in as {row.email}.\n"
-        "If you were not expecting this, you can ignore this email.\n"
+async def _cancel_queued_email(
+    session: AsyncSession, invitation_id: uuid.UUID, now: datetime
+) -> None:
+    """Clear a message whose invitation can no longer be used."""
+    outbox_id = await session.scalar(
+        select(EmailOutboxRow.id).where(EmailOutboxRow.invitation_id == invitation_id)
     )
-    try:
-        await asyncio.wait_for(
-            asyncio.to_thread(mailer.send, row.email, subject, text), SEND_TIMEOUT_S
-        )
-    except Exception as exc:
-        log.warning(
-            "invitation_email_not_confirmed",
-            error=type(exc).__name__,
-            invitation=ids.encode("invite", row.id),
-        )
-        return "failed"
-    return "sent"
+    if outbox_id is not None:
+        await cancel_outbox_email(session, outbox_id, now, "InvitationNoLongerValid")
 
 
 def _mask(email: str) -> str:
@@ -118,14 +95,35 @@ def _mask(email: str) -> str:
 
 
 class Invitations:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, master: MasterKey) -> None:
         self.db = db
+        self.master = master
 
     async def create(
-        self, org_id: uuid.UUID, principal: Principal, body: CreateInvitation
-    ) -> tuple[InvitationRow, str]:
+        self,
+        org_id: uuid.UUID,
+        principal: Principal,
+        body: CreateInvitation,
+        *,
+        workspace: str,
+        inviter: str,
+        link_base: str | None,
+    ) -> tuple[InvitationRow, str, str]:
         secret = secrets.token_urlsafe(32)
         now = datetime.now(UTC)
+        token = f"{ids.encode('org', org_id)}.{secret}"
+        accept_path = f"/invite/{token}"
+        email: EmailEnvelope | None = (
+            invitation_email(
+                email=body.email,
+                workspace=workspace,
+                inviter=inviter,
+                link_base=link_base,
+                accept_path=accept_path,
+            )
+            if link_base
+            else None
+        )
         async with self.db.transaction() as session:
             member = await session.scalar(
                 select(MembershipRow.user_id)
@@ -147,6 +145,7 @@ class Invitations:
             if open_row is not None:
                 # A new link replaces the old one, so a lost link is never a dead end.
                 open_row.revoked_at = now
+                await _cancel_queued_email(session, open_row.id, now)
                 await session.flush()
             row = InvitationRow(
                 id=ids.uuid7(),
@@ -160,17 +159,37 @@ class Invitations:
             )
             session.add(row)
             session.add(_audit(org_id, principal.id, "invitation.created", row))
+            # The invitation and its delivery intent commit together. If email is not configured,
+            # keep an explicit dead record so the admin sees that no email was sent.
+            outbox_id = ids.uuid7()
+            session.add(
+                EmailOutboxRow(
+                    id=outbox_id,
+                    org_id=org_id,
+                    kind="invitation",
+                    invitation_id=row.id,
+                    state="queued" if email else "dead",
+                    payload_enc=seal_envelope(self.master, org_id, outbox_id, email)
+                    if email
+                    else None,
+                    attempts=0,
+                    available_at=now,
+                    dead_at=None if email else now,
+                    last_error=None if email else "EmailNotConfigured",
+                )
+            )
             await session.flush()
-        return row, f"{ids.encode('org', org_id)}.{secret}"
+        return row, token, "queued" if email else "failed"
 
     async def listing(
         self, org_id: uuid.UUID, limit: int, cursor: str | None, codec: CursorCodec
-    ) -> tuple[list[tuple[InvitationRow, str | None]], str | None]:
+    ) -> tuple[list[tuple[InvitationRow, str | None, str]], str | None]:
         filters: dict[str, object] = {}
         sort = codec.decode(cursor, scope="invitations", org_id=str(org_id), filters=filters)
         query = (
-            select(InvitationRow, UserRow.display_name)
+            select(InvitationRow, UserRow.display_name, EmailOutboxRow.state)
             .outerjoin(UserRow, UserRow.id == InvitationRow.invited_by)
+            .outerjoin(EmailOutboxRow, EmailOutboxRow.invitation_id == InvitationRow.id)
             .where(InvitationRow.org_id == org_id)
         )
         if sort is not None:
@@ -202,7 +221,7 @@ class Invitations:
             if has_more and rows
             else None
         )
-        return [(r, name) for r, name in rows], next_cursor
+        return [(row, name, delivery_status(state)) for row, name, state in rows], next_cursor
 
     async def revoke(self, org_id: uuid.UUID, principal: Principal, invite_id: uuid.UUID) -> None:
         async with self.db.transaction() as session:
@@ -216,7 +235,9 @@ class Invitations:
             if row.accepted_at is not None:
                 raise ApiError(409, "INVITATION_USED", "this invitation was already accepted")
             if row.revoked_at is None:
-                row.revoked_at = datetime.now(UTC)
+                now = datetime.now(UTC)
+                row.revoked_at = now
+                await _cancel_queued_email(session, row.id, now)
                 session.add(_audit(org_id, principal.id, "invitation.revoked", row))
 
     async def accept(self, principal: Principal, token: str) -> InvitationAccepted:
@@ -300,6 +321,7 @@ class Invitations:
                     member.status = "active"
                 if row.accepted_at is None:
                     row.accepted_at, row.accepted_by = now, principal.id
+                    await _cancel_queued_email(session, row.id, now)
                     session.add(_audit(org_id, principal.id, "invitation.accepted", row))
                 await session.flush()
                 summary = organization_view(org, list(member.roles))

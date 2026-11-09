@@ -4,16 +4,24 @@
  * Consent status for a person, recording or withdrawing it, and permanent erasure.
  * The core enforces who may do each of these; this only decides what to show.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { langLabel } from "@/components/app/ParticipantForm";
 import { Badge, Button, Dialog, Field, Input, Notice, Select } from "@/components/ui";
 import { actionKey } from "@/lib/api/account";
 import { ApiError, describeError } from "@/lib/api/http";
 import type { OrganizationApi } from "@/lib/api/organization";
-import type { ConsentRecord, RecordConsent, SitePerson } from "@/lib/api/types";
+import type {
+  ConsentRecord,
+  ConsentRequestDelivery,
+  RecordConsent,
+  SitePerson,
+} from "@/lib/api/types";
 import { relative } from "@/lib/data/derive";
 
 type Purpose = RecordConsent["purpose"];
+
+// A queued consent email normally leaves within seconds. Stop checking after about 20 seconds.
+const DELIVERY_CHECKS = 20;
 type Channel = RecordConsent["channel"];
 
 export const PURPOSES: { id: Purpose; label: string; meaning: string }[] = [
@@ -104,11 +112,50 @@ export function ConsentDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
-  const [requestLink, setRequestLink] = useState<{ path: string; delivery: string } | null>(null);
+  const [requestLink, setRequestLink] = useState<{
+    requestId: string;
+    path: string;
+    delivery: ConsentRequestDelivery["email_delivery"] | "unavailable";
+    checks: number;
+  } | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
 
   const languages = person?.languages.stt_candidates ?? [];
   const chosen = language || languages[0] || "en";
+  const personId = person?.id;
+
+  useEffect(() => {
+    if (!personId || !requestLink || requestLink.delivery !== "queued") return;
+    if (requestLink.checks >= DELIVERY_CHECKS) return;
+    const { requestId } = requestLink;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void api
+        .consentRequestDelivery(siteId, personId, requestId)
+        .then(({ email_delivery }) => {
+          if (active) {
+            setRequestLink((current) =>
+              current?.requestId === requestId
+                ? { ...current, delivery: email_delivery, checks: current.checks + 1 }
+                : current,
+            );
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setRequestLink((current) =>
+              current?.requestId === requestId
+                ? { ...current, delivery: "unavailable", checks: DELIVERY_CHECKS }
+                : current,
+            );
+          }
+        });
+    }, 900);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [api, personId, requestLink, siteId]);
 
   function close() {
     setRecording(null);
@@ -172,7 +219,12 @@ export function ConsentDialog({
                           setRequestLink(null);
                           try {
                             const created = await api.requestConsent(siteId, person.id, { key: actionKey("consent-request") });
-                            setRequestLink({ path: created.link_path, delivery: created.email_delivery });
+                            setRequestLink({
+                              requestId: created.request_id,
+                              path: created.link_path,
+                              delivery: created.email_delivery,
+                              checks: 0,
+                            });
                           } catch (e) {
                             setError(privacyError(e));
                           } finally {
@@ -187,11 +239,15 @@ export function ConsentDialog({
                           <p className="text-[12px] text-fg-2" aria-live="polite">
                             {requestLink.delivery === "sent"
                               ? "Email sent. You can also copy the link."
-                              : requestLink.delivery === "no_email"
+                              : requestLink.delivery === "queued"
+                                ? requestLink.checks >= DELIVERY_CHECKS
+                                  ? "Email is still queued. Copy and share the link if it does not arrive."
+                                  : "Email is queued. You can copy and share the link while it sends."
+                                : requestLink.delivery === "no_email"
                                 ? "No email is saved for this person. Copy and share the link."
                                 : requestLink.delivery === "failed"
-                                  ? "Email could not be confirmed. Copy and share the link."
-                                  : "Email is not set up. Copy and share the link."}
+                                  ? "Email was not sent. Copy and share the link."
+                                  : "Email status is unavailable. Copy and share the link."}
                           </p>
                           <div className="flex flex-wrap items-center gap-2">
                             <code className="min-w-0 flex-1 break-all rounded bg-black/20 p-2 text-[11px] text-muted">

@@ -1,15 +1,8 @@
-"""Email one-time consent links through the configured Gmail mailer."""
+"""Build email content for one-time consent links."""
 
 from __future__ import annotations
 
-import asyncio
-from typing import Literal
-
-from .mail import Mailer
-from .observability import log
-
-ConsentDelivery = Literal["sent", "failed", "not_configured", "no_email"]
-SEND_TIMEOUT_S = 6.0
+from .outbox import EmailEnvelope
 
 
 def _message(language: str, link: str) -> tuple[str, str]:
@@ -36,27 +29,9 @@ def _message(language: str, link: str) -> tuple[str, str]:
     )
 
 
-async def email_consent_request(
-    mailer: Mailer | None,
-    link_base: str | None,
-    to: str | None,
-    link_path: str,
-    language: str,
-    request_id: str,
-) -> ConsentDelivery:
-    """Try Gmail without logging the recipient or secret link; manual copy remains available."""
-    if not to:
-        return "no_email"
-    if mailer is None or not link_base:
-        return "not_configured"
+def consent_request_email(
+    *, email: str, link_base: str, link_path: str, language: str
+) -> EmailEnvelope:
+    """Build the message to store with its consent link in the durable email outbox."""
     subject, body = _message(language, f"{link_base.rstrip('/')}{link_path}")
-    try:
-        await asyncio.wait_for(asyncio.to_thread(mailer.send, to, subject, body), SEND_TIMEOUT_S)
-    except Exception as exc:
-        log.warning(
-            "consent_request_email_not_confirmed",
-            error=type(exc).__name__,
-            request=request_id,
-        )
-        return "failed"
-    return "sent"
+    return EmailEnvelope(email, subject, body)

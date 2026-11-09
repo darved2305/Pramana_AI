@@ -30,8 +30,9 @@ from .auth.service import Principal
 from .cursors import CursorCodec
 from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, acting_for
 from .errors import ApiError, not_found
-from .mail import Mailer
 from .observability import log
+from .outbox import EmailEnvelope, queue_email
+from .vault import MasterKey
 
 MANAGERS = ("owner", "admin")
 DOMAIN_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -103,14 +104,10 @@ class DnsPythonResolver:
         }
 
 
-class LocalOutbox:
-    """Development mail sink. Messages are inspectable and never leave the process."""
-
-    def __init__(self) -> None:
-        self.messages: list[tuple[str, str, str]] = []
-
-    def send(self, to: str, subject: str, body: str) -> None:
-        self.messages.append((to, subject, body))
+JOIN_NOTICE_KIND = "domain_join_notice"
+"""Mail to workspace managers about a join. Sent by the relay after the join commits."""
+JOIN_DECISION_KIND = "domain_join_decision"
+"""Mail to the requester about their join request. Sent by the relay after the decision commits."""
 
 
 def normalise_domain(value: str) -> str:
@@ -166,13 +163,8 @@ def join_request_view(row: JoinRequestRow, org: OrganizationRow, user: UserRow) 
 
 
 class DomainJoins:
-    def __init__(
-        self,
-        db: Database,
-        resolver: DnsTxtResolver,
-        mailer: Mailer,
-    ) -> None:
-        self.db, self.resolver, self.mailer = db, resolver, mailer
+    def __init__(self, db: Database, resolver: DnsTxtResolver, master: MasterKey) -> None:
+        self.db, self.resolver, self.master = db, resolver, master
 
     @staticmethod
     async def _lock_domain(session: AsyncSession, org_id: uuid.UUID, domain: str) -> None:
@@ -605,23 +597,27 @@ class DomainJoins:
                             {"status": "pending", "domain": domain},
                         )
                     )
+                if joined:
+                    await self._queue_admin_notice(
+                        session,
+                        org_id,
+                        "A new workspace member joined",
+                        f"{principal.display_name} joined {org_name} as a viewer because "
+                        f"{domain} uses automatic joining.",
+                        now,
+                    )
+                else:
+                    await self._queue_admin_notice(
+                        session,
+                        org_id,
+                        f"Request to join {org_name}",
+                        f"{principal.display_name} ({principal.email}) asked to join "
+                        f"{org_name}. Review the request in Workspace settings.",
+                        now,
+                    )
                 await session.flush()
                 assert row is not None
                 view = await self._request_view(session, row)
-            if joined:
-                await self._email_admins(
-                    org_id,
-                    f"{principal.display_name} joined {org_name} as a viewer because "
-                    f"{domain} uses automatic joining.",
-                    "A new workspace member joined",
-                )
-            else:
-                await self._email_admins(
-                    org_id,
-                    f"{principal.display_name} ({principal.email}) asked to join "
-                    f"{org_name}. Review the request in Workspace settings.",
-                    f"Request to join {org_name}",
-                )
         return JoinRequestCreated(
             request=view,
             joined=joined,
@@ -748,9 +744,16 @@ class DomainJoins:
                     {"status": row.status, "roles": row.roles or []},
                 )
             )
+            queue_email(
+                session,
+                master=self.master,
+                org_id=org_id,
+                kind=JOIN_DECISION_KIND,
+                envelope=EmailEnvelope(requester_email, subject, text_body),
+                now=now,
+            )
             await session.flush()
             view = join_request_view(row, organization, requester)
-        await self._send_email(requester_email, subject, text_body)
         return view
 
     async def auto_join_on_sign_in(self, principal: Principal) -> None:
@@ -759,7 +762,6 @@ class DomainJoins:
         assert principal.hosted_domain is not None
         domain = principal.hosted_domain.lower()
         now = datetime.now(UTC)
-        joined: list[tuple[uuid.UUID, str]] = []
         with acting_for(None, principal.id, hosted_domain=domain):
             async with self.db.transaction() as session:
                 await session.execute(
@@ -852,14 +854,14 @@ class DomainJoins:
                             {"domain": domain, "roles": ["viewer"]},
                         )
                     )
-                    joined.append((org_id, name))
-        for org_id, name in joined:
-            await self._email_admins(
-                org_id,
-                f"{principal.display_name} joined {name} as a viewer because "
-                f"{domain} uses automatic joining.",
-                "A new workspace member joined",
-            )
+                    await self._queue_admin_notice(
+                        session,
+                        org_id,
+                        "A new workspace member joined",
+                        f"{principal.display_name} joined {name} as a viewer because "
+                        f"{domain} uses automatic joining.",
+                        now,
+                    )
 
     async def _request_view(self, session: AsyncSession, row: JoinRequestRow) -> JoinRequestView:
         org = await session.get(OrganizationRow, row.org_id)
@@ -868,32 +870,38 @@ class DomainJoins:
             raise not_found("join request")
         return join_request_view(row, org, user)
 
-    async def _email_admins(self, org_id: uuid.UUID, body: str, subject: str) -> None:
-        with acting_for(org_id):
-            async with self.db.read() as session:
-                recipients = list(
-                    (
-                        await session.scalars(
-                            select(UserRow.email)
-                            .join(MembershipRow, MembershipRow.user_id == UserRow.id)
-                            .where(
-                                MembershipRow.org_id == org_id,
-                                MembershipRow.status == "active",
-                                MembershipRow.roles.overlap(list(MANAGERS)),
-                            )
-                        )
-                    ).all()
+    async def _queue_admin_notice(
+        self,
+        session: AsyncSession,
+        org_id: uuid.UUID,
+        subject: str,
+        body: str,
+        now: datetime,
+    ) -> None:
+        """Queue the notice for each active manager, inside the join's own transaction."""
+        await session.execute(
+            text("select set_config('app.org_id', :org, true)"), {"org": str(org_id)}
+        )
+        addresses = (
+            await session.scalars(
+                select(UserRow.email)
+                .join(MembershipRow, MembershipRow.user_id == UserRow.id)
+                .where(
+                    MembershipRow.org_id == org_id,
+                    MembershipRow.status == "active",
+                    MembershipRow.roles.overlap(list(MANAGERS)),
                 )
-        for address in recipients:
-            await self._send_email(address, subject, body)
-
-    async def _send_email(self, address: str, subject: str, body: str) -> None:
-        try:
-            await asyncio.wait_for(
-                asyncio.to_thread(self.mailer.send, address, subject, body), timeout=6
             )
-        except Exception as exc:
-            log.warning("domain_join_email_not_confirmed", error=type(exc).__name__)
+        ).all()
+        for address in addresses:
+            queue_email(
+                session,
+                master=self.master,
+                org_id=org_id,
+                kind=JOIN_NOTICE_KIND,
+                envelope=EmailEnvelope(address, subject, body),
+                now=now,
+            )
 
     @staticmethod
     def _matching_google_email(principal: Principal) -> bool:
