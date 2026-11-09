@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -17,6 +16,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from core_testkit import OPERATOR_KEY, SIGNING_KEY, core_settings, truncate_all
+from db_guard import require_listed_url, setting_database_url
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -27,14 +27,11 @@ from pramana_core.main import create_app
 from pramana_sim.app import SimSettings
 from pramana_sim.app import create_app as create_sim_app
 
-TEST_DB_URL = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql+asyncpg://pramana@localhost:5433/pramana_test"
-)
 CORE_DIR = Path(__file__).resolve().parents[1]
 
 
-async def _reachable() -> bool:
-    engine = create_async_engine(TEST_DB_URL, connect_args={"timeout": 2})
+async def _reachable(url: str) -> bool:
+    engine = create_async_engine(url, connect_args={"timeout": 2})
     try:
         async with engine.connect() as conn:
             await conn.exec_driver_sql("select 1")
@@ -45,10 +42,10 @@ async def _reachable() -> bool:
         await engine.dispose()
 
 
-def _alembic(action: str) -> None:
+def _alembic(action: str, url: str) -> None:
     cfg = Config(str(CORE_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(CORE_DIR / "alembic"))
-    cfg.attributes["url"] = TEST_DB_URL
+    cfg.attributes["url"] = require_listed_url(url)
     if action == "upgrade":
         command.upgrade(cfg, "head")
     else:
@@ -57,15 +54,17 @@ def _alembic(action: str) -> None:
 
 @pytest.fixture(scope="session")
 def migrated_db() -> str:
-    if not asyncio.run(_reachable()):
+    # Refused before any connection: no URL, or a database this checkout does not allowlist.
+    url = setting_database_url("TEST_DATABASE_URL")
+    if not asyncio.run(_reachable(url)):
         pytest.skip("PostgreSQL test database unreachable; run `python scripts/dev_db.py start`")
     # Rows left by an earlier run (a status like "awaiting_approval") would not fit the older,
     # narrower columns the downgrade passes through.
     with contextlib.suppress(Exception):  # a fresh database has no tables yet
-        asyncio.run(truncate_all(TEST_DB_URL))
-    _alembic("downgrade")
-    _alembic("upgrade")
-    return TEST_DB_URL
+        asyncio.run(truncate_all(url))
+    _alembic("downgrade", url)
+    _alembic("upgrade", url)
+    return url
 
 
 @pytest.fixture

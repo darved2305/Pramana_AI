@@ -21,6 +21,13 @@ import uvicorn
 
 ROOT = Path(__file__).resolve().parents[3]
 CORE_DIR = ROOT / "services" / "core"
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from db_guard import (  # noqa: E402
+    DatabaseGuardError,
+    require_listed_database,
+    require_listed_url,
+)
 
 
 def _database_name(environment: Mapping[str, str] | None = None) -> str:
@@ -30,10 +37,11 @@ def _database_name(environment: Mapping[str, str] | None = None) -> str:
         raise SystemExit("refusing to reset a database: set E2E_DATABASE explicitly")
     if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", name) or not name.endswith("_e2e"):
         raise SystemExit("refusing to reset a database: E2E_DATABASE must be a dedicated _e2e name")
-    allowed = {entry.strip() for entry in env.get("PRAMANA_DB_NAMES", "").split(",") if entry.strip()}
-    if not allowed or name not in allowed:
-        raise SystemExit("refusing to reset a database: E2E_DATABASE must be listed in PRAMANA_DB_NAMES")
-    return name
+    try:
+        # The browser run passes its settings explicitly, so this checkout's .env is not read.
+        return require_listed_database(name, environ=env, dotenv_path=None)
+    except DatabaseGuardError as error:
+        raise SystemExit(str(error)) from error
 
 
 def _db_url() -> str:
@@ -44,7 +52,6 @@ def _db_url() -> str:
 
 def _ensure_database() -> None:
     name = _database_name()
-    sys.path.insert(0, str(ROOT / "scripts"))
     import dev_db  # type: ignore[import-not-found]
 
     dev_db.run(
@@ -66,7 +73,7 @@ def _migrate(url: str) -> None:
 
     cfg = Config(str(CORE_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(CORE_DIR / "alembic"))
-    cfg.attributes["url"] = url
+    cfg.attributes["url"] = require_listed_url(url, dotenv_path=None)
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
 
