@@ -6,10 +6,13 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from auth_testkit import CSRF
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -26,6 +29,7 @@ from pramana_core.questioning import decide_availability, in_quiet_hours
 from pramana_engine import EngineConfig
 
 pytestmark = pytest.mark.db
+CORE_DIR = Path(__file__).resolve().parents[1]
 
 
 def post(client: TestClient, path: str, body: Any = None, key: str | None = None) -> Any:
@@ -38,6 +42,30 @@ def people_root(workspace: dict[str, Any]) -> str:
     return (
         f"/v1/orgs/{workspace['organization']['slug']}/sites/{workspace['live_site']['id']}/people"
     )
+
+
+def test_downgrade_preserves_multiple_refusals_as_inactive(
+    account_core: TestClient, migrated_db: str
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace) + "/p_ravi/consent-requests"
+    for decision in ("refused", "refused", "granted"):
+        link = post(client, root).json()["link_path"].removeprefix("/consent/")
+        assert (
+            client.post("/v1/consent-links/" + link, json={"decision": decision}).status_code == 200
+        )
+
+    cfg = Config(str(CORE_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(CORE_DIR / "alembic"))
+    cfg.attributes["url"] = migrated_db
+    try:
+        command.downgrade(cfg, "0016")
+        rows = sql(migrated_db, "select withdrawn_at from consents")
+        assert len(rows) == 3
+        assert sum(row["withdrawn_at"] is None for row in rows) == 1
+    finally:
+        command.upgrade(cfg, "head")
 
 
 def patch_person(client: TestClient, root: str, body: dict[str, Any]) -> Any:
@@ -119,6 +147,11 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
 
     code = created.json()["link_path"].removeprefix("/consent/")
     _, secret = code.split(".", 1)
+    stored = sql(
+        migrated_db, "select response_body from idempotency_keys where key=:key", {"key": key}
+    )
+    assert stored
+    assert secret.encode() not in bytes(stored[0]["response_body"])
     rows = sql(migrated_db, "select token_hash from consent_links")
     assert bytes(rows[0]["token_hash"]) == hashlib.sha256(secret.encode()).digest()
     public = "/v1/consent-links/" + code

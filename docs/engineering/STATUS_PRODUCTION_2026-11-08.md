@@ -19,6 +19,10 @@ fake transport and the live planner test uses the in-process simulator. Hindi an
 still needs native review. Deployment of migration 0019 must repeat the schema revoke for
 `anon` and `authenticated`.
 
+The consent-request idempotency response is encrypted at rest so a retry can return the same
+link without leaving its bearer secret in plaintext in the database. On migration rollback,
+refusals become inactive consent history in the older schema.
+
 Worktree: `gnani ai hackathon-production`, branch `production`. The draft
 [PR #3](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/pull/3) remains unmerged.
 No demo database, main worktree file or unrelated process was changed. Terraform remains unapplied.
