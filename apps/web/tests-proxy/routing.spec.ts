@@ -31,6 +31,21 @@ test("redirects OAuth requests on another host to the canonical origin", async (
     );
     expect(canonicalResponse.status).toBe(200);
     expect(canonicalResponse.headers.get("location")).toBeNull();
+
+    // Standalone servers can expose an internal URL while preserving the public Host header.
+    const internalUrl = "http://localhost:3000/login?next=%2Fapp";
+    const canonicalHost = await proxy(new NextRequest(internalUrl, {
+      headers: { host: "pramana-web-671800103530.asia-south1.run.app" },
+    }));
+    expect(canonicalHost.status).toBe(200);
+    expect(canonicalHost.headers.get("location")).toBeNull();
+    const legacyHost = await proxy(new NextRequest(internalUrl, {
+      headers: { host: "pramana-web-nzxslh75pq-el.a.run.app" },
+    }));
+    expect(legacyHost.status).toBe(308);
+    expect(legacyHost.headers.get("location")).toBe(
+      "https://pramana-web-671800103530.asia-south1.run.app/login?next=%2Fapp",
+    );
   } finally {
     if (originalOrigin === undefined) delete process.env.PRAMANA_CANONICAL_ORIGIN;
     else process.env.PRAMANA_CANONICAL_ORIGIN = originalOrigin;

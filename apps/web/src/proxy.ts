@@ -20,7 +20,10 @@ function canonicalHostRedirect(request: NextRequest): NextResponse | null {
   if (!canonicalOrigin || request.nextUrl.pathname === HEALTHCHECK_PATH) return null;
 
   const canonical = new URL(canonicalOrigin);
-  if (request.nextUrl.host === canonical.host) return null;
+  // The standalone Next server can construct nextUrl with its internal listening host.
+  // Cloud Run preserves the original request Host header for the public endpoint.
+  const host = request.headers.get("host") ?? request.nextUrl.host;
+  if (host.toLowerCase() === canonical.host.toLowerCase()) return null;
 
   const destination = new URL(
     `${request.nextUrl.pathname}${request.nextUrl.search}`,
