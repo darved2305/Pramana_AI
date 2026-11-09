@@ -20,6 +20,7 @@ test("a new person signs in with Google, sets up a workspace and resumes where t
   await page.getByRole("button", { name: "Water supply" }).click();
   await page.getByRole("button", { name: "Hindi" }).click();
   await expect(page.getByRole("button", { name: "Water supply" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
 
   // Answers are kept by the core: a fresh browser on the same account sees them.
   await page.reload();
