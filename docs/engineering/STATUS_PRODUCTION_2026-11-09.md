@@ -70,7 +70,7 @@ The team-only stage is in GCP project luminous-slice-514102-f4, asia-south1, dep
 | core | https://pramana-core-nzxslh75pq-el.a.run.app | pramana-core-00007-hr6 | sha256:cfbe6255b2fbf408028be8b5b7e6684034c73ffb8681ac6579bd424dde8c5c38 |
 | simulator | https://pramana-sim-nzxslh75pq-el.a.run.app | pramana-sim-00008-wn6 | sha256:cfbe6255b2fbf408028be8b5b7e6684034c73ffb8681ac6579bd424dde8c5c38 |
 
-The deploy uses min 0 and service max 2 instances. Cloud Run describes max 2; the default minimum 0 has no annotation. Migration execution pramana-migrate-g6gqq succeeded and logged a passed database grant audit after revokes. The preceding execution pramana-migrate-b58nh applied 0019 through 0022. No existing Supabase application data was dropped or rewritten.
+The deploy uses min 0 and service max 2 instances. Cloud Run describes max 2; the default minimum 0 has no annotation. Migration execution pramana-migrate-g6gqq succeeded and logged a passed database grant audit after revokes. The preceding execution pramana-migrate-b58nh applied 0019 through 0022. No database reset or destructive data rewrite was performed; migration 0021 includes its normal practice-site metadata updates.
 
 Live curl checks returned 200 for /, /login, a static asset, /api/core/health and /ready; an unknown path returned 404. The legacy web host returned 308 to the canonical host preserving path and query. OAuth start returned 302 to accounts.google.com with redirect_uri exactly https://pramana-web-671800103530.asia-south1.run.app/api/core/v1/auth/google/callback. The redirect was not followed. HSTS, CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy and Permissions-Policy were present on the home response.
 
