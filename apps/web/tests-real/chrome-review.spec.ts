@@ -399,8 +399,19 @@ test("real Chrome review: an owner describes, checks and publishes a site", asyn
 
   await page.getByRole("button", { name: "Start from scratch" }).click();
   await expect(page.getByRole("heading", { name: "Draft, version 2" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Site name" })).toHaveValue("Your first building");
+  const siteName = page.getByRole("textbox", { name: "Site name" });
+  await expect(siteName).toHaveValue("Your first building");
   await capture(page, "builder-start-from-scratch");
+  await siteName.fill("Reception lights");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await capture(page, "builder-scratch-description-saved");
+  await page.getByRole("button", { name: "Check this model" }).click();
+  await expect(page.getByText("Ready to publish")).toBeVisible({ timeout: 60_000 });
+  await capture(page, "builder-scratch-health-ready");
+  await page.getByRole("button", { name: "Publish version 2" }).click();
+  await expect(page.getByText("Version 2 is published")).toBeVisible();
+  await capture(page, "builder-scratch-published");
 });
 
 test("real Chrome review: invitations can be withdrawn or joined from welcome", async ({ page }) => {
