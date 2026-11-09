@@ -135,10 +135,10 @@ class Settings(BaseSettings):
                     or issuer.hostname not in {"localhost", "127.0.0.1"}
                     or issuer.port is None
                     or discovery.scheme != "http"
-                    or discovery.hostname != "host.docker.internal"
+                    or discovery.hostname not in {"host.docker.internal", "mock-oidc"}
                     or discovery.port != issuer.port
                     or discovery.path != "/.well-known/openid-configuration"
-                    or database_host not in {"host.docker.internal", "localhost"}
+                    or database_host not in {"host.docker.internal", "localhost", "postgres"}
                     or sim_host not in {"sim", "pramana-smoke-sim"}
                     or redirect.scheme != "http"
                     or redirect.hostname != "localhost"

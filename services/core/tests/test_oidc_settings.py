@@ -75,6 +75,23 @@ def test_local_production_harness_requires_the_docker_only_endpoints() -> None:
     assert cfg.secure_cookies
 
 
+def test_local_production_harness_accepts_isolated_docker_service_names() -> None:
+    cfg = core_settings(
+        "postgresql+asyncpg://pramana_app@postgres:5432/pramana_prod_test",
+        PRAMANA_MODE="production",
+        PRAMANA_LOCAL_PRODUCTION_TEST=True,
+        PRAMANA_PII_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        OIDC_ISSUER="http://localhost:8420",
+        OIDC_DISCOVERY_URL="http://mock-oidc:8420/.well-known/openid-configuration",
+        OIDC_REDIRECT_URL="http://localhost:3100/api/core/v1/auth/google/callback",
+        SIM_URL="http://sim:8080",
+        SIM_SERVERLESS_AUTH=False,
+    )
+    assert cfg.mode == "production"
+    assert cfg.enforce_auth
+    assert cfg.secure_cookies
+
+
 def test_production_runtime_role_cannot_bypass_rls(migrated_db: str) -> None:
     async def check() -> None:
         owner = Database(create_async_engine(migrated_db))
