@@ -247,14 +247,14 @@ def _neutral_spec(spec: dict[str, object]) -> dict[str, object]:
                     "Equipment room power switch position",
                     "Without touching anything, is the power switch for "
                     "equipment room 2 up or down?",
-                    "बिना कुछ छुए, उपकरण कक्ष 2 का बिजली वाला स्विच ऊपर है या नीचे?",
+                    "बिना कुछ छुए, उपकरण कक्ष 2 का बिजली का स्विच ऊपर है या नीचे?",
                     "Bina kuch chhue, equipment room 2 ka power switch upar hai ya neeche?",
                     "कशालाही हात न लावता, उपकरण कक्ष 2 चा वीजेचा स्विच वर आहे की खाली?",
                 ),
                 "breaker_c2_5": (
                     "Lights power switch position",
                     "Without touching anything, is the power switch for the lights up or down?",
-                    "बिना कुछ छुए, लाइटों का बिजली वाला स्विच ऊपर है या नीचे?",
+                    "बिना कुछ छुए, लाइटों का बिजली का स्विच ऊपर है या नीचे?",
                     "Bina kuch chhue, lights ka power switch upar hai ya neeche?",
                     "कशालाही हात न लावता, दिव्यांचा वीजेचा स्विच वर आहे की खाली?",
                 ),
