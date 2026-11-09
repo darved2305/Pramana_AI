@@ -7,9 +7,9 @@ import { Badge, Button, ButtonLink, Card, ErrorState, PageHeader, ProbBar, Skele
 import { IconBuilding, IconCheck, IconChevronRight, IconEye, IconEyeOff, IconPlus, IconSpark } from "@/components/ui/icons";
 import { accountApi, actionKey } from "@/lib/api/account";
 import { describeError } from "@/lib/api/http";
-import type { HomeInvestigation, HomeModule, HomeSite, InvestigationStatus } from "@/lib/api/types";
+import type { HomeInvestigation, HomeModule, HomeSite, InvestigationStatus, JoinRequestView } from "@/lib/api/types";
 import { refreshAccount } from "@/lib/data/account";
-import { STATUS_LABEL, STATUS_TONE, relative } from "@/lib/data/derive";
+import { STATUS_LABEL, STATUS_TONE, joinRequestLabel, relative } from "@/lib/data/derive";
 import { useLoad } from "@/lib/data/hooks";
 import { useWorkspace } from "@/lib/org/context";
 
@@ -68,6 +68,8 @@ export default function WorkspaceHomePage() {
         }
       />
       {layoutError ? <p role="alert" className="text-[13px] text-bad">{layoutError}</p> : null}
+
+      {home.status === "ready" ? <JoinActivity requests={home.data.join_requests ?? []} href={`${ws.base}/settings#join-requests`} /> : null}
 
       {home.status === "loading" ? (
         <div className="grid gap-4 lg:grid-cols-2" aria-busy="true" aria-label="Loading your home">
@@ -241,5 +243,40 @@ function InvestigationList({ items, base }: { items: HomeInvestigation[]; base: 
         );
       })}
     </ul>
+  );
+}
+
+/** Owners and admins: people asking to join from the verified email domain, and who joined. */
+function JoinActivity({ requests, href }: { requests: JoinRequestView[]; href: string }) {
+  const shown = requests.filter((r) => r.status === "pending" || r.status === "approved").slice(0, 5);
+  if (!shown.length) return null;
+  const waiting = requests.filter((r) => r.status === "pending").length;
+  return (
+    <Card className="flex flex-col gap-3 p-5" aria-labelledby="join-activity-heading">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="join-activity-heading" className="text-[16px] font-semibold text-fg">People joining from your domain</h2>
+          <p className="mt-1 text-[13px] text-muted">
+            {waiting
+              ? `${waiting} ${waiting === 1 ? "person is" : "people are"} waiting for you to approve or decline.`
+              : "People who recently joined with an address at your verified domain."}
+          </p>
+        </div>
+        <Link href={href} className="btn-line">{waiting ? "Review requests" : "See all"}</Link>
+      </header>
+      <ul className="flex flex-col divide-y divide-white/[.06]">
+        {shown.map((r) => {
+          const { label, tone } = joinRequestLabel(r);
+          return (
+            <li key={r.id} className="flex flex-wrap items-center gap-2 py-2 text-[13px]">
+              <span className="min-w-0 flex-1 truncate text-fg">
+                {r.requester_name} <span className="text-muted">{r.requester_email}</span>
+              </span>
+              <Badge tone={tone}>{label}</Badge>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }

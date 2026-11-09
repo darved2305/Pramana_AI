@@ -591,6 +591,40 @@
     "title": "CheckRecord",
     "type": "object"
    },
+   "ConsentLinkView": {
+    "additionalProperties": false,
+    "properties": {
+     "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "language": {
+      "title": "Language",
+      "type": "string"
+     },
+     "notice_version": {
+      "title": "Notice Version",
+      "type": "string"
+     },
+     "purpose": {
+      "enum": [
+       "contact_for_investigations",
+       "voice_processing"
+      ],
+      "title": "Purpose",
+      "type": "string"
+     }
+    },
+    "required": [
+     "purpose",
+     "language",
+     "notice_version",
+     "expires_at"
+    ],
+    "title": "ConsentLinkView",
+    "type": "object"
+   },
    "ConsentRecord": {
     "additionalProperties": false,
     "properties": {
@@ -603,6 +637,15 @@
        "paper"
       ],
       "title": "Channel",
+      "type": "string"
+     },
+     "decision": {
+      "default": "granted",
+      "enum": [
+       "granted",
+       "refused"
+      ],
+      "title": "Decision",
       "type": "string"
      },
      "evidence": {
@@ -671,6 +714,96 @@
      "granted_at"
     ],
     "title": "ConsentRecord",
+    "type": "object"
+   },
+   "ConsentRequestCreated": {
+    "additionalProperties": false,
+    "properties": {
+     "email_delivery": {
+      "enum": [
+       "sent",
+       "failed",
+       "not_configured",
+       "no_email"
+      ],
+      "title": "Email Delivery",
+      "type": "string"
+     },
+     "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "link_path": {
+      "title": "Link Path",
+      "type": "string"
+     }
+    },
+    "required": [
+     "link_path",
+     "expires_at",
+     "email_delivery"
+    ],
+    "title": "ConsentRequestCreated",
+    "type": "object"
+   },
+   "ConsentResponseView": {
+    "additionalProperties": false,
+    "properties": {
+     "decision": {
+      "enum": [
+       "granted",
+       "refused"
+      ],
+      "title": "Decision",
+      "type": "string"
+     },
+     "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "decision",
+     "recorded_at"
+    ],
+    "title": "ConsentResponseView",
+    "type": "object"
+   },
+   "CreateDomain": {
+    "additionalProperties": false,
+    "properties": {
+     "domain": {
+      "maxLength": 253,
+      "minLength": 3,
+      "title": "Domain",
+      "type": "string"
+     },
+     "join_policy": {
+      "default": "request",
+      "enum": [
+       "off",
+       "request",
+       "auto"
+      ],
+      "title": "Join Policy",
+      "type": "string"
+     },
+     "verification": {
+      "enum": [
+       "google_hd",
+       "dns_txt"
+      ],
+      "title": "Verification",
+      "type": "string"
+     }
+    },
+    "required": [
+     "domain",
+     "verification"
+    ],
+    "title": "CreateDomain",
     "type": "object"
    },
    "CreateInvestigation": {
@@ -2173,9 +2306,29 @@
       "title": "Presence Checks Enabled",
       "type": "boolean"
      },
+     "questioning_availability": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/QuestioningAvailability"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "questions_asked": {
       "title": "Questions Asked",
       "type": "integer"
+     },
+     "quiet_hours_override": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/QuietHoursOverrideView"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "repair_options": {
       "items": {
@@ -2435,6 +2588,141 @@
     "title": "InvitationView",
     "type": "object"
    },
+   "JoinRequestCreated": {
+    "additionalProperties": false,
+    "properties": {
+     "destination": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Destination"
+     },
+     "joined": {
+      "title": "Joined",
+      "type": "boolean"
+     },
+     "request": {
+      "$ref": "#/components/schemas/JoinRequestView"
+     }
+    },
+    "required": [
+     "request",
+     "joined"
+    ],
+    "title": "JoinRequestCreated",
+    "type": "object"
+   },
+   "JoinRequestDecision": {
+    "additionalProperties": false,
+    "properties": {
+     "role": {
+      "default": "viewer",
+      "enum": [
+       "admin",
+       "operator",
+       "approver",
+       "viewer"
+      ],
+      "title": "Role",
+      "type": "string"
+     }
+    },
+    "title": "JoinRequestDecision",
+    "type": "object"
+   },
+   "JoinRequestView": {
+    "additionalProperties": false,
+    "properties": {
+     "decided_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decided At"
+     },
+     "decision_source": {
+      "anyOf": [
+       {
+        "enum": [
+         "admin",
+         "auto"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Decision Source"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "organization_id": {
+      "title": "Organization Id",
+      "type": "string"
+     },
+     "organization_name": {
+      "title": "Organization Name",
+      "type": "string"
+     },
+     "requested_at": {
+      "format": "date-time",
+      "title": "Requested At",
+      "type": "string"
+     },
+     "requester_email": {
+      "title": "Requester Email",
+      "type": "string"
+     },
+     "requester_name": {
+      "title": "Requester Name",
+      "type": "string"
+     },
+     "role": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/OrganizationRole"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "approved",
+       "declined",
+       "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "organization_id",
+     "organization_name",
+     "requester_name",
+     "requester_email",
+     "status",
+     "requested_at"
+    ],
+    "title": "JoinRequestView",
+    "type": "object"
+   },
    "JoinSuggestion": {
     "additionalProperties": false,
     "properties": {
@@ -2457,6 +2745,29 @@
       ],
       "title": "Policy",
       "type": "string"
+     },
+     "request_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Request Id"
+     },
+     "request_status": {
+      "anyOf": [
+       {
+        "const": "pending",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Request Status"
      }
     },
     "required": [
@@ -3101,6 +3412,74 @@
      "destination"
     ],
     "title": "OrganizationCreated",
+    "type": "object"
+   },
+   "OrganizationDomain": {
+    "additionalProperties": false,
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "join_policy": {
+      "enum": [
+       "off",
+       "request",
+       "auto"
+      ],
+      "title": "Join Policy",
+      "type": "string"
+     },
+     "verification": {
+      "enum": [
+       "google_hd",
+       "dns_txt"
+      ],
+      "title": "Verification",
+      "type": "string"
+     },
+     "verification_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Verification Name"
+     },
+     "verification_value": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Verification Value"
+     },
+     "verified_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Verified At"
+     }
+    },
+    "required": [
+     "domain",
+     "verification",
+     "verified_at",
+     "join_policy"
+    ],
+    "title": "OrganizationDomain",
     "type": "object"
    },
    "OrganizationKind": {
@@ -3783,6 +4162,114 @@
     "title": "QuestionStatus",
     "type": "string"
    },
+   "QuestioningAvailability": {
+    "additionalProperties": false,
+    "properties": {
+     "eligible_count": {
+      "title": "Eligible Count",
+      "type": "integer"
+     },
+     "evaluated_at": {
+      "format": "date-time",
+      "title": "Evaluated At",
+      "type": "string"
+     },
+     "no_consent_count": {
+      "title": "No Consent Count",
+      "type": "integer"
+     },
+     "quiet_hours_count": {
+      "title": "Quiet Hours Count",
+      "type": "integer"
+     },
+     "unavailable_count": {
+      "title": "Unavailable Count",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "evaluated_at",
+     "eligible_count",
+     "no_consent_count",
+     "quiet_hours_count",
+     "unavailable_count"
+    ],
+    "title": "QuestioningAvailability",
+    "type": "object"
+   },
+   "QuietHours": {
+    "additionalProperties": false,
+    "description": "A person's local time window when new questions should wait.",
+    "properties": {
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "end": {
+      "default": "08:00",
+      "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+      "title": "End",
+      "type": "string"
+     },
+     "start": {
+      "default": "22:00",
+      "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+      "title": "Start",
+      "type": "string"
+     },
+     "timezone": {
+      "default": "Asia/Kolkata",
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Timezone",
+      "type": "string"
+     }
+    },
+    "title": "QuietHours",
+    "type": "object"
+   },
+   "QuietHoursOverrideRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "reason": {
+      "maxLength": 500,
+      "minLength": 5,
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "reason"
+    ],
+    "title": "QuietHoursOverrideRequest",
+    "type": "object"
+   },
+   "QuietHoursOverrideView": {
+    "additionalProperties": false,
+    "properties": {
+     "actor_id": {
+      "title": "Actor Id",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "reason",
+     "actor_id",
+     "created_at"
+    ],
+    "title": "QuietHoursOverrideView",
+    "type": "object"
+   },
    "RecordConsent": {
     "additionalProperties": false,
     "description": "Proof of what a person agreed to. Evidence holds ids only, never their words.",
@@ -4127,6 +4614,22 @@
      "participant_id"
     ],
     "title": "RequestApproval",
+    "type": "object"
+   },
+   "RequestJoin": {
+    "additionalProperties": false,
+    "properties": {
+     "organization_id": {
+      "maxLength": 40,
+      "minLength": 8,
+      "title": "Organization Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "organization_id"
+    ],
+    "title": "RequestJoin",
     "type": "object"
    },
    "RevealResult": {
@@ -4543,6 +5046,17 @@
    "SitePerson": {
     "additionalProperties": false,
     "properties": {
+     "contact_email": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contact Email"
+     },
      "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -4550,6 +5064,9 @@
      },
      "person": {
       "$ref": "#/components/schemas/ParticipantSpec"
+     },
+     "quiet_hours": {
+      "$ref": "#/components/schemas/QuietHours"
      },
      "site_id": {
       "title": "Site Id",
@@ -4573,6 +5090,121 @@
      "updated_at"
     ],
     "title": "SitePerson",
+    "type": "object"
+   },
+   "SitePersonPatch": {
+    "additionalProperties": false,
+    "description": "A site person edit, including private contact and availability settings.",
+    "properties": {
+     "available": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Available"
+     },
+     "contact_email": {
+      "anyOf": [
+       {
+        "maxLength": 254,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Contact Email"
+     },
+     "display_name": {
+      "anyOf": [
+       {
+        "maxLength": 80,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Display Name"
+     },
+     "languages": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/LanguageProfile"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "location_id": {
+      "anyOf": [
+       {
+        "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Location Id"
+     },
+     "question_budget": {
+      "anyOf": [
+       {
+        "maximum": 20.0,
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Question Budget"
+     },
+     "quiet_hours": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/QuietHours"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "roles": {
+      "anyOf": [
+       {
+        "items": {
+         "pattern": "^[a-z][a-z0-9_]{0,47}$",
+         "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Roles"
+     },
+     "skill": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Skill"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "title": "SitePersonPatch",
     "type": "object"
    },
    "SiteSummary": {
@@ -4824,6 +5456,24 @@
     "title": "SubmitAnswer",
     "type": "object"
    },
+   "SubmitConsentResponse": {
+    "additionalProperties": false,
+    "properties": {
+     "decision": {
+      "enum": [
+       "granted",
+       "refused"
+      ],
+      "title": "Decision",
+      "type": "string"
+     }
+    },
+    "required": [
+     "decision"
+    ],
+    "title": "SubmitConsentResponse",
+    "type": "object"
+   },
    "TtsRequest": {
     "additionalProperties": false,
     "properties": {
@@ -4890,6 +5540,25 @@
      "text"
     ],
     "title": "TtsRequest",
+    "type": "object"
+   },
+   "UpdateDomainPolicy": {
+    "additionalProperties": false,
+    "properties": {
+     "join_policy": {
+      "enum": [
+       "off",
+       "request",
+       "auto"
+      ],
+      "title": "Join Policy",
+      "type": "string"
+     }
+    },
+    "required": [
+     "join_policy"
+    ],
+    "title": "UpdateDomainPolicy",
     "type": "object"
    },
    "UpdateMemberRoles": {
@@ -4989,6 +5658,13 @@
        "type": "string"
       },
       "title": "Hidden",
+      "type": "array"
+     },
+     "join_requests": {
+      "items": {
+       "$ref": "#/components/schemas/JoinRequestView"
+      },
+      "title": "Join Requests",
       "type": "array"
      },
      "modules": {
@@ -5352,6 +6028,98 @@
     "summary": "Get Session",
     "tags": [
      "auth"
+    ]
+   }
+  },
+  "/v1/consent-links/{code}": {
+   "get": {
+    "operationId": "get_consent_link_v1_consent_links__code__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "code",
+      "required": true,
+      "schema": {
+       "title": "Code",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsentLinkView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Consent Link",
+    "tags": [
+     "consent"
+    ]
+   },
+   "post": {
+    "operationId": "respond_to_consent_link_v1_consent_links__code__post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "code",
+      "required": true,
+      "schema": {
+       "title": "Code",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SubmitConsentResponse"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsentResponseView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Respond To Consent Link",
+    "tags": [
+     "consent"
     ]
    }
   },
@@ -6468,6 +7236,118 @@
     ]
    }
   },
+  "/v1/join-requests": {
+   "post": {
+    "operationId": "request_to_join_v1_join_requests_post",
+    "parameters": [
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RequestJoin"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JoinRequestCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Request To Join",
+    "tags": [
+     "workspace joins"
+    ]
+   }
+  },
+  "/v1/join-requests/{request_id}/cancel": {
+   "post": {
+    "operationId": "cancel_join_request_v1_join_requests__request_id__cancel_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "request_id",
+      "required": true,
+      "schema": {
+       "title": "Request Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Cancel Join Request",
+    "tags": [
+     "workspace joins"
+    ]
+   }
+  },
   "/v1/library/equipment": {
    "get": {
     "description": "Equipment types a site author can choose from, with their faults, checks and repairs.",
@@ -6794,6 +7674,303 @@
     "summary": "Organization",
     "tags": [
      "accounts"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/domains": {
+   "get": {
+    "operationId": "list_domains_v1_orgs__org__domains_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/OrganizationDomain"
+         },
+         "title": "Response List Domains V1 Orgs  Org  Domains Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Domains",
+    "tags": [
+     "workspace domains"
+    ]
+   },
+   "post": {
+    "operationId": "add_domain_v1_orgs__org__domains_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateDomain"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OrganizationDomain"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Add Domain",
+    "tags": [
+     "workspace domains"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/domains/{domain}": {
+   "delete": {
+    "operationId": "remove_domain_v1_orgs__org__domains__domain__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "domain",
+      "required": true,
+      "schema": {
+       "title": "Domain",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Remove Domain",
+    "tags": [
+     "workspace domains"
+    ]
+   },
+   "patch": {
+    "operationId": "set_domain_policy_v1_orgs__org__domains__domain__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "domain",
+      "required": true,
+      "schema": {
+       "title": "Domain",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateDomainPolicy"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OrganizationDomain"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Set Domain Policy",
+    "tags": [
+     "workspace domains"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/domains/{domain}/verify": {
+   "post": {
+    "operationId": "verify_domain_v1_orgs__org__domains__domain__verify_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "domain",
+      "required": true,
+      "schema": {
+       "title": "Domain",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OrganizationDomain"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Verify Domain",
+    "tags": [
+     "workspace domains"
     ]
    }
   },
@@ -7406,6 +8583,74 @@
     ]
    }
   },
+  "/v1/orgs/{org}/investigations/{inv_id}/availability/recheck": {
+   "post": {
+    "operationId": "recheck_availability_v1_orgs__org__investigations__inv_id__availability_recheck_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Recheck Availability",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
   "/v1/orgs/{org}/investigations/{inv_id}/events": {
    "get": {
     "operationId": "list_events_v1_orgs__org__investigations__inv_id__events_get",
@@ -7754,6 +8999,84 @@
     ]
    }
   },
+  "/v1/orgs/{org}/investigations/{inv_id}/quiet-hours/override": {
+   "post": {
+    "operationId": "override_quiet_hours_v1_orgs__org__investigations__inv_id__quiet_hours_override_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "inv_id",
+      "required": true,
+      "schema": {
+       "title": "Inv Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QuietHoursOverrideRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvestigationState"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Override Quiet Hours",
+    "tags": [
+     "investigations"
+    ]
+   }
+  },
   "/v1/orgs/{org}/investigations/{inv_id}/replay": {
    "get": {
     "description": "Rebuild the investigation from its event log and compare with the recorded belief.",
@@ -8098,6 +9421,198 @@
     "summary": "Revoke Invitation",
     "tags": [
      "invitations"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/join-requests": {
+   "get": {
+    "operationId": "list_join_requests_v1_orgs__org__join_requests_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/JoinRequestView"
+         },
+         "title": "Response List Join Requests V1 Orgs  Org  Join Requests Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Join Requests",
+    "tags": [
+     "workspace domains"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/join-requests/{request_id}/approve": {
+   "post": {
+    "operationId": "approve_join_request_v1_orgs__org__join_requests__request_id__approve_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "request_id",
+      "required": true,
+      "schema": {
+       "title": "Request Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JoinRequestDecision"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JoinRequestView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Approve Join Request",
+    "tags": [
+     "workspace domains"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/join-requests/{request_id}/decline": {
+   "post": {
+    "operationId": "decline_join_request_v1_orgs__org__join_requests__request_id__decline_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "request_id",
+      "required": true,
+      "schema": {
+       "title": "Request Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JoinRequestView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Decline Join Request",
+    "tags": [
+     "workspace domains"
     ]
    }
   },
@@ -9165,7 +10680,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "$ref": "#/components/schemas/ParticipantPatch"
+        "$ref": "#/components/schemas/SitePersonPatch"
        }
       }
      },
@@ -9200,6 +10715,85 @@
      }
     },
     "summary": "Update Person",
+    "tags": [
+     "people"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consent-requests": {
+   "post": {
+    "description": "Create a single-use web consent link and email it when Gmail is ready.",
+    "operationId": "request_consent_v1_orgs__org__sites__site_id__people__person_id__consent_requests_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "person_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Person Id",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsentRequestCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Request Consent",
     "tags": [
      "people"
     ]

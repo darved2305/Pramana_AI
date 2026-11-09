@@ -43,8 +43,8 @@ export function privacyError(e: unknown): string {
 }
 
 /** The newest record for a purpose, which may have been withdrawn. */
-function latest(records: ConsentRecord[], purpose: Purpose): ConsentRecord | undefined {
-  return records.find((r) => r.purpose === purpose);
+function latest(records: ConsentRecord[], purpose: Purpose, channel?: Channel): ConsentRecord | undefined {
+  return records.find((r) => r.purpose === purpose && (!channel || r.channel === channel));
 }
 
 export function ConsentSummary({ records, failed }: { records: ConsentRecord[] | undefined; failed: boolean }) {
@@ -54,12 +54,27 @@ export function ConsentSummary({ records, failed }: { records: ConsentRecord[] |
     <ul className="flex flex-wrap items-center gap-1.5" aria-label="Consent">
       {PURPOSES.map((p) => {
         const r = latest(records, p.id);
-        const state = !r ? "not recorded" : r.withdrawn_at ? "withdrawn" : "given";
+        const state = !r
+          ? "not recorded"
+          : r.decision === "refused"
+            ? "refused"
+            : r.withdrawn_at
+              ? "withdrawn"
+              : "given";
+        const web = p.id === "contact_for_investigations"
+          ? latest(records, p.id, "web")
+          : undefined;
+        const webAllowed = !!web && web.decision !== "refused" && !web.withdrawn_at;
         return (
           <li key={p.id}>
-            <Badge tone={state === "given" ? "ok" : state === "withdrawn" ? "warn" : "muted"}>
-              {p.label}: {state}
+            <Badge tone={state === "given" ? "ok" : state === "withdrawn" || state === "refused" ? "warn" : "muted"}>
+              {p.label}: {state}{r ? ` (${r.channel})` : ""}
             </Badge>
+            {p.id === "contact_for_investigations" ? (
+              <Badge tone={webAllowed ? "ok" : "muted"}>
+                Web questions: {webAllowed ? "allowed" : "not allowed"}
+              </Badge>
+            ) : null}
           </li>
         );
       })}
@@ -88,6 +103,9 @@ export function ConsentDialog({
   const [channel, setChannel] = useState<Channel>("paper");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requesting, setRequesting] = useState(false);
+  const [requestLink, setRequestLink] = useState<{ path: string; delivery: string } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const languages = person?.languages.stt_candidates ?? [];
   const chosen = language || languages[0] || "en";
@@ -96,6 +114,8 @@ export function ConsentDialog({
     setRecording(null);
     setLanguage("");
     setError(null);
+    setRequestLink(null);
+    setLinkCopied(false);
     onClose();
   }
 
@@ -127,17 +147,70 @@ export function ConsentDialog({
           <ul className="flex flex-col gap-3">
             {PURPOSES.map((p) => {
               const r = latest(records, p.id);
-              const active = r && !r.withdrawn_at;
+              const active = r && r.decision !== "refused" && !r.withdrawn_at;
               return (
                 <li key={p.id} aria-label={p.label} className="flex flex-col gap-2 rounded-[10px] border border-white/[.08] p-3">
                   <p className="text-[14px] font-medium text-fg">{p.meaning}</p>
                   <p className="text-[13px] text-fg-2">
                     {!r
                       ? "Not recorded yet."
-                      : active
+                      : r.decision === "refused"
+                        ? `Refused ${relative(r.granted_at)}.`
+                        : active
                         ? `Given ${relative(r.granted_at)}, notice version ${r.notice_version}, in ${langLabel(r.language)}.`
                         : `Withdrawn ${relative(r.withdrawn_at as string)}.`}
                   </p>
+                  {p.id === "contact_for_investigations" ? (
+                    <div className="flex flex-col gap-2 rounded-[10px] bg-white/[.025] p-3">
+                      <Button
+                        size="sm"
+                        disabled={busy || requesting}
+                        loading={requesting}
+                        onClick={async () => {
+                          setRequesting(true);
+                          setError(null);
+                          setRequestLink(null);
+                          try {
+                            const created = await api.requestConsent(siteId, person.id, { key: actionKey("consent-request") });
+                            setRequestLink({ path: created.link_path, delivery: created.email_delivery });
+                          } catch (e) {
+                            setError(privacyError(e));
+                          } finally {
+                            setRequesting(false);
+                          }
+                        }}
+                      >
+                        Send consent request
+                      </Button>
+                      {requestLink ? (
+                        <>
+                          <p className="text-[12px] text-fg-2" aria-live="polite">
+                            {requestLink.delivery === "sent"
+                              ? "Email sent. You can also copy the link."
+                              : requestLink.delivery === "no_email"
+                                ? "No email is saved for this person. Copy and share the link."
+                                : requestLink.delivery === "failed"
+                                  ? "Email could not be confirmed. Copy and share the link."
+                                  : "Email is not set up. Copy and share the link."}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <code className="min-w-0 flex-1 break-all rounded bg-black/20 p-2 text-[11px] text-muted">
+                              {typeof window === "undefined" ? requestLink.path : `${window.location.origin}${requestLink.path}`}
+                            </code>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                const link = `${window.location.origin}${requestLink.path}`;
+                                void navigator.clipboard?.writeText(link).then(() => setLinkCopied(true));
+                              }}
+                            >
+                              {linkCopied ? "Copied" : "Copy link"}
+                            </Button>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {recording === p.id ? (
                     <form
                       className="flex flex-col gap-2"

@@ -9,14 +9,16 @@ from fastapi import APIRouter, Header, Path, Request, Response
 from pramana_contracts import (
     ConsentPurpose,
     ConsentRecord,
-    ParticipantPatch,
+    ConsentRequestCreated,
     ParticipantSpec,
     PersonTrackRecord,
     RecordConsent,
     SitePerson,
+    SitePersonPatch,
 )
 
 from .. import ids
+from ..consent import email_consent_request
 from ..db import Database
 from ..errors import not_found
 from ..idempotency import idempotent
@@ -51,7 +53,12 @@ def _people(request: Request, response: Response) -> SitePeople:
 async def list_people(
     org: str, site_id: str, request: Request, response: Response
 ) -> list[SitePerson]:
-    return [person_view(r) for r in await _people(request, response).listing(_site(site_id))]
+    roles = set(request.state.principal.roles)
+    include_contact = bool(roles & {"owner", "admin", "operator"})
+    return [
+        person_view(r, include_contact=include_contact)
+        for r in await _people(request, response).listing(_site(site_id))
+    ]
 
 
 @router.get("/track-record")
@@ -74,7 +81,7 @@ async def add_person(
     """``409 PERSON_EXISTS`` when the id is taken at this site; roles must exist in its model."""
     row = await _people(request, response).add(_site(site_id), body)
     response.headers["ETag"] = person_etag(row)
-    return person_view(row)
+    return person_view(row, include_contact=True)
 
 
 @router.patch(
@@ -90,14 +97,14 @@ async def update_person(
     org: str,
     site_id: str,
     person_id: PersonId,
-    body: ParticipantPatch,
+    body: SitePersonPatch,
     request: Request,
     response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
 ) -> SitePerson:
     row = await _people(request, response).update(_site(site_id), person_id, body, if_match)
     response.headers["ETag"] = person_etag(row)
-    return person_view(row)
+    return person_view(row, include_contact=True)
 
 
 @router.post("/{person_id}/remove", status_code=204)
@@ -141,6 +148,8 @@ async def record_consent(
     row = await _people(request, response).grant_consent(
         _site(site_id), person_id, body, request.state.principal
     )
+    if body.purpose == "contact_for_investigations":
+        await request.app.state.investigations.consent_state_changed(_site(site_id), person_id)
     return consent_view(row)
 
 
@@ -157,4 +166,31 @@ async def withdraw_consent(
     await _people(request, response).withdraw_consent(
         _site(site_id), person_id, purpose, request.state.principal
     )
+    if purpose == "contact_for_investigations":
+        await request.app.state.investigations.consent_state_changed(_site(site_id), person_id)
     return Response(status_code=204)
+
+
+@router.post("/{person_id}/consent-requests", status_code=201)
+@idempotent("org", roles=EDITORS)
+async def request_consent(
+    org: str, site_id: str, person_id: PersonId, request: Request, response: Response
+) -> ConsentRequestCreated:
+    """Create a single-use web consent link and email it when Gmail is ready."""
+    response.headers["Cache-Control"] = "private, no-store"
+    people = _people(request, response)
+    code, expires_at, email, language, request_id = await people.request_consent_link(
+        _site(site_id), person_id, request.state.principal
+    )
+    link_path = f"/consent/{code}"
+    delivery = await email_consent_request(
+        request.app.state.mailer,
+        request.app.state.settings.invitation_link_base,
+        email,
+        link_path,
+        language,
+        request_id,
+    )
+    return ConsentRequestCreated(
+        link_path=link_path, expires_at=expires_at, email_delivery=delivery
+    )

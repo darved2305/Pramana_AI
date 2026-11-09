@@ -59,14 +59,55 @@ async function identityToken(audience: string): Promise<string> {
   return token;
 }
 
+/**
+ * On Cloud Run the core and simulator accept only their invoker service accounts. The caller's
+ * own Authorization header (a participant or app token) is left untouched; the identity token goes
+ * in X-Serverless-Authorization, which Cloud Run checks and then strips.
+ */
+async function serverlessAuth(target: URL): Promise<Record<string, string>> {
+  if (process.env.PRAMANA_CLOUD_RUN_AUTH !== "true") return {};
+  return { "X-Serverless-Authorization": `Bearer ${await identityToken(target.origin)}` };
+}
+
 export async function proxy(request: NextRequest) {
   const target = upstreamFor(request.nextUrl.pathname, request.nextUrl.search, process.env);
   if (!target) return NextResponse.next();
 
-  if (process.env.PRAMANA_CLOUD_RUN_AUTH !== "true") return NextResponse.rewrite(target);
+  // Next's rewrite proxy logs the full upstream URL when the core is unreachable. Consent
+  // links contain bearer secrets, so handle these requests without exposing the URL in logs.
+  if (request.nextUrl.pathname.startsWith("/api/core/v1/consent-links/")) {
+    if (request.method !== "GET" && request.method !== "POST") {
+      return new Response(null, { status: 405 });
+    }
+    try {
+      const response = await fetch(target, {
+        method: request.method,
+        headers: { "Content-Type": "application/json", ...(await serverlessAuth(target)) },
+        body: request.method === "POST" ? await request.text() : undefined,
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
+      });
+      return new Response(response.body, {
+        status: response.status,
+        headers: {
+          "Content-Type": response.headers.get("content-type") ?? "application/json",
+          "Cache-Control": "no-store",
+          "Referrer-Policy": "no-referrer",
+        },
+      });
+    } catch {
+      return Response.json(
+        { error: { code: "UPSTREAM_DOWN", message: "Pramana could not be reached" } },
+        { status: 503, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } },
+      );
+    }
+  }
+
   try {
+    const auth = await serverlessAuth(target);
+    if (Object.keys(auth).length === 0) return NextResponse.rewrite(target);
     const headers = new Headers(request.headers);
-    headers.set("X-Serverless-Authorization", `Bearer ${await identityToken(target.origin)}`);
+    for (const [name, value] of Object.entries(auth)) headers.set(name, value);
     return NextResponse.rewrite(target, { request: { headers } });
   } catch {
     return NextResponse.json(

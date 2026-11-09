@@ -16,18 +16,24 @@ import type {
   SiteModelDraft,
   SiteModelSummary,
   ConsentRecord,
+  ConsentRequestCreated,
   InvestigationForecast,
   MapDriftCheck,
   RecordConsent,
   SitePerson,
   PersonTrackRecord,
   SiteSummary,
-  ParticipantPatch,
+  SitePersonPatch,
   WorkspaceHome,
   WorkspaceMember,
   CreateInvitation,
   InvitationCreated,
   InvitationView,
+  CreateDomain,
+  JoinRequestDecision,
+  JoinRequestView,
+  OrganizationDomain,
+  UpdateDomainPolicy,
   SubmitAnswer,
 } from "./types";
 
@@ -64,6 +70,32 @@ export function organizationApi(org: string) {
     home: (signal?: AbortSignal) => request<WorkspaceHome>("core", `${root}/home`, { signal }),
     members: (signal?: AbortSignal) => request<WorkspaceMember[]>("core", `${root}/members`, { signal }),
     invitations: (signal?: AbortSignal) => request<InvitationView[]>("core", `${root}/invitations`, { signal }),
+    domains: (signal?: AbortSignal) => request<OrganizationDomain[]>("core", `${root}/domains`, { signal }),
+    addDomain: (body: CreateDomain, action: OrganizationAction) =>
+      mutate<OrganizationDomain>(`${root}/domains`, body, action),
+    verifyDomain: (domain: string, action: OrganizationAction) =>
+      mutate<OrganizationDomain>(`${root}/domains/${enc(domain)}/verify`, undefined, action),
+    updateDomainPolicy: (domain: string, body: UpdateDomainPolicy, action: OrganizationAction) =>
+      request<OrganizationDomain>("core", `${root}/domains/${enc(domain)}`, {
+        method: "PATCH",
+        json: body,
+        token: action.token,
+        signal: action.signal,
+        headers: { "Idempotency-Key": action.key },
+      }),
+    removeDomain: (domain: string, action: OrganizationAction) =>
+      request<void>("core", `${root}/domains/${enc(domain)}`, {
+        method: "DELETE",
+        token: action.token,
+        signal: action.signal,
+        headers: { "Idempotency-Key": action.key },
+      }),
+    joinRequests: (signal?: AbortSignal) =>
+      request<JoinRequestView[]>("core", `${root}/join-requests`, { signal }),
+    approveJoinRequest: (id: string, body: JoinRequestDecision, action: OrganizationAction) =>
+      mutate<JoinRequestView>(`${root}/join-requests/${enc(id)}/approve`, body, action),
+    declineJoinRequest: (id: string, action: OrganizationAction) =>
+      mutate<JoinRequestView>(`${root}/join-requests/${enc(id)}/decline`, undefined, action),
     updateMember: (memberId: string, roles: WorkspaceMember["roles"], action: OrganizationAction) =>
       request<WorkspaceMember>("core", `${root}/members/${enc(memberId)}`, {
         method: "PATCH",
@@ -85,7 +117,7 @@ export function organizationApi(org: string) {
     addPerson: (siteId: string, person: ParticipantSpec, action: OrganizationAction) =>
       mutate<SitePerson>(`${site(siteId)}/people`, person, action),
     updatePerson: (
-      siteId: string, personId: string, patch: ParticipantPatch, version: number, action: OrganizationAction,
+      siteId: string, personId: string, patch: SitePersonPatch, version: number, action: OrganizationAction,
     ) =>
       request<SitePerson>("core", `${site(siteId)}/people/${enc(personId)}`, {
         method: "PATCH",
@@ -103,6 +135,8 @@ export function organizationApi(org: string) {
       mutate<ConsentRecord>(`${site(siteId)}/people/${enc(personId)}/consents`, body, action),
     withdrawConsent: (siteId: string, personId: string, purpose: RecordConsent["purpose"], action: OrganizationAction) =>
       mutate<void>(`${site(siteId)}/people/${enc(personId)}/consents/${enc(purpose)}/withdraw`, undefined, action),
+    requestConsent: (siteId: string, personId: string, action: OrganizationAction) =>
+      mutate<ConsentRequestCreated>(`${site(siteId)}/people/${enc(personId)}/consent-requests`, undefined, action),
     site: (id: string, signal?: AbortSignal) => request<SiteSummary>("core", site(id), { signal }),
     models: (id: string, signal?: AbortSignal) =>
       request<SiteModelSummary[]>("core", `${site(id)}/models`, { signal }),
@@ -176,6 +210,10 @@ export function organizationApi(org: string) {
       mutate<ParticipantToken & { org_id: string }>(
         `${investigation(id)}/participants/${enc(participantId)}/token`, undefined, action,
       ),
+    recheckAvailability: (id: string, action: OrganizationAction) =>
+      mutate<InvestigationState>(`${investigation(id)}/availability/recheck`, undefined, action),
+    overrideQuietHours: (id: string, reason: string, action: OrganizationAction) =>
+      mutate<InvestigationState>(`${investigation(id)}/quiet-hours/override`, { reason }, action),
   });
 }
 

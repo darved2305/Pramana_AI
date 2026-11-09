@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import Field
 
 from .common import StrictModel
+from .domain_joins import JoinRequestView
 
 HomeModuleId = Literal["approvals", "active", "decided", "setup", "sites", "recent"]
 
@@ -58,3 +59,4 @@ class WorkspaceHome(StrictModel):
     greeting_name: str
     modules: list[HomeModule]
     hidden: list[HomeModuleId] = Field(default_factory=list)
+    join_requests: list[JoinRequestView] = Field(default_factory=list)

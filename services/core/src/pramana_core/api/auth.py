@@ -162,12 +162,13 @@ async def google_callback(request: Request) -> RedirectResponse:
             code = query.get("code")
             if not code or len(code) > 4096:
                 raise OidcError("missing authorization code")
-            token, _ = await google.finish(
+            token, principal = await google.finish(
                 flow,
                 code,
                 request.cookies.get(cfg.session_cookie_name),
                 request.headers.get("user-agent"),
             )
+            await request.app.state.domain_joins.auto_join_on_sign_in(principal)
             response = _redirect(flow.next_path)
             _session_cookie(response, cfg, token)
     except AccountExistsError:

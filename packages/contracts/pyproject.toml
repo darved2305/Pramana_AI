@@ -3,7 +3,7 @@ name = "pramana-contracts"
 version = "0.1.0"
 description = "Canonical typed contracts shared by every Pramana component"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2.9", "cryptography>=43"]
+dependencies = ["pydantic>=2.9", "cryptography>=43", "tzdata>=2024.1"]
 
 [build-system]
 requires = ["hatchling>=1.25"]

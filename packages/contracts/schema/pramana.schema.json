@@ -453,6 +453,41 @@
       "title": "CapabilityGrant",
       "type": "object"
     },
+    "CreateDomain": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "maxLength": 253,
+          "minLength": 3,
+          "title": "Domain",
+          "type": "string"
+        },
+        "join_policy": {
+          "default": "request",
+          "enum": [
+            "off",
+            "request",
+            "auto"
+          ],
+          "title": "Join Policy",
+          "type": "string"
+        },
+        "verification": {
+          "enum": [
+            "google_hd",
+            "dns_txt"
+          ],
+          "title": "Verification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "verification"
+      ],
+      "title": "CreateDomain",
+      "type": "object"
+    },
     "CreateInvestigation": {
       "additionalProperties": false,
       "description": "Legacy developer/evaluation input. Production creation selects a saved site instead.",
@@ -1526,9 +1561,31 @@
           "title": "Presence Checks Enabled",
           "type": "boolean"
         },
+        "questioning_availability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuestioningAvailability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "questions_asked": {
           "title": "Questions Asked",
           "type": "integer"
+        },
+        "quiet_hours_override": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuietHoursOverrideView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "repair_options": {
           "items": {
@@ -1678,6 +1735,145 @@
       "title": "InvestigationSummary",
       "type": "object"
     },
+    "JoinRequestCreated": {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination"
+        },
+        "joined": {
+          "title": "Joined",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/JoinRequestView"
+        }
+      },
+      "required": [
+        "request",
+        "joined"
+      ],
+      "title": "JoinRequestCreated",
+      "type": "object"
+    },
+    "JoinRequestDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "default": "viewer",
+          "enum": [
+            "admin",
+            "operator",
+            "approver",
+            "viewer"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "title": "JoinRequestDecision",
+      "type": "object"
+    },
+    "JoinRequestView": {
+      "additionalProperties": false,
+      "properties": {
+        "decided_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decided At"
+        },
+        "decision_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "admin",
+                "auto"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Source"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "organization_id": {
+          "title": "Organization Id",
+          "type": "string"
+        },
+        "organization_name": {
+          "title": "Organization Name",
+          "type": "string"
+        },
+        "requested_at": {
+          "format": "date-time",
+          "title": "Requested At",
+          "type": "string"
+        },
+        "requester_email": {
+          "title": "Requester Email",
+          "type": "string"
+        },
+        "requester_name": {
+          "title": "Requester Name",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OrganizationRole"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "approved",
+            "declined",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "organization_id",
+        "organization_name",
+        "requester_name",
+        "requester_email",
+        "status",
+        "requested_at"
+      ],
+      "title": "JoinRequestView",
+      "type": "object"
+    },
     "JoinSuggestion": {
       "additionalProperties": false,
       "properties": {
@@ -1700,6 +1896,31 @@
           ],
           "title": "Policy",
           "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "request_status": {
+          "anyOf": [
+            {
+              "const": "pending",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Status"
         }
       },
       "required": [
@@ -2414,6 +2635,76 @@
       "title": "OrganizationCreated",
       "type": "object"
     },
+    "OrganizationDomain": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        },
+        "join_policy": {
+          "enum": [
+            "off",
+            "request",
+            "auto"
+          ],
+          "title": "Join Policy",
+          "type": "string"
+        },
+        "verification": {
+          "enum": [
+            "google_hd",
+            "dns_txt"
+          ],
+          "title": "Verification",
+          "type": "string"
+        },
+        "verification_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verification Name"
+        },
+        "verification_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verification Value"
+        },
+        "verified_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Verified At"
+        }
+      },
+      "required": [
+        "domain",
+        "verification",
+        "verified_at",
+        "join_policy"
+      ],
+      "title": "OrganizationDomain",
+      "type": "object"
+    },
     "OrganizationKind": {
       "enum": [
         "campus",
@@ -3082,6 +3373,66 @@
       "title": "QuestionStatus",
       "type": "string"
     },
+    "QuestioningAvailability": {
+      "additionalProperties": false,
+      "properties": {
+        "eligible_count": {
+          "title": "Eligible Count",
+          "type": "integer"
+        },
+        "evaluated_at": {
+          "format": "date-time",
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "no_consent_count": {
+          "title": "No Consent Count",
+          "type": "integer"
+        },
+        "quiet_hours_count": {
+          "title": "Quiet Hours Count",
+          "type": "integer"
+        },
+        "unavailable_count": {
+          "title": "Unavailable Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "evaluated_at",
+        "eligible_count",
+        "no_consent_count",
+        "quiet_hours_count",
+        "unavailable_count"
+      ],
+      "title": "QuestioningAvailability",
+      "type": "object"
+    },
+    "QuietHoursOverrideView": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "actor_id",
+        "created_at"
+      ],
+      "title": "QuietHoursOverrideView",
+      "type": "object"
+    },
     "RepairOption": {
       "additionalProperties": false,
       "description": "A repair the site's model allows for the current decision, on one specific target.",
@@ -3271,6 +3622,22 @@
         "participant_id"
       ],
       "title": "RequestApproval",
+      "type": "object"
+    },
+    "RequestJoin": {
+      "additionalProperties": false,
+      "properties": {
+        "organization_id": {
+          "maxLength": 40,
+          "minLength": 8,
+          "title": "Organization Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organization_id"
+      ],
+      "title": "RequestJoin",
       "type": "object"
     },
     "RevealResult": {
@@ -3940,6 +4307,25 @@
       "title": "TtsRequest",
       "type": "object"
     },
+    "UpdateDomainPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "join_policy": {
+          "enum": [
+            "off",
+            "request",
+            "auto"
+          ],
+          "title": "Join Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "join_policy"
+      ],
+      "title": "UpdateDomainPolicy",
+      "type": "object"
+    },
     "ViewItem": {
       "additionalProperties": false,
       "description": "One thing a participant can perceive at their current location.",
@@ -4027,6 +4413,9 @@
     "CapabilityGrant": {
       "$ref": "#/$defs/CapabilityGrant"
     },
+    "CreateDomain": {
+      "$ref": "#/$defs/CreateDomain"
+    },
     "CreateInvestigation": {
       "$ref": "#/$defs/CreateInvestigation"
     },
@@ -4057,6 +4446,15 @@
     "InvestigationState": {
       "$ref": "#/$defs/InvestigationState"
     },
+    "JoinRequestCreated": {
+      "$ref": "#/$defs/JoinRequestCreated"
+    },
+    "JoinRequestDecision": {
+      "$ref": "#/$defs/JoinRequestDecision"
+    },
+    "JoinRequestView": {
+      "$ref": "#/$defs/JoinRequestView"
+    },
     "LoginRequest": {
       "$ref": "#/$defs/LoginRequest"
     },
@@ -4075,6 +4473,9 @@
     "OrganizationCreated": {
       "$ref": "#/$defs/OrganizationCreated"
     },
+    "OrganizationDomain": {
+      "$ref": "#/$defs/OrganizationDomain"
+    },
     "PackSummary": {
       "$ref": "#/$defs/PackSummary"
     },
@@ -4089,6 +4490,9 @@
     },
     "RequestApproval": {
       "$ref": "#/$defs/RequestApproval"
+    },
+    "RequestJoin": {
+      "$ref": "#/$defs/RequestJoin"
     },
     "RevealResult": {
       "$ref": "#/$defs/RevealResult"
@@ -4116,6 +4520,9 @@
     },
     "TtsRequest": {
       "$ref": "#/$defs/TtsRequest"
+    },
+    "UpdateDomainPolicy": {
+      "$ref": "#/$defs/UpdateDomainPolicy"
     },
     "VoiceAnswerResult": {
       "$ref": "#/$defs/VoiceAnswerResult"

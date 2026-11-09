@@ -72,6 +72,10 @@ export default function OnboardingPage() {
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [joinBusy, setJoinBusy] = useState<string | null>(null);
+  const [requested, setRequested] = useState<Record<string, string>>({});
+  const joinKeys = useRef(new Map<string, string>());
+  const cancelKeys = useRef(new Map<string, string>());
 
   function adopt(next: OnboardingState, etag: string | null) {
     latest.current = { state: next, etag, saved: next.answers };
@@ -144,10 +148,61 @@ export default function OnboardingPage() {
     return fresh.status === "ready" ? fresh.account.destination : "/app";
   }
 
+  async function requestToJoin(organizationId: string) {
+    setJoinBusy(organizationId);
+    setError(null);
+    const key = joinKeys.current.get(organizationId) ?? actionKey("domain-join");
+    joinKeys.current.set(organizationId, key);
+    try {
+      const result = await accountApi.requestJoin(organizationId, key);
+      if (result.joined && result.destination) {
+        await refreshAccount();
+        router.push(result.destination);
+        return;
+      }
+      setRequested((current) => ({ ...current, [organizationId]: result.request.id }));
+      await refreshAccount();
+    } catch (e) {
+      if (e instanceof ApiError && !e.unreachable && e.code !== "IDEMPOTENCY_IN_FLIGHT") {
+        joinKeys.current.delete(organizationId);
+      }
+      setError(describeError(e));
+    } finally {
+      setJoinBusy(null);
+    }
+  }
+
+  async function cancelJoin(organizationId: string, requestId: string) {
+    setJoinBusy(organizationId);
+    setError(null);
+    const key = cancelKeys.current.get(requestId) ?? actionKey("cancel-join");
+    cancelKeys.current.set(requestId, key);
+    try {
+      await accountApi.cancelJoinRequest(requestId, key);
+      cancelKeys.current.delete(requestId);
+      joinKeys.current.delete(organizationId);
+      setRequested((current) => {
+        const next = { ...current };
+        delete next[organizationId];
+        return next;
+      });
+      await refreshAccount();
+    } catch (e) {
+      if (e instanceof ApiError && !e.unreachable && e.code !== "IDEMPOTENCY_IN_FLIGHT") {
+        cancelKeys.current.delete(requestId);
+      }
+      setError(describeError(e));
+    } finally {
+      setJoinBusy(null);
+    }
+  }
+
   const workspace =
     account.status === "ready" && state?.org_id
       ? account.account.memberships.find((m) => m.id === state.org_id) ?? null
       : null;
+  const joinSuggestions =
+    account.status === "ready" ? account.account.join_suggestions ?? [] : [];
   const index = FLOW.findIndex((f) => f.id === step);
 
   return (
@@ -179,7 +234,20 @@ export default function OnboardingPage() {
             {account.status === "ready" && (account.account.pending_invitations ?? []).length > 0 ? (
               <Invitations invitations={account.account.pending_invitations ?? []} onJoined={(dest) => router.push(dest)} />
             ) : null}
-            <Primary busy={busy} onClick={() => go("survey")}>Get started</Primary>
+            {joinSuggestions.length > 0 ? (
+              <DomainJoinChoices
+                suggestions={joinSuggestions}
+                localRequests={requested}
+                busyId={joinBusy}
+                onRequest={requestToJoin}
+                onCancel={cancelJoin}
+              />
+            ) : null}
+            <Primary busy={busy || joinBusy !== null} onClick={() => go("survey")}>
+              {joinSuggestions.length > 0
+                ? "Create a separate organization"
+                : "Get started"}
+            </Primary>
           </Step>
         ) : step === "survey" ? (
           <Survey answers={state.answers} busy={busy} onChange={(a) => save({ answers: a })} onNext={() => go("org")} />
@@ -399,6 +467,57 @@ function Invitations({
             </button>
           </li>
         ))}
+      </ul>
+    </section>
+  );
+}
+
+function DomainJoinChoices({
+  suggestions,
+  localRequests,
+  busyId,
+  onRequest,
+  onCancel,
+}: {
+  suggestions: NonNullable<CurrentAccount["join_suggestions"]>;
+  localRequests: Record<string, string>;
+  busyId: string | null;
+  onRequest: (organizationId: string) => void;
+  onCancel: (organizationId: string, requestId: string) => void;
+}) {
+  return (
+    <section aria-labelledby="domain-join-heading" className="mb-6 flex flex-col gap-3">
+      <h2 id="domain-join-heading" className="text-[20px] font-medium text-cream">Workspaces for your verified email</h2>
+      <p className="text-[14px] leading-relaxed text-cream/65">
+        You can create a separate organization and use its sandbox while an admin reviews your request.
+      </p>
+      <ul className="flex flex-col gap-3">
+        {suggestions.map((suggestion) => {
+          const requestId = localRequests[suggestion.organization_id] ?? suggestion.request_id;
+          const pending = Boolean(requestId);
+          return (
+            <li key={suggestion.organization_id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border-[0.8px] border-cream/25 px-4 py-3">
+              <span className="min-w-0 flex-1 text-[15px] text-cream">
+                {suggestion.organization_name}
+                <span className="ml-2 block text-[12px] text-cream/55">Verified domain: {suggestion.domain}</span>
+                {pending ? <span className="mt-1 block text-[13px] text-cream/70">Request sent. You can create a separate organization to use a sandbox.</span> : null}
+              </span>
+              {pending && requestId ? (
+                <button type="button" className="btn-line disabled:opacity-50" disabled={busyId !== null} onClick={() => onCancel(suggestion.organization_id, requestId)}>
+                  {busyId === suggestion.organization_id ? "Saving..." : "Cancel request"}
+                </button>
+              ) : (
+                <button type="button" className="btn-cream disabled:opacity-50" disabled={busyId !== null} onClick={() => onRequest(suggestion.organization_id)}>
+                  {busyId === suggestion.organization_id
+                    ? "Sending request..."
+                    : suggestion.policy === "auto"
+                      ? `Join ${suggestion.organization_name}`
+                      : `Request to join ${suggestion.organization_name}`}
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
