@@ -113,7 +113,7 @@ async def email_invitation(
 
 def _mask(email: str) -> str:
     local, _, domain = email.partition("@")
-    return f"{local[:2]}{'*' * max(len(local) - 2, 1)}@{domain}"
+    return f"{local[:1]}•••@{domain}"
 
 
 class Invitations:
