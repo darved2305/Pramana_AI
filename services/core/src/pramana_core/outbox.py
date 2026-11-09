@@ -34,6 +34,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from . import ids
 from .account_rows import InvitationRow
 from .db import Base, Database, acting_as_job, acting_for, apply_context
 from .mail import Mailer
@@ -134,6 +135,31 @@ def invitation_email(
         "If you were not expecting this, you can ignore this email.\n"
     )
     return EmailEnvelope(email, subject, body)
+
+
+def queue_email(
+    session: AsyncSession,
+    *,
+    org_id: uuid.UUID,
+    kind: str,
+    envelope: EmailEnvelope,
+    now: datetime,
+) -> None:
+    """Queue a message that belongs to no invitation or consent link. It joins the caller's
+    transaction, so the state change and the send intent commit or roll back together."""
+    session.add(
+        EmailOutboxRow(
+            id=ids.uuid7(),
+            org_id=org_id,
+            kind=kind,
+            state="queued",
+            recipient=envelope.recipient,
+            subject=envelope.subject,
+            body=envelope.body,
+            attempts=0,
+            available_at=now,
+        )
+    )
 
 
 def delivery_status(state: str | None) -> str:

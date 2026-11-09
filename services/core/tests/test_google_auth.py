@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from pramana_contracts import StaffRole
 from pramana_core.auth.service import AuthService, LoginThrottle
 from pramana_core.db import Database
+from pramana_core.mail import FakeMailer
 from pramana_core.main import create_app
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
@@ -62,6 +63,7 @@ def oauth_core(
         oidc_transport=httpx.MockTransport(fake.transport),
     )
     with TestClient(app) as client:
+        client.app.state.email_relay.mailer = FakeMailer()
         yield client, fake
 
 
@@ -228,7 +230,7 @@ def test_google_sign_in_auto_joins_pending_request_as_viewer(
     )
     assert any(
         address == "owner@college.edu" and "joined Nava College as a viewer" in body
-        for address, _, body in client.app.state.domain_joins.mailer.messages
+        for address, _, body in client.app.state.email_relay.mailer.sent
     )
 
 

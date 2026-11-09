@@ -41,7 +41,7 @@ from .auth.oidc import GoogleOidc
 from .auth.service import AuthService, LoginThrottle
 from .db import Database, make_engine
 from .directory import make_queries
-from .domain_joins import DnsPythonResolver, DnsTxtResolver, DomainJoins, LocalOutbox
+from .domain_joins import DnsPythonResolver, DnsTxtResolver, DomainJoins
 from .errors import install_error_handlers
 from .investigations import InvestigationService
 from .invitations import Invitations
@@ -165,13 +165,7 @@ def create_app(
             else None
         )
         app.state.email_relay = EmailRelay(db, app.state.mailer)
-        app.state.domain_joins = DomainJoins(
-            db,
-            dns_txt_resolver or DnsPythonResolver(),
-            GmailSmtp(cfg.gmail_address, cfg.gmail_app_password)
-            if can_send_email and cfg.gmail_address and cfg.gmail_app_password
-            else LocalOutbox(),
-        )
+        app.state.domain_joins = DomainJoins(db, dns_txt_resolver or DnsPythonResolver())
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)
