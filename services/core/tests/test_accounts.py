@@ -29,6 +29,8 @@ from pramana_core.errors import ApiError
 from pramana_core.idempotency import IdempotencyRoute, idempotent, reap_expired
 from pramana_core.main import create_app
 from pramana_core.org_access import require_user
+from pramana_domain.spec_storage import load_spec
+from pramana_engine import compile_pack
 
 pytestmark = pytest.mark.db
 KEY = "workspace-create-001"
@@ -144,6 +146,7 @@ def test_stored_sandbox_is_identical_to_latest_frozen_template(
     account_core: TestClient, migrated_db: str
 ) -> None:
     data = create(account_core).json()
+    assert data["sandbox_site"]["kind"] == "other"
     model_id = ids.decode("model", data["sandbox_site"]["current_model_id"])
     rows = sql(
         migrated_db,
@@ -159,6 +162,44 @@ def test_stored_sandbox_is_identical_to_latest_frozen_template(
         ).encode()
     ).digest()
     assert digest == rows[0]["spec_sha256"] == rows[0]["template_hash"]
+
+    templates = sql(
+        migrated_db,
+        "select version, spec, spec_sha256 from model_templates "
+        "where purpose = 'sandbox' order by version",
+    )
+    assert [row["version"] for row in templates] == [1, 2]
+    assert bytes(templates[0]["spec_sha256"]).hex() == (
+        "9435216bfb330b2da94db1166a9e4147613536e224897cbc5b8f1b2485a75837"
+    )
+    assert templates[0]["spec"]["title"] == "Hostel Block C (simulated)"
+
+    spec = templates[1]["spec"]
+    compile_pack(load_spec(spec))
+    copy = [spec["title"]]
+    copy.extend(role["label"] for role in spec["roles"])
+    copy.extend(location["label"]["en"] for location in spec["locations"])
+    copy.extend(component["label"] for component in spec["components"])
+    copy.extend(
+        failure["label"]
+        for component in spec["components"]
+        for failure in component["failure_modes"]
+    )
+    copy.extend(probe["label"] for probe in spec["probes"])
+    copy.extend(text for probe in spec["probes"] for text in probe["templates"].values())
+    copy.extend(decision["label"] for decision in spec["decision_classes"])
+    shown = " ".join(copy).casefold()
+    for site_specific_term in (
+        "hostel",
+        "guard desk",
+        "student",
+        "nava-wifi",
+        "ip test page",
+        "wi-fi box",
+        "idf-",
+        "db-c2",
+    ):
+        assert site_specific_term not in shown
 
 
 @pytest.mark.parametrize(
