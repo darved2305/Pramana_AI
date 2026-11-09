@@ -20,7 +20,12 @@ const nextConfig: NextConfig = {
   distDir: process.env.PRAMANA_NEXT_DIST_DIR ?? ".next",
   // OAuth codes and state arrive in query strings; omit these routes from dev request logs.
   logging: {
-    incomingRequests: { ignore: [/\/api\/core\/v1\/auth\/google\/(?:start|callback)/] },
+    incomingRequests: {
+      ignore: [
+        /\/api\/core\/v1\/auth\/google\/(?:start|callback)/,
+        /\/consent\/[^/]+/,
+      ],
+    },
   },
   turbopack: {
     rules: {

@@ -24,6 +24,7 @@ import { ApprovalPanel, ContradictionPanel, ConversationPanel, EvidenceLedger, T
 import { ForecastPanel } from "@/components/console/ForecastPanel";
 import { useInvestigation, useInvestigationPack } from "@/lib/data/hooks";
 import { useCurrentUser } from "@/lib/data/session";
+import { useOptionalWorkspace } from "@/lib/org/context";
 import { hasRole } from "@/lib/api/auth";
 import { STATUS_LABEL, STATUS_TONE, findContradictions, locationLabel, outcomeWord, participantName, probeLabel, relative } from "@/lib/data/derive";
 import { ApiError, describeError } from "@/lib/api/http";
@@ -97,9 +98,18 @@ function CommandCenter({
 }) {
   const scope = useInvestigationScope();
   const [selected, setSelected] = useState<string | null>(null);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const contradictions = useMemo(() => findContradictions(s.observations), [s.observations]);
   // Only an operator may reveal (the core enforces it); approvers do not see the button.
   const me = useCurrentUser();
+  const workspace = useOptionalWorkspace();
+  const canOverrideQuietHours = !!workspace &&
+    (workspace.roles.has("owner") || workspace.roles.has("admin")) &&
+    !!scope.overrideQuietHours;
+  const availability = s.questioning_availability;
+  const nobodyEligible = !s.practice && !!availability && availability.eligible_count === 0;
   const isOperator = me ? hasRole(me, "operator") : true;
   const canReveal = isOperator && !s.ground_truth && ["decided", "abstained", "verified", "not_verified"].includes(s.status);
   const [copied, setCopied] = useState(false);
@@ -140,6 +150,28 @@ function CommandCenter({
           <Button onClick={onLinks}>
             <IconLink className="h-4 w-4" /> Participant links
           </Button>
+          {nobodyEligible && availability.quiet_hours_count > 0 && scope.recheckAvailability ? (
+            <Button
+              loading={rechecking}
+              disabled={rechecking}
+              onClick={async () => {
+                setRechecking(true);
+                setAvailabilityError(null);
+                try {
+                  feed.apply(await scope.recheckAvailability!(s.id));
+                } catch (cause) {
+                  setAvailabilityError(describeError(cause));
+                } finally {
+                  setRechecking(false);
+                }
+              }}
+            >
+              Check availability again
+            </Button>
+          ) : null}
+          {!s.quiet_hours_override && availability && availability.quiet_hours_count > 0 && canOverrideQuietHours ? (
+            <Button variant="primary" onClick={() => setOverrideOpen(true)}>Emergency quiet-hours override</Button>
+          ) : null}
           {canReveal && !readOnly ? (
             <Button variant="primary" onClick={onReveal}>
               Reveal ground truth
@@ -170,6 +202,35 @@ function CommandCenter({
       {feed.error && feed.status === "ready" ? (
         <Notice tone="bad">Lost contact with the core. Showing the last known state. {describeError(feed.error)}</Notice>
       ) : null}
+
+      {nobodyEligible ? (
+        <Notice tone="warn" title="No one can be asked right now">
+          <div className="flex flex-col gap-2">
+            {availability.no_consent_count > 0 ? (
+              <p>
+                {availability.no_consent_count} person{availability.no_consent_count === 1 ? " has" : "s have"} no current consent for web questions. Send a consent request or record consent they gave on the web. Paper consent does not allow web questions.
+              </p>
+            ) : null}
+            {availability.quiet_hours_count > 0 ? (
+              <p>
+                {availability.quiet_hours_count} consenting person{availability.quiet_hours_count === 1 ? " is" : "s are"} in quiet hours. Wait and check again later, or ask an owner/admin to override quiet hours for this investigation with a reason.
+              </p>
+            ) : null}
+            {availability.unavailable_count > 0 ? (
+              <p>Other people are marked unavailable or declined during this investigation.</p>
+            ) : null}
+            <Link className="w-fit text-accent underline" href={`${scope.base}/people?site=${encodeURIComponent(s.site_id ?? "")}`}>
+              Review people and consent
+            </Link>
+          </div>
+        </Notice>
+      ) : null}
+      {s.quiet_hours_override ? (
+        <Notice tone="warn" title="Quiet hours override active for this investigation">
+          Reason: {s.quiet_hours_override.reason} · Recorded {relative(s.quiet_hours_override.created_at)}.
+        </Notice>
+      ) : null}
+      {availabilityError ? <Notice tone="bad" title="Availability was not checked">{availabilityError}</Notice> : null}
 
       {/* Row 1: environment + belief */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
@@ -225,7 +286,86 @@ function CommandCenter({
         <DiagnosisPanel state={s} pack={pack} contradictions={contradictions.length} />
       </div>
       {children}
+      {scope.overrideQuietHours ? (
+        <QuietHoursOverrideDialog
+          open={overrideOpen}
+          state={s}
+          onClose={() => setOverrideOpen(false)}
+          onState={feed.apply}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function QuietHoursOverrideDialog({
+  open,
+  state,
+  onClose,
+  onState,
+}: {
+  open: boolean;
+  state: InvestigationState;
+  onClose: () => void;
+  onState: (state: InvestigationState) => void;
+}) {
+  const scope = useInvestigationScope();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Dialog
+      open={open}
+      onClose={() => {
+        setReason("");
+        setError(null);
+        onClose();
+      }}
+      title="Override quiet hours for this investigation?"
+      description="Use this only for an emergency. The reason is added to the investigation and the audit log. This does not override consent."
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            disabled={busy || reason.trim().length < 5}
+            onClick={async () => {
+              if (!scope.overrideQuietHours) return;
+              setBusy(true);
+              setError(null);
+              try {
+                onState(await scope.overrideQuietHours(state.id, reason.trim()));
+                setReason("");
+                onClose();
+              } catch (cause) {
+                setError(describeError(cause));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Record override
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        {error ? <Notice tone="bad" title="Override was not recorded">{error}</Notice> : null}
+        <label className="flex flex-col gap-1.5 text-[13px] font-medium text-fg-2">
+          Emergency reason
+          <textarea
+            autoFocus
+            rows={3}
+            maxLength={500}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            className="w-full rounded-[12px] border-[0.8px] border-line bg-white/[.03] px-3.5 py-3 text-[15px] text-fg outline-none focus:border-accent/70"
+            placeholder="For example, a fire alarm needs an immediate check."
+          />
+        </label>
+      </div>
+    </Dialog>
   );
 }
 
