@@ -197,6 +197,24 @@ def test_no_consent_then_withdrawal_cancels_question_and_replays(
     assert "synthetic@example.test" not in json.dumps(events)
 
 
+def test_failed_replanning_does_not_consume_the_consent_link(
+    account_core: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace)
+    link = post(client, root + "/p_ravi/consent-requests").json()["link_path"]
+    public = "/v1/consent-links/" + link.removeprefix("/consent/")
+
+    async def fail_replanning(*args: Any) -> None:
+        raise RuntimeError("synthetic failure")
+
+    monkeypatch.setattr(client.app.state.investigations, "consent_state_changed", fail_replanning)
+    assert client.post(public, json={"decision": "granted"}).status_code == 500
+    assert client.get(public).status_code == 200
+    assert client.get(root + "/p_ravi/consents").json() == []
+
+
 def test_quiet_hours_override_is_audited_and_replays(
     account_core: TestClient, monkeypatch: pytest.MonkeyPatch, migrated_db: str
 ) -> None:
