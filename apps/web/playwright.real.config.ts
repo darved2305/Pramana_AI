@@ -27,6 +27,12 @@ process.env.E2E_SIM_URL = `http://127.0.0.1:${SIM_PORT}`;
 
 const shared = { E2E_DATABASE: DATABASE, E2E_CORE_PORT: String(CORE_PORT), E2E_SIM_PORT: String(SIM_PORT) };
 
+// Local runs use Playwright's own Chromium in a throwaway profile. The installed Google Chrome can
+// pass the password fields these tests type (some deliberately wrong) to Windows sign-in, which
+// locked the Windows account on a shared laptop. CI keeps the installed Chrome; set
+// PW_CHANNEL=chrome to use it locally on purpose.
+const CHANNEL = process.env.PW_CHANNEL ?? (process.env.CI ? "chrome" : undefined);
+
 export default defineConfig({
   testDir: "./tests-real",
   timeout: 180_000,
@@ -38,7 +44,7 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: `http://localhost:${WEB_PORT}`,
-    channel: "chrome",
+    channel: CHANNEL,
     trace: "retain-on-failure",
     ...devices["Desktop Chrome"],
     viewport: { width: 1440, height: 900 },

@@ -2,6 +2,12 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.PW_PORT ?? 3012);
 
+// Local runs use Playwright's own Chromium in a throwaway profile. The installed Google Chrome can
+// pass the password fields these tests type (some deliberately wrong) to Windows sign-in, which
+// locked the Windows account on a shared laptop. CI keeps the installed Chrome; set
+// PW_CHANNEL=chrome to use it locally on purpose.
+const CHANNEL = process.env.PW_CHANNEL ?? (process.env.CI ? "chrome" : undefined);
+
 export default defineConfig({
   testDir: "./tests",
   timeout: 45_000,
@@ -13,12 +19,12 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: `http://localhost:${PORT}`,
-    channel: "chrome",
+    channel: CHANNEL,
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"], channel: "chrome", viewport: { width: 1440, height: 900 } }, testIgnore: /mobile\.spec\.ts/ },
-    { name: "mobile", use: { ...devices["Pixel 7"], channel: "chrome", viewport: { width: 390, height: 844 } }, testMatch: /mobile\.spec\.ts/ },
+    { name: "desktop", use: { ...devices["Desktop Chrome"], channel: CHANNEL, viewport: { width: 1440, height: 900 } }, testIgnore: /mobile\.spec\.ts/ },
+    { name: "mobile", use: { ...devices["Pixel 7"], channel: CHANNEL, viewport: { width: 390, height: 844 } }, testMatch: /mobile\.spec\.ts/ },
   ],
   webServer: {
     command: `npx next build && npx next start -p ${PORT}`,
