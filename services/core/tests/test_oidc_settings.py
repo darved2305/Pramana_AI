@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -78,3 +79,15 @@ def test_production_runtime_role_cannot_bypass_rls(migrated_db: str) -> None:
             await runtime.dispose()
 
     asyncio.run(check())
+
+
+def test_core_test_settings_ignore_the_checkout_env_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Settings read ``.env`` from the working directory. A checkout's local values must not reach
+    # the tests, or they pass or fail depending on that file.
+    (tmp_path / ".env").write_text("OIDC_ISSUER=https://evil.example\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OIDC_ISSUER", raising=False)
+    settings = core_settings("postgresql+asyncpg://pramana@localhost:5433/pramana_test")
+    assert settings.oidc_issuer == "https://accounts.google.com"
