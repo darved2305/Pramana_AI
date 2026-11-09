@@ -167,12 +167,17 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await expect(page.locator("main")).not.toContainText(/hospital or clinic|hostel/i);
   await capture(page, "onboarding-workspace-empty");
   const name = page.getByLabel("Workspace name");
+  await name.fill("प्रशासन कार्यालय ".repeat(24));
+  expect((await name.inputValue()).length).toBeLessThanOrEqual(120);
+  await capture(page, "onboarding-workspace-long-marathi");
   const longHindiName = "कार्यालय ".repeat(40);
   await name.fill(longHindiName);
   expect((await name.inputValue()).length).toBeLessThanOrEqual(120);
   await capture(page, "onboarding-workspace-long-hindi");
-  await page.getByRole("button", { name: "Create workspace" }).click();
+  await page.getByRole("button", { name: "Create workspace" }).dblclick();
   await expect(page).toHaveURL(/\/onboarding\/sandbox$/);
+  const account = await page.request.get("/api/core/v1/me");
+  expect((await account.json()).memberships).toHaveLength(1);
   await expect(page.locator("main")).toContainText("A simulated site has a hidden fault.");
   await expect(page.locator("main")).not.toContainText(/hostel/i);
   await capture(page, "onboarding-sandbox");
@@ -590,4 +595,34 @@ test("real Chrome review: offline messages do not expose internal setup details"
   await expect(page.getByText("Pramana cannot be reached").first()).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/uv run|scripts\/dev\.py|127\.0\.0\.1:\d+/i);
   await capture(page, "offline-help");
+});
+
+test("real Chrome review: a URL for another account's workspace shows no data", async ({ page }) => {
+  const stamp = Date.now();
+  const targetOwner = `review-target-${stamp}`;
+  const currentOwner = `review-current-${stamp}`;
+  async function signIn(who: string) {
+    await page.goto("/api/core/v1/auth/google/start?next=/app/account");
+    await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+    await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+    await page.getByRole("button", { name: "Continue with mock account" }).click();
+  }
+  async function createWorkspace(who: string) {
+    const response = await page.request.post("/api/core/v1/orgs", {
+      headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${who}-workspace` },
+      data: { name: `${who} workspace`, kind: "office" },
+    });
+    expect(response.status()).toBe(201);
+    return response.json();
+  }
+  await signIn(targetOwner);
+  const target = await createWorkspace(targetOwner);
+  await page.request.post("/api/core/v1/auth/logout", { headers: { "X-Pramana-CSRF": "1" } });
+  await signIn(currentOwner);
+  const own = await createWorkspace(currentOwner);
+  expect(target.organization.slug).not.toBe(own.organization.slug);
+  await page.goto(`/app/${target.organization.slug}`);
+  await expect(page.getByText("You do not have access to this workspace")).toBeVisible();
+  await expect(page.locator("main")).not.toContainText(target.organization.name);
+  await capture(page, "other-organization-url");
 });
