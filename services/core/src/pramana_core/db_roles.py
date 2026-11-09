@@ -65,7 +65,10 @@ async def ensure_roles(migrator_url: str, app_url: str, sim_url: str) -> None:
                 )
                 action = "alter" if exists else "create"
                 statement = await connection.scalar(
-                    text("select format(:template, :role, :verifier)"),
+                    text(
+                        "select format(cast(:template as text), cast(:role as text), "
+                        "cast(:verifier as text))"
+                    ),
                     {
                         "template": (
                             f"{action} role %I login nosuperuser nobypassrls nocreatedb "

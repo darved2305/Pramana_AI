@@ -31,7 +31,7 @@ from test_closing_loop import approve, decided, reset_in_simulator, verify
 from test_recovery import assert_identical
 
 from pramana_contracts.tokens import mint, mint_capability, private_key_from_b64, public_key_b64
-from pramana_core.db_roles import role_passwords, scram_verifier
+from pramana_core.db_roles import ensure_roles, role_passwords, scram_verifier
 from pramana_core.grant_audit import audit_connection, audit_database, revoke_statements
 from pramana_core.main import create_app as create_core_app
 from pramana_domain import load_pack
@@ -339,6 +339,19 @@ def test_scram_verifier_matches_the_rfc_7677_vector() -> None:
     client_signature = hmac.digest(stored_key, auth_message, "sha256")
     client_key = bytes(a ^ b for a, b in zip(proof, client_signature, strict=True))
     assert hashlib.sha256(client_key).digest() == stored_key
+
+
+def test_runtime_roles_can_be_created_on_postgres(migrated_db: str) -> None:
+    async def check() -> None:
+        app_url = make_url(migrated_db).set(username="pramana_app", password="app-test-password")
+        sim_url = make_url(migrated_db).set(username="pramana_sim", password="sim-test-password")
+        await ensure_roles(
+            migrated_db,
+            app_url.render_as_string(hide_password=False),
+            sim_url.render_as_string(hide_password=False),
+        )
+
+    asyncio.run(check())
 
 
 def test_postgres_stores_the_verifier_as_is_so_no_password_reaches_the_server(
