@@ -24,7 +24,14 @@ from .accounts import organization_view
 from .auth.service import Principal
 from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, acting_for
 from .errors import ApiError, not_found
-from .outbox import EmailEnvelope, EmailOutboxRow, delivery_status, invitation_email, seal_envelope
+from .outbox import (
+    EmailEnvelope,
+    EmailOutboxRow,
+    cancel_outbox_email,
+    delivery_status,
+    invitation_email,
+    seal_envelope,
+)
 from .vault import MasterKey
 
 LIFETIME = timedelta(days=7)
@@ -75,17 +82,11 @@ async def _cancel_queued_email(
     session: AsyncSession, invitation_id: uuid.UUID, now: datetime
 ) -> None:
     """Clear a message whose invitation can no longer be used."""
-    outbox = await session.scalar(
-        select(EmailOutboxRow)
-        .where(EmailOutboxRow.invitation_id == invitation_id)
-        .with_for_update()
+    outbox_id = await session.scalar(
+        select(EmailOutboxRow.id).where(EmailOutboxRow.invitation_id == invitation_id)
     )
-    if outbox is not None and outbox.state == "queued":
-        outbox.state = "dead"
-        outbox.dead_at = now
-        outbox.locked_until = None
-        outbox.payload_enc = None
-        outbox.last_error = "InvitationNoLongerValid"
+    if outbox_id is not None:
+        await cancel_outbox_email(session, outbox_id, now, "InvitationNoLongerValid")
 
 
 def _mask(email: str) -> str:

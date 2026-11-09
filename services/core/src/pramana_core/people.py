@@ -54,7 +54,7 @@ from .auth.service import Principal
 from .consent import consent_request_email
 from .db import AuditLogRow, Base, Database, SiteModelRow, SiteRow, acting_for, current_org
 from .errors import ApiError, not_found
-from .outbox import EmailOutboxRow, delivery_status, seal_envelope
+from .outbox import EmailOutboxRow, cancel_outbox_email, delivery_status, seal_envelope
 from .vault import SEALED, PersonKeyRow, PersonRef, PersonVault
 
 _ERASED_RESPONSE = json.dumps(
@@ -67,26 +67,15 @@ INVALID_CONSENT_LINK = (
 )
 
 
-def _clear_queued_email(outbox: EmailOutboxRow, now: datetime, reason: str) -> None:
-    """Dead-letter a queued email and drop the address and bearer link it carries."""
-    outbox.state = "dead"
-    outbox.dead_at = now
-    outbox.locked_until = None
-    outbox.payload_enc = None
-    outbox.last_error = reason
-
-
 async def _cancel_queued_consent_email(
     session: AsyncSession, consent_link_id: uuid.UUID, now: datetime
 ) -> None:
     """Clear a queued bearer link when its consent request can no longer be used."""
-    outbox = await session.scalar(
-        select(EmailOutboxRow)
-        .where(EmailOutboxRow.consent_link_id == consent_link_id)
-        .with_for_update()
+    outbox_id = await session.scalar(
+        select(EmailOutboxRow.id).where(EmailOutboxRow.consent_link_id == consent_link_id)
     )
-    if outbox is not None and outbox.state == "queued":
-        _clear_queued_email(outbox, now, "ConsentLinkNoLongerValid")
+    if outbox_id is not None:
+        await cancel_outbox_email(session, outbox_id, now, "ConsentLinkNoLongerValid")
 
 
 async def _cancel_person_queued_consent_emails(
@@ -98,17 +87,17 @@ async def _cancel_person_queued_consent_emails(
         ConsentLinkRow.site_id == site_id,
         ConsentLinkRow.person_id == person_id,
     )
-    queued = await session.scalars(
-        select(EmailOutboxRow)
+    outbox_ids = await session.scalars(
+        select(EmailOutboxRow.id)
         .where(
             EmailOutboxRow.org_id == org_id,
             EmailOutboxRow.consent_link_id.in_(link_ids),
-            EmailOutboxRow.state == "queued",
+            EmailOutboxRow.state.in_(("queued", "sending")),
         )
-        .with_for_update()
+        .order_by(EmailOutboxRow.id)
     )
-    for outbox in queued:
-        _clear_queued_email(outbox, now, "ContactEmailChanged")
+    for outbox_id in outbox_ids:
+        await cancel_outbox_email(session, outbox_id, now, "ContactEmailChanged")
 
 
 class SitePersonRow(Base):
@@ -409,7 +398,11 @@ class SitePeople:
     async def remove(self, site_id: uuid.UUID, person_id: str) -> None:
         async with self.db.transaction() as session:
             site = await self._site(session, site_id)
-            await session.delete(await self._locked(session, site, person_id))
+            person = await self._locked(session, site, person_id)
+            await _cancel_person_queued_consent_emails(
+                session, site.org_id, site.id, person_id, datetime.now(UTC)
+            )
+            await session.delete(person)
 
     async def erase(self, site_id: uuid.UUID, person_id: str, principal: Principal) -> None:
         """Delete this person's key and directory entry. Their investigations stay replayable."""
@@ -422,6 +415,10 @@ class SitePeople:
             known = await session.get(PersonKeyRow, (site.org_id, site.id, person_id))
             if row is None and known is None:
                 raise not_found("person")
+            if row is not None:
+                await _cancel_person_queued_consent_emails(
+                    session, site.org_id, site.id, person_id, datetime.now(UTC)
+                )
             await self.vault.erase(session, ref)
             if row is not None:
                 await session.delete(row)

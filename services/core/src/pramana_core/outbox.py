@@ -171,6 +171,42 @@ def open_envelope(
     return EmailEnvelope(recipient, subject, body)
 
 
+def _row_lock_name(outbox_id: uuid.UUID) -> str:
+    return f"email-outbox/{outbox_id}"
+
+
+async def cancel_outbox_email(
+    session: AsyncSession, outbox_id: uuid.UUID, now: datetime, reason: str
+) -> None:
+    """Serialize invalidation against SMTP so a committed change cannot trail an active send."""
+    await session.execute(
+        text("select pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": _row_lock_name(outbox_id)},
+    )
+    row = await session.scalar(
+        select(EmailOutboxRow).where(EmailOutboxRow.id == outbox_id).with_for_update()
+    )
+    if row is None or row.state not in {"queued", "sending"}:
+        return
+
+    if row.state == "sending":
+        history = await session.get(
+            EmailAttemptRow,
+            (row.org_id, row.id, row.attempts),
+            with_for_update=True,
+        )
+        if history is not None and history.finished_at is None:
+            history.finished_at = now
+            history.result = "uncertain"
+            history.error_type = reason[:80]
+
+    row.state = "dead"
+    row.dead_at = now
+    row.locked_until = None
+    row.payload_enc = None
+    row.last_error = reason[:80]
+
+
 def queue_email(
     session: AsyncSession,
     *,
@@ -245,6 +281,8 @@ class EmailRelay:
                     action, attempt = await self._claim(lock_connection)
                     if action == "idle":
                         break
+                    if action == "skip":
+                        continue
                     if action == "dead":
                         counts["dead"] += 1
                         continue
@@ -267,6 +305,8 @@ class EmailRelay:
                     else:
                         await self._finish_success(lock_connection, attempt)
                         counts["sent"] += 1
+                    finally:
+                        await self._release_row_lock(lock_connection, attempt.outbox_id)
             finally:
                 await lock_connection.execute(
                     text("select pg_advisory_unlock(:key)"), {"key": RELAY_LOCK_KEY}
@@ -288,8 +328,8 @@ class EmailRelay:
         now = datetime.now(UTC)
         with acting_as_job(RELAY_JOB):
             async with self._transaction(connection) as session:
-                row = await session.scalar(
-                    select(EmailOutboxRow)
+                candidate_id = await session.scalar(
+                    select(EmailOutboxRow.id)
                     .where(
                         or_(
                             and_(
@@ -303,11 +343,49 @@ class EmailRelay:
                         )
                     )
                     .order_by(EmailOutboxRow.available_at, EmailOutboxRow.created_at)
-                    .with_for_update(skip_locked=True)
                     .limit(1)
                 )
+        if candidate_id is None:
+            return "idle", None
+
+        await connection.execute(
+            text("select pg_advisory_lock(hashtextextended(:key, 0))"),
+            {"key": _row_lock_name(candidate_id)},
+        )
+        await connection.commit()
+        try:
+            action, attempt = await self._claim_locked(connection, candidate_id, now)
+        except BaseException:
+            await self._release_row_lock(connection, candidate_id)
+            raise
+        if action != "send":
+            await self._release_row_lock(connection, candidate_id)
+        return action, attempt
+
+    async def _claim_locked(
+        self, connection: AsyncConnection, candidate_id: uuid.UUID, now: datetime
+    ) -> tuple[str, _Attempt | None]:
+        with acting_as_job(RELAY_JOB):
+            async with self._transaction(connection) as session:
+                row = await session.scalar(
+                    select(EmailOutboxRow)
+                    .where(
+                        EmailOutboxRow.id == candidate_id,
+                        or_(
+                            and_(
+                                EmailOutboxRow.state == "queued",
+                                EmailOutboxRow.available_at <= now,
+                            ),
+                            and_(
+                                EmailOutboxRow.state == "sending",
+                                EmailOutboxRow.locked_until <= now,
+                            ),
+                        ),
+                    )
+                    .with_for_update(skip_locked=True)
+                )
                 if row is None:
-                    return "idle", None
+                    return "skip", None
 
                 if row.state == "sending":
                     previous = await session.get(
@@ -397,6 +475,14 @@ class EmailRelay:
                         body=envelope.body,
                     ),
                 )
+
+    @staticmethod
+    async def _release_row_lock(connection: AsyncConnection, outbox_id: uuid.UUID) -> None:
+        await connection.execute(
+            text("select pg_advisory_unlock(hashtextextended(:key, 0))"),
+            {"key": _row_lock_name(outbox_id)},
+        )
+        await connection.commit()
 
     async def _finish_success(self, connection: AsyncConnection, attempt: _Attempt) -> None:
         now = datetime.now(UTC)

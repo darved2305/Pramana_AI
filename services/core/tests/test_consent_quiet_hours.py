@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,7 +24,7 @@ from test_practice import published_water_site
 from test_practice import request as investigation_request
 
 from pramana_contracts import PlanDecision, PlanKind, QuestioningAvailability, QuietHours
-from pramana_core import ids, outbox
+from pramana_core import ids, outbox, people
 from pramana_core.investigations import InvestigationService, _waits_for_people
 from pramana_core.mail import FakeMailer
 from pramana_core.questioning import decide_availability, in_quiet_hours
@@ -472,6 +474,75 @@ def test_changing_contact_email_stops_the_email_queued_for_the_old_address(
     )[0]
     assert row == {"state": "dead", "payload_enc": None}
     assert [sent[0] for sent in mailer.sent] == ["meena@example.test"]
+
+
+def test_contact_change_waits_for_an_inflight_consent_email(
+    account_core: TestClient,
+    migrated_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace)
+    first = patch_person(client, root, {"contact_email": "ravi@example.test"})
+    assert first.status_code == 200, first.text
+    mailer, queued = queue_consent_email(client, monkeypatch, root, "p_ravi")
+    entered, release, cancellation_started = threading.Event(), threading.Event(), threading.Event()
+
+    class BlockingMailer(FakeMailer):
+        def send(
+            self, to: str, subject: str, body: str, *, outbox_id: uuid.UUID | None = None
+        ) -> None:
+            entered.set()
+            if not release.wait(10):
+                raise TimeoutError("test send was not released")
+            super().send(to, subject, body, outbox_id=outbox_id)
+
+    blocking_mailer = BlockingMailer()
+    relay = client.app.state.email_relay
+    relay.mailer = blocking_mailer
+    monkeypatch.undo()
+    cancel = people.cancel_outbox_email
+
+    async def observe_cancellation(*args: Any, **kwargs: Any) -> None:
+        cancellation_started.set()
+        await cancel(*args, **kwargs)
+
+    monkeypatch.setattr(people, "cancel_outbox_email", observe_cancellation)
+    draining = client.portal.start_task_soon(relay.drain)
+    assert entered.wait(5), "relay did not reach SMTP"
+
+    def change_contact() -> Any:
+        return client.patch(
+            root + "/p_ravi",
+            json={"contact_email": "ravi.new@example.test"},
+            headers={
+                **CSRF,
+                "Idempotency-Key": uuid.uuid4().hex,
+                "If-Match": first.headers["ETag"],
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        changing = pool.submit(change_contact)
+        try:
+            assert cancellation_started.wait(5), "contact update did not reach outbox cancellation"
+            with pytest.raises(TimeoutError):
+                changing.result(timeout=0.5)
+        finally:
+            release.set()
+        changed = changing.result(timeout=10)
+
+    assert changed.status_code == 200, changed.text
+    assert draining.result(timeout=10)["sent"] == 1
+    assert blocking_mailer.sent[0][0] == "ravi@example.test"
+    assert mailer.sent == []
+    row = sql(
+        migrated_db,
+        "select state, payload_enc from email_outbox where consent_link_id=:id",
+        {"id": ids.decode("consent", queued["request_id"])},
+    )[0]
+    assert row == {"state": "sent", "payload_enc": None}
 
 
 def test_unconfigured_consent_email_is_failed_without_storing_contact_data(
