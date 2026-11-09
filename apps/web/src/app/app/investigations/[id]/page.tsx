@@ -204,7 +204,7 @@ function CommandCenter({
           </div>
           {selected && pack ? <PlaceDetail id={selected} s={s} pack={pack} onClose={() => setSelected(null)} /> : null}
         </Card>
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <HypothesisPanel state={s} />
           <DecisionBar state={s} />
           <ForecastPanel state={s} />
