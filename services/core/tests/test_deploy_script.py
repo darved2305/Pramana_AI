@@ -124,9 +124,7 @@ def test_existing_alert_budget_with_project_number_is_idempotent(
                 "calendarPeriod": "MONTH",
             },
             "amount": {"specifiedAmount": {"currencyCode": "INR", "units": "1000"}},
-            "thresholdRules": [
-                {"thresholdPercent": value} for value in (0.5, 0.8, 1.0)
-            ],
+            "thresholdRules": [{"thresholdPercent": value} for value in (0.5, 0.8, 1.0)],
         },
         {
             "displayName": deploy.SPEND_CAP_NAME,
@@ -136,9 +134,7 @@ def test_existing_alert_budget_with_project_number_is_idempotent(
                 "calendarPeriod": "MONTH",
             },
             "amount": {"specifiedAmount": {"currencyCode": "INR", "units": "500"}},
-            "thresholdRules": [
-                {"thresholdPercent": value} for value in (0.5, 0.8, 1.0)
-            ],
+            "thresholdRules": [{"thresholdPercent": value} for value in (0.5, 0.8, 1.0)],
             "spendCap": {"inputState": "CONFIGURED"},
         },
     ]
@@ -165,6 +161,24 @@ def test_existing_alert_budget_with_project_number_is_idempotent(
     assert "Cloud Run spend cap already has the expected project, service and amount." in (
         capsys.readouterr().out
     )
+
+
+def test_runbook_describes_project_wide_cloud_run_cap() -> None:
+    runbook = (deploy.ROOT / "docs" / "engineering" / "DEPLOY_BUDGET_GCP.md").read_text(
+        encoding="utf-8"
+    )
+    assert "applies to all Cloud Run resource types" in runbook
+    assert "including services and jobs" in runbook
+    assert "products and projects keep running" in runbook
+
+
+def test_backup_runbook_checks_native_command_exit_codes() -> None:
+    runbook = (deploy.ROOT / "docs" / "engineering" / "DEPLOY_BUDGET_GCP.md").read_text(
+        encoding="utf-8"
+    )
+    for command in ("pg_dump", "age encryption", "age decryption", "pg_restore", "grant audit"):
+        assert f"{command} failed" in runbook
+    assert "if ($LASTEXITCODE -ne 0)" in runbook
 
 
 def test_private_service_accounts_receive_only_their_database_secret() -> None:
