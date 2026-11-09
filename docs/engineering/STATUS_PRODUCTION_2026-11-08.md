@@ -269,3 +269,20 @@ passed 4,127 tests before this web-only change. The exact commands, earlier buil
 rollout details and teardown steps are in the report at
 C:\Dev\Pramana-AI\.claude\worktrees\production\.cache\nov9\out\G-report.md
 and in [DEPLOY_BUDGET_GCP.md](DEPLOY_BUDGET_GCP.md).
+
+## Final real-stack verification, 2026-11-10
+
+The final real-stack Playwright gate passed 32 tests using one worker and the root worktree
+.env. Before starting it, I verified that the configured E2E database was in
+PRAMANA_DB_NAMES and that all four configured test ports were free. Migration downgrade and
+upgrade completed on the allowlisted pramana_dp_e2e database. Playwright stopped the mock
+OIDC, simulator, core and web servers; no listener remains on the configured ports.
+
+A preceding attempt was misconfigured: it ran from apps/web while its environment loader looked
+for .env relative to that directory. The loader found no file, so Playwright fell back to its
+default E2E_DATABASE value pramana_web_e2e and no PRAMANA_DB_NAMES allowlist was set. The backend
+started an Alembic downgrade on that database and failed at 0017 to 0016 because consent_links
+did not exist. The command did not reach the browser tests. The database transaction outcome and
+final schema state were not verified. I did not query or clean that database afterwards. The owner
+should inspect pramana_web_e2e before any further use. All servers from that failed attempt have
+stopped.
