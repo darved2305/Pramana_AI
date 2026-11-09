@@ -265,3 +265,65 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
 
   expect(signals.filter((x) => x.kind === "pageerror")).toEqual([]);
 });
+
+test("real Chrome review: invitations can be withdrawn or joined from welcome", async ({ page }) => {
+  test.setTimeout(120_000);
+  const stamp = Date.now();
+  const owner = `review-owner-${stamp}`;
+  const invitee = `review-invitee-${stamp}`;
+  const withdrawn = `review-withdrawn-${stamp}`;
+  async function signIn(who: string, next: string) {
+    await page.goto(`/api/core/v1/auth/google/start?next=${encodeURIComponent(next)}`);
+    await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+    await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+    await page.getByRole("button", { name: "Continue with mock account" }).click();
+  }
+  async function logout() {
+    const response = await page.request.post("/api/core/v1/auth/logout", { headers: { "X-Pramana-CSRF": "1" } });
+    expect(response.ok()).toBeTruthy();
+  }
+  await signIn(owner, "/app/account");
+  const made = await page.request.post("/api/core/v1/orgs", {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${owner}-workspace` },
+    data: { name: "Invitation review", kind: "hospital" },
+  });
+  expect(made.status()).toBe(201);
+  const ws = await made.json();
+  const base = `/app/${ws.organization.slug}`;
+  await page.goto(`${base}/settings`);
+  await page.getByLabel("Their email address").fill(`${withdrawn}@gmail.com`);
+  await page.getByRole("button", { name: "Create invitation link" }).click();
+  const link = await page.locator("code").filter({ hasText: "/invite/org_" }).innerText();
+  const pending = page.getByRole("list", { name: "Invitations" }).getByRole("listitem").filter({ hasText: `${withdrawn}@gmail.com` });
+  await pending.getByRole("button", { name: "Withdraw" }).click();
+  await expect(pending.getByText("revoked")).toBeVisible();
+  await capture(page, "invitation-withdrawn");
+  await page.getByLabel("Their email address").fill(`${invitee}@gmail.com`);
+  await page.getByRole("button", { name: "Create invitation link" }).click();
+  await expect(page.getByRole("list", { name: "Invitations" }).getByText("pending")).toBeVisible();
+  await logout();
+  await signIn(withdrawn, new URL(link).pathname);
+  await page.getByRole("button", { name: "Accept invitation" }).click();
+  await expect(page.locator("main").getByRole("alert")).toContainText("withdrawn");
+  await capture(page, "invitation-withdrawn-error");
+  await logout();
+  await signIn(invitee, "/onboarding/welcome");
+  await expect(page.getByRole("heading", { name: "You have been invited" })).toBeVisible();
+  await capture(page, "invitation-welcome");
+  await page.getByRole("region", { name: "Invitations" }).getByRole("button", { name: "Join" }).click();
+  await expect(page).toHaveURL(new RegExp(`${base}$`));
+  await capture(page, "invitation-joined");
+  await logout();
+  await signIn(owner, `${base}/settings`);
+  const row = page.getByRole("list", { name: "Members" }).getByRole("listitem").filter({ hasText: `${invitee}@gmail.com` });
+  await row.getByRole("button", { name: "Remove" }).click();
+  await expect(row).toHaveCount(0);
+  await logout();
+  await signIn(invitee, base);
+  await expect(page.getByText("You do not have access to this workspace")).toBeVisible();
+  await capture(page, "removed-user");
+  await page.goto("/app/account");
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/(login|$)/);
+  await capture(page, "signed-out");
+});
