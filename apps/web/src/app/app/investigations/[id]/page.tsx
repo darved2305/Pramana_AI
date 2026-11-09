@@ -29,6 +29,7 @@ import { STATUS_LABEL, STATUS_TONE, findContradictions, locationLabel, outcomeWo
 import { ApiError, describeError } from "@/lib/api/http";
 import { encodeJoin } from "@/lib/join";
 import type { InvestigationState, SitePack } from "@/lib/api/types";
+import { useOptionalWorkspace } from "@/lib/org/context";
 
 export default function CommandCenterPage() {
   const { id } = useParams<{ id: string }>();
@@ -98,9 +99,10 @@ function CommandCenter({
   const scope = useInvestigationScope();
   const [selected, setSelected] = useState<string | null>(null);
   const contradictions = useMemo(() => findContradictions(s.observations), [s.observations]);
-  // Only an operator may reveal (the core enforces it); approvers do not see the button.
+  // Workspace operators, owners and admins can reveal; approvers do not see the button.
   const me = useCurrentUser();
-  const isOperator = me ? hasRole(me, "operator") : true;
+  const workspace = useOptionalWorkspace();
+  const isOperator = workspace ? workspace.canOperate : me ? hasRole(me, "operator") : true;
   const canReveal = isOperator && !s.ground_truth && ["decided", "abstained", "verified", "not_verified"].includes(s.status);
   const [copied, setCopied] = useState(false);
 
