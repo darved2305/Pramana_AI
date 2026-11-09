@@ -56,7 +56,11 @@ export default function WorkspaceHomePage() {
   return (
     <div className="flex flex-col gap-6 pt-4">
       <PageHeader
-        eyebrow={<Badge tone="accent">{ws.org.name}</Badge>}
+        eyebrow={
+          <Badge tone="accent" className="max-w-full">
+            <span className="min-w-0 truncate" title={ws.org.name}>{ws.org.name}</span>
+          </Badge>
+        }
         title={home.status === "ready" ? `${greeting()}, ${home.data.greeting_name}` : greeting()}
         subtitle="What needs you first, and why. Pin what you check every day; hide what you do not need."
         actions={
@@ -70,7 +74,7 @@ export default function WorkspaceHomePage() {
       {layoutError ? <p role="alert" className="text-[13px] text-bad">{layoutError}</p> : null}
 
       {home.status === "loading" ? (
-        <div className="grid gap-4 lg:grid-cols-2" aria-busy="true" aria-label="Loading your home">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" aria-busy="true" aria-label="Loading your home">
           <Skeleton className="h-48" />
           <Skeleton className="h-48" />
         </div>
@@ -78,7 +82,7 @@ export default function WorkspaceHomePage() {
         <ErrorState error={home.error} onRetry={home.reload} />
       ) : (
         <>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {home.data.modules.map((m) => (
               <ModuleCard
                 key={m.id}
@@ -123,7 +127,7 @@ function ModuleCard({
   onDismissSetup: () => void;
 }) {
   return (
-    <Card className={clsx("flex flex-col gap-4 p-5", wide && "lg:col-span-2")} aria-labelledby={`home-${m.id}`}>
+    <Card className={clsx("flex min-w-0 flex-col gap-4 p-5", wide && "lg:col-span-2")} aria-labelledby={`home-${m.id}`}>
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 id={`home-${m.id}`} className="text-[16px] font-semibold text-fg">
@@ -158,7 +162,7 @@ function Checklist({ steps, base, onDismiss }: { steps: NonNullable<HomeModule["
   return (
     <div className="flex flex-col gap-3">
       <ProbBar value={done / steps.length} label={`${done} of ${steps.length} steps done`} />
-      <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+      <ol className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
         {steps.map((s, i) => (
           <li key={s.id}>
             <Link
@@ -195,7 +199,7 @@ const DRAFT_LABEL: Record<HomeSite["draft"], string | null> = {
 
 function SiteGrid({ sites, base }: { sites: HomeSite[]; base: string }) {
   return (
-    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {sites.map((s) => (
         <li key={s.id}>
           <Link href={`${base}/sites/${s.id}`} className="group flex h-full flex-col gap-2 rounded-[12px] p-4 shadow-[inset_0_0_0_0.8px_var(--app-line)] transition-colors hover:bg-white/[.04]">
