@@ -547,7 +547,7 @@ Browser                         api                                   provider /
      mutations or via `scripts/reap_idempotency.py`; a scheduled worker remains deployment work.
 3. **Commands with external effects** ("approve and notify the technician", "place a call"). One local transaction commits the state change and an outbox row. The worker calls the provider with a provider-side idempotency key derived from the outbox id, where the provider supports one. Where it does not, record the attempt and reconcile through status APIs or webhooks; never retry a non-idempotent call blindly (brandur).
 
-   Invitation email commits its outbox row with the invitation. The API starts a drain after it sends the HTTP response, and `scripts/drain_email_outbox.py` is the repeatable Cloud Run Job entry point. A PostgreSQL advisory lock elects one relay. Attempts are recorded before SMTP, retry uses exponential backoff with jitter, and delivery stops after five attempts. A stable `Message-ID` and outbox id help correlate delivery, but SMTP has no idempotency key: if SMTP accepts a message and the process crashes before recording success, a later attempt can send it again. This is at-least-once delivery. The uncertain attempt remains in `email_outbox_attempts`; SMTP error text and message bodies are never logged. Recipient, subject and body are cleared after success or after the row becomes dead.
+   Invitation email commits its outbox row with the invitation. The API starts a bounded drain after it sends the HTTP response, and `scripts/drain_email_outbox.py` repeats bounded drains until the due queue is empty for a Cloud Run Job. A PostgreSQL advisory lock elects one relay. Attempts are recorded before SMTP, retry uses exponential backoff with jitter, and delivery stops after five attempts. A stable `Message-ID` and outbox id help correlate delivery, but SMTP has no idempotency key: if SMTP accepts a message and the process crashes before recording success, a later attempt can send it again. This is at-least-once delivery. The uncertain attempt remains in `email_outbox_attempts`; SMTP error text and message bodies are never logged. Recipient, subject and body are cleared after success or after the row becomes dead.
 4. **Webhooks.** Verify the signature and timestamp, then `INSERT` into `inbox (provider, event_id)` under a unique constraint in the same transaction as the effect. Answer 2xx quickly and process asynchronously.
 5. **Events.** `idempotency_key` becomes unique per investigation, not globally.
 6. **Answers.** Duplicates are rejected today (`409 QUESTION_NOT_PENDING`). With idempotency keys, a retried answer gets its original `200` instead of a confusing conflict, and a second, different answer still gets the 409.
@@ -997,7 +997,11 @@ create table email_outbox (
   locked_until     timestamptz,
   sent_at          timestamptz,
   dead_at          timestamptz,
-  last_error       text                               -- reason code only, never provider text
+  last_error       text,                              -- reason code only, never provider text
+  created_at       timestamptz not null default now(),
+  check (kind <> 'invitation' or invitation_id is not null),
+  check (((state in ('queued', 'sending')) and recipient is not null and subject is not null and body is not null)
+      or ((state in ('sent', 'dead')) and recipient is null and subject is null and body is null))
 );
 create index email_outbox_ready on email_outbox (available_at, created_at) where state = 'queued';
 

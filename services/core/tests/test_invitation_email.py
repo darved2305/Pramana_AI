@@ -259,6 +259,43 @@ def test_only_one_relay_sends_at_a_time(
     assert len(mailer.sent) == 1
 
 
+def test_relay_drains_bounded_batches_for_generic_email_kinds(
+    account_core: TestClient, migrated_db: str
+) -> None:
+    client = account_core
+    org = workspace(client)
+    org_id = sql(migrated_db, "select id from organizations where slug = :slug", {"slug": org})[0][
+        "id"
+    ]
+    mailer = FakeMailer()
+    configure(client, mailer, "https://pramana.example")
+    outbox_ids = [uuid.uuid4() for _ in range(outbox.MAX_MESSAGES_PER_DRAIN + 1)]
+    for index, outbox_id in enumerate(outbox_ids):
+        sql(
+            migrated_db,
+            "insert into email_outbox "
+            "(id, org_id, kind, state, recipient, subject, body) "
+            "values (:id, :org, 'notice', 'queued', :recipient, 'Hello', 'Message body')",
+            {
+                "id": outbox_id,
+                "org": org_id,
+                "recipient": f"person{index}@example.test",
+            },
+        )
+
+    relay = client.app.state.email_relay
+    first = client.portal.call(relay.drain)
+    assert first["sent"] == outbox.MAX_MESSAGES_PER_DRAIN
+    assert len(mailer.sent) == outbox.MAX_MESSAGES_PER_DRAIN
+    queued = sql(migrated_db, "select count(*) as count from email_outbox where state = 'queued'")
+    assert queued[0]["count"] == 1
+
+    second = client.portal.call(relay.drain)
+    assert second["sent"] == 1
+    assert len(mailer.sent) == len(outbox_ids)
+    assert set(mailer.outbox_ids) == set(outbox_ids)
+
+
 def test_dead_letter_is_visible_and_message_body_is_purged(
     account_core: TestClient, migrated_db: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
