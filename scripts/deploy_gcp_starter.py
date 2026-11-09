@@ -1081,6 +1081,7 @@ def deploy_service(
     timeout: str,
     probe_path: str,
     public: bool,
+    container_args: Sequence[str] = (),
     max_instances: int = 2,
     no_traffic: bool = False,
 ) -> str:
@@ -1109,6 +1110,8 @@ def deploy_service(
         f"--liveness-probe=httpGet.path={probe_path},periodSeconds=60,timeoutSeconds=5,failureThreshold=3",
         "--quiet",
     ]
+    if container_args:
+        args.append(f"--args={','.join(container_args)}")
     if secret_map:
         args.append(f"--set-secrets={secret_map}")
     args.append("--allow-unauthenticated" if public else "--no-allow-unauthenticated")
@@ -1292,6 +1295,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
         timeout="300s",
         probe_path="/ready",
         public=False,
+        container_args=("sim",),
     )
     bind_invoker(gcloud, ctx, "pramana-sim", "web")
     bind_invoker(gcloud, ctx, "pramana-sim", "core")
@@ -1334,6 +1338,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
         timeout="3600s",
         probe_path="/ready",
         public=False,
+        container_args=("core",),
     )
     bind_invoker(gcloud, ctx, "pramana-core", "web")
     web_url = deploy_service(

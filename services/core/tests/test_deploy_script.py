@@ -48,6 +48,8 @@ def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     assert "--locations=asia-south1" in output
     assert "--no-traffic" in output
     assert "run jobs execute pramana-migrate" in output
+    assert "--args=sim" in output
+    assert "--args=core" in output
     assert "X-Serverless-Authorization" not in output
     assert "dry-run-only-placeholder" not in output
     assert "Budget: existing INR 1,000 project alert" in output
