@@ -7,7 +7,6 @@ import asyncio
 import base64
 import hashlib
 import hmac
-import os
 import socket
 import threading
 import time
@@ -20,6 +19,7 @@ import pytest
 import uvicorn
 from core_testkit import OPERATOR_KEY, SIGNING_KEY, core_settings, truncate_all
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from db_guard import require_listed_url, setting_database_url
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -43,9 +43,7 @@ from pramana_domain import load_pack
 from pramana_domain.spec_storage import spec_digest
 from pramana_sim.app import SimSettings, create_app
 
-TEST_DB_URL = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql+asyncpg://pramana@localhost:5433/pramana_test"
-)
+TEST_DB_URL = setting_database_url("TEST_DATABASE_URL")
 KEY = Ed25519PrivateKey.generate()
 OPERATOR = {"X-Operator-Key": "deploy-database-test"}
 FAULT = {"faults": [{"component_id": "CB_C2_7", "mode": "tripped"}]}
@@ -54,6 +52,10 @@ PEOPLE = [
     {"id": "p_mahesh", "location_id": "GUARD_DESK", "roles": ["guard"]},
     {"id": "p_imran", "location_id": "MAINT_ROOM", "roles": ["electrician"]},
 ]
+
+
+def test_direct_test_database_url_is_allowlisted() -> None:
+    assert require_listed_url(TEST_DB_URL) == TEST_DB_URL
 
 
 def test_grant_audit_fails_for_table_and_future_default_access(migrated_db: str) -> None:
