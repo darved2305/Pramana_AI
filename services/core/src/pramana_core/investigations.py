@@ -63,7 +63,11 @@ from pramana_contracts import (
     PresenceCheckView,
     ProbeAction,
     Question,
+    QuestioningAvailability,
     QuestionStatus,
+    QuietHours,
+    QuietHoursOverrideRequest,
+    QuietHoursOverrideView,
     RepairOption,
     Report,
     ReportIntervention,
@@ -100,6 +104,7 @@ from pramana_engine import map_drift as run_map_drift
 from . import ids
 from .db import (
     ApprovalRow,
+    AuditLogRow,
     Database,
     EventRow,
     InvestigationRow,
@@ -114,6 +119,8 @@ from .language.intake import INTAKE_PROBE, parse_report
 from .language.presence import read_code
 from .language.realize import CONFIRM_PREFIX, realize, realize_challenge
 from .observability import log
+from .people import ConsentRow, SitePersonRow
+from .questioning import AvailabilityDecision, decide_availability
 from .sim_client import SimClient
 from .site_models import PinnedModel, StoredModels
 from .vault import ERASED_NAME, ERASED_REPORT, SEALED, PersonRef, PersonVault
@@ -141,6 +148,22 @@ class PendingQuestion:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _waits_for_people(availability: QuestioningAvailability | None, plan: PlanDecision) -> bool:
+    """A live case with nobody to ask waits when people could still become askable.
+
+    Conclusions the evidence already supports (a confident decision, an open-world abstention,
+    a verification) go ahead. Only the planner's "nobody available can observe anything more"
+    ending waits, and only while someone is held back by missing consent or quiet hours rather
+    than by the roster or their own refusal."""
+    return (
+        availability is not None
+        and availability.eligible_count == 0
+        and availability.no_consent_count + availability.quiet_hours_count > 0
+        and plan.kind in (PlanKind.DECIDE, PlanKind.ABSTAIN)
+        and plan.rule == "no_feasible_action"
+    )
 
 
 def _id(prefix: str) -> str:
@@ -356,6 +379,20 @@ class InvestigationService:
                 )
             elif type_ == "ParticipantUnavailable":
                 engine.set_available(payload["participant_id"], False)
+            elif type_ == "QuestioningAvailabilityEvaluated":
+                for participant in payload.get("participants", []):
+                    engine.set_available(
+                        participant["participant_id"], bool(participant["available"])
+                    )
+            elif type_ == "QuestionCancelled" and "location_id" in payload:
+                engine.question_withdrawn(
+                    ProbeAction(
+                        participant_id=payload["participant_id"],
+                        probe_id=payload["probe_id"],
+                        location_id=payload["location_id"],
+                        requires_move=bool(payload["requires_move"]),
+                    )
+                )
             elif type_ == "QuestionWithdrawn" and "location_id" in payload:
                 # Logs written before withdrawals carried the place replay as they ran then.
                 engine.question_withdrawn(
@@ -551,10 +588,133 @@ class InvestigationService:
             }
         self._event(session, row.id, "QuestionAsked", payload)
 
+    async def _evaluate_questioning_availability(
+        self, session: AsyncSession, row: InvestigationRow, engine: Engine
+    ) -> tuple[QuestioningAvailability | None, dict[str, AvailabilityDecision]]:
+        """Read live consent and quiet hours, then record only replay-safe decisions."""
+        if row.site_id is None or bool(row.request.get("practice", True)):
+            # Practice and sandbox participants are synthetic. No contact is made and their
+            # simulated answers must remain available without a human consent record.
+            return None, {}
+        requested = self._request(row).participants
+        participant_ids = [person.id for person in requested]
+        site_people = list(
+            (
+                await session.scalars(
+                    select(SitePersonRow).where(
+                        SitePersonRow.org_id == row.org_id,
+                        SitePersonRow.site_id == row.site_id,
+                        SitePersonRow.id.in_(participant_ids),
+                    )
+                )
+            ).all()
+        )
+        people_by_id = {person.id: person for person in site_people}
+        consented = set(
+            (
+                await session.scalars(
+                    select(ConsentRow.person_id).where(
+                        ConsentRow.org_id == row.org_id,
+                        ConsentRow.site_id == row.site_id,
+                        ConsentRow.person_id.in_(participant_ids),
+                        ConsentRow.purpose == "contact_for_investigations",
+                        ConsentRow.channel == "web",
+                        ConsentRow.decision == "granted",
+                        ConsentRow.withdrawn_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        override = await session.scalar(
+            select(EventRow.seq)
+            .where(
+                EventRow.investigation_id == row.id,
+                EventRow.type == "QuietHoursOverridden",
+            )
+            .limit(1)
+        )
+        prior_events = (
+            await session.execute(
+                select(EventRow.type, EventRow.payload)
+                .where(
+                    EventRow.investigation_id == row.id,
+                    EventRow.type.in_(("ConsentRecorded", "ParticipantUnavailable")),
+                )
+                .order_by(EventRow.seq)
+            )
+        ).all()
+        declined = {
+            str(payload["participant_id"])
+            for type_, payload in prior_events
+            if (type_ == "ConsentRecorded" and payload.get("consented") is False)
+            or (type_ == "ParticipantUnavailable" and payload.get("reason") == "asked to stop")
+        }
+        at = _now()
+        decisions: dict[str, AvailabilityDecision] = {}
+        for participant in requested:
+            person = people_by_id.get(participant.id)
+            hours = (
+                QuietHours(
+                    enabled=person.quiet_hours_enabled,
+                    start=person.quiet_hours_start,
+                    end=person.quiet_hours_end,
+                    timezone=person.quiet_hours_timezone,
+                )
+                if person is not None
+                else QuietHours()
+            )
+            decision = decide_availability(
+                listed_available=participant.available,
+                has_web_contact_consent=participant.id in consented,
+                quiet_hours=hours,
+                at=at,
+                quiet_hours_overridden=override is not None,
+                declined_in_investigation=participant.id in declined,
+            )
+            decisions[participant.id] = decision
+            engine.set_available(participant.id, decision.available)
+        eligible = sum(decision.available for decision in decisions.values())
+        no_consent = sum(decision.reason == "no_consent" for decision in decisions.values())
+        quiet = sum(decision.reason == "quiet_hours" for decision in decisions.values())
+        unavailable = len(decisions) - eligible - no_consent - quiet
+        self._event(
+            session,
+            row.id,
+            "QuestioningAvailabilityEvaluated",
+            {
+                "evaluated_at": at.isoformat(),
+                "eligible_count": eligible,
+                "no_consent_count": no_consent,
+                "quiet_hours_count": quiet,
+                "unavailable_count": unavailable,
+                "participants": [
+                    {
+                        "participant_id": participant_id,
+                        "available": decision.available,
+                        "reason": decision.reason,
+                    }
+                    for participant_id, decision in sorted(decisions.items())
+                ],
+            },
+        )
+        return (
+            QuestioningAvailability(
+                evaluated_at=at,
+                eligible_count=eligible,
+                no_consent_count=no_consent,
+                quiet_hours_count=quiet,
+                unavailable_count=unavailable,
+            ),
+            decisions,
+        )
+
     async def _schedule(self, session: AsyncSession, row: InvestigationRow, engine: Engine) -> None:
         """After any change of belief: withdraw questions that stopped mattering, then ask or
         conclude (``pramana_engine.schedule``, docs/adr/0011). With one call at a time this is
         exactly the sequential planner."""
+        availability, decisions = await self._evaluate_questioning_availability(
+            session, row, engine
+        )
         limit = int(row.request.get("max_parallel_calls", 1))
         pending = list(
             (
@@ -570,6 +730,35 @@ class InvestigationService:
             .scalars()
             .all()
         )
+        if availability is not None:
+            remaining: list[QuestionRow] = []
+            for question in pending:
+                decision = decisions.get(question.participant_id)
+                if decision is None or decision.available:
+                    remaining.append(question)
+                    continue
+                question.status = QuestionStatus.CANCELLED.value
+                action = ProbeAction(
+                    participant_id=question.participant_id,
+                    probe_id=question.probe_id,
+                    location_id=question.location_id,
+                    requires_move=question.requires_move,
+                )
+                engine.question_withdrawn(action)
+                self._event(
+                    session,
+                    row.id,
+                    "QuestionCancelled",
+                    {
+                        "question_id": question.id,
+                        "participant_id": question.participant_id,
+                        "probe_id": question.probe_id,
+                        "location_id": question.location_id,
+                        "requires_move": question.requires_move,
+                        "reason": decision.reason,
+                    },
+                )
+            pending = remaining
         actions = [
             ProbeAction(
                 participant_id=q.participant_id,
@@ -600,14 +789,51 @@ class InvestigationService:
                 },
             )
         if step.plan is not None:
-            self._apply_plan(session, row, engine, step.plan)
+            self._apply_plan_or_wait(session, row, engine, step.plan, availability)
         else:
             self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
         for extra in step.ask:
             self._ask(session, row, engine, extra.action, parallel=extra)
 
+    def _apply_plan_or_wait(
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        plan: PlanDecision,
+        availability: QuestioningAvailability | None,
+    ) -> None:
+        if not _waits_for_people(availability, plan):
+            self._apply_plan(session, row, engine, plan, availability)
+            return
+        # Nobody can be asked only because consent is missing or it is quiet time. Do not
+        # conclude from what is known so far: record the plan as computed, keep the case open,
+        # and let a new consent, an override or a later check resume it.
+        assert availability is not None
+        self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
+        self._event(session, row.id, "PlanComputed", plan.model_dump(mode="json"))
+        self._event(
+            session,
+            row.id,
+            "QuestioningPaused",
+            {
+                "no_consent_count": availability.no_consent_count,
+                "quiet_hours_count": availability.quiet_hours_count,
+            },
+        )
+        row.status = (
+            InvestigationStatus.VERIFYING
+            if engine.snapshot().repair is not None
+            else InvestigationStatus.INVESTIGATING
+        ).value
+
     def _apply_plan(
-        self, session: AsyncSession, row: InvestigationRow, engine: Engine, plan: PlanDecision
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        plan: PlanDecision,
+        availability: QuestioningAvailability | None,
     ) -> None:
         """Record the plan; ask the next question or conclude."""
         self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
@@ -638,7 +864,7 @@ class InvestigationService:
                 # The repair did not resolve it: reopen with the alternatives promoted.
                 engine.reopen()
                 self._event(session, row.id, "Reopened", {"reason": plan.reason})
-                self._apply_plan(session, row, engine, engine.plan())
+                self._apply_plan_or_wait(session, row, engine, engine.plan(), availability)
             return
         decided = plan.kind == PlanKind.DECIDE
         row.status = (
@@ -1030,6 +1256,141 @@ class InvestigationService:
         log.info("investigation_created", investigation_id=inv_id, status=row.status)
         return await self.get(inv_id)
 
+    async def recheck_availability(self, inv_id: str) -> InvestigationState:
+        """Re-run the logged live eligibility check after a quiet-hours window may have ended."""
+        async with self._lock(inv_id):
+            try:
+                async with self.db.transaction() as session:
+                    row = await self._load_row(session, inv_id, lock=True)
+                    if row.site_id is None or bool(row.request.get("practice", True)):
+                        raise ApiError(
+                            409,
+                            "AVAILABILITY_CHECK_NOT_NEEDED",
+                            "simulated practice participants do not use live availability checks",
+                        )
+                    if row.status not in {status.value for status in ANSWERABLE_STATUSES}:
+                        raise ApiError(
+                            409,
+                            "INVESTIGATION_NOT_ACTIVE",
+                            f"investigation is {row.status}",
+                        )
+                    engine = await self._engine(session, row)
+                    await self._schedule(session, row, engine)
+                    row.version += 1
+                    version = row.version
+            except BaseException:
+                self._cache.pop(inv_id, None)
+                raise
+            self._cache_engine(inv_id, version, engine)
+        return await self.get(inv_id)
+
+    async def override_quiet_hours(
+        self, inv_id: str, body: QuietHoursOverrideRequest, actor_id: str
+    ) -> InvestigationState:
+        """Record an owner/admin emergency override for this investigation only."""
+        async with self._lock(inv_id):
+            try:
+                async with self.db.transaction() as session:
+                    row = await self._load_row(session, inv_id, lock=True)
+                    if row.site_id is None or bool(row.request.get("practice", True)):
+                        raise ApiError(
+                            409,
+                            "QUIET_HOURS_NOT_APPLICABLE",
+                            "quiet hours apply only to a live investigation",
+                        )
+                    if row.status not in {status.value for status in ANSWERABLE_STATUSES}:
+                        raise ApiError(
+                            409,
+                            "INVESTIGATION_NOT_ACTIVE",
+                            f"investigation is {row.status}",
+                        )
+                    existing = await session.scalar(
+                        select(EventRow.seq)
+                        .where(
+                            EventRow.investigation_id == inv_id,
+                            EventRow.type == "QuietHoursOverridden",
+                        )
+                        .limit(1)
+                    )
+                    if existing is not None:
+                        raise ApiError(
+                            409,
+                            "QUIET_HOURS_ALREADY_OVERRIDDEN",
+                            "quiet hours have already been overridden for this investigation",
+                        )
+                    now = _now()
+                    payload = {
+                        "reason": body.reason,
+                        "actor_id": actor_id,
+                        "created_at": now.isoformat(),
+                    }
+                    self._event(session, inv_id, "QuietHoursOverridden", payload)
+                    session.add(
+                        AuditLogRow(
+                            id=ids.uuid7(),
+                            org_id=row.org_id,
+                            actor_kind="user",
+                            actor_id=actor_id,
+                            action="quiet_hours.override",
+                            target_kind="investigation",
+                            target_id=inv_id,
+                            details={
+                                "site_id": ids.encode("site", row.site_id),
+                                "reason": body.reason,
+                            },
+                        )
+                    )
+                    engine = await self._engine(session, row)
+                    await self._schedule(session, row, engine)
+                    row.version += 1
+                    version = row.version
+            except BaseException:
+                self._cache.pop(inv_id, None)
+                raise
+            self._cache_engine(inv_id, version, engine)
+        return await self.get(inv_id)
+
+    async def consent_state_changed(self, site_id: uuid.UUID, person_id: str) -> None:
+        """Cancel an in-flight question or plan again after a person's consent changes."""
+        org_id = current_org.get()
+        if org_id is None:
+            raise not_found("investigation")
+        async with self.db.read() as session:
+            inv_ids = list(
+                (
+                    await session.scalars(
+                        select(InvestigationRow.id).where(
+                            InvestigationRow.org_id == org_id,
+                            InvestigationRow.site_id == site_id,
+                            InvestigationRow.status.in_(
+                                [status.value for status in ANSWERABLE_STATUSES]
+                            ),
+                        )
+                    )
+                ).all()
+            )
+        for inv_id in inv_ids:
+            async with self._lock(inv_id):
+                try:
+                    async with self.db.transaction() as session:
+                        row = await self._load_row(session, inv_id, lock=True)
+                        if row.request.get("practice", True) or row.status not in {
+                            status.value for status in ANSWERABLE_STATUSES
+                        }:
+                            continue
+                        if person_id not in {
+                            person.id for person in self._request(row).participants
+                        }:
+                            continue
+                        engine = await self._engine(session, row)
+                        await self._schedule(session, row, engine)
+                        row.version += 1
+                        version = row.version
+                except BaseException:
+                    self._cache.pop(inv_id, None)
+                    raise
+                self._cache_engine(inv_id, version, engine)
+
     @staticmethod
     def _person(site_id: uuid.UUID, person_id: str) -> PersonRef:
         org = current_org.get()
@@ -1339,6 +1700,24 @@ class InvestigationService:
                 )
             ).scalar_one()
             plan = PlanDecision.model_validate(plan_payload)
+            availability_payload = await session.scalar(
+                select(EventRow.payload)
+                .where(
+                    EventRow.investigation_id == inv_id,
+                    EventRow.type == "QuestioningAvailabilityEvaluated",
+                )
+                .order_by(EventRow.seq.desc())
+                .limit(1)
+            )
+            override_payload = await session.scalar(
+                select(EventRow.payload)
+                .where(
+                    EventRow.investigation_id == inv_id,
+                    EventRow.type == "QuietHoursOverridden",
+                )
+                .order_by(EventRow.seq.desc())
+                .limit(1)
+            )
             req = self._request(row)
             questions = (
                 (
@@ -1452,6 +1831,23 @@ class InvestigationService:
             ground_truth=None
             if row.ground_truth is None
             else GroundTruthComparison.model_validate(row.ground_truth),
+            questioning_availability=None
+            if availability_payload is None
+            else QuestioningAvailability.model_validate(
+                {
+                    key: availability_payload[key]
+                    for key in (
+                        "evaluated_at",
+                        "eligible_count",
+                        "no_consent_count",
+                        "quiet_hours_count",
+                        "unavailable_count",
+                    )
+                }
+            ),
+            quiet_hours_override=None
+            if override_payload is None
+            else QuietHoursOverrideView.model_validate(override_payload),
         )
 
     @staticmethod
@@ -1808,7 +2204,10 @@ class InvestigationService:
                             "participant_id": report.participant_id,
                         },
                     )
-                    self._apply_plan(session, row, engine, engine.plan())
+                    availability, _ = await self._evaluate_questioning_availability(
+                        session, row, engine
+                    )
+                    self._apply_plan_or_wait(session, row, engine, engine.plan(), availability)
                     row.version += 1
                     version = row.version
             except BaseException:

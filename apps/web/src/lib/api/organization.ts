@@ -18,6 +18,7 @@ import type {
   SiteModelSummary,
   ConsentRecord,
   DeleteOrganization,
+  ConsentRequestCreated,
   InvestigationForecast,
   MapDriftCheck,
   RecordConsent,
@@ -26,6 +27,7 @@ import type {
   SiteSummary,
   OrganizationSummary,
   ParticipantPatch,
+  SitePersonPatch,
   WorkspaceHome,
   WorkspaceMember,
   OrganizationDeletion,
@@ -127,7 +129,7 @@ export function organizationApi(org: string) {
     addPerson: (siteId: string, person: ParticipantSpec, action: OrganizationAction) =>
       mutate<SitePerson>(`${site(siteId)}/people`, person, action),
     updatePerson: (
-      siteId: string, personId: string, patch: ParticipantPatch, version: number, action: OrganizationAction,
+      siteId: string, personId: string, patch: SitePersonPatch, version: number, action: OrganizationAction,
     ) =>
       request<SitePerson>("core", `${site(siteId)}/people/${enc(personId)}`, {
         method: "PATCH",
@@ -159,6 +161,8 @@ export function organizationApi(org: string) {
       mutate<ConsentRecord>(`${site(siteId)}/people/${enc(personId)}/consents`, body, action),
     withdrawConsent: (siteId: string, personId: string, purpose: RecordConsent["purpose"], action: OrganizationAction) =>
       mutate<void>(`${site(siteId)}/people/${enc(personId)}/consents/${enc(purpose)}/withdraw`, undefined, action),
+    requestConsent: (siteId: string, personId: string, action: OrganizationAction) =>
+      mutate<ConsentRequestCreated>(`${site(siteId)}/people/${enc(personId)}/consent-requests`, undefined, action),
     site: (id: string, signal?: AbortSignal) => request<SiteSummary>("core", site(id), { signal }),
     models: (id: string, query: { limit?: number; cursor?: string } = {}, signal?: AbortSignal) => {
       const params = new URLSearchParams();
@@ -236,6 +240,10 @@ export function organizationApi(org: string) {
       mutate<ParticipantToken & { org_id: string }>(
         `${investigation(id)}/participants/${enc(participantId)}/token`, undefined, action,
       ),
+    recheckAvailability: (id: string, action: OrganizationAction) =>
+      mutate<InvestigationState>(`${investigation(id)}/availability/recheck`, undefined, action),
+    overrideQuietHours: (id: string, reason: string, action: OrganizationAction) =>
+      mutate<InvestigationState>(`${investigation(id)}/quiet-hours/override`, { reason }, action),
   });
 }
 

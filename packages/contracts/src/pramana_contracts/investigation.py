@@ -12,6 +12,7 @@ from .common import Directness, Hedge, Identifier, Modality, StrictModel, Templa
 from .participants import ParticipantSpec
 from .reasoning import BeliefSnapshot, Extraction, Observation, PlanDecision, ProbeAction
 from .sim import FaultSpec, RevealResult
+from .site_people import QuestioningAvailability, QuietHoursOverrideView
 from .voice import SttResult
 
 
@@ -309,6 +310,10 @@ class InvestigationState(StrictModel):
     """Simulated: the shared practice site, or practice faults on a site's own model."""
     repair_options: list[RepairOption] = Field(default_factory=list)
     """What may be proposed for approval now, from the site's own actions."""
+    questioning_availability: QuestioningAvailability | None = None
+    """The latest logged consent and quiet-hours check for a live investigation."""
+    quiet_hours_override: QuietHoursOverrideView | None = None
+    """A logged owner/admin emergency override, if one was used."""
 
 
 class EventEnvelope(StrictModel):

@@ -1,7 +1,7 @@
 """Add restorable workspace deletion state and keyset-list indexes.
 
-Revision ID: 0017
-Revises: 0016
+Revision ID: 0018
+Revises: 0017
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision: str = "0017"
-down_revision: str | None = "0016"
+revision: str = "0018"
+down_revision: str | None = "0017"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

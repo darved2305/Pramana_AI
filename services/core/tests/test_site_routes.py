@@ -47,6 +47,7 @@ SITE_OPERATIONS = {
     ("get", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents/{purpose}/withdraw"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consent-requests"),
 }
 
 

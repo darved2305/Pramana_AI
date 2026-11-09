@@ -108,9 +108,14 @@ def test_every_table_with_org_id_forces_rls(db_urls: tuple[str, str]) -> None:
         engine = create_async_engine(db_urls[0])
         async with engine.connect() as conn:
             tables = await _tenant_tables(conn)
-            assert {"investigations", "events", "sites", "site_models", "memberships"} <= set(
-                tables
-            )
+            assert {
+                "investigations",
+                "events",
+                "sites",
+                "site_models",
+                "memberships",
+                "consent_links",
+            } <= set(tables)
             for table in tables:
                 row = await conn.execute(
                     text(
@@ -125,6 +130,56 @@ def test_every_table_with_org_id_forces_rls(db_urls: tuple[str, str]) -> None:
                 assert forced, table
                 assert policies >= 1, table
         await engine.dispose()
+
+    _run(check)
+
+
+def test_consent_links_are_scoped_under_runtime_role(db_urls: tuple[str, str]) -> None:
+    async def check() -> None:
+        a, b = await _seed_two_orgs(db_urls[0])
+        owner = create_async_engine(db_urls[0])
+        async with owner.begin() as conn:
+            for org in (a, b):
+                site = (
+                    await conn.execute(text("select id from sites where org_id=:org"), {"org": org})
+                ).scalar_one()
+                await conn.execute(
+                    text(
+                        "insert into site_people (org_id,site_id,id,spec) "
+                        "values (:org,:site,'p_test','{}')"
+                    ),
+                    {"org": org, "site": site},
+                )
+                await conn.execute(
+                    text(
+                        "insert into consent_links "
+                        "(id,org_id,site_id,person_id,purpose,channel,language,notice_version,"
+                        "token_hash,created_by,created_at,expires_at) "
+                        "values (:id,:org,:site,'p_test','contact_for_investigations','web',"
+                        "'en','1',:hash,'test',now(),now()+interval '1 day')"
+                    ),
+                    {"id": ids.uuid7(), "org": org, "site": site, "hash": org.bytes},
+                )
+        await owner.dispose()
+        db = Database(create_async_engine(db_urls[1]))
+        with acting_for(a):
+            async with db.read() as session:
+                visible = set(
+                    (await session.execute(text("select org_id from consent_links"))).scalars()
+                )
+                assert visible == {a}
+        with acting_for(b):
+            async with db.read() as session:
+                visible = set(
+                    (await session.execute(text("select org_id from consent_links"))).scalars()
+                )
+                assert visible == {b}
+        with acting_for(None):
+            async with db.read() as session:
+                assert (
+                    await session.execute(text("select count(*) from consent_links"))
+                ).scalar_one() == 0
+        await db.dispose()
 
     _run(check)
 

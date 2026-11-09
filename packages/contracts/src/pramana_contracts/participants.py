@@ -44,6 +44,7 @@ class RecordConsent(StrictModel):
 
 class ConsentRecord(RecordConsent):
     id: str
+    decision: Literal["granted", "refused"] = "granted"
     granted_at: datetime
     withdrawn_at: datetime | None = None
 

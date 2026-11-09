@@ -18,6 +18,7 @@ from .account_rows import ModelTemplateRow
 from .accounts import AccountService
 from .api import accounts as accounts_api
 from .api import auth as auth_api
+from .api import consent as consent_api
 from .api import directory as directory_api
 from .api import evaluation as evaluation_api
 from .api import home as home_api
@@ -251,6 +252,7 @@ def create_app(
     app.include_router(site_builder_api.library)
     app.include_router(site_builder_api.router)
     app.include_router(people_api.router)
+    app.include_router(consent_api.router)
     app.include_router(home_api.router)
     app.include_router(members_api.router)
     app.include_router(invitations_api.router)
