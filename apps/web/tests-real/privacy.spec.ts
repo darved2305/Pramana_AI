@@ -9,7 +9,7 @@ async function googleSignIn(page: Page, who: string, next: string) {
 
 const csrf = (key: string) => ({ "X-Pramana-CSRF": "1", "Idempotency-Key": key });
 
-test("staff record and withdraw consent, and only owners or admins can erase, with a warning first", async ({ page }) => {
+test("staff record and withdraw consent, and only owners or admins can erase, with a warning first", async ({ page, browser }) => {
   test.setTimeout(180_000);
   const stamp = Date.now();
   const owner = `privacy-owner-${stamp}`;
@@ -65,6 +65,39 @@ test("staff record and withdraw consent, and only owners or admins can erase, wi
   await expect(contact.getByText(/^Withdrawn /)).toBeVisible();
   await expect(ravi.getByText("Contact: withdrawn")).toBeVisible();
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
+
+  // The person page saves a local quiet-hours window and can issue a one-use link.
+  await ravi.getByRole("link", { name: "Person page" }).click();
+  await expect(page.getByRole("heading", { name: "Ravi", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Quiet hours start")).toHaveValue("22:00");
+  await expect(page.getByLabel("Quiet hours end")).toHaveValue("08:00");
+  await expect(page.getByLabel("Timezone")).toHaveValue("Asia/Kolkata");
+  await page.getByLabel("Quiet hours start").fill("21:30");
+  await page.getByLabel("Quiet hours end").fill("07:30");
+  const saved = page.waitForResponse((r) => r.url().endsWith("/people/p_ravi") && r.request().method() === "PATCH");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  expect((await saved).status()).toBe(200);
+  await expect(page.getByLabel("Quiet hours start")).toHaveValue("21:30");
+  await expect(page.getByText("Web questions: not allowed")).toBeVisible();
+  await page.getByRole("button", { name: "Manage consent" }).click();
+  const detailDialog = page.getByRole("dialog", { name: "Consent for Ravi" });
+  await detailDialog.getByRole("button", { name: "Send consent request" }).click();
+  await expect(detailDialog.getByText("No email is saved for this person. Copy and share the link.")).toBeVisible();
+  await expect(detailDialog.getByRole("button", { name: "Copy link" })).toBeVisible();
+  const consentUrl = (await detailDialog.locator("code").innerText()).trim();
+  const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phone = await phoneContext.newPage();
+  await phone.goto(consentUrl);
+  await expect(phone.getByRole("heading", { name: "May Pramana ask you questions?" })).toBeVisible();
+  await phone.getByRole("button", { name: "Yes, I agree" }).click();
+  await expect(phone.getByText(/Your choice is recorded/)).toBeVisible();
+  await phone.reload();
+  await expect(phone.getByText(/This link has expired or has already been used/)).toBeVisible();
+  await phoneContext.close();
+  await page.reload();
+  await expect(page.getByText("Web questions: allowed")).toBeVisible();
+  await page.goto(sitePath);
+  await expect(ravi.getByText("Web questions: allowed")).toBeVisible();
 
   // The server's refusal reaches the person in plain words.
   await page.route(`**${people}/p_meena/erase`, (route) =>

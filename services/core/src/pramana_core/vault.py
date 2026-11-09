@@ -82,6 +82,12 @@ class MasterKey:
     def unwrap(self, wrapped: bytes, ref: PersonRef) -> bytes:
         return _open(self._aead, wrapped, ref.context("key"))
 
+    def seal_response(self, body: bytes, context: bytes) -> bytes:
+        return _seal(self._aead, body, b"idempotency-response/" + context)
+
+    def open_response(self, body: bytes, context: bytes) -> bytes:
+        return _open(self._aead, body, b"idempotency-response/" + context)
+
 
 def _seal(aead: AESGCM, plain: bytes, context: bytes) -> bytes:
     nonce = os.urandom(_NONCE)

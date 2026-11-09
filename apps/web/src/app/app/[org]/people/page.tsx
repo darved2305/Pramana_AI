@@ -167,6 +167,12 @@ export default function PeoplePage() {
                 ) : null}
                 {ws.canOperate ? (
                   <div className="mt-auto flex flex-wrap gap-2 border-t border-white/[.06] pt-3">
+                    <Link
+                      href={`${ws.base}/people/${encodeURIComponent(p.id)}?site=${encodeURIComponent(siteId as string)}`}
+                      className="inline-flex h-8 items-center rounded-full border-[0.8px] border-line-strong px-3 text-[13px] text-fg hover:bg-white/[.06]"
+                    >
+                      Person page
+                    </Link>
                     <Button size="sm" onClick={() => setEditing(entry)}>
                       <IconEdit className="h-4 w-4" /> Edit
                     </Button>
