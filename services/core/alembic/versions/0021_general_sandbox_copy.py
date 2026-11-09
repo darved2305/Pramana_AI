@@ -201,11 +201,10 @@ def _neutral_spec(spec: dict[str, object]) -> dict[str, object]:
                 ),
                 "ap_light": (
                     "Ceiling device light",
-                    "At {place}, look at the small device on the ceiling. Is its light on or off?",
-                    "{place} में छत पर लगे छोटे उपकरण को देखें। उसकी बत्ती चालू है या बंद?",
-                    "{place} mein chhat par lage chhote device ko dekhiye. "
-                    "Uski light on hai ya off?",
-                    "{place} मध्ये छतावरचे छोटे उपकरण पाहा. त्याचा दिवा चालू आहे की बंद?",
+                    "Look at the small device on the ceiling. Is its light on or off?",
+                    "छत पर लगे छोटे उपकरण को देखें। उसकी बत्ती चालू है या बंद?",
+                    "Chhat par lage chhote device ko dekhiye. Uski light on hai ya off?",
+                    "छतावरचे छोटे उपकरण पाहा. त्याचा दिवा चालू आहे की बंद?",
                 ),
                 "corridor_lights": (
                     "Corridor lights",
@@ -216,78 +215,69 @@ def _neutral_spec(spec: dict[str, object]) -> dict[str, object]:
                 ),
                 "switch_leds": (
                     "Network device lights",
-                    "At {place}, look at the box with several network cables. "
+                    "Look at the box with several network cables. "
                     "Are its small lights green, orange, or off?",
-                    "{place} में कई नेटवर्क तारों वाले डिब्बे को देखें। उसकी छोटी बत्तियाँ हरी, नारंगी, या बंद हैं?",
-                    "{place} mein kai network cables wale box ko dekhiye. "
+                    "कई नेटवर्क तारों वाले डिब्बे को देखें। उसकी छोटी बत्तियाँ हरी, नारंगी, या बंद हैं?",
+                    "Kai network cables wale box ko dekhiye. "
                     "Uski chhoti lights green, orange, ya off hain?",
-                    "{place} मध्ये अनेक नेटवर्क तारा जोडलेला डबा पाहा. "
-                    "त्याचे छोटे दिवे हिरवे, नारंगी, की बंद आहेत?",
+                    "अनेक नेटवर्क तारा जोडलेला डबा पाहा. त्याचे छोटे दिवे हिरवे, नारंगी, की बंद आहेत?",
                 ),
                 "nvr_screen": (
                     "Security camera screen",
-                    "At {place}, look at the small screen used to view security cameras. "
-                    "Is it on or off?",
-                    "{place} में सुरक्षा कैमरे देखने वाली छोटी स्क्रीन को देखें। वह चालू है या बंद?",
-                    "{place} mein security cameras dekhne wali chhoti screen ko dekhiye. "
-                    "Woh on hai ya off?",
-                    "{place} मध्ये सुरक्षा कॅमेरे पाहण्याची छोटी स्क्रीन पाहा. ती चालू आहे की बंद?",
+                    "Look at the small screen used to view security cameras. Is it on or off?",
+                    "सुरक्षा कैमरे देखने वाली छोटी स्क्रीन को देखें। वह चालू है या बंद?",
+                    "Security cameras dekhne wali chhoti screen ko dekhiye. Woh on hai ya off?",
+                    "सुरक्षा कॅमेरे पाहण्याची छोटी स्क्रीन पाहा. ती चालू आहे की बंद?",
                 ),
                 "closet_light": (
                     "Equipment room light",
-                    "When you switch on the light in {place}, does the ceiling light come on?",
-                    "{place} की बत्ती का स्विच चालू करने पर छत की बत्ती जलती है?",
-                    "{place} ki light ka switch on karne par chhat ki light jalti hai?",
-                    "{place} मधला दिवा लावल्यावर छताचा दिवा लागतो का?",
+                    "When you switch on the light, does the ceiling light come on?",
+                    "बत्ती का स्विच चालू करने पर छत की बत्ती जलती है?",
+                    "Light ka switch on karne par chhat ki light jalti hai?",
+                    "दिवा लावल्यावर छताचा दिवा लागतो का?",
                 ),
                 "wan_led": (
                     "Internet router light",
-                    "At {place}, look at the internet router. "
-                    "Is the light marked INTERNET green, red, or off?",
-                    "{place} में इंटरनेट राउटर देखें। INTERNET लिखी बत्ती हरी, लाल, या बंद है?",
-                    "{place} mein internet router dekhiye. "
-                    "INTERNET likhi light green, red, ya off hai?",
-                    "{place} मध्ये इंटरनेट राउटर पाहा. INTERNET लिहिलेला दिवा हिरवा, लाल, की बंद आहे?",
+                    "Look at the internet router. Is the light marked INTERNET green, red, or off?",
+                    "इंटरनेट राउटर देखें। INTERNET लिखी बत्ती हरी, लाल, या बंद है?",
+                    "Internet router dekhiye. INTERNET likhi light green, red, ya off hai?",
+                    "इंटरनेट राउटर पाहा. INTERNET लिहिलेला दिवा हिरवा, लाल, की बंद आहे?",
                 ),
                 "breaker_c2_7": (
                     "Equipment room power switch position",
-                    "At {place}, without touching anything, is the power switch for "
+                    "Without touching anything, is the power switch for "
                     "equipment room 2 up or down?",
-                    "{place} पर, बिना कुछ छुए, उपकरण कक्ष 2 का बिजली वाला स्विच ऊपर है या नीचे?",
-                    "{place} par, bina kuch chhue, equipment room 2 ka power switch "
-                    "upar hai ya neeche?",
-                    "{place} येथे, कशालाही हात न लावता, उपकरण कक्ष 2 चा वीजेचा स्विच वर आहे की खाली?",
+                    "बिना कुछ छुए, उपकरण कक्ष 2 का बिजली वाला स्विच ऊपर है या नीचे?",
+                    "Bina kuch chhue, equipment room 2 ka power switch upar hai ya neeche?",
+                    "कशालाही हात न लावता, उपकरण कक्ष 2 चा वीजेचा स्विच वर आहे की खाली?",
                 ),
                 "breaker_c2_5": (
                     "Lights power switch position",
-                    "At {place}, without touching anything, is the power switch for "
-                    "the lights up or down?",
-                    "{place} पर, बिना कुछ छुए, लाइटों का बिजली वाला स्विच ऊपर है या नीचे?",
-                    "{place} par, bina kuch chhue, lights ka power switch upar hai ya neeche?",
-                    "{place} येथे, कशालाही हात न लावता, दिव्यांचा वीजेचा स्विच वर आहे की खाली?",
+                    "Without touching anything, is the power switch for the lights up or down?",
+                    "बिना कुछ छुए, लाइटों का बिजली वाला स्विच ऊपर है या नीचे?",
+                    "Bina kuch chhue, lights ka power switch upar hai ya neeche?",
+                    "कशालाही हात न लावता, दिव्यांचा वीजेचा स्विच वर आहे की खाली?",
                 ),
                 "breaker_main_1": (
                     "Main power switch position",
-                    "At {place}, without touching anything, is the main power switch up or down?",
-                    "{place} पर, बिना कुछ छुए, मुख्य बिजली का स्विच ऊपर है या नीचे?",
-                    "{place} par, bina kuch chhue, main power switch upar hai ya neeche?",
-                    "{place} येथे, कशालाही हात न लावता, मुख्य वीजेचा स्विच वर आहे की खाली?",
+                    "Without touching anything, is the main power switch up or down?",
+                    "बिना कुछ छुए, मुख्य बिजली का स्विच ऊपर है या नीचे?",
+                    "Bina kuch chhue, main power switch upar hai ya neeche?",
+                    "कशालाही हात न लावता, मुख्य वीजेचा स्विच वर आहे की खाली?",
                 ),
                 "room_socket": (
                     "Wall socket power",
-                    "At {place}, plug in a phone charger. Does the phone start charging?",
-                    "{place} में फ़ोन का चार्जर लगाएँ। क्या फ़ोन चार्ज होने लगता है?",
-                    "{place} mein phone charger lagaiye. Kya phone charge hone lagta hai?",
-                    "{place} मध्ये फोनचा चार्जर लावा. फोन चार्ज व्हायला लागतो का?",
+                    "Plug in a phone charger. Does the phone start charging?",
+                    "फ़ोन का चार्जर लगाएँ। क्या फ़ोन चार्ज होने लगता है?",
+                    "Phone charger lagaiye. Kya phone charge hone lagta hai?",
+                    "फोनचा चार्जर लावा. फोन चार्ज व्हायला लागतो का?",
                 ),
                 "fibre_light": (
                     "Internet connection box light",
-                    "At {place}, look at the internet connection box. "
-                    "Is its status light green, red, or off?",
-                    "{place} में इंटरनेट कनेक्शन वाले डिब्बे को देखें। उसकी बत्ती हरी, लाल, या बंद है?",
-                    "{place} mein internet connection box dekhiye. "
-                    "Uski status light green, red, ya off hai?",
-                    "{place} मध्ये इंटरनेट जोडणीचा डबा पाहा. त्याची बत्ती हिरवी, लाल, की बंद आहे?",
+                    "Look at the internet connection box. Is its status light green, red, or off?",
+                    "इंटरनेट कनेक्शन वाले डिब्बे को देखें। उसकी बत्ती हरी, लाल, या बंद है?",
+                    "Internet connection box dekhiye. Uski status light green, red, ya off hai?",
+                    "इंटरनेट जोडणीचा डबा पाहा. त्याची बत्ती हिरवी, लाल, की बंद आहे?",
                 ),
             }.get(probe_id)
             if probe_copy:

@@ -195,6 +195,11 @@ def test_stored_sandbox_is_identical_to_latest_frozen_template(
     copy.extend(probe["label"] for probe in spec["probes"])
     copy.extend(text for probe in spec["probes"] for text in probe["templates"].values())
     copy.extend(decision["label"] for decision in spec["decision_classes"])
+    assert all(
+        "{place}" not in template
+        for probe in spec["probes"]
+        for template in probe["templates"].values()
+    )
     shown = " ".join(copy).casefold()
     for site_specific_term in (
         "hostel",
