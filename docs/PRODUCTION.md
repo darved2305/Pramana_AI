@@ -547,7 +547,11 @@ Browser                         api                                   provider /
      mutations or via `scripts/reap_idempotency.py`; a scheduled worker remains deployment work.
 3. **Commands with external effects** ("approve and notify the technician", "place a call"). One local transaction commits the state change and an outbox row. The worker calls the provider with a provider-side idempotency key derived from the outbox id, where the provider supports one. Where it does not, record the attempt and reconcile through status APIs or webhooks; never retry a non-idempotent call blindly (brandur).
 
-   Invitation email commits its outbox row with the invitation. The API starts a bounded drain after it sends the HTTP response, and `scripts/drain_email_outbox.py` repeats bounded drains until the due queue is empty for a Cloud Run Job. A PostgreSQL advisory lock elects one relay. Attempts are recorded before SMTP, retry uses exponential backoff with jitter, and delivery stops after five attempts. A stable `Message-ID` and outbox id help correlate delivery, but SMTP has no idempotency key: if SMTP accepts a message and the process crashes before recording success, a later attempt can send it again. This is at-least-once delivery. The uncertain attempt remains in `email_outbox_attempts`; SMTP error text and message bodies are never logged. Recipient, subject and body are cleared after success or after the row becomes dead.
+   Invitation and consent request emails commit their outbox row with the invitation or consent link. The API starts a bounded drain after it sends the HTTP response, and `scripts/drain_email_outbox.py` repeats bounded drains until the due queue is empty for a Cloud Run Job. A PostgreSQL advisory lock elects one relay. Attempts are recorded before SMTP, retry uses exponential backoff with jitter, and delivery stops after five attempts. A stable `Message-ID` and outbox id help correlate delivery, but SMTP has no idempotency key: if SMTP accepts a message and the process crashes before recording success, a later attempt can send it again. This is at-least-once delivery. The uncertain attempt remains in `email_outbox_attempts`; SMTP error text and message bodies are never logged. Recipient, subject and body are cleared after success or after the row becomes dead. Consent emails are cancelled and purged when their link is replaced, consumed, revoked or found expired before delivery.
+
+   The consent-request response returns `queued` when the email intent is durable. Managers can poll the site and person scoped `GET /consent-requests/{request_id}` route for sent, queued, failed or no-email status; the bearer link itself is returned only by the create request.
+
+   Invitations created before the outbox have no recorded delivery result. Settings shows their email status as unavailable instead of guessing that delivery failed.
 4. **Webhooks.** Verify the signature and timestamp, then `INSERT` into `inbox (provider, event_id)` under a unique constraint in the same transaction as the effect. Answer 2xx quickly and process asynchronously.
 5. **Events.** `idempotency_key` becomes unique per investigation, not globally.
 6. **Answers.** Duplicates are rejected today (`409 QUESTION_NOT_PENDING`). With idempotency keys, a retried answer gets its original `200` instead of a confusing conflict, and a second, different answer still gets the 409.
@@ -987,7 +991,8 @@ create table email_outbox (
   id               uuid primary key,                 -- stable SMTP Message-ID and dedupe identity
   org_id           uuid not null references organizations(id),
   kind             text not null default 'invitation',
-  invitation_id    uuid unique references invitations(id), -- set for invitations; other email kinds may omit it
+  invitation_id    uuid unique references invitations(id), -- set for invitations
+  consent_link_id  uuid unique references consent_links(id), -- set for consent request email
   state            text not null check (state in ('queued', 'sending', 'sent', 'dead')),
   recipient        text,                              -- needed only until success or dead letter
   subject          text,
@@ -999,7 +1004,9 @@ create table email_outbox (
   dead_at          timestamptz,
   last_error       text,                              -- reason code only, never provider text
   created_at       timestamptz not null default now(),
-  check (kind <> 'invitation' or invitation_id is not null),
+  check ((kind = 'invitation' and invitation_id is not null and consent_link_id is null)
+      or (kind = 'consent_request' and consent_link_id is not null and invitation_id is null)
+      or (kind not in ('invitation', 'consent_request') and invitation_id is null and consent_link_id is null)),
   check (((state in ('queued', 'sending')) and recipient is not null and subject is not null and body is not null)
       or ((state in ('sent', 'dead')) and recipient is null and subject is null and body is null))
 );

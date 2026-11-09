@@ -8,15 +8,15 @@ not selected for a new question. Withdrawing consent cancels a pending question 
 An owner or admin can log an emergency quiet-hours override for one investigation, with a reason.
 
 The people directory and person page show consent status. A single-use link lets a person grant
-or refuse web contact in English, Hindi or Marathi; a configured Gmail transport can send it,
-and the operator can copy it. Contact email is encrypted. Quiet hours are editable on the person
+or refuse web contact in English, Hindi or Marathi; a configured Gmail transport sends it through
+the transactional outbox, and the operator can copy it and poll delivery status. Contact email is encrypted. Quiet hours are editable on the person
 page and default to 22:00-08:00 in Asia/Kolkata. Practice and sandbox use simulated participants
 and bypass human consent and quiet hours. Starting a real live investigation is still disabled.
 
 Focused API checks passed under both the database owner and `pramana_app`, including replay,
 withdrawal, override audit, link expiry and reuse, and tenant isolation. The mail test uses a
 fake transport and the live planner test uses the in-process simulator. Hindi and Marathi wording
-still needs native review. Deployment of migration 0017 must repeat the schema revoke for
+still needs native review. Deployment of migrations 0017 and 0020 must repeat the schema revoke for
 `anon` and `authenticated`.
 
 The consent-request idempotency response is encrypted at rest so a retry can return the same
@@ -30,8 +30,9 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 ## Update, 2026-11-09: email relay and sealing backfill
 
 Task F is implemented locally on `nov9/outbox-backfill`. Migration 0020 adds the transactional
-email outbox and attempt history. Invitation email is relayed after the response and through a
-bounded Cloud Run Job entry point. The UI reports sent, queued or failed. SMTP remains at-least-once
+email outbox and attempt history. Invitation and consent request emails are relayed after the
+response and through a bounded Cloud Run Job entry point. The UI reports sent, queued or failed.
+SMTP remains at-least-once
 because it has no idempotency key. The resumable `scripts/backfill_personal_data.py` seals older
 plaintext and removes personal values from legacy events while preserving replay and log seals.
 
