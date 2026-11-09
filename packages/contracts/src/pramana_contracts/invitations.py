@@ -37,7 +37,7 @@ class InvitationView(StrictModel):
     email: str
     roles: list[InvitedRole]
     status: Literal["pending", "accepted", "revoked", "expired"]
-    email_delivery: Literal["sent", "queued", "failed"]
+    email_delivery: Literal["sent", "queued", "failed", "unknown"]
     created_at: datetime
     expires_at: datetime
     invited_by: str | None

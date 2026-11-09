@@ -7,7 +7,11 @@ import { Badge, Button, Card, CardHeader, ErrorState, Field, Input, KeyValue, No
 import { IconCopy } from "@/components/ui/icons";
 import { actionKey } from "@/lib/api/account";
 import { describeError } from "@/lib/api/http";
-import type { CreateInvitation, InvitationCreated, WorkspaceMember } from "@/lib/api/types";
+import type {
+  CreateInvitation,
+  InvitationView,
+  WorkspaceMember,
+} from "@/lib/api/types";
 import { refreshAccount } from "@/lib/data/account";
 import { relative } from "@/lib/data/derive";
 import { useLoad } from "@/lib/data/hooks";
@@ -34,7 +38,12 @@ export default function WorkspaceSettingsPage() {
   const [roles, setRoles] = useState<InvitedRole[]>(["operator"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [link, setLink] = useState<{ id: string; email: string; url: string; delivery: InvitationCreated["email_delivery"] } | null>(null);
+  const [link, setLink] = useState<{
+    id: string;
+    email: string;
+    url: string;
+    delivery: InvitationView["email_delivery"];
+  } | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function invite(e: React.FormEvent) {
@@ -190,8 +199,8 @@ export default function WorkspaceSettingsPage() {
                   <span className="min-w-0 flex-1 truncate text-fg">{i.email}</span>
                   <span className="text-[12px] text-muted">{i.roles.join(", ")} · {relative(i.created_at)}</span>
                   <Badge tone={i.status === "pending" ? "warn" : i.status === "accepted" ? "ok" : "muted"}>{i.status}</Badge>
-                  <Badge tone={i.email_delivery === "sent" ? "ok" : i.email_delivery === "queued" ? "warn" : "bad"}>
-                    Email {i.email_delivery}
+                  <Badge tone={i.email_delivery === "sent" ? "ok" : i.email_delivery === "queued" ? "warn" : i.email_delivery === "unknown" ? "muted" : "bad"}>
+                    {i.email_delivery === "unknown" ? "Email status unavailable" : `Email ${i.email_delivery}`}
                   </Badge>
                   {i.status === "pending" ? (
                     <Button

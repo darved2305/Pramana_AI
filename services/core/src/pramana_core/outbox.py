@@ -137,6 +137,10 @@ def invitation_email(
 
 
 def delivery_status(state: str | None) -> str:
+    if state is None:
+        # Invitations created before the outbox have no durable delivery record. The old
+        # request-time SMTP path did not persist whether the provider accepted the message.
+        return "unknown"
     if state == "sent":
         return "sent"
     if state in {"queued", "sending"}:

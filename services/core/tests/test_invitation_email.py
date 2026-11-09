@@ -10,7 +10,7 @@ from types import TracebackType
 from typing import Any, ClassVar, Self
 
 import pytest
-from auth_testkit import CSRF
+from auth_testkit import CSRF, USERS, login
 from core_testkit import core_settings
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -18,7 +18,7 @@ from test_accounts import account_core as account_core
 from test_accounts import create
 from test_google_auth import sql
 
-from pramana_core import outbox
+from pramana_core import ids, outbox
 from pramana_core.mail import FakeMailer, GmailSmtp
 
 pytestmark = pytest.mark.db
@@ -49,7 +49,9 @@ def configure(client: TestClient, mailer: FakeMailer | None, base: str | None) -
 INVITE = {"email": "new.person@example.com", "roles": ["operator"]}
 
 
-def test_the_link_is_emailed_when_gmail_is_set_up(account_core: TestClient) -> None:
+def test_the_link_is_emailed_when_gmail_is_set_up(
+    account_core: TestClient, migrated_db: str
+) -> None:
     client = account_core
     org = workspace(client)
     mailer = FakeMailer()
@@ -65,6 +67,12 @@ def test_the_link_is_emailed_when_gmail_is_set_up(account_core: TestClient) -> N
     assert f"https://pramana.example{body['accept_path']}" in text
     listed = client.get(f"/v1/orgs/{org}/invitations").json()
     assert listed[0]["email_delivery"] == "sent"
+    sent_row = sql(
+        migrated_db,
+        "select state, recipient, subject, body from email_outbox where invitation_id = :id",
+        {"id": ids.decode("invite", body["invitation"]["id"])},
+    )
+    assert sent_row == [{"state": "sent", "recipient": None, "subject": None, "body": None}]
 
 
 def test_a_retry_replays_without_sending_again(account_core: TestClient) -> None:
@@ -116,6 +124,75 @@ def test_revoking_a_queued_invitation_purges_its_email(
     assert mailer.sent == []
 
 
+def test_replacing_a_queued_invitation_only_keeps_the_new_email_eligible(
+    account_core: TestClient, migrated_db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = account_core
+    org = workspace(client)
+    mailer = FakeMailer()
+    configure(client, mailer, "https://pramana.example")
+    relay = client.app.state.email_relay
+
+    async def no_op() -> dict[str, int | bool]:
+        return {"locked": True, "sent": 0, "retried": 0, "dead": 0}
+
+    monkeypatch.setattr(relay, "drain", no_op)
+    first = post(client, f"/v1/orgs/{org}/invitations", INVITE).json()
+    second = post(client, f"/v1/orgs/{org}/invitations", INVITE).json()
+    rows = sql(
+        migrated_db,
+        "select invitation_id::text as invitation_id, state, recipient, subject, body "
+        "from email_outbox order by created_at",
+    )
+    by_invitation = {row["invitation_id"]: row for row in rows}
+    first_id = str(ids.decode("invite", first["invitation"]["id"]))
+    second_id = str(ids.decode("invite", second["invitation"]["id"]))
+    assert by_invitation[first_id] == {
+        "invitation_id": first_id,
+        "state": "dead",
+        "recipient": None,
+        "subject": None,
+        "body": None,
+    }
+    assert by_invitation[second_id]["state"] == "queued"
+    assert by_invitation[second_id]["body"] is not None
+    assert mailer.sent == []
+
+
+def test_accepting_a_queued_invitation_purges_its_email(
+    account_core: TestClient, migrated_db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = account_core
+    org = workspace(client)
+    mailer = FakeMailer()
+    configure(client, mailer, "https://pramana.example")
+    relay = client.app.state.email_relay
+
+    async def no_op() -> dict[str, int | bool]:
+        return {"locked": True, "sent": 0, "retried": 0, "dead": 0}
+
+    monkeypatch.setattr(relay, "drain", no_op)
+    invited = post(
+        client,
+        f"/v1/orgs/{org}/invitations",
+        {"email": USERS["approver"][0], "roles": ["viewer"]},
+    ).json()
+    login(client, "approver")
+    accepted = post(
+        client,
+        "/v1/invitations/accept",
+        {"token": invited["accept_path"].removeprefix("/invite/")},
+    )
+    assert accepted.status_code == 200, accepted.text
+    row = sql(
+        migrated_db,
+        "select state, recipient, subject, body from email_outbox where invitation_id = :id",
+        {"id": ids.decode("invite", invited["invitation"]["id"])},
+    )
+    assert row == [{"state": "dead", "recipient": None, "subject": None, "body": None}]
+    assert mailer.sent == []
+
+
 def test_expired_invitation_is_dead_lettered_without_sending(
     account_core: TestClient, migrated_db: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -154,6 +231,29 @@ def test_without_gmail_email_is_failed_and_the_owner_can_share_the_link(
     assert r.json()["email_delivery"] == "failed"
     assert r.json()["accept_path"].startswith("/invite/org_")
     assert client.get(f"/v1/orgs/{org}/invitations").json()[0]["email_delivery"] == "failed"
+
+
+def test_legacy_invitation_reports_unknown_delivery_instead_of_a_false_failure(
+    account_core: TestClient, migrated_db: str
+) -> None:
+    client = account_core
+    org = workspace(client)
+    org_id = sql(migrated_db, "select id from organizations where slug = :slug", {"slug": org})[0][
+        "id"
+    ]
+    sql(
+        migrated_db,
+        "insert into invitations "
+        "(id, org_id, email, roles, token_hash, expires_at) "
+        "values (:id, :org, 'legacy@example.test', array['viewer'], :token_hash, "
+        "now() + interval '1 day')",
+        {"id": uuid.uuid4(), "org": org_id, "token_hash": b"x" * 32},
+    )
+
+    invitations = client.get(f"/v1/orgs/{org}/invitations")
+
+    assert invitations.status_code == 200, invitations.text
+    assert invitations.json()[0]["email_delivery"] == "unknown"
 
 
 def test_smtp_failure_is_retried_and_does_not_store_error_text(

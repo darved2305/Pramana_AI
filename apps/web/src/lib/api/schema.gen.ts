@@ -2583,7 +2583,7 @@ export interface components {
              * Email Delivery
              * @enum {string}
              */
-            email_delivery: "sent" | "queued" | "failed";
+            email_delivery: "sent" | "queued" | "failed" | "unknown";
             /**
              * Expires At
              * Format: date-time

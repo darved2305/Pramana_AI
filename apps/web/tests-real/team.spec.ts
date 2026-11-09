@@ -115,4 +115,14 @@ test("an owner invites a teammate, who joins with the invited address only", asy
     }
     await page.unroute("**/invitations");
   }
+
+  await page.route("**/invitations", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const rows = await response.json() as Array<Record<string, unknown>>;
+    await route.fulfill({ response, json: rows.map((row) => ({ ...row, email_delivery: "unknown" })) });
+  });
+  await page.reload();
+  await expect(page.getByText("Email status unavailable").first()).toBeVisible();
+  await page.unroute("**/invitations");
 });
