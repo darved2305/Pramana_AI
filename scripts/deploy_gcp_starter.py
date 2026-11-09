@@ -81,6 +81,7 @@ ROTATION_ACKS = {
 # together with the non-India database acknowledgement, so it can never describe a stage
 # that holds real personal data, and it is printed on every deploy.
 ROTATIONS_PARKED_ACK = "PRAMANA_ROTATIONS_PARKED"
+MIN_PASSWORD_LENGTH = 16
 DEPLOY_ENV_KEYS = frozenset(
     {
         "GCP_PROJECT_ID",
@@ -344,10 +345,25 @@ def validate_environment(ctx: Context) -> None:
         raise DeployError("PARTICIPANT_SIGNING_KEY must encode a 32-byte Ed25519 seed") from exc
     if len(signing_seed) != 32:
         raise DeployError("PARTICIPANT_SIGNING_KEY must encode a 32-byte Ed25519 seed")
-    if len(ctx.value("PRAMANA_SUPABASE_DB_PASSWORD")) < 16:
-        raise DeployError("the rotated Supabase migrator password is missing or too short")
-    if len(ctx.value("PRAMANA_SUPABASE_APP_PASSWORD")) < 16:
-        raise DeployError("the rotated Supabase runtime password is missing or too short")
+    short = [
+        label
+        for setting, label in (
+            ("PRAMANA_SUPABASE_DB_PASSWORD", "migrator"),
+            ("PRAMANA_SUPABASE_APP_PASSWORD", "runtime"),
+        )
+        if len(ctx.value(setting)) < MIN_PASSWORD_LENGTH
+    ]
+    if short and not outstanding:
+        raise DeployError(
+            f"the rotated Supabase {short[0]} password is too short; use at least "
+            f"{MIN_PASSWORD_LENGTH} characters"
+        )
+    if short:
+        print(
+            "WARNING: parked credentials are shorter than the "
+            f"{MIN_PASSWORD_LENGTH}-character rule: "
+            + ", ".join(f"{name} password" for name in short)
+        )
     if ctx.value("PRAMANA_SUPABASE_APP_PASSWORD") == ctx.value("PRAMANA_SUPABASE_DB_PASSWORD"):
         raise DeployError("Supabase migrator and runtime passwords must be different")
     ctx.value("PRAMANA_SUPABASE_DATABASE")

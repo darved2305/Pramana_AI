@@ -244,3 +244,24 @@ def test_images_are_built_by_the_dedicated_build_account_and_bucket() -> None:
         )
         assert f"--gcs-source-staging-dir=gs://{deploy.build_bucket(context)}/source" in command
         assert f"--gcs-log-dir=gs://{deploy.build_bucket(context)}/logs" in command
+
+
+def test_short_parked_passwords_warn_but_rotated_passwords_must_be_long(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+    context.env["PRAMANA_SUPABASE_DB_PASSWORD"] = "short-1"
+    context.env[deploy.NON_INDIA_DATABASE_ACK] = "true"
+    for setting in deploy.ROTATION_ACKS:
+        context.env[setting] = "false"
+    context.env[deploy.ROTATIONS_PARKED_ACK] = "true"
+    context.env["PRAMANA_SUPABASE_REGION"] = "ap-southeast-1"
+    context.env["PRAMANA_SUPABASE_POOLER_HOST"] = "aws-0-ap-southeast-1.pooler.supabase.com"
+
+    deploy.validate_environment(context)
+    assert "migrator password" in capsys.readouterr().out
+
+    for setting in deploy.ROTATION_ACKS:
+        context.env[setting] = "true"
+    with pytest.raises(deploy.DeployError, match="too short"):
+        deploy.validate_environment(context)
