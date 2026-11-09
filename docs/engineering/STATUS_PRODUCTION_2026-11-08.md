@@ -69,12 +69,24 @@ Matched by test name and scope, not by re-reading each assertion.
 
 | Result | Rows |
 |---|---|
-| Automated test found | ID-01, 02, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 09, 10; DA-01, 04, 05 |
+| Automated test found | ID-01, 02, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 09, 10; DA-01, 04, 05; PA-09 |
 | Partly covered | ID-06 (address check and switch-account prompt; the masked message is not asserted in a browser); ID-11 (disabled sign-in only); OR-01, OR-02 (saved preference, no switcher journey); OR-04 (access ends; stream closing not tested for removal); OR-05 (roles change; mid-session refresh not tested); OR-08 (suggestions; slug change and redirects not built); OR-11 (self-approval refused; "Invite an approver" not tested); DA-02, DA-03, DA-06, DA-08 (server rules; banners not tested) |
 | Not built | ID-03, ID-04 (domain join); OR-07 (organization deletion, R3); DA-07 (list pages use offset, not cursor) |
 
 Known limit of sealing: investigation search matches ids only for sealed reports, because the
 text is encrypted.
+
+### Consent and quiet-hours controls (2026-11-09)
+
+DA-04 and PA-09 are implemented for saved-site question planning. A current web-contact consent
+is required before a person can be selected. Quiet hours are evaluated in the person's timezone
+and the evaluation time and participant decisions are recorded for replay. Granting or withdrawing
+consent replans open investigations; withdrawal cancels that person's pending questions. When
+consent or quiet hours leave nobody eligible, the investigation stays open with operator guidance.
+An owner or admin can override quiet hours once per investigation with a reason; the action is
+visible on the investigation and in the audit log. Practice uses synthetic people and bypasses
+contact consent and quiet hours. Live delivery remains disabled, so no real calls or messages are
+sent.
 
 ## Remaining work
 

@@ -1335,9 +1335,12 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | DA-07 | Thousands of investigations | Cursor pagination, server-side search and filters; no client-side full loads | A, L |
 | DA-08 | The site model changes while an investigation is open | The investigation stays on its pinned version: "A newer model (v8) exists; new investigations use it" | A |
 
-DA-04 status, 2026-11-09: the web questioning path checks current contact consent before planning.
-The directory shows consent and can issue a single-use web consent request. Starting an actual
-live investigation remains disabled until live delivery is configured.
+DA-04 status, 2026-11-09: saved-site investigations only plan web questions for people with
+current contact consent. The directory shows consent and can issue a single-use web consent
+request. If no one is eligible only because consent is missing or it is quiet hours, the case
+stays open and tells the operator what to do. Practice runs use synthetic participants and do not
+require contact consent. Starting an actual live investigation remains disabled until live
+delivery is configured.
 
 **Participants and live investigations**
 
@@ -1358,6 +1361,13 @@ live investigation remains disabled until live delivery is configured.
 | PA-13 | The voice provider fails or the budget runs out mid-investigation | The current turn finishes; later questions go out as text; admins are told | P, C |
 | PA-14 | The requester opens the approval | `403 SELF_APPROVAL` (exists), shown in plain words | B |
 | PA-15 | A work order expires during a long walk | Collecting again returns the same live token or a new one after expiry (exists for capabilities) | P |
+
+PA-09 status, 2026-11-09: each person has an editable quiet-hours window and timezone, defaulting
+to Asia/Kolkata. Saved-site investigation planning records the evaluation time and each
+participant's availability decision. An owner or admin can override quiet hours for one
+investigation with a reason; the override appears on the investigation and in the audit log. The
+override never grants consent. Practice runs use simulated participants and bypass contact
+consent and quiet hours because they do not contact people.
 
 **People data and account lifecycle**
 
