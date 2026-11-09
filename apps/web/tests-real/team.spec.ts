@@ -91,7 +91,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await me.getByRole("checkbox", { name: "owner" }).uncheck();
   await me.getByRole("checkbox", { name: "admin" }).check();
   await me.getByRole("button", { name: "Save roles" }).click();
-  await expect(me.getByText(/A workspace needs an owner/)).toBeVisible();
+  await expect(me.getByText(/a workspace needs an owner/i)).toBeVisible();
   await me.getByRole("button", { name: "Cancel" }).click();
   await row.getByRole("button", { name: "Remove" }).click();
   await expect(memberList.getByRole("listitem").filter({ hasText: `${mate}@gmail.com` })).toHaveCount(0);
