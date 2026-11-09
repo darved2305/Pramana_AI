@@ -44,7 +44,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await googleSignIn(page, `stranger-${stamp}`, "/app/account");
   await page.goto(new URL(link).pathname);
   await page.getByRole("button", { name: "Accept invitation" }).click();
-  await expect(page.getByText(/This invitation is for/)).toBeVisible();
+  await expect(page.getByText(/this invitation is for/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Use another account" })).toBeVisible();
 
   // The invited person joins and lands in the workspace with the role they were given.
