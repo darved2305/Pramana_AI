@@ -3,7 +3,7 @@ name = "pramana-sim"
 version = "0.1.0"
 description = "Simulated building with sealed hidden truth"
 requires-python = ">=3.11"
-dependencies = ["pramana-contracts", "pramana-domain", "fastapi>=0.115", "uvicorn[standard]>=0.32", "pydantic-settings>=2.6", "cryptography>=43"]
+dependencies = ["pramana-contracts", "pramana-domain", "fastapi>=0.115", "uvicorn[standard]>=0.32", "pydantic-settings>=2.6", "cryptography>=43", "asyncpg>=0.30", "sqlalchemy[asyncio]>=2.0.36"]
 
 [build-system]
 requires = ["hatchling>=1.25"]

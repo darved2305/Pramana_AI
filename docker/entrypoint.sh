@@ -13,7 +13,9 @@ case "$cmd" in
     exec python -m pramana_sim "$@"
     ;;
   migrate)
-    exec python -m alembic -c /app/services/core/alembic.ini upgrade head
+    python -m pramana_core.db_roles
+    python -m alembic -c /app/services/core/alembic.ini upgrade head
+    exec python -m pramana_core.grant_audit --apply-revokes
     ;;
   *)
     exec "$cmd" "$@"

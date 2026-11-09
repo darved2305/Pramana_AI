@@ -19,15 +19,17 @@ import hmac
 import json
 import os
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import Annotated, TypeVar
+from typing import Annotated, Literal, Self, TypeVar, cast
 
+import asyncpg
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 from pramana_contracts import (
     ActRequest,
@@ -60,19 +62,56 @@ _Result = TypeVar("_Result")
 
 
 class SimSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="SIM_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="SIM_", env_file=".env", extra="ignore", populate_by_name=True
+    )
 
+    mode: Literal["dev", "test", "demo", "production"] = Field(
+        default="dev", validation_alias="PRAMANA_MODE"
+    )
+    local_production_test: bool = Field(
+        default=False, validation_alias="PRAMANA_LOCAL_PRODUCTION_TEST"
+    )
     operator_key: SecretStr
     oracle_key: SecretStr | None = None
     participant_public_key: str
     cors_origins: list[str] = ["http://localhost:3000"]
     max_scenarios: int = 500
     state_file: str | None = None
+    database_url: str | None = None
+    database_pool_size: int = Field(default=1, ge=1, le=4)
     require_documented_models: bool = True
+
+    @model_validator(mode="after")
+    def _production_state_is_durable(self) -> Self:
+        if self.mode == "production":
+            if not self.database_url:
+                raise ValueError("production requires SIM_DATABASE_URL")
+            if self.state_file:
+                raise ValueError("production simulator state must use PostgreSQL")
+            if self.oracle_key is not None:
+                raise ValueError("the simulator oracle key is forbidden in production")
+            url = make_url(self.database_url)
+            if (
+                not url.drivername.startswith("postgresql")
+                or not url.host
+                or (
+                    self.local_production_test
+                    and url.host.lower() not in {"host.docker.internal", "localhost"}
+                )
+                or (
+                    url.host.lower() in {"localhost", "127.0.0.1", "::1"}
+                    and not self.local_production_test
+                )
+            ):
+                raise ValueError(
+                    "production requires an explicit remote PostgreSQL SIM_DATABASE_URL"
+                )
+        return self
 
 
 class ScenarioStore:
-    """Bounded scenarios with optional atomic snapshots for staging restarts."""
+    """In-memory scenarios with optional atomic snapshots for local restart checks."""
 
     def __init__(self, limit: int, state_file: str | None = None) -> None:
         self._items: OrderedDict[str, Scenario] = OrderedDict()
@@ -114,7 +153,7 @@ class ScenarioStore:
             pack = self.documented(pack_id, DocumentedModel.model_validate(raw_model))
         return Scenario.from_snapshot(pack, snapshot)
 
-    def add(self, scenario: Scenario) -> None:
+    async def add(self, scenario: Scenario) -> None:
         previous = self._items.copy()
         self._items[scenario.id] = scenario
         while len(self._items) > self._limit:
@@ -125,14 +164,14 @@ class ScenarioStore:
             self._items = previous
             raise
 
-    def get(self, sid: str) -> Scenario:
+    async def get(self, sid: str) -> Scenario:
         scenario = self._items.get(sid)
         if scenario is None:
             raise ScenarioError(404, "SCENARIO_NOT_FOUND", "scenario not found")
         return scenario
 
-    def mutate(self, sid: str, update: Callable[[Scenario], _Result]) -> _Result:
-        scenario = self.get(sid)
+    async def mutate(self, sid: str, update: Callable[[Scenario], _Result]) -> _Result:
+        scenario = await self.get(sid)
         if self._state_file is None:
             return update(scenario)
 
@@ -144,6 +183,9 @@ class ScenarioStore:
         except Exception:
             self._items[sid] = self.restore(snapshot)
             raise
+
+    async def ping(self) -> None:
+        return None
 
     def persist(self) -> None:
         if self._state_file is None:
@@ -193,11 +235,140 @@ class ScenarioStore:
             raise RuntimeError("simulator state file could not be loaded") from exc
 
 
+class PostgresScenarioStore:
+    """PostgreSQL-backed snapshots, serialized with row locks across Cloud Run instances."""
+
+    def __init__(self, pool: asyncpg.Pool, limit: int) -> None:
+        self._pool = pool
+        self._limit = limit
+        self._codec = ScenarioStore(limit)
+
+    def pack(self, pack_id: str) -> DomainPack:
+        return self._codec.pack(pack_id)
+
+    @staticmethod
+    def documented(pack_id: str, model: DocumentedModel) -> DomainPack:
+        return ScenarioStore.documented(pack_id, model)
+
+    @classmethod
+    async def connect(cls, database_url: str, limit: int, pool_size: int) -> Self:
+        url = make_url(database_url)
+        if not url.drivername.startswith("postgresql"):
+            raise ValueError("SIM_DATABASE_URL must use PostgreSQL")
+        params: dict[str, object] = {
+            "host": url.host,
+            "port": url.port or 5432,
+            "user": url.username,
+            "password": url.password,
+            "database": url.database,
+            "min_size": 1,
+            "max_size": pool_size,
+            "command_timeout": 10,
+            "server_settings": {"search_path": "pramana_sim"},
+        }
+        # The same libpq-style modes the core's asyncpg URL takes ("require", "verify-full").
+        sslmode = url.query.get("sslmode") or url.query.get("ssl")
+        if isinstance(sslmode, str) and sslmode != "disable":
+            params["ssl"] = sslmode
+        pool = await asyncpg.create_pool(**params)
+        return cls(pool, limit)
+
+    async def add(self, scenario: Scenario) -> None:
+        payload = json.dumps(scenario.to_snapshot(), ensure_ascii=False, separators=(",", ":"))
+        async with self._pool.acquire() as connection, connection.transaction():
+            await connection.execute(
+                "select pg_advisory_xact_lock(hashtext('pramana_sim.scenario_capacity'))"
+            )
+            # Like the in-memory store, stay bounded by forgetting the stalest worlds, closed ones
+            # first, so a small free database never fills up with finished practice runs.
+            await connection.execute(
+                "delete from scenarios where id in (select id from scenarios "
+                "order by (status = 'closed') desc, updated_at asc "
+                "limit greatest((select count(*) from scenarios) - $1 + 1, 0))",
+                self._limit,
+            )
+            await connection.execute(
+                "insert into scenarios (id, snapshot, status) values ($1, $2::jsonb, $3)",
+                scenario.id,
+                payload,
+                scenario.status.value,
+            )
+
+    async def get(self, sid: str) -> Scenario:
+        async with self._pool.acquire() as connection:
+            snapshot = await connection.fetchval(
+                "select snapshot from scenarios where id = $1", sid
+            )
+        if snapshot is None:
+            raise ScenarioError(404, "SCENARIO_NOT_FOUND", "scenario not found")
+        return self._restore(snapshot)
+
+    async def mutate(self, sid: str, update: Callable[[Scenario], _Result]) -> _Result:
+        async with self._pool.acquire() as connection, connection.transaction():
+            snapshot = await connection.fetchval(
+                "select snapshot from scenarios where id = $1 for update", sid
+            )
+            if snapshot is None:
+                raise ScenarioError(404, "SCENARIO_NOT_FOUND", "scenario not found")
+            scenario = self._restore(snapshot)
+            result = update(scenario)
+            payload = json.dumps(scenario.to_snapshot(), ensure_ascii=False, separators=(",", ":"))
+            await connection.execute(
+                "update scenarios set snapshot = $2::jsonb, status = $3, updated_at = now() "
+                "where id = $1",
+                sid,
+                payload,
+                scenario.status.value,
+            )
+            return result
+
+    async def ping(self) -> None:
+        async with self._pool.acquire() as connection:
+            await connection.fetchval("select 1")
+
+    def _restore(self, value: object) -> Scenario:
+        """Every read re-validates the stored world, including its sealed-truth commitment."""
+        snapshot = json.loads(value) if isinstance(value, str) else value
+        try:
+            if not isinstance(snapshot, dict):
+                raise ValueError("stored scenario is invalid")
+            return self._codec.restore(snapshot)
+        except (TypeError, ValueError, KeyError) as exc:
+            raise RuntimeError("stored simulator scenario could not be loaded") from exc
+
+    async def close(self) -> None:
+        await self._pool.close()
+
+
 def create_app(settings: SimSettings | None = None) -> FastAPI:
     cfg = settings or SimSettings()
     public_key = public_key_from_b64(cfg.participant_public_key)
-    store = ScenarioStore(cfg.max_scenarios, cfg.state_file)
-    app = FastAPI(title="Pramana simulator", version="0.1.0")
+    memory_store = (
+        ScenarioStore(cfg.max_scenarios, cfg.state_file) if not cfg.database_url else None
+    )
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if cfg.database_url:
+            store: ScenarioStore | PostgresScenarioStore = await PostgresScenarioStore.connect(
+                cfg.database_url, cfg.max_scenarios, cfg.database_pool_size
+            )
+        else:
+            assert memory_store is not None
+            store = memory_store
+        app.state.store = store
+        try:
+            yield
+        finally:
+            if isinstance(store, PostgresScenarioStore):
+                await store.close()
+
+    app = FastAPI(title="Pramana simulator", version="0.1.0", lifespan=lifespan)
+    app.state.store = memory_store
+
+    def store_for(request: Request) -> ScenarioStore | PostgresScenarioStore:
+        return cast(ScenarioStore | PostgresScenarioStore, request.app.state.store)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
@@ -242,65 +413,79 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/ready")
+    async def ready(request: Request) -> JSONResponse:
+        try:
+            await store_for(request).ping()
+        except Exception as exc:
+            return JSONResponse(
+                {"status": "not_ready", "database": type(exc).__name__}, status_code=503
+            )
+        return JSONResponse({"status": "ready", "database": "ok"})
+
     @app.post("/sim/v1/scenarios", status_code=201, dependencies=[require_operator])
-    async def create(req: CreateScenario) -> ScenarioCreated:
+    async def create(req: CreateScenario, request: Request) -> ScenarioCreated:
         if req.documented_model is None:
             if cfg.require_documented_models:
                 raise ScenarioError(422, "MODEL_REQUIRED", "supply a documented site model")
-            pack = store.pack(req.pack_id)
+            pack = store_for(request).pack(req.pack_id)
         else:
-            pack = store.documented(req.pack_id, req.documented_model)
+            pack = store_for(request).documented(req.pack_id, req.documented_model)
         fault = draw_fault(pack, req.seed) if req.fault == "random" else req.fault
         assert isinstance(fault, FaultSpec)
         scenario = Scenario.create(
             pack, fault, req.participants, documented_model=req.documented_model
         )
-        store.add(scenario)
+        await store_for(request).add(scenario)
         return ScenarioCreated(scenario_id=scenario.id, commitment=scenario.commitment)
 
     @app.get("/sim/v1/scenarios/{sid}/view")
-    async def view(sid: str, who: Annotated[str, Depends(participant)]) -> ParticipantView:
-        return store.get(sid).view(who)
+    async def view(
+        sid: str, request: Request, who: Annotated[str, Depends(participant)]
+    ) -> ParticipantView:
+        return (await store_for(request).get(sid)).view(who)
 
     @app.post("/sim/v1/scenarios/{sid}/move")
     async def move(
-        sid: str, req: MoveRequest, who: Annotated[str, Depends(participant)]
+        sid: str, req: MoveRequest, request: Request, who: Annotated[str, Depends(participant)]
     ) -> MoveResult:
-        return store.mutate(sid, lambda scenario: scenario.move(who, req.to))
+        return await store_for(request).mutate(sid, lambda scenario: scenario.move(who, req.to))
 
     @app.post("/sim/v1/scenarios/{sid}/observe")
     async def observe(
-        sid: str, req: ObserveRequest, who: Annotated[str, Depends(participant)]
+        sid: str, req: ObserveRequest, request: Request, who: Annotated[str, Depends(participant)]
     ) -> ObserveResult:
-        return store.get(sid).observe(who, req.probe_id)
+        return (await store_for(request).get(sid)).observe(who, req.probe_id)
 
     @app.post("/sim/v1/scenarios/{sid}/act")
     async def act(
-        sid: str, req: ActRequest, who: Annotated[str, Depends(participant)]
+        sid: str, req: ActRequest, request: Request, who: Annotated[str, Depends(participant)]
     ) -> ActResult:
         try:
             claims = verify_capability(public_key, req.capability)
         except TokenError as exc:
             raise HTTPException(403, str(exc)) from exc
-        return store.mutate(sid, lambda scenario: scenario.act(who, req.action, req.target, claims))
+        return await store_for(request).mutate(
+            sid, lambda scenario: scenario.act(who, req.action, req.target, claims)
+        )
 
     @app.post("/sim/v1/scenarios/{sid}/presence/check", dependencies=[require_operator])
-    async def check_presence(sid: str, req: PresenceCheck) -> PresenceCheckResult:
-        return store.mutate(
+    async def check_presence(sid: str, req: PresenceCheck, request: Request) -> PresenceCheckResult:
+        return await store_for(request).mutate(
             sid,
             lambda scenario: scenario.check_presence(req.participant_id, req.token_id, req.answer),
         )
 
     @app.post("/sim/v1/scenarios/{sid}/close", status_code=204, dependencies=[require_operator])
-    async def close(sid: str) -> None:
-        store.mutate(sid, lambda scenario: scenario.close())
+    async def close(sid: str, request: Request) -> None:
+        await store_for(request).mutate(sid, lambda scenario: scenario.close())
 
     @app.post("/sim/v1/scenarios/{sid}/reveal", dependencies=[require_operator])
-    async def reveal(sid: str) -> RevealResult:
-        return store.get(sid).reveal()
+    async def reveal(sid: str, request: Request) -> RevealResult:
+        return (await store_for(request).get(sid)).reveal()
 
     @app.get("/sim/v1/scenarios/{sid}/truth", dependencies=[Depends(oracle)])
-    async def truth(sid: str) -> FaultSpec:
-        return store.get(sid).fault_spec
+    async def truth(sid: str, request: Request) -> FaultSpec:
+        return (await store_for(request).get(sid)).fault_spec
 
     return app
