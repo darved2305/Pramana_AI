@@ -88,7 +88,12 @@ class WorkspaceLifecycle:
             if row is None:
                 raise not_found("organization")
             if row.deleted_at is not None:
-                return deletion_view(row)
+                raise ApiError(
+                    410,
+                    "WORKSPACE_DELETED",
+                    "This workspace was already deleted. Restore it within 30 days or "
+                    "download its export.",
+                )
             if body.confirmation != row.name:
                 raise ApiError(
                     422,

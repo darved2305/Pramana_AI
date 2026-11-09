@@ -41,18 +41,28 @@ def test_workspace_lifecycle_and_lists_hide_other_organizations(account_core: Te
     foreign = create(client, name="Foreign Workspace", slug="foreign-workspace").json()
     login(client, "approver")
     create(client, name="Own Workspace", slug="own-workspace")
-    root = f"/v1/orgs/{foreign['organization']['slug']}"
-    site = foreign["live_site"]["id"]
+    slug = foreign["organization"]["slug"]
+    root = f"/v1/orgs/{slug}"
+    # Every paged list is found from the API description, so a new one cannot skip this check.
+    paged = sorted(
+        path
+        for path, definition in client.app.openapi()["paths"].items()
+        if path.startswith("/v1/orgs/{org}")
+        and any(p["name"] == "cursor" for p in definition.get("get", {}).get("parameters", []))
+    )
+    assert len(paged) == 8, paged
     operations = [
         ("GET", f"{root}/export"),
         ("DELETE", root),
         ("POST", f"{root}/restore"),
-        ("GET", f"{root}/investigations?cursor=invalid"),
-        ("GET", f"{root}/sites?cursor=invalid"),
-        ("GET", f"{root}/sites/{site}/models?cursor=invalid"),
-        ("GET", f"{root}/sites/{site}/people?cursor=invalid"),
-        ("GET", f"{root}/members?cursor=invalid"),
-        ("GET", f"{root}/invitations?cursor=invalid"),
+        *(
+            (
+                "GET",
+                path.format(org=slug, site_id=foreign["live_site"]["id"], person_id="p_riya")
+                + "?cursor=invalid",
+            )
+            for path in paged
+        ),
     ]
     for method, path in operations:
         response = client.request(
@@ -88,6 +98,9 @@ def test_deleted_workspace_is_closed_to_members_and_owner_can_restore(
     retry = _delete(client, org["slug"], org["name"], "delete-campus-restore-01")
     assert retry.content == deleted.content
     assert retry.headers["idempotent-replayed"] == "true"
+    repeated = _delete(client, org["slug"], org["name"], "delete-campus-repeat-02")
+    assert repeated.status_code == 410, repeated.text
+    assert repeated.json()["error"]["code"] == "WORKSPACE_DELETED"
     assert client.get(f"/v1/orgs/{org['slug']}").status_code == 410
     assert client.get(f"/v1/orgs/{org['slug']}/sites").status_code == 410
     me = client.get("/v1/me")
