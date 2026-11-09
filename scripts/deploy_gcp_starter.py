@@ -28,6 +28,10 @@ from sqlalchemy.engine import URL, make_url
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_DEFAULT = "luminous-slice-514102-f4"
 REGION = "asia-south1"
+CANONICAL_WEB_ORIGIN = "https://pramana-web-671800103530.asia-south1.run.app"
+CANONICAL_WEB_CALLBACK = f"{CANONICAL_WEB_ORIGIN}/api/core/v1/auth/google/callback"
+CANONICAL_CORS_ORIGINS = json.dumps([CANONICAL_WEB_ORIGIN])
+WEB_HEALTHCHECK_PATH = "/_health"
 INDIA_DATABASE_REGION = "ap-south-1"
 SUPABASE_REF = "lhgxsrechpucdbyqljfu"
 NON_INDIA_DATABASE_ACK = "PRAMANA_ACCEPT_NON_INDIA_DATABASE"
@@ -1224,11 +1228,12 @@ def bind_invoker(gcloud: Gcloud, ctx: Context, service: str, account: str) -> No
 
 
 def smoke(gcloud: Gcloud, ctx: Context) -> None:
-    base = ctx.service_urls["pramana-web"]
+    base = CANONICAL_WEB_ORIGIN
     if gcloud.dry_run:
         print(f"HTTP GET {base}/ (planned; live smoke skipped in dry-run)")
         print(f"HTTP GET {base}/login (planned; live smoke skipped in dry-run)")
         print(f"HTTP GET {base}/_next/static/... (planned; live smoke skipped in dry-run)")
+        print(f"HTTP GET {base}{WEB_HEALTHCHECK_PATH} (Cloud Run health probe)")
         print(
             f"HTTP GET {base}/api/core/health and {base}/ready "
             "(planned; live smoke skipped in dry-run)"
@@ -1265,7 +1270,47 @@ def smoke(gcloud: Gcloud, ctx: Context) -> None:
     ready_status, ready_body, _ = get("/ready")
     if ready_status != 200 or b'"status":"ready"' not in ready_body:
         raise DeployError("readiness smoke check failed")
-    print("Live smoke passed: /, /login, a Next static asset, /api/core/health and /ready.")
+    health_status, health_body, _ = get(WEB_HEALTHCHECK_PATH)
+    if health_status != 200 or b'"status":"ok"' not in health_body:
+        raise DeployError("web health probe smoke check failed")
+
+    assigned_url = ctx.service_urls.get("pramana-web", "").rstrip("/")
+    if assigned_url and assigned_url != CANONICAL_WEB_ORIGIN:
+        alias_path = "/login?canonical-origin-check=1"
+        request = urllib.request.Request(
+            assigned_url + alias_path, headers={"User-Agent": "pramana-deploy-smoke/1"}
+        )
+
+        class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+            def redirect_request(
+                self,
+                req: urllib.request.Request,
+                fp: Any,
+                code: int,
+                msg: str,
+                headers: Any,
+                newurl: str,
+            ) -> None:
+                del req, fp, code, msg, headers, newurl
+                return None
+
+        try:
+            with urllib.request.build_opener(NoRedirectHandler()).open(
+                request, timeout=30
+            ) as response:
+                status = response.status
+                location = response.headers.get("Location")
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            location = exc.headers.get("Location")
+        expected_location = CANONICAL_WEB_ORIGIN + alias_path
+        if status != 308 or location != expected_location:
+            raise DeployError("legacy web host did not redirect to the canonical origin")
+
+    print(
+        "Live smoke passed: canonical /, /login, a Next static asset, /api/core/health, "
+        "/ready, the Cloud Run health probe and the legacy host redirect."
+    )
 
 
 def execute(gcloud: Gcloud, ctx: Context) -> None:
@@ -1301,8 +1346,8 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
     build_images(gcloud, ctx)
     deploy_migrator(gcloud, ctx)
 
-    # Keep prior web traffic active while learning the managed URL for backend configuration.
-    web_url = deploy_service(
+    # Keep prior web traffic active while preparing backend services for the canonical origin.
+    deploy_service(
         gcloud,
         ctx,
         name="pramana-web",
@@ -1312,16 +1357,18 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
             "NEXT_PUBLIC_ENABLE_PREVIEW": "0",
             "PRAMANA_CORE_URL": "http://127.0.0.1:9",
             "PRAMANA_SIM_URL": "http://127.0.0.1:9",
+            "PRAMANA_CANONICAL_ORIGIN": CANONICAL_WEB_ORIGIN,
             "PRAMANA_CLOUD_RUN_AUTH": "true",
         },
         secrets={},
         memory="512Mi",
         concurrency=40,
         timeout="300s",
-        probe_path="/",
+        probe_path=WEB_HEALTHCHECK_PATH,
         public=True,
         no_traffic=True,
     )
+    web_url = CANONICAL_WEB_ORIGIN
     sim_url = deploy_service(
         gcloud,
         ctx,
@@ -1330,6 +1377,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
         account="sim",
         env_vars={
             "PRAMANA_MODE": "production",
+            "SIM_CORS_ORIGINS": CANONICAL_CORS_ORIGINS,
             "SIM_DATABASE_POOL_SIZE": "1",
             "SIM_MAX_SCENARIOS": "500",
             "SIM_REQUIRE_DOCUMENTED_MODELS": "true",
@@ -1365,7 +1413,8 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
             "DB_MAX_OVERFLOW": "0",
             "DB_POOL_TIMEOUT_S": "5",
             "PUBLIC_WEB_URL": web_url,
-            "OIDC_REDIRECT_URL": f"{web_url}/api/core/v1/auth/google/callback",
+            "CORS_ORIGINS": CANONICAL_CORS_ORIGINS,
+            "OIDC_REDIRECT_URL": CANONICAL_WEB_CALLBACK,
             "LLM_EXTRACTOR_PROVIDER": "none",
             "LOG_JSON": "true",
             "LOG_LEVEL": "INFO",
@@ -1400,13 +1449,14 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
             "NEXT_PUBLIC_ENABLE_PREVIEW": "0",
             "PRAMANA_CORE_URL": core_url,
             "PRAMANA_SIM_URL": sim_url,
+            "PRAMANA_CANONICAL_ORIGIN": CANONICAL_WEB_ORIGIN,
             "PRAMANA_CLOUD_RUN_AUTH": "true",
         },
         secrets={},
         memory="512Mi",
         concurrency=40,
         timeout="300s",
-        probe_path="/",
+        probe_path=WEB_HEALTHCHECK_PATH,
         public=True,
     )
     # --no-traffic pins the previous revision. Restore traffic to latest after backend URLs are set.
@@ -1423,8 +1473,8 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
         ]
     )
     smoke(gcloud, ctx)
-    print(f"Web URL: {web_url}")
-    print(f"Google OAuth authorized redirect URI: {web_url}/api/core/v1/auth/google/callback")
+    print(f"Web URL: {CANONICAL_WEB_ORIGIN}")
+    print(f"Google OAuth authorized redirect URI: {CANONICAL_WEB_CALLBACK}")
     print("Rollback commands for prior traffic:")
     commands = rollback_commands(ctx)
     if commands:

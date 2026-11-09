@@ -8,6 +8,53 @@ test("routes readiness and simulator requests to the intended paths", () => {
   expect(upstreamFor("/api/sim/sim/v1/view", "?x=1", env)?.href).toBe("https://sim.example/sim/v1/view?x=1");
 });
 
+test("redirects OAuth requests on another host to the canonical origin", async () => {
+  const originalOrigin = process.env.PRAMANA_CANONICAL_ORIGIN;
+  process.env.PRAMANA_CANONICAL_ORIGIN =
+    "https://pramana-web-671800103530.asia-south1.run.app";
+  try {
+    const response = await proxy(
+      new NextRequest(
+        "https://pramana-web-nzxslh75pq-el.a.run.app/api/core/v1/auth/google/start?next=%2Fapp",
+      ),
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://pramana-web-671800103530.asia-south1.run.app/api/core/v1/auth/google/start?next=%2Fapp",
+    );
+
+    const canonicalResponse = await proxy(
+      new NextRequest(
+        "https://pramana-web-671800103530.asia-south1.run.app/login",
+      ),
+    );
+    expect(canonicalResponse.status).toBe(200);
+    expect(canonicalResponse.headers.get("location")).toBeNull();
+  } finally {
+    if (originalOrigin === undefined) delete process.env.PRAMANA_CANONICAL_ORIGIN;
+    else process.env.PRAMANA_CANONICAL_ORIGIN = originalOrigin;
+  }
+});
+
+test("keeps the Cloud Run health probe working on an alias host", async () => {
+  const originalOrigin = process.env.PRAMANA_CANONICAL_ORIGIN;
+  process.env.PRAMANA_CANONICAL_ORIGIN =
+    "https://pramana-web-671800103530.asia-south1.run.app";
+  try {
+    const response = await proxy(
+      new NextRequest("https://pramana-web-nzxslh75pq-el.a.run.app/_health"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok" });
+    expect(response.headers.get("location")).toBeNull();
+  } finally {
+    if (originalOrigin === undefined) delete process.env.PRAMANA_CANONICAL_ORIGIN;
+    else process.env.PRAMANA_CANONICAL_ORIGIN = originalOrigin;
+  }
+});
+
 test("keeps the app bearer while authenticating the private service", async () => {
   const originalFetch = globalThis.fetch;
   const originalCore = process.env.PRAMANA_CORE_URL;

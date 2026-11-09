@@ -54,6 +54,16 @@ def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     assert "run services update-traffic pramana-web --to-latest" in output
     assert "--args=sim" in output
     assert "--args=core" in output
+    assert deploy.CANONICAL_WEB_ORIGIN in output
+    assert deploy.CANONICAL_WEB_CALLBACK in output
+    assert f'["{deploy.CANONICAL_WEB_ORIGIN}"]' == deploy.CANONICAL_CORS_ORIGINS
+    assert f"PRAMANA_CANONICAL_ORIGIN={deploy.CANONICAL_WEB_ORIGIN}" in output
+    assert f"PUBLIC_WEB_URL={deploy.CANONICAL_WEB_ORIGIN}" in output
+    escaped_origins = deploy.CANONICAL_CORS_ORIGINS.replace('"', '\\"')
+    assert f"CORS_ORIGINS={escaped_origins}" in output
+    assert f"SIM_CORS_ORIGINS={escaped_origins}" in output
+    assert "SESSION_COOKIE_SECURE=true" in output
+    assert "httpGet.path=/_health" in output
     assert "X-Serverless-Authorization" not in output
     assert "dry-run-only-placeholder" not in output
     assert "Budget: existing INR 1,000 project alert" in output
@@ -73,6 +83,7 @@ def test_live_smoke_accepts_the_server_rendered_login_shell(
         "/_next/static/app.js": b"asset",
         "/api/core/health": b'{"status":"ok"}',
         "/ready": b'{"status":"ready"}',
+        "/_health": b'{"status":"ok"}',
     }
 
     class Response(io.BytesIO):
@@ -83,15 +94,37 @@ def test_live_smoke_accepts_the_server_rendered_login_shell(
 
     def fake_urlopen(request: urllib.request.Request, *, timeout: int) -> Response:
         del timeout
+        assert (
+            urllib.parse.urlsplit(request.full_url).netloc
+            == urllib.parse.urlsplit(deploy.CANONICAL_WEB_ORIGIN).netloc
+        )
         path = urllib.parse.urlsplit(request.full_url).path
         return Response(responses[path])
 
+    class NoRedirectOpener:
+        def open(self, request: urllib.request.Request, *, timeout: int) -> None:
+            del timeout
+            expected_url = deploy.CANONICAL_WEB_ORIGIN + "/login?canonical-origin-check=1"
+            assert request.full_url == "https://example.test/login?canonical-origin-check=1"
+            raise urllib.error.HTTPError(
+                request.full_url,
+                308,
+                "Permanent Redirect",
+                {"Location": expected_url},
+                None,
+            )
+
     monkeypatch.setattr(deploy.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        deploy.urllib.request, "build_opener", lambda *_handlers: NoRedirectOpener()
+    )
     context = Namespace(service_urls={"pramana-web": "https://example.test"})
 
     deploy.smoke(Namespace(dry_run=False), context)
 
-    assert "Live smoke passed" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Live smoke passed" in output
+    assert "legacy host redirect" in output
 
 
 def test_deploy_max_flag_caps_service_across_revisions() -> None:
@@ -404,6 +437,9 @@ def test_runbook_states_budget_and_missing_spend_cap() -> None:
     assert "brief Cloud Run overages during" in runbook
     assert "instances per revision" not in runbook
     assert "50%, 90%" not in runbook
+    assert deploy.CANONICAL_WEB_ORIGIN in runbook
+    assert deploy.CANONICAL_WEB_CALLBACK in runbook
+    assert "308" in runbook
 
 
 def test_backup_runbook_checks_native_command_exit_codes() -> None:

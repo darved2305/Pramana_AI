@@ -13,6 +13,21 @@ const UPSTREAMS: Record<string, { env: string; fallback: string }> = {
   "/api/sim": { env: "PRAMANA_SIM_URL", fallback: "http://127.0.0.1:8100" },
   "/ready": { env: "PRAMANA_CORE_URL", fallback: "http://127.0.0.1:8000" },
 };
+const HEALTHCHECK_PATH = "/_health";
+
+function canonicalHostRedirect(request: NextRequest): NextResponse | null {
+  const canonicalOrigin = process.env.PRAMANA_CANONICAL_ORIGIN;
+  if (!canonicalOrigin || request.nextUrl.pathname === HEALTHCHECK_PATH) return null;
+
+  const canonical = new URL(canonicalOrigin);
+  if (request.nextUrl.host === canonical.host) return null;
+
+  const destination = new URL(
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+    canonical,
+  );
+  return NextResponse.redirect(destination, 308);
+}
 
 const METADATA_IDENTITY_URL =
   "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity";
@@ -70,6 +85,13 @@ async function serverlessAuth(target: URL): Promise<Record<string, string>> {
 }
 
 export async function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname === HEALTHCHECK_PATH) {
+    return NextResponse.json({ status: "ok" }, { headers: { "Cache-Control": "no-store" } });
+  }
+
+  const canonicalRedirect = canonicalHostRedirect(request);
+  if (canonicalRedirect) return canonicalRedirect;
+
   const target = upstreamFor(request.nextUrl.pathname, request.nextUrl.search, process.env);
   if (!target) return NextResponse.next();
 
@@ -118,5 +140,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/core/:path*", "/api/sim/:path*", "/ready"],
+  matcher: ["/:path*"],
 };

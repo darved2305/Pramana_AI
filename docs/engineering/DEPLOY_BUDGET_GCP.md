@@ -4,6 +4,14 @@ Status: deployed and smoke-tested on 2026-11-09. The live stage uses the separat
 this runbook; `infra/gcp` remains the larger HA reference. The web URL is team-only and must not
 be shared outside the team.
 
+The canonical public web origin for new revisions is
+`https://pramana-web-671800103530.asia-south1.run.app`. The deploy script uses it for the web
+proxy, invitation links, CORS allowlists and the Google OAuth callback. Core sets Secure,
+host-only `__Host-` session and OAuth state cookies. Requests to any other host receive a 308 to
+the canonical origin with the same path and query. Cloud Run probes use `/_health`, which returns
+200 on any host so the redirect does not interfere with instance health checks. The CSP uses
+`'self'` and does not name a host.
+
 ## Readiness and residency gate
 
 The live stage has a public Cloud Run web service and private Cloud Run core and simulator services
@@ -109,18 +117,25 @@ ready in `asia-south1` with 100% traffic on the revisions below:
 
 | Service | URL | Ready revision | Image digest |
 |---|---|---|---|
-| `pramana-web` | `https://pramana-web-nzxslh75pq-el.a.run.app` | `pramana-web-00009-k6j` | `pramana-web@sha256:c4de3687d6b0f1181f54b028b47cde1a451b443d3560d25ed8e9e12b4b4c64c6` |
+| `pramana-web` | `https://pramana-web-671800103530.asia-south1.run.app` | `pramana-web-00009-k6j` | `pramana-web@sha256:c4de3687d6b0f1181f54b028b47cde1a451b443d3560d25ed8e9e12b4b4c64c6` |
 | `pramana-core` | `https://pramana-core-nzxslh75pq-el.a.run.app` | `pramana-core-00004-ctb` | `pramana-py@sha256:350168dbe5dfd27bd5e340897df5292292696926c2ecaa3ac567c75f9f762bc3` |
 | `pramana-sim` | `https://pramana-sim-nzxslh75pq-el.a.run.app` | `pramana-sim-00005-5dk` | `pramana-py@sha256:350168dbe5dfd27bd5e340897df5292292696926c2ecaa3ac567c75f9f762bc3` |
+
+The listed web revision predates the canonical-host candidate. Cloud Run assigned that revision
+`https://pramana-web-nzxslh75pq-el.a.run.app`; after deploying the candidate, that address is a
+redirect alias and the origin above is the only public web origin.
 
 The Cloud Run migration job completed successfully and the schema is at Alembic revision `0019`.
 Read-only checks found only the Alembic version table in `public`, confirmed the `pramana` and
 `pramana_sim` schemas, and confirmed the runtime roles cannot superuser, bypass row security, create
 databases or create roles. No tenant or personal-data rows were read or added.
 
-The deploy smoke returned 200 for `/`, `/login`, a Next static asset, `/api/core/health` through
-the web proxy, and `/ready`. Follow-up checks confirmed a 404 for an unknown path and these headers
-on the landing page, login page and 404 response: HSTS, CSP, `X-Content-Type-Options`,
+The 2026-11-09 deploy smoke returned 200 for `/`, `/login`, a Next static asset,
+`/api/core/health` through the web proxy, and `/ready`. The candidate's deploy smoke also checks
+the canonical `/_health` endpoint and verifies the legacy assigned URL returns a 308 with the
+same path and query. Follow-up checks for the deployed revision confirmed a 404 for an unknown
+path and these headers on the landing page, login page and 404 response: HSTS, CSP,
+`X-Content-Type-Options`,
 `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy`. The HTTPS login page rendered in
 bundled headless Chromium, and the Google sign-in link was visible but not clicked. An HTTP-only
 request to the Google start endpoint returned 302 to `accounts.google.com`; the configured client
@@ -128,15 +143,14 @@ ID and callback matched, and the state cookie had Secure, HttpOnly, SameSite and
 The redirect was not followed and no Google sign-in or email was attempted. Screenshots are in the
 ignored `apps/.cache/g-live-final-home.png` and `apps/.cache/g-live-final-login.png` files.
 
-Add this exact callback URI manually to the existing Google OAuth web client before testing a real
-sign-in:
+The registered callback URI on the existing Google OAuth web client is:
 
 ```text
-https://pramana-web-nzxslh75pq-el.a.run.app/api/core/v1/auth/google/callback
+https://pramana-web-671800103530.asia-south1.run.app/api/core/v1/auth/google/callback
 ```
 
 The app uses a server-side authorization-code redirect and does not require a JavaScript origin.
-No OAuth client edit was attempted.
+The owner registered this URI. This work did not open a Google page, attempt sign-in or send email.
 
 ## Owner actions before real data
 
@@ -151,12 +165,10 @@ No OAuth client edit was attempted.
    replacements and traffic spikes.
 4. Choose a restricted encrypted backup destination in India, then complete and record a restore
    drill before putting real personal data in the app.
-5. Add the callback URI above by hand in Google Cloud Console. This work did not open a Google page,
-   attempt sign-in or send email.
-6. Review the owner-confirmed INR 1,000/month alert `pramana-inr-1000` and the actual bill. The
+5. Review the owner-confirmed INR 1,000/month alert `pramana-inr-1000` and the actual bill. The
    deploy identity does not have a billing role, and this deployment neither listed nor changed
    budgets. There is no spend cap.
-7. After those prerequisites, review the synthetic plan and deploy from a clean, committed tree:
+6. After those prerequisites, review the synthetic plan and deploy from a clean, committed tree:
 
    ```powershell
    uv run python scripts/deploy_gcp_starter.py --dry-run
