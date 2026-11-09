@@ -598,3 +598,15 @@ def test_verified_domain_claim_cannot_be_owned_by_two_workspaces(domain_core: Te
     )
     assert contested.status_code == 409, contested.text
     assert contested.json()["error"]["code"] == "DOMAIN_ALREADY_CLAIMED"
+
+
+def test_workspace_home_lists_pending_join_requests_for_owners(domain_core: TestClient) -> None:
+    client = domain_core
+    org_id = client.org_id  # type: ignore[attr-defined]
+    _as_requester(client)
+    created = _request(client, org_id, "join-home-create-0001").json()["request"]
+    _as_owner(client)
+
+    home = client.get(f"/v1/orgs/{org_id}/home")
+    assert home.status_code == 200, home.text
+    assert [row["id"] for row in home.json()["join_requests"]] == [created["id"]]
