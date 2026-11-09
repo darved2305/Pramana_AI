@@ -1335,6 +1335,10 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | DA-07 | Thousands of investigations | Cursor pagination, server-side search and filters; no client-side full loads | A, L |
 | DA-08 | The site model changes while an investigation is open | The investigation stays on its pinned version: "A newer model (v8) exists; new investigations use it" | A |
 
+DA-04 status, 2026-11-09: the web questioning path checks current contact consent before planning.
+The directory shows consent and can issue a single-use web consent request. Starting an actual
+live investigation remains disabled until live delivery is configured.
+
 **Participants and live investigations**
 
 | Id | Scenario | Expected behaviour | Tests |
@@ -1347,7 +1351,7 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | PA-06 | Poor or lost network while answering | The answer is queued with its idempotency key and retried; the server keeps exactly one | B, C |
 | PA-07 | Person says "later" or declines | Cool-down and re-planning (exist today); the cool-down is a durable job | P |
 | PA-08 | Person is under 18 | Not contactable without recorded guardian consent (DPDP section 9); adults-only is the default | A |
-| PA-09 | Quiet hours | Treated as unavailable by the planner; an admin can override, and the override is logged | A |
+| PA-09 | Quiet hours | Treated as unavailable by the planner; an admin can override, and the override is logged | A, B |
 | PA-10 | Two people share one phone number | Allowed with a warning; consent is recorded per person | A |
 | PA-11 | A phone call rings out or reaches voicemail | Unavailable after the ring timeout (30 s today), one retry after 60 s, then a WhatsApp link | P |
 | PA-12 | A telephony or WhatsApp webhook arrives twice or out of order | The inbox deduplicates it; state transitions ignore events that are out of date | A |
@@ -1669,8 +1673,9 @@ Run the existing benchmark harness (`pramana_eval`, logic mode) against the draf
 
 ### 9.3 Consent, quiet hours, minors and fatigue
 
-- **No consent, no contact.** Consent is recorded per person and purpose, with the notice version and language (`consents`). Withdrawal is honoured everywhere.
-- **Quiet hours** per person, treated by the planner as unavailability. An admin can override them in an emergency, and the override is audited.
+- **No consent, no contact.** Web questions in a site investigation require a current `contact_for_investigations` consent for the `web` channel. A person can grant or refuse through a single-use link; withdrawal cancels pending questions and replans. The notice version and language are recorded. The eligibility decisions used by the planner are logged for exact replay.
+- **Quiet hours** are a per-person local time window, defaulting to 22:00-08:00 in Asia/Kolkata. The planner treats the person as unavailable in that window. An owner or admin can record an emergency override for one investigation, with a reason visible in the investigation and audit log. The override does not grant consent.
+- **Practice and sandbox** use simulated people and do not require human consent or apply human quiet hours. Real live investigations remain disabled until live delivery is configured.
 - **Minors.** Adults only by default; minors need recorded verifiable guardian consent (DPDP section 9, §14).
 - **Fatigue.** The existing limits stay: at most 4 questions per person per incident, a 15-minute cool-down after "later" (PRODUCT §20). Add a cap per person per week [T].
 

@@ -1,5 +1,24 @@
 # Pramana production status, 2026-11-08
 
+## Update, 2026-11-09: consent and quiet hours
+
+The site investigation planner now records each web contact eligibility decision and uses it
+on replay. People without current web contact consent or who are in their local quiet hours are
+not selected for a new question. Withdrawing consent cancels a pending question and replans.
+An owner or admin can log an emergency quiet-hours override for one investigation, with a reason.
+
+The people directory and person page show consent status. A single-use link lets a person grant
+or refuse web contact in English, Hindi or Marathi; a configured Gmail transport can send it,
+and the operator can copy it. Contact email is encrypted. Quiet hours are editable on the person
+page and default to 22:00-08:00 in Asia/Kolkata. Practice and sandbox use simulated participants
+and bypass human consent and quiet hours. Starting a real live investigation is still disabled.
+
+Focused API checks passed under both the database owner and `pramana_app`, including replay,
+withdrawal, override audit, link expiry and reuse, and tenant isolation. The mail test uses a
+fake transport and the live planner test uses the in-process simulator. Hindi and Marathi wording
+still needs native review. Deployment of migration 0019 must repeat the schema revoke for
+`anon` and `authenticated`.
+
 Worktree: `gnani ai hackathon-production`, branch `production`. The draft
 [PR #3](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/pull/3) remains unmerged.
 No demo database, main worktree file or unrelated process was changed. Terraform remains unapplied.
@@ -37,7 +56,7 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 | CSV equipment import in the site builder | CI green | `ce1051e`: `apps/web/src/lib/builder/csv.ts`; workspace real-stack journey 2 passed; run 42479734853 passed |
 | Answer words per outcome | Pushed | `e86e800`: `Probe.outcome_words`, `ServicePoint.words`, passed to all extractors. ruff, mypy, API drift and focused suites pass locally |
 | Pending invitations in `/v1/me` | Pushed | `ef29567`: migration 0015 adds read-only policies limited to the signed-in person's verified email; `POST /v1/invitations/accept-pending`; shown on the welcome step. Invitation, account and RLS tests pass as the restricted role; UI 48 passed. The join button has no browser journey of its own yet |
-| Personal data vault, consent, erasure | Pushed | `b7ad488`: migration 0016 `person_keys`, `personal_texts`, `consents`; AES-256-GCM with one data key per person, wrapped by a master key held in the process (`PRAMANA_PII_KEY`, required in production). Cloud KMS is not wired: it replaces `MasterKey` at deployment. Directory names sealed, and for site investigations names, reports and transcripts stay out of events and rows; erasure also scrubs saved idempotent responses. `POST .../people/{id}/erase` and consent routes added. No UI for erasure or consent yet. Consent is recorded but nothing enforces it until R3 |
+| Personal data vault, consent, erasure | Pushed | `b7ad488`: migration 0016 `person_keys`, `personal_texts`, `consents`; AES-256-GCM with one data key per person, wrapped by a master key held in the process (`PRAMANA_PII_KEY`, required in production). Cloud KMS is not wired: it replaces `MasterKey` at deployment. Directory names sealed, and for site investigations names, reports and transcripts stay out of events and rows; erasure also scrubs saved idempotent responses. `POST .../people/{id}/erase` and consent routes added. The later consent gate and screens are described in the Nov 9 update above |
 
 | New kinds of site | Tested locally | `test_new_kinds_of_site.py`, through the real core and simulator by API, under owner and restricted database roles: a hospital, an office and a metro station built from empty, each reaching the right decision for two injected faults, with exact replay and seal. Also a contradicting witness, two simultaneous faults, self-approval refused, no hostel wording, nothing personal in the log. Medical gas and nurse call equipment types added. Not driven through the browser |
 | Real Google sign-in | Partly checked | First sign-in with the owner's account verified in the database on `localhost:3102`. Returning user, cancel at Google and wrong-account invitation not yet exercised on real Google |
@@ -50,9 +69,9 @@ Matched by test name and scope, not by re-reading each assertion.
 
 | Result | Rows |
 |---|---|
-| Automated test found | ID-01, 02, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 09, 10; DA-01, 05 |
+| Automated test found | ID-01, 02, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 09, 10; DA-01, 04, 05 |
 | Partly covered | ID-06 (address check and switch-account prompt; the masked message is not asserted in a browser); ID-11 (disabled sign-in only); OR-01, OR-02 (saved preference, no switcher journey); OR-04 (access ends; stream closing not tested for removal); OR-05 (roles change; mid-session refresh not tested); OR-08 (suggestions; slug change and redirects not built); OR-11 (self-approval refused; "Invite an approver" not tested); DA-02, DA-03, DA-06, DA-08 (server rules; banners not tested) |
-| Not built | ID-03, ID-04 (domain join); OR-07 (organization deletion, R3); DA-04 (consent gate, R3); DA-07 (list pages use offset, not cursor) |
+| Not built | ID-03, ID-04 (domain join); OR-07 (organization deletion, R3); DA-07 (list pages use offset, not cursor) |
 
 Known limit of sealing: investigation search matches ids only for sealed reports, because the
 text is encrypted.
