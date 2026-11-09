@@ -33,7 +33,7 @@ export default function WorkspaceSettingsPage() {
   const [roles, setRoles] = useState<InvitedRole[]>(["operator"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [link, setLink] = useState<{ email: string; url: string; delivery: InvitationCreated["email_delivery"] } | null>(null);
+  const [link, setLink] = useState<{ id: string; email: string; url: string; delivery: InvitationCreated["email_delivery"] } | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function invite(e: React.FormEvent) {
@@ -44,6 +44,7 @@ export default function WorkspaceSettingsPage() {
     try {
       const created = await ws.api.invite({ email: email.trim(), roles }, { key: actionKey("invite") });
       setLink({
+        id: created.invitation.id,
         email: created.invitation.email,
         url: `${window.location.origin}${created.accept_path}`,
         delivery: created.email_delivery,
@@ -167,6 +168,7 @@ export default function WorkspaceSettingsPage() {
                       onClick={async () => {
                         try {
                           await ws.api.revokeInvitation(i.id, { key: actionKey("revoke") });
+                          setLink((current) => current?.id === i.id ? null : current);
                           invitations.reload();
                         } catch (x) {
                           setError(describeError(x));
