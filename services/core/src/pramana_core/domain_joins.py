@@ -173,6 +173,13 @@ class DomainJoins:
     ) -> None:
         self.db, self.resolver, self.mailer = db, resolver, mailer
 
+    @staticmethod
+    async def _lock_domain(session: AsyncSession, org_id: uuid.UUID, domain: str) -> None:
+        await session.execute(
+            text("select pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"workspace-domain:{org_id}:{domain}"},
+        )
+
     async def list_domains(self, org_id: uuid.UUID) -> list[OrganizationDomain]:
         async with self.db.read() as session:
             rows = await session.scalars(
@@ -330,6 +337,7 @@ class DomainJoins:
         if policy == "auto":
             self._require_fresh_google(principal)
         async with self.db.transaction() as session:
+            await self._lock_domain(session, org_id, domain)
             row = await session.scalar(
                 select(OrganizationDomainRow)
                 .where(
@@ -360,6 +368,7 @@ class DomainJoins:
         domain = normalise_domain(domain_value)
         now = datetime.now(UTC)
         async with self.db.transaction() as session:
+            await self._lock_domain(session, org_id, domain)
             row = await session.scalar(
                 select(OrganizationDomainRow)
                 .where(
@@ -424,6 +433,7 @@ class DomainJoins:
         joined = False
         with acting_for(None, principal.id, hosted_domain=domain):
             async with self.db.transaction() as session:
+                await self._lock_domain(session, org_id, domain)
                 await session.execute(
                     text("select pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                     {"key": f"join:{org_id}:{principal.id}"},
@@ -724,6 +734,17 @@ class DomainJoins:
                     )
                 ).all()
                 for org_id, name, _slug in matches:
+                    await self._lock_domain(session, org_id, domain)
+                    still_auto = await session.scalar(
+                        select(OrganizationDomainRow.org_id).where(
+                            OrganizationDomainRow.org_id == org_id,
+                            OrganizationDomainRow.domain == domain,
+                            OrganizationDomainRow.verified_at.is_not(None),
+                            OrganizationDomainRow.join_policy == "auto",
+                        )
+                    )
+                    if still_auto is None:
+                        continue
                     await session.execute(
                         text("select pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                         {"key": f"join:{org_id}:{principal.id}"},

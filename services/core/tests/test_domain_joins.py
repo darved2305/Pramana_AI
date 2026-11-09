@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import secrets
+import threading
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import pytest
@@ -158,6 +160,59 @@ def _as_requester(
 
 def _as_owner(client: TestClient) -> None:
     _use_session(client, client.owner_token)  # type: ignore[attr-defined]
+
+
+def test_removing_domain_waits_for_inflight_request(domain_core: TestClient) -> None:
+    client = domain_core
+    org_id = client.org_id  # type: ignore[attr-defined]
+    requester = _as_requester(client)
+    entered, release, removal_started = threading.Event(), threading.Event(), threading.Event()
+
+    class BlockingMailer:
+        def send(self, to: str, subject: str, body: str) -> None:
+            entered.set()
+            if not release.wait(15):
+                raise TimeoutError("test did not release mailer")
+
+    client.app.state.domain_joins.mailer = BlockingMailer()
+
+    def create_request() -> httpx.Response:
+        return client.post(
+            "/v1/join-requests",
+            json={"organization_id": org_id},
+            headers={
+                **_headers("race-join-request-0001"),
+                "Cookie": f"pramana_session={requester}",
+            },
+        )
+
+    def remove_domain() -> httpx.Response:
+        removal_started.set()
+        return client.delete(
+            f"/v1/orgs/{org_id}/domains/college.edu",
+            headers={
+                **_headers("race-remove-domain-0001"),
+                "Cookie": f"pramana_session={client.owner_token}",  # type: ignore[attr-defined]
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        creating = pool.submit(create_request)
+        try:
+            assert entered.wait(10), "request did not reach its notification"
+            removing = pool.submit(remove_domain)
+            assert removal_started.wait(5)
+            with pytest.raises(TimeoutError):
+                removing.result(timeout=0.5)
+        finally:
+            release.set()
+        created = creating.result(timeout=15)
+        removed = removing.result(timeout=15)
+    assert created.status_code == 201, created.text
+    assert removed.status_code == 204, removed.text
+    _as_owner(client)
+    history = client.get(f"/v1/orgs/{org_id}/join-requests").json()
+    assert history[0]["status"] == "cancelled"
 
 
 def test_dns_verification_rejects_changed_challenge(domain_core: TestClient) -> None:
