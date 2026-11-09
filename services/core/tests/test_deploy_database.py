@@ -360,8 +360,13 @@ def test_runtime_roles_can_be_created_on_postgres(migrated_db: str) -> None:
 
 
 def test_runtime_role_statements_use_safe_managed_postgres_defaults() -> None:
-    assert role_statement_template(exists=False) == "create role %I login password %L"
-    assert role_statement_template(exists=True) == "alter role %I login password %L"
+    safe_attributes = "login nosuperuser nobypassrls nocreatedb nocreaterole noreplication"
+    assert role_statement_template(exists=False) == (
+        f"create role %I {safe_attributes} password %L"
+    )
+    assert role_statement_template(exists=True) == (
+        f"alter role %I {safe_attributes} password %L"
+    )
 
 
 def test_postgres_stores_the_verifier_as_is_so_no_password_reaches_the_server(

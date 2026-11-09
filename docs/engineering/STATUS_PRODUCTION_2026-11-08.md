@@ -225,6 +225,14 @@ query or cleanup targeted that database. The passing whole-suite rerun explicitl
 `pramana_dp_e2e`. The owner of the shared cluster should review the stale `pramana_e2e` migration
 state; this work did not inspect or alter that database further.
 
+## Nov 9 database reset guard and workspace deletion
+
+A local browser run could fall back to a database that the checkout's `PRAMANA_DB_NAMES` did not
+list, and reset it. The real-stack runner now refuses unless `E2E_DATABASE` is explicit and
+allowlisted, and the Python suites, the e2e harness and the load test use the same check
+(`scripts/db_guard.py`). The Python suites no longer default to any database, and CI runs the
+safety tests in both the web and Python jobs.
+
 ## Task G live deployment update, 2026-11-09
 
 The budget deployment is live in GCP project luminous-slice-514102-f4, region

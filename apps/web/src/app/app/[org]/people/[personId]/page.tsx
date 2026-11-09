@@ -15,25 +15,46 @@ export default function PersonPage() {
   const ws = useWorkspace();
   const { personId } = useParams<{ personId: string }>();
   const params = useSearchParams();
-  const sites = useLoad(`sites|${ws.org.id}`, (signal) => ws.api.sites(signal));
   const remembered = ws.account.preferences.last_site_by_org?.[ws.org.id];
-  const siteId = params.get("site") ?? (sites.status === "ready"
-    ? (sites.data.find((site) => site.id === remembered) ?? sites.data.find((site) => site.mode === "live") ?? sites.data[0])?.id
-    : undefined);
-  const site = sites.status === "ready" ? sites.data.find((entry) => entry.id === siteId) : undefined;
-  const people = useLoad(siteId ? `people|${ws.org.id}|${siteId}` : null, (signal) => ws.api.people(siteId as string, signal));
-  const entry = people.status === "ready" ? people.data.find((person) => person.person.id === personId) : undefined;
-  const consents = useLoad(siteId && entry ? `consents|${ws.org.id}|${siteId}|${personId}` : null, (signal) =>
-    ws.api.consents(siteId as string, personId, signal),
+  const siteId = params.get("site") ?? remembered;
+  const site = useLoad(
+    siteId ? `site|${ws.org.id}|${siteId}` : null,
+    (signal) => ws.api.site(siteId as string, signal),
+  );
+  const people = useLoad(
+    siteId ? `person|${ws.org.id}|${siteId}|${personId}` : null,
+    (signal) => ws.api.people(siteId as string, { limit: 5, q: personId }, signal),
+  );
+  const entry =
+    people.status === "ready"
+      ? people.data.items.find((person) => person.person.id === personId)
+      : undefined;
+  const consents = useLoad(
+    siteId && entry ? `consents|${ws.org.id}|${siteId}|${personId}` : null,
+    async (signal) => {
+      const pages = await Promise.all([
+        ws.api.consents(siteId as string, personId, { limit: 1, purpose: "contact_for_investigations" }, signal),
+        ws.api.consents(siteId as string, personId, { limit: 1, purpose: "voice_processing" }, signal),
+      ]);
+      return pages.flatMap((page) => page.items);
+    },
   );
   const [consentOpen, setConsentOpen] = useState(false);
 
-  if (sites.status === "loading" || people.status === "loading") {
+  if (!siteId) {
+    return (
+      <div className="pt-4">
+        <ButtonLink href={`${ws.base}/people`}>Back to people</ButtonLink>
+        <Notice tone="warn" title="Choose a site">Open a person from the People page to view their settings.</Notice>
+      </div>
+    );
+  }
+  if (site.status === "loading" || people.status === "loading") {
     return <div className="flex flex-col gap-4 pt-4"><Skeleton className="h-12" /><Skeleton className="h-72" /></div>;
   }
-  if (sites.status === "error") return <ErrorState error={sites.error} onRetry={sites.reload} />;
+  if (site.status === "error") return <ErrorState error={site.error} onRetry={site.reload} />;
   if (people.status === "error") return <ErrorState error={people.error} onRetry={people.reload} />;
-  if (!siteId || !site || !entry) {
+  if (site.status !== "ready" || !entry) {
     return (
       <div className="pt-4">
         <ButtonLink href={`${ws.base}/people`}>Back to people</ButtonLink>
@@ -42,6 +63,7 @@ export default function PersonPage() {
     );
   }
 
+  const siteData = site.data;
   const person = entry.person;
   const quietHours = entry.quiet_hours ?? { enabled: true, start: "22:00", end: "08:00", timezone: "Asia/Kolkata" };
   return (
@@ -49,7 +71,7 @@ export default function PersonPage() {
       <ButtonLink href={`${ws.base}/people?site=${encodeURIComponent(siteId)}`}>Back to people</ButtonLink>
       <PageHeader
         title={person.display_name}
-        subtitle={`${site.name} · ${person.roles.join(", ")} · ${person.languages.template_language}`}
+        subtitle={`${siteData.name} · ${person.roles.join(", ")} · ${person.languages.template_language}`}
         actions={ws.canOperate ? <Button onClick={() => setConsentOpen(true)}>Manage consent</Button> : undefined}
       />
       {consents.status === "error" ? <Notice tone="bad" title="Consent could not be loaded">Reload this page to try again.</Notice> : null}

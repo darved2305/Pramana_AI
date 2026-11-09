@@ -38,7 +38,7 @@ export default function OverviewPage() {
   const people = directory.data ?? [];
   const all = useInvestigationList(ALL);
   const running = useInvestigationList(RUNNING);
-  const total = all.data?.total ?? 0;
+  const hasInvestigations = (all.data?.items.length ?? 0) > 0 || Boolean(all.data?.next_cursor);
   const active = (running.data?.items ?? []).map((r) => ({
     id: r.id,
     createdAt: r.created_at,
@@ -67,7 +67,7 @@ export default function OverviewPage() {
       icon: IconPlus,
       title: "Create an investigation",
       body: "Describe the problem in the reporter's words. Pramana takes it from there.",
-      done: total > 0,
+      done: hasInvestigations,
     },
   ];
 
@@ -144,7 +144,7 @@ export default function OverviewPage() {
           href="/app/investigations"
           icon={<IconHistory />}
           title="Investigations"
-          body={all.status === "error" ? "List unavailable" : total ? `${total} in the core` : "None yet"}
+          body={all.status === "error" ? "List unavailable" : hasInvestigations ? "Search and filter past work" : "None yet"}
         />
         <QuickCard
           href="/app/participants"

@@ -33,7 +33,11 @@ class OrganizationAccess:
 
 
 async def require_organization(
-    request: Request, principal: Principal, roles: tuple[str, ...] = ()
+    request: Request,
+    principal: Principal,
+    roles: tuple[str, ...] = (),
+    *,
+    include_deleted: bool = False,
 ) -> OrganizationAccess:
     value = str(request.path_params.get("org", ""))
     try:
@@ -55,7 +59,7 @@ async def require_organization(
                         condition,
                         MembershipRow.user_id == principal.id,
                         MembershipRow.status == "active",
-                        OrganizationRow.deleted_at.is_(None),
+                        *(() if include_deleted else (OrganizationRow.deleted_at.is_(None),)),
                     )
                 )
             ).one_or_none()

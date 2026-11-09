@@ -1033,6 +1033,278 @@
     "title": "CurrentAccount",
     "type": "object"
    },
+   "CursorPage_ConsentRecord_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ConsentRecord"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[ConsentRecord]",
+    "type": "object"
+   },
+   "CursorPage_InvitationView_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/InvitationView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[InvitationView]",
+    "type": "object"
+   },
+   "CursorPage_JoinRequestView_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/JoinRequestView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[JoinRequestView]",
+    "type": "object"
+   },
+   "CursorPage_PersonTrackRecord_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/PersonTrackRecord"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[PersonTrackRecord]",
+    "type": "object"
+   },
+   "CursorPage_SiteModelSummary_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SiteModelSummary"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[SiteModelSummary]",
+    "type": "object"
+   },
+   "CursorPage_SitePerson_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SitePerson"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[SitePerson]",
+    "type": "object"
+   },
+   "CursorPage_SiteSummary_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SiteSummary"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[SiteSummary]",
+    "type": "object"
+   },
+   "CursorPage_WorkspaceMember_": {
+    "additionalProperties": false,
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/WorkspaceMember"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
+     }
+    },
+    "required": [
+     "items",
+     "limit",
+     "next_cursor"
+    ],
+    "title": "CursorPage[WorkspaceMember]",
+    "type": "object"
+   },
    "DecisionBelief": {
     "additionalProperties": false,
     "properties": {
@@ -1057,6 +1329,22 @@
      "probability"
     ],
     "title": "DecisionBelief",
+    "type": "object"
+   },
+   "DeleteOrganization": {
+    "additionalProperties": false,
+    "properties": {
+     "confirmation": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Confirmation",
+      "type": "string"
+     }
+    },
+    "required": [
+     "confirmation"
+    ],
+    "title": "DeleteOrganization",
     "type": "object"
    },
    "DependsOn": {
@@ -2177,20 +2465,22 @@
       "title": "Limit",
       "type": "integer"
      },
-     "offset": {
-      "title": "Offset",
-      "type": "integer"
-     },
-     "total": {
-      "title": "Total",
-      "type": "integer"
+     "next_cursor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Cursor"
      }
     },
     "required": [
      "items",
-     "total",
      "limit",
-     "offset"
+     "next_cursor"
     ],
     "title": "InvestigationPage",
     "type": "object"
@@ -3414,6 +3704,32 @@
     "title": "OrganizationCreated",
     "type": "object"
    },
+   "OrganizationDeletion": {
+    "additionalProperties": false,
+    "properties": {
+     "deleted_at": {
+      "format": "date-time",
+      "title": "Deleted At",
+      "type": "string"
+     },
+     "organization_id": {
+      "title": "Organization Id",
+      "type": "string"
+     },
+     "purge_after": {
+      "format": "date-time",
+      "title": "Purge After",
+      "type": "string"
+     }
+    },
+    "required": [
+     "organization_id",
+     "deleted_at",
+     "purge_after"
+    ],
+    "title": "OrganizationDeletion",
+    "type": "object"
+   },
    "OrganizationDomain": {
     "additionalProperties": false,
     "properties": {
@@ -3513,6 +3829,18 @@
       "title": "Created At",
       "type": "string"
      },
+     "deleted_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Deleted At"
+     },
      "id": {
       "title": "Id",
       "type": "string"
@@ -3523,6 +3851,18 @@
      "name": {
       "title": "Name",
       "type": "string"
+     },
+     "purge_after": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Purge After"
      },
      "roles": {
       "items": {
@@ -6194,7 +6534,7 @@
   },
   "/v1/investigations": {
    "get": {
-    "description": "Newest first. ``status`` may repeat; ``q`` searches the report text and the id.",
+    "description": "Newest first with a stable keyset; sealed reports match by ID only.",
     "operationId": "list_investigations_v1_investigations_get",
     "parameters": [
      {
@@ -6247,13 +6587,19 @@
      },
      {
       "in": "query",
-      "name": "offset",
+      "name": "cursor",
       "required": false,
       "schema": {
-       "default": 0,
-       "minimum": 0,
-       "title": "Offset",
-       "type": "integer"
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
       }
      }
     ],
@@ -7636,6 +7982,73 @@
    }
   },
   "/v1/orgs/{org}": {
+   "delete": {
+    "operationId": "delete_workspace_v1_orgs__org__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DeleteOrganization"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OrganizationDeletion"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Delete Workspace",
+    "tags": [
+     "workspace"
+    ]
+   },
    "get": {
     "operationId": "organization_v1_orgs__org__get",
     "parameters": [
@@ -7974,6 +8387,46 @@
     ]
    }
   },
+  "/v1/orgs/{org}/export": {
+   "get": {
+    "operationId": "export_workspace_v1_orgs__org__export_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Workspace",
+    "tags": [
+     "workspace"
+    ]
+   }
+  },
   "/v1/orgs/{org}/home": {
    "get": {
     "operationId": "home_v1_orgs__org__home_get",
@@ -8018,7 +8471,7 @@
   },
   "/v1/orgs/{org}/investigations": {
    "get": {
-    "description": "Newest first. ``status`` may repeat; ``q`` searches the report text and the id.",
+    "description": "Newest first with a stable keyset; sealed reports match by ID only.",
     "operationId": "list_investigations_v1_orgs__org__investigations_get",
     "parameters": [
      {
@@ -8071,13 +8524,19 @@
      },
      {
       "in": "query",
-      "name": "offset",
+      "name": "cursor",
       "required": false,
       "schema": {
-       "default": 0,
-       "minimum": 0,
-       "title": "Offset",
-       "type": "integer"
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
       }
      }
     ],
@@ -9261,6 +9720,35 @@
        "title": "Org",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
      }
     ],
     "responses": {
@@ -9268,11 +9756,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/InvitationView"
-         },
-         "title": "Response List Invitations V1 Orgs  Org  Invitations Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_InvitationView_"
         }
        }
       },
@@ -9436,6 +9920,35 @@
        "title": "Org",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
      }
     ],
     "responses": {
@@ -9443,11 +9956,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/JoinRequestView"
-         },
-         "title": "Response List Join Requests V1 Orgs  Org  Join Requests Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_JoinRequestView_"
         }
        }
       },
@@ -9628,6 +10137,35 @@
        "title": "Org",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
      }
     ],
     "responses": {
@@ -9635,11 +10173,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/WorkspaceMember"
-         },
-         "title": "Response Members V1 Orgs  Org  Members Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_WorkspaceMember_"
         }
        }
       },
@@ -9804,6 +10338,65 @@
     ]
    }
   },
+  "/v1/orgs/{org}/restore": {
+   "post": {
+    "operationId": "restore_workspace_v1_orgs__org__restore_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "description": "Reuse this key only when retrying the same action.",
+      "in": "header",
+      "name": "Idempotency-Key",
+      "required": true,
+      "schema": {
+       "maxLength": 130,
+       "minLength": 16,
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OrganizationSummary"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "description": "Missing or invalid idempotency key"
+     },
+     "409": {
+      "description": "Action in flight or business conflict"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Changed request for the same key or invalid input"
+     }
+    },
+    "summary": "Restore Workspace",
+    "tags": [
+     "workspace"
+    ]
+   }
+  },
   "/v1/orgs/{org}/sites": {
    "get": {
     "operationId": "sites_v1_orgs__org__sites_get",
@@ -9816,6 +10409,35 @@
        "title": "Org",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
      }
     ],
     "responses": {
@@ -9823,11 +10445,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/SiteSummary"
-         },
-         "title": "Response Sites V1 Orgs  Org  Sites Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_SiteSummary_"
         }
        }
       },
@@ -10326,6 +10944,35 @@
        "title": "Site Id",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
      }
     ],
     "responses": {
@@ -10333,11 +10980,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/SiteModelSummary"
-         },
-         "title": "Response Models V1 Orgs  Org  Sites  Site Id  Models Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_SiteModelSummary_"
         }
        }
       },
@@ -10441,6 +11084,52 @@
        "title": "Site Id",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 100,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
      }
     ],
     "responses": {
@@ -10448,11 +11137,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/SitePerson"
-         },
-         "title": "Response List People V1 Orgs  Org  Sites  Site Id  People Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_SitePerson_"
         }
        }
       },
@@ -10574,6 +11259,54 @@
        "title": "Site Id",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "person_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Person Id"
+      }
      }
     ],
     "responses": {
@@ -10581,11 +11314,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/PersonTrackRecord"
-         },
-         "title": "Response Track Record V1 Orgs  Org  Sites  Site Id  People Track Record Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_PersonTrackRecord_"
         }
        }
       },
@@ -10830,6 +11559,55 @@
        "title": "Person Id",
        "type": "string"
       }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "maximum": 100,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 4096,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "purpose",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "contact_for_investigations",
+          "voice_processing"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Purpose"
+      }
      }
     ],
     "responses": {
@@ -10837,11 +11615,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "items": {
-          "$ref": "#/components/schemas/ConsentRecord"
-         },
-         "title": "Response List Consents V1 Orgs  Org  Sites  Site Id  People  Person Id  Consents Get",
-         "type": "array"
+         "$ref": "#/components/schemas/CursorPage_ConsentRecord_"
         }
        }
       },

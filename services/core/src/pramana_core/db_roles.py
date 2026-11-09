@@ -52,13 +52,12 @@ def role_passwords(app_url: str, sim_url: str) -> dict[str, str]:
 
 
 def role_statement_template(*, exists: bool) -> str:
-    """Create or update login credentials without changing privileged role attributes.
-
-    Managed PostgreSQL services may grant CREATEROLE without SUPERUSER. Safe role attributes are
-    the defaults for CREATE ROLE, and ensure_roles audits them after provisioning.
-    """
+    """Create or update runtime credentials while explicitly clearing elevated attributes."""
     action = "alter" if exists else "create"
-    return f"{action} role %I login password %L"
+    return (
+        f"{action} role %I login nosuperuser nobypassrls nocreatedb "
+        "nocreaterole noreplication password %L"
+    )
 
 
 async def ensure_roles(migrator_url: str, app_url: str, sim_url: str) -> None:

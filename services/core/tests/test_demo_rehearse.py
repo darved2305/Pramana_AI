@@ -83,12 +83,12 @@ def test_s1_rehearsal_runs_parallel_approval_repair_verification_reveal_and_repl
 
 def test_s1_without_an_authenticated_approver_is_rejected_before_creation(core: TestClient) -> None:
     sim = TestClient(core.sim_app)  # type: ignore[attr-defined]
-    before = core.get("/v1/investigations").json()["total"]
+    before = len(core.get("/v1/investigations").json()["items"])
 
     with pytest.raises(RehearsalError, match="authenticated approver"):
         run_rehearsal(core, sim, scenario="S1", output=io.StringIO())
 
-    assert core.get("/v1/investigations").json()["total"] == before
+    assert len(core.get("/v1/investigations").json()["items"]) == before
 
 
 def test_approver_client_requires_both_credentials() -> None:

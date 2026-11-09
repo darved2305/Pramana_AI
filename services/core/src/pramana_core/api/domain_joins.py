@@ -2,12 +2,13 @@
 """Verified domain settings and requests to join a workspace."""
 
 import uuid
-from typing import cast
+from typing import Annotated, cast
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 
 from pramana_contracts import (
     CreateDomain,
+    CursorPage,
     JoinRequestCreated,
     JoinRequestDecision,
     JoinRequestView,
@@ -17,6 +18,7 @@ from pramana_contracts import (
 )
 
 from .. import ids
+from ..cursors import CursorCodec
 from ..domain_joins import MANAGERS, DomainJoins
 from ..errors import not_found
 from ..idempotency import IdempotencyRoute, idempotent
@@ -100,13 +102,22 @@ async def remove_domain(org: str, domain: str, request: Request, response: Respo
 
 @org_router.get("/join-requests")
 async def list_join_requests(
-    org: str, request: Request, response: Response
-) -> list[JoinRequestView]:
+    org: str,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
+) -> CursorPage[JoinRequestView]:
     access = request.state.organization
     response.headers["Cache-Control"] = "private, no-store"
-    return await _service(request).list_join_requests(
-        access.organization.id, request.state.principal
+    items, next_cursor = await _service(request).list_join_requests(
+        access.organization.id,
+        request.state.principal,
+        limit=limit,
+        cursor=cursor,
+        codec=cast(CursorCodec, request.app.state.cursor_codec),
     )
+    return CursorPage[JoinRequestView](items=items, limit=limit, next_cursor=next_cursor)
 
 
 @org_router.post("/join-requests/{request_id}/approve")

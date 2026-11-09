@@ -11,6 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -36,7 +38,12 @@ def test_restart_policy_caps_exponential_backoff() -> None:
     assert staging.RestartPolicy().delay_for(1026) == 30
 
 
-def test_production_environment_forces_secure_auth_and_isolates_web_secrets() -> None:
+def test_production_environment_forces_secure_auth_and_isolates_web_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A host value must not replace the private source: the environments are built from the
+    # explicit inputs only (``inherited={}``), so this test does not depend on the machine.
+    monkeypatch.setenv("SIM_OPERATOR_KEY", "host-operator-value")
     source = {
         "SIM_OPERATOR_KEY": "sim-operator-secret",
         "PARTICIPANT_SIGNING_KEY": "participant-signing-secret",
@@ -48,7 +55,7 @@ def test_production_environment_forces_secure_auth_and_isolates_web_secrets() ->
     }
 
     core, sim, web = staging.make_environments(
-        source, "https://pramana-staging.account.workers.dev"
+        source, "https://pramana-staging.account.workers.dev", inherited={}
     )
 
     assert core["PRAMANA_MODE"] == "demo"

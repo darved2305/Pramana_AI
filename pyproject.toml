@@ -77,7 +77,7 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-q --strict-markers --import-mode=importlib"
-pythonpath = ["packages/engine/tests", "services/core/tests", "tests"]
+pythonpath = ["packages/engine/tests", "services/core/tests", "tests", "scripts"]
 markers = [
     "db: requires the PostgreSQL test database (make db-up)",
     "live_gnani: calls the real Gnani API and spends credits (needs GNANI_API_KEY)",
@@ -91,6 +91,7 @@ testpaths = [
     "services/core/tests",
     "eval/tests",
     "tests",
+    "apps/web/tests-real",
 ]
 
 [tool.importlinter]

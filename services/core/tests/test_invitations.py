@@ -52,12 +52,12 @@ def test_an_invited_person_joins_with_the_roles_given(account_core: TestClient) 
     assert [m["slug"] for m in me["memberships"]] == [org]
     # Accepting again is harmless for the same person.
     assert post(client, "/v1/invitations/accept", {"token": token(created)}).status_code == 200
-    members = client.get(f"/v1/orgs/{org}/members").json()
+    members = client.get(f"/v1/orgs/{org}/members").json()["items"]
     assert len(members) == 2
     assert all(m["email"] is None or m["you"] for m in members)  # not an admin: no addresses
 
     login(client, "operator")
-    listed = client.get(f"/v1/orgs/{org}/invitations").json()
+    listed = client.get(f"/v1/orgs/{org}/invitations").json()["items"]
     assert [i["status"] for i in listed] == ["accepted"]
 
 
@@ -108,7 +108,7 @@ def test_only_owners_and_admins_invite(account_core: TestClient) -> None:
     assert post(client, "/v1/invitations/accept", {"token": token(created)}).status_code == 200
     r = post(client, f"/v1/orgs/{org}/invitations", {"email": "x@example.com", "roles": ["viewer"]})
     assert r.status_code == 403
-    assert client.get(f"/v1/orgs/{org}/invitations").json() == []
+    assert client.get(f"/v1/orgs/{org}/invitations").json()["items"] == []
 
 
 def test_owners_cannot_be_invited_and_members_cannot_be_invited_twice(
@@ -146,7 +146,7 @@ def joined_as(client: TestClient, roles: list[str]) -> tuple[str, str]:
     created = invite(client, org, APPROVER_EMAIL, roles)
     login(client, "approver")
     assert post(client, "/v1/invitations/accept", {"token": token(created)}).status_code == 200
-    mate = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    mate = next(m for m in client.get(f"/v1/orgs/{org}/members").json()["items"] if m["you"])["id"]
     login(client, "operator")
     return org, mate
 
@@ -158,7 +158,7 @@ def patch(client: TestClient, path: str, json: Any) -> Any:
 def test_owners_change_roles_and_the_last_owner_stays(account_core: TestClient) -> None:
     client = account_core
     org, mate = joined_as(client, ["viewer"])
-    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json()["items"] if m["you"])["id"]
     changed = patch(client, f"/v1/orgs/{org}/members/{mate}", {"roles": ["approver", "operator"]})
     assert changed.status_code == 200, changed.text
     assert changed.json()["roles"] == ["approver", "operator"]
@@ -173,7 +173,7 @@ def test_owners_change_roles_and_the_last_owner_stays(account_core: TestClient) 
 def test_admins_cannot_touch_the_owner_role(account_core: TestClient) -> None:
     client = account_core
     org, mate = joined_as(client, ["admin"])
-    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json()["items"] if m["you"])["id"]
     login(client, "approver")  # the admin
     r = patch(client, f"/v1/orgs/{org}/members/{mate}", {"roles": ["owner"]})
     assert r.status_code == 403
@@ -184,7 +184,7 @@ def test_admins_cannot_touch_the_owner_role(account_core: TestClient) -> None:
 def test_leaving_and_removal_end_access_at_once(account_core: TestClient) -> None:
     client = account_core
     org, mate = joined_as(client, ["operator"])
-    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    me = next(m for m in client.get(f"/v1/orgs/{org}/members").json()["items"] if m["you"])["id"]
     last = post(client, f"/v1/orgs/{org}/members/{me}/remove")
     assert last.status_code == 409  # the last owner cannot leave
     assert post(client, f"/v1/orgs/{org}/members/{mate}/remove").status_code == 204
@@ -196,7 +196,7 @@ def test_leaving_and_removal_end_access_at_once(account_core: TestClient) -> Non
 def test_a_member_may_leave_but_not_remove_others(account_core: TestClient) -> None:
     client = account_core
     org, mate = joined_as(client, ["viewer"])
-    owner = next(m for m in client.get(f"/v1/orgs/{org}/members").json() if m["you"])["id"]
+    owner = next(m for m in client.get(f"/v1/orgs/{org}/members").json()["items"] if m["you"])["id"]
     login(client, "approver")
     assert post(client, f"/v1/orgs/{org}/members/{owner}/remove").status_code == 403
     assert post(client, f"/v1/orgs/{org}/members/{mate}/remove").status_code == 204

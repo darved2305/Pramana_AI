@@ -1,5 +1,6 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
+import { selectE2EDatabase } from "./scripts/e2e-database-safety.mjs";
 
 /**
  * End-to-end tests against a REAL simulator, core and PostgreSQL test database. Nothing is
@@ -20,12 +21,17 @@ if (!process.env.E2E_SIGNING_KEY) {
   process.env.E2E_AUTOMATION_KEY = randomBytes(18).toString("base64url");
   process.env.E2E_PASSWORD = randomBytes(12).toString("base64url");
 }
-const DATABASE = process.env.E2E_DATABASE ?? "pramana_web_e2e";
+const DATABASE = selectE2EDatabase(process.env);
 process.env.E2E_DATABASE = DATABASE;
 process.env.E2E_CORE_URL = `http://127.0.0.1:${CORE_PORT}`;
 process.env.E2E_SIM_URL = `http://127.0.0.1:${SIM_PORT}`;
 
-const shared = { E2E_DATABASE: DATABASE, E2E_CORE_PORT: String(CORE_PORT), E2E_SIM_PORT: String(SIM_PORT) };
+const shared = {
+  E2E_DATABASE: DATABASE,
+  PRAMANA_DB_NAMES: process.env.PRAMANA_DB_NAMES!,
+  E2E_CORE_PORT: String(CORE_PORT),
+  E2E_SIM_PORT: String(SIM_PORT),
+};
 
 // Local runs use Playwright's own Chromium in a throwaway profile. The installed Google Chrome can
 // pass the password fields these tests type (some deliberately wrong) to Windows sign-in, which

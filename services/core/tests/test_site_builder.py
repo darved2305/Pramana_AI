@@ -187,7 +187,8 @@ def test_republishing_retires_the_previous_version(account_core: TestClient) -> 
     assert [v["version"] for v in versions] == [1, 2]
     org, site = workspace["organization"]["slug"], workspace["live_site"]["id"]
     listed = {
-        m["id"]: m["status"] for m in client.get(f"/v1/orgs/{org}/sites/{site}/models").json()
+        m["id"]: m["status"]
+        for m in client.get(f"/v1/orgs/{org}/sites/{site}/models").json()["items"]
     }
     assert listed == {versions[0]["id"]: "retired", versions[1]["id"]: "published"}
 

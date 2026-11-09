@@ -65,7 +65,7 @@ def test_a_name_is_stored_only_sealed(account_core: TestClient, migrated_db: str
     assert NAME not in stored[0]["spec"]
     assert NAME.encode() not in bytes(stored[0]["display_name_enc"])
 
-    listed = client.get(f"/v1/orgs/{org}/sites/{site}/people").json()
+    listed = client.get(f"/v1/orgs/{org}/sites/{site}/people").json()["items"]
     assert [p["person"]["display_name"] for p in listed] == [NAME]
 
     patched = client.patch(
@@ -84,7 +84,7 @@ def test_erasure_is_permanent_and_blocks_reuse(account_core: TestClient, migrate
     add_person(client, org, site)
 
     assert post(client, f"/v1/orgs/{org}/sites/{site}/people/ananya/erase").status_code == 204
-    assert client.get(f"/v1/orgs/{org}/sites/{site}/people").json() == []
+    assert client.get(f"/v1/orgs/{org}/sites/{site}/people").json()["items"] == []
     key = sql(
         migrated_db, "select wrapped_key, erased_at from person_keys where person_id = 'ananya'"
     )
@@ -131,17 +131,67 @@ def test_consent_is_recorded_replaced_and_withdrawn(account_core: TestClient) ->
     }
     assert post(client, base, grant).status_code == 201
     assert post(client, base, {**grant, "notice_version": "2026-12"}).status_code == 201
-    records = client.get(base).json()
+    records = client.get(base).json()["items"]
     assert [r["notice_version"] for r in records] == ["2026-12", "2026-11"]
     assert records[0]["withdrawn_at"] is None
     assert records[1]["withdrawn_at"] is not None
 
     assert post(client, f"{base}/voice_processing/withdraw").status_code == 204
-    assert all(r["withdrawn_at"] is not None for r in client.get(base).json())
+    assert all(r["withdrawn_at"] is not None for r in client.get(base).json()["items"])
 
     # The proof of consent outlives the person's name.
     assert post(client, f"/v1/orgs/{org}/sites/{site}/people/ananya/erase").status_code == 204
-    assert len(client.get(base).json()) == 2
+    assert len(client.get(base).json()["items"]) == 2
+
+
+def test_consent_purpose_filter_keeps_current_status_after_long_history(
+    account_core: TestClient,
+) -> None:
+    client = account_core
+    org, _, site = workspace(client)
+    add_person(client, org, site)
+    base = f"/v1/orgs/{org}/sites/{site}/people/ananya/consents"
+    contact = {
+        "purpose": "contact_for_investigations",
+        "notice_version": "contact-1",
+        "language": "en",
+        "channel": "paper",
+        "evidence": {},
+    }
+    voice = {
+        "purpose": "voice_processing",
+        "notice_version": "voice-0",
+        "language": "en",
+        "channel": "paper",
+        "evidence": {},
+    }
+    assert post(client, base, contact).status_code == 201
+    for version in range(101):
+        response = post(client, base, {**voice, "notice_version": f"voice-{version}"})
+        assert response.status_code == 201, response.text
+
+    first_page = client.get(base, params={"limit": 100}).json()
+    assert len(first_page["items"]) == 100
+    assert all(row["purpose"] == "voice_processing" for row in first_page["items"])
+    assert first_page["next_cursor"]
+
+    latest_contact = client.get(base, params={"limit": 1, "purpose": "contact_for_investigations"})
+    assert latest_contact.status_code == 200, latest_contact.text
+    assert [row["notice_version"] for row in latest_contact.json()["items"]] == ["contact-1"]
+    latest_voice = client.get(base, params={"limit": 1, "purpose": "voice_processing"})
+    assert latest_voice.status_code == 200, latest_voice.text
+    assert [row["notice_version"] for row in latest_voice.json()["items"]] == ["voice-100"]
+
+    wrong_filter = client.get(
+        base,
+        params={
+            "limit": 1,
+            "purpose": "contact_for_investigations",
+            "cursor": latest_voice.json()["next_cursor"],
+        },
+    )
+    assert wrong_filter.status_code == 400
+    assert wrong_filter.json()["error"]["code"] == "CURSOR_INVALID"
 
 
 def test_a_ciphertext_cannot_be_moved_to_another_person() -> None:
