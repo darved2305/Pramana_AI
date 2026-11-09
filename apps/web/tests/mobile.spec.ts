@@ -57,3 +57,10 @@ test("a consent page reports a connection failure without calling the link expir
   await expect(page.getByText("Pramana could not be reached. Check your connection and try again.")).toBeVisible();
   await expect(page.getByText(/This link has expired/)).toHaveCount(0);
 });
+
+test("a consent request reports an unavailable core without a proxy rewrite", async ({ request }) => {
+  const response = await request.get("/api/core/v1/consent-links/synthetic-test-token");
+  expect(response.status()).toBe(503);
+  expect(response.headers()["cache-control"]).toBe("no-store");
+  expect((await response.json()).error.code).toBe("UPSTREAM_DOWN");
+});

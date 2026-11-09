@@ -23,6 +23,7 @@ const nextConfig: NextConfig = {
     incomingRequests: {
       ignore: [
         /\/api\/core\/v1\/auth\/google\/(?:start|callback)/,
+        /\/api\/core\/v1\/consent-links\//,
         /\/consent\/[^/]+/,
       ],
     },
