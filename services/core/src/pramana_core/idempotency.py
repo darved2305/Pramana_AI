@@ -119,10 +119,22 @@ def _where(scope: str, principal: str, key: str) -> tuple[Any, ...]:
     )
 
 
-def _replay(row: IdempotencyRow) -> Response:
+_SEALED_RESPONSE = b"pramana-sealed-response-v1:"
+
+
+def _response_context(row: IdempotencyRow) -> bytes:
+    return json.dumps([row.scope, row.principal, row.key], separators=(",", ":")).encode()
+
+
+def _replay(row: IdempotencyRow, request: Request) -> Response:
     assert row.response_status is not None
+    body = row.response_body or b""
+    if body.startswith(_SEALED_RESPONSE):
+        body = request.app.state.vault.master.open_response(
+            body[len(_SEALED_RESPONSE) :], _response_context(row)
+        )
     return Response(
-        row.response_body or b"",
+        body,
         status_code=row.response_status,
         headers={**row.response_headers, "Idempotent-Replayed": "true"},
     )
@@ -227,7 +239,12 @@ class IdempotencyRoute(APIRoute):
             digest = fingerprint(request, body)
             db: Database = request.app.state.db
             nonce = ids.uuid7()
-            with acting_for(org_id, user_id, actor=actor):
+            with acting_for(
+                org_id,
+                user_id,
+                actor=actor,
+                hosted_domain=(principal.hosted_domain if principal.email_verified else None),
+            ):
                 await reap_expired(db)
                 async with db.transaction() as session:
                     now = (await session.execute(select(func.now()))).scalar_one()
@@ -263,7 +280,7 @@ class IdempotencyRoute(APIRoute):
                                 "use a new key for a different action",
                             )
                         if row.response_status is not None:
-                            return _replay(row)
+                            return _replay(row, request)
                         if row.locked_until is not None and row.locked_until > now:
                             raise _in_flight()
                         try:
@@ -280,7 +297,7 @@ class IdempotencyRoute(APIRoute):
                                 raise _in_flight() from exc
                             raise
                         if row.response_status is not None:
-                            return _replay(row)
+                            return _replay(row, request)
                         row.owner_nonce, row.locked_until = nonce, now + LEASE
                 try:
                     async with db.unit_of_work() as session:
@@ -322,6 +339,16 @@ class IdempotencyRoute(APIRoute):
                             raise RuntimeError("idempotent commands must return a bounded response")
                         row.response_status = response.status_code
                         row.response_body = bytes(response.body)
+                        if (
+                            request.url.path.endswith("/consent-requests")
+                            and response.status_code < 400
+                        ):
+                            row.response_body = (
+                                _SEALED_RESPONSE
+                                + request.app.state.vault.master.seal_response(
+                                    row.response_body, _response_context(row)
+                                )
+                            )
                         row.response_headers = {
                             k: v for k, v in response.headers.items() if k in RESPONSE_HEADERS
                         }

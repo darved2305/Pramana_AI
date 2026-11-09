@@ -108,9 +108,14 @@ def test_every_table_with_org_id_forces_rls(db_urls: tuple[str, str]) -> None:
         engine = create_async_engine(db_urls[0])
         async with engine.connect() as conn:
             tables = await _tenant_tables(conn)
-            assert {"investigations", "events", "sites", "site_models", "memberships"} <= set(
-                tables
-            )
+            assert {
+                "investigations",
+                "events",
+                "sites",
+                "site_models",
+                "memberships",
+                "consent_links",
+            } <= set(tables)
             for table in tables:
                 row = await conn.execute(
                     text(
@@ -127,6 +132,56 @@ def test_every_table_with_org_id_forces_rls(db_urls: tuple[str, str]) -> None:
                 assert forced, table
                 assert policies >= 1, table
         await engine.dispose()
+
+    _run(check)
+
+
+def test_consent_links_are_scoped_under_runtime_role(db_urls: tuple[str, str]) -> None:
+    async def check() -> None:
+        a, b = await _seed_two_orgs(db_urls[0])
+        owner = create_async_engine(db_urls[0])
+        async with owner.begin() as conn:
+            for org in (a, b):
+                site = (
+                    await conn.execute(text("select id from sites where org_id=:org"), {"org": org})
+                ).scalar_one()
+                await conn.execute(
+                    text(
+                        "insert into site_people (org_id,site_id,id,spec) "
+                        "values (:org,:site,'p_test','{}')"
+                    ),
+                    {"org": org, "site": site},
+                )
+                await conn.execute(
+                    text(
+                        "insert into consent_links "
+                        "(id,org_id,site_id,person_id,purpose,channel,language,notice_version,"
+                        "token_hash,created_by,created_at,expires_at) "
+                        "values (:id,:org,:site,'p_test','contact_for_investigations','web',"
+                        "'en','1',:hash,'test',now(),now()+interval '1 day')"
+                    ),
+                    {"id": ids.uuid7(), "org": org, "site": site, "hash": org.bytes},
+                )
+        await owner.dispose()
+        db = Database(create_async_engine(db_urls[1]))
+        with acting_for(a):
+            async with db.read() as session:
+                visible = set(
+                    (await session.execute(text("select org_id from consent_links"))).scalars()
+                )
+                assert visible == {a}
+        with acting_for(b):
+            async with db.read() as session:
+                visible = set(
+                    (await session.execute(text("select org_id from consent_links"))).scalars()
+                )
+                assert visible == {b}
+        with acting_for(None):
+            async with db.read() as session:
+                assert (
+                    await session.execute(text("select count(*) from consent_links"))
+                ).scalar_one() == 0
+        await db.dispose()
 
     _run(check)
 
@@ -248,6 +303,158 @@ def test_memberships_visible_to_their_user_only(db_urls: tuple[str, str]) -> Non
                     text("update memberships set roles = array['owner'] returning user_id")
                 )
                 assert list(result) == []
+        await db.dispose()
+
+    _run(check)
+
+
+def test_domain_suggestions_and_join_requests_are_scoped_by_runtime_rls(
+    db_urls: tuple[str, str],
+) -> None:
+    async def check() -> None:
+        a, b = await _seed_two_orgs(db_urls[0])
+        domain_a, domain_b = f"college-{a.hex[:8]}.example", f"other-{b.hex[:8]}.example"
+        requester, another, admin, outsider, unverified = (ids.new("usr")[1] for _ in range(5))
+        request_a, request_b = ids.uuid7(), ids.uuid7()
+        owner = create_async_engine(db_urls[0])
+        async with owner.begin() as conn:
+            for uid, email, verified in (
+                (requester, f"one@{domain_a}", True),
+                (another, f"two@{domain_a}", True),
+                (admin, f"admin@{domain_a}", True),
+                (outsider, f"person@{domain_b}", True),
+                (unverified, f"unverified@{domain_a}", False),
+            ):
+                await conn.execute(
+                    text(
+                        "insert into users (id, email, display_name, password_hash, roles, "
+                        "active, email_verified_at) values (:id, :email, 'Person', 'x', "
+                        "'[]'::jsonb, true, case when :verified then now() else null end)"
+                    ),
+                    {"id": uid, "email": email, "verified": verified},
+                )
+            await conn.execute(
+                text(
+                    "insert into memberships (org_id, user_id, roles) "
+                    "values (:org, :uid, '{owner}')"
+                ),
+                {"org": a, "uid": admin},
+            )
+            for org, domain, policy in ((a, domain_a, "request"), (b, domain_b, "auto")):
+                await conn.execute(
+                    text(
+                        "insert into org_domains (org_id, domain, verification, verified_at, "
+                        "join_policy) values (:org, :domain, 'dns_txt', now(), :policy)"
+                    ),
+                    {"org": org, "domain": domain, "policy": policy},
+                )
+            for request_id, org, uid in ((request_a, a, requester), (request_b, b, outsider)):
+                await conn.execute(
+                    text(
+                        "insert into join_requests (id, org_id, requester_id, status) "
+                        "values (:id, :org, :uid, 'pending')"
+                    ),
+                    {"id": request_id, "org": org, "uid": uid},
+                )
+        await owner.dispose()
+
+        db = Database(create_async_engine(db_urls[1]))
+        with acting_for(None, requester, hosted_domain=domain_a):
+            async with db.read() as session:
+                domains = set(
+                    (await session.execute(text("select domain from org_domains"))).scalars()
+                )
+                orgs = set((await session.execute(text("select id from organizations"))).scalars())
+                requests = set(
+                    (await session.execute(text("select id from join_requests"))).scalars()
+                )
+        assert domains == {domain_a}
+        assert orgs == {a}
+        assert requests == {request_a}
+
+        with acting_for(None, requester, hosted_domain=domain_b):
+            async with db.read() as session:
+                assert not (await session.execute(text("select domain from org_domains"))).all()
+                assert not (await session.execute(text("select id from organizations"))).all()
+        with acting_for(a, admin):
+            async with db.read() as session:
+                requests = set(
+                    (await session.execute(text("select id from join_requests"))).scalars()
+                )
+                domains = set(
+                    (await session.execute(text("select domain from org_domains"))).scalars()
+                )
+        assert requests == {request_a}
+        assert domains == {domain_a}
+
+        new_id = ids.uuid7()
+        with acting_for(None, another, hosted_domain=domain_a):
+            async with db.transaction() as session:
+                await session.execute(
+                    text(
+                        "insert into join_requests (id, org_id, requester_id) "
+                        "values (:id, :org, :uid)"
+                    ),
+                    {"id": new_id, "org": a, "uid": another},
+                )
+        with (
+            acting_for(None, another, hosted_domain=domain_a),
+            pytest.raises(DBAPIError, match="requesters may only cancel"),
+        ):
+            async with db.transaction() as session:
+                await session.execute(
+                    text(
+                        "update join_requests set status = 'cancelled', decided_at = now(), "
+                        "org_id = :org, roles = array['admin']::text[] where id = :id"
+                    ),
+                    {"id": new_id, "org": b},
+                )
+        with acting_for(None, another, hosted_domain=domain_a):
+            async with db.transaction() as session:
+                await session.execute(
+                    text(
+                        "update join_requests set status = 'cancelled', decided_at = now() "
+                        "where id = :id"
+                    ),
+                    {"id": new_id},
+                )
+        with (
+            acting_for(None, another, hosted_domain=domain_a),
+            pytest.raises(DBAPIError, match="row-level security"),
+        ):
+            async with db.transaction() as session:
+                await session.execute(
+                    text(
+                        "insert into join_requests (id, org_id, requester_id) "
+                        "values (:id, :org, :uid)"
+                    ),
+                    {"id": ids.uuid7(), "org": b, "uid": another},
+                )
+        with (
+            acting_for(None, unverified, hosted_domain=domain_a),
+            pytest.raises(DBAPIError, match="row-level security"),
+        ):
+            async with db.transaction() as session:
+                await session.execute(
+                    text(
+                        "insert into join_requests (id, org_id, requester_id) "
+                        "values (:id, :org, :uid)"
+                    ),
+                    {"id": ids.uuid7(), "org": a, "uid": unverified},
+                )
+        with (
+            acting_for(None, outsider, hosted_domain=domain_b),
+            pytest.raises(DBAPIError, match="row-level security"),
+        ):
+            async with db.transaction() as session:
+                await session.execute(
+                    text(
+                        "insert into join_requests (id, org_id, requester_id, status, roles, "
+                        "decision_source, decided_at) values (:id, :org, :uid, 'approved', "
+                        "array['admin'], 'auto', now())"
+                    ),
+                    {"id": ids.uuid7(), "org": b, "uid": outsider},
+                )
         await db.dispose()
 
     _run(check)

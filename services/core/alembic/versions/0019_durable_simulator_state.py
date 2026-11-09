@@ -10,16 +10,16 @@ role (``alembic_version`` stays in ``public``), so it is independent of which ot
 landed before it. Per-role search paths are set with ``ALTER ROLE ... IN DATABASE`` because the
 Supabase session pooler does not forward connection startup settings.
 
-Revision ID: 0022
-Revises: 0016
+Revision ID: 0019
+Revises: 0018
 """
 
 from __future__ import annotations
 
 from alembic import op
 
-revision = "0022"
-down_revision = "0016"
+revision = "0019"
+down_revision = "0018"
 branch_labels = None
 depends_on = None
 

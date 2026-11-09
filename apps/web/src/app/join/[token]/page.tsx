@@ -159,6 +159,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const sendAnswer = async (body: { outcome?: string; text?: string }) => {
     if (!q) return;
     setMsg(null);
+    setUnderstood(null);
     if (preview) {
       setUnderstood(`I understood: ${outcomeWord(body.outcome ?? "your answer")}. (Preview: nothing was sent.)`);
       return;
@@ -339,6 +340,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const toggleVoice = async () => {
     if (!q) return;
     setMsg(null);
+    setUnderstood(null);
     const call = callPhase === "active" ? callRef.current : null;
     if (call) {
       if (phase === "recording") {

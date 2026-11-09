@@ -37,8 +37,8 @@ def _run(connection: Connection) -> None:
 async def _run_async() -> None:
     engine = create_async_engine(_url())
     async with engine.connect() as conn:
-        # Set per session, not as a startup setting: the Supabase pooler drops those. Until 0022
-        # creates ``pramana`` new objects land in ``public``; 0022 moves them.
+        # Set per session, not as a startup setting: the Supabase pooler drops those. Until 0019
+        # creates ``pramana`` new objects land in ``public``; 0019 moves them.
         await conn.exec_driver_sql("set search_path to pramana, public")
         await conn.commit()  # a session-level SET outlives this transaction
         await conn.run_sync(_run)

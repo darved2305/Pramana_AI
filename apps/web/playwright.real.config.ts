@@ -86,6 +86,8 @@ export default defineConfig({
         CORE_AUTOMATION_KEY: process.env.E2E_AUTOMATION_KEY as string,
         E2E_PASSWORD: process.env.E2E_PASSWORD as string,
         GNANI_API_KEY: "",
+        GMAIL_ADDRESS: "",
+        GMAIL_APP_PASSWORD: "",
         LLM_EXTRACTOR_PROVIDER: "none",
         EVAL_REPORTS_DIR: "apps/web/tests-real/fixtures/reports",
         OIDC_ISSUER: `http://localhost:${OIDC_PORT}`,
