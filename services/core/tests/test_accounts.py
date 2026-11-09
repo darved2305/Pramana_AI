@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import threading
 import uuid
 from collections.abc import Iterator
@@ -169,9 +170,15 @@ def test_stored_sandbox_is_identical_to_latest_frozen_template(
         "where purpose = 'sandbox' order by version",
     )
     assert [row["version"] for row in templates] == [1, 2]
+    frozen_v1_digest = hashlib.sha256(
+        json.dumps(
+            templates[0]["spec"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).digest()
     assert bytes(templates[0]["spec_sha256"]).hex() == (
         "9435216bfb330b2da94db1166a9e4147613536e224897cbc5b8f1b2485a75837"
     )
+    assert frozen_v1_digest == templates[0]["spec_sha256"]
     assert templates[0]["spec"]["title"] == "Hostel Block C (simulated)"
 
     spec = templates[1]["spec"]
@@ -194,12 +201,31 @@ def test_stored_sandbox_is_identical_to_latest_frozen_template(
         "guard desk",
         "student",
         "nava-wifi",
+        "wifi",
+        "wi-fi",
+        "वाई-फ़ाई",
+        "वाय-फाय",
         "ip test page",
-        "wi-fi box",
+        "bookmark",
+        "ont",
+        "pon",
         "idf-",
         "db-c2",
+        "isp",
+        "dhcp",
+        "dns",
+        "cctv",
+        "nvr",
+        "poe",
+        "hvac",
+        "access point",
+        "rack",
+        "main-1",
+        "c2-5",
+        "c2-7",
+        "gateway",
     ):
-        assert site_specific_term not in shown
+        assert re.search(rf"\b{re.escape(site_specific_term)}\b", shown) is None
 
 
 @pytest.mark.parametrize(

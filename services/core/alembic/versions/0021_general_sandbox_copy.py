@@ -91,35 +91,46 @@ def _neutral_spec(spec: dict[str, object]) -> dict[str, object]:
                 label.update(dict(zip(("en", "hi", "hi_en", "mr"), words, strict=True)))
 
     component_copy = {
-        "FEED_MAIN": "Main power supply",
-        "FEED_C2": "Power supply to floor 2",
-        "CB_MAIN_1": "Main breaker",
-        "CB_C2_5": "Lighting breaker for floors 2 and 3",
-        "CB_C2_7": "Equipment room 2 breaker",
-        "LIGHT_IDF2": "Equipment room 2 lights",
-        "NVR_C2": "Security camera recorder in equipment room 2",
-        "SOCKETS_F2": "Power sockets in work areas on floor 2",
-        "SOCKETS_F3": "Power sockets in work areas on floor 3",
-        "ISP_LINK": "Internet provider connection",
-        "ONT": "Fibre connection box",
+        "FEED_MAIN": "Electricity supply",
+        "FEED_C2": "Power supply for floor 2",
+        "CB_MAIN_1": "Main power switch",
+        "CB_C2_5": "Power switch for the floor 2 and 3 lights",
+        "CB_C2_7": "Power switch in equipment room 2",
+        "LIGHT_IDF2": "Equipment room 2 light",
+        "NVR_C2": "Security video recorder",
+        "SOCKETS_F2": "Wall sockets in floor 2 work areas",
+        "SOCKETS_F3": "Wall sockets in floor 3 work areas",
+        "ISP_LINK": "Internet connection",
+        "ONT": "Internet connection box",
         "GATEWAY": "Internet router",
-        "DHCP": "Service that gives devices network addresses",
-        "DNS": "Service that helps websites load by name",
-        "SW_CORE": "Main network switch",
-        "SW_C2": "Network switch in equipment room 2",
-        "AP_1A": "Wi-Fi access point 1A",
-        "AP_2A": "Wi-Fi access point 2A",
-        "AP_2B": "Wi-Fi access point 2B",
-        "AP_3A": "Wi-Fi access point 3A",
-        "AP_3B": "Wi-Fi access point 3B",
+        "DHCP": "Service that connects devices to the network",
+        "DNS": "Service that helps websites open by name",
+        "SW_CORE": "Main network device",
+        "SW_C2": "Network device in equipment room 2",
+        "AP_1A": "Ceiling network device in area 1A",
+        "AP_2A": "Ceiling network device in area 2A",
+        "AP_2B": "Ceiling network device in area 2B",
+        "AP_3A": "Ceiling network device in area 3A",
+        "AP_3B": "Ceiling network device in area 3B",
     }
     components = result.get("components")
     if isinstance(components, list):
         failure_copy = {
-            "FEED_C2": "Power supply to floor 2 interrupted",
-            "CB_MAIN_1": "Main breaker tripped",
-            "CB_C2_5": "Lighting breaker for floors 2 and 3 tripped",
-            "CB_C2_7": "Equipment room 2 breaker tripped",
+            "FEED_C2": "Power supply interrupted",
+            "CB_MAIN_1": "Main power switch tripped",
+            "CB_C2_5": "Lighting power switch tripped",
+            "CB_C2_7": "Equipment room power switch tripped",
+            "ISP_LINK": "Internet connection interrupted",
+            "GATEWAY": "Internet router not working",
+            "DHCP": "Devices cannot connect to the network",
+            "DNS": "Websites cannot be found by name",
+            "SW_CORE": "Main network device not working",
+            "SW_C2": "Network device in equipment room 2 not working",
+            "AP_1A": "Ceiling network device in area 1A not working",
+            "AP_2A": "Ceiling network device in area 2A not working",
+            "AP_2B": "Ceiling network device in area 2B not working",
+            "AP_3A": "Ceiling network device in area 3A not working",
+            "AP_3B": "Ceiling network device in area 3B not working",
         }
         for component in components:
             if not isinstance(component, dict):
@@ -134,19 +145,19 @@ def _neutral_spec(spec: dict[str, object]) -> dict[str, object]:
                         failure["label"] = failure_copy[component_id]
 
     decision_copy = {
-        "DISPATCH_ELECTRICIAN_DB_C2": "Facilities technician: check the floor 2 electrical panel",
+        "DISPATCH_ELECTRICIAN_DB_C2": "Facilities technician: check the floor 2 power panel",
         "ESCALATE_FACILITIES_POWER": "Ask the facilities team to check the floor 2 power supply",
-        "DISPATCH_ELECTRICIAN_MAIN": "Facilities technician: check the main breaker",
-        "IT_ONSITE_SW_C2": "Network technician: replace the switch in equipment room 2",
-        "IT_ONSITE_CORE": "Network technician: check the main switch or internet router",
-        "IT_REPLACE_AP_1A": "Replace Wi-Fi access point 1A",
-        "IT_REPLACE_AP_2A": "Replace Wi-Fi access point 2A",
-        "IT_REPLACE_AP_2B": "Replace Wi-Fi access point 2B",
-        "IT_REPLACE_AP_3A": "Replace Wi-Fi access point 3A",
-        "IT_REPLACE_AP_3B": "Replace Wi-Fi access point 3B",
-        "IT_FIX_DHCP": "Restore the service that gives devices network addresses",
-        "IT_FIX_DNS": "Restore the service that helps websites load by name",
-        "ESCALATE_ISP": "Report a problem to the internet provider",
+        "DISPATCH_ELECTRICIAN_MAIN": "Facilities technician: check the main power switch",
+        "IT_ONSITE_SW_C2": "Network technician: check the network equipment in room 2",
+        "IT_ONSITE_CORE": "Network technician: check the main network device or internet router",
+        "IT_REPLACE_AP_1A": "Replace the ceiling network device in area 1A",
+        "IT_REPLACE_AP_2A": "Replace the ceiling network device in area 2A",
+        "IT_REPLACE_AP_2B": "Replace the ceiling network device in area 2B",
+        "IT_REPLACE_AP_3A": "Replace the ceiling network device in area 3A",
+        "IT_REPLACE_AP_3B": "Replace the ceiling network device in area 3B",
+        "IT_FIX_DHCP": "Restore device access to the network",
+        "IT_FIX_DNS": "Help websites open by name",
+        "ESCALATE_ISP": "Contact the internet provider about an interruption",
         "NO_ACTION_USER_SIDE": "The site network works; help the person with their phone",
     }
     decisions = result.get("decision_classes")
@@ -170,57 +181,113 @@ def _neutral_spec(spec: dict[str, object]) -> dict[str, object]:
                     "तुमच्या फोनवर एखादी साधी वेबसाइट उघडते का? हो किंवा नाही सांगा.",
                 ),
                 "wifi_status": (
-                    "Site Wi-Fi on the phone",
-                    "Open your phone's Wi-Fi list. Do you see the site's network, "
-                    "is it still connecting, or is it connected?",
-                    "फ़ोन की वाई-फ़ाई सूची खोलें। क्या साइट का नेटवर्क दिख रहा है, "
+                    "Site network on the phone",
+                    "On your phone, open the list of available networks. Is this site's "
+                    "network missing, still connecting, or connected?",
+                    "अपने फ़ोन पर उपलब्ध नेटवर्क की सूची खोलें। क्या साइट का नेटवर्क नहीं दिख रहा, "
                     "जुड़ने की कोशिश कर रहा है, या जुड़ चुका है?",
-                    "Phone ki Wi-Fi list kholiye. Kya site ka network dikh raha hai, "
-                    "connecting hai, ya connected hai?",
-                    "फोनची वाय-फाय यादी उघडा. साइटचे नेटवर्क दिसत आहे, कनेक्ट होत आहे, की कनेक्ट झाले आहे?",
+                    "Phone par available network ki list kholiye. "
+                    "Kya site ka network nahi dikh raha, connect hone ki koshish kar raha hai, "
+                    "ya connect ho chuka hai?",
+                    "तुमच्या फोनवर उपलब्ध नेटवर्कची यादी उघडा. "
+                    "साइटचे नेटवर्क दिसत नाही, जोडण्याचा प्रयत्न करत आहे, की जोडले आहे?",
                 ),
                 "web_by_ip": (
-                    "Internet test page opens",
-                    "Please open the saved internet test page on your phone. "
-                    "Does it open? Yes or no?",
-                    "फ़ोन पर सेव किया हुआ इंटरनेट जाँच पेज खोलें। क्या वह खुलता है? हाँ या नहीं?",
-                    "Phone par saved internet test page kholiye. Kya woh khulta hai? Haan ya nahi?",
-                    "फोनवर जतन केलेले इंटरनेट तपासणीचे पान उघडा. ते उघडते का? हो की नाही?",
+                    "Internet check page opens",
+                    "Please open the test page on your phone. Does it load? Yes or no?",
+                    "अपने फ़ोन पर जाँच वाला पेज खोलें। क्या वह खुलता है? हाँ या नहीं?",
+                    "Phone par jaanch wala page kholiye. Kya woh khulta hai? Haan ya nahi?",
+                    "तुमच्या फोनवर तपासणीचे पान उघडा. ते उघडते का? हो की नाही?",
                 ),
                 "ap_light": (
-                    "Network device light",
-                    "At {place}, look for the small network device on the ceiling. "
-                    "Is its light on or off?",
-                    "{place} में छत पर लगे छोटे नेटवर्क उपकरण को देखें। उसकी बत्ती चालू है या बंद?",
-                    "{place} mein chhat par lage chhote network device ko dekhiye. "
+                    "Ceiling device light",
+                    "At {place}, look at the small device on the ceiling. Is its light on or off?",
+                    "{place} में छत पर लगे छोटे उपकरण को देखें। उसकी बत्ती चालू है या बंद?",
+                    "{place} mein chhat par lage chhote device ko dekhiye. "
                     "Uski light on hai ya off?",
-                    "{place} मध्ये छतावरचे छोटे नेटवर्क उपकरण पाहा. त्याचा दिवा चालू आहे की बंद?",
+                    "{place} मध्ये छतावरचे छोटे उपकरण पाहा. त्याचा दिवा चालू आहे की बंद?",
+                ),
+                "corridor_lights": (
+                    "Corridor lights",
+                    "Please look at the corridor nearby. Are its lights on or off?",
+                    "पास के गलियारे में देखें। वहाँ की बत्तियाँ जल रही हैं या बंद हैं?",
+                    "Paas ke corridor mein dekhiye. Wahan ki lights on hain ya off?",
+                    "जवळच्या मार्गिकेत पाहा. तिथले दिवे चालू आहेत की बंद?",
+                ),
+                "switch_leds": (
+                    "Network device lights",
+                    "At {place}, look at the box with several network cables. "
+                    "Are its small lights green, orange, or off?",
+                    "{place} में कई नेटवर्क तारों वाले डिब्बे को देखें। उसकी छोटी बत्तियाँ हरी, नारंगी, या बंद हैं?",
+                    "{place} mein kai network cables wale box ko dekhiye. "
+                    "Uski chhoti lights green, orange, ya off hain?",
+                    "{place} मध्ये अनेक नेटवर्क तारा जोडलेला डबा पाहा. "
+                    "त्याचे छोटे दिवे हिरवे, नारंगी, की बंद आहेत?",
+                ),
+                "nvr_screen": (
+                    "Security camera screen",
+                    "At {place}, look at the small screen used to view security cameras. "
+                    "Is it on or off?",
+                    "{place} में सुरक्षा कैमरे देखने वाली छोटी स्क्रीन को देखें। वह चालू है या बंद?",
+                    "{place} mein security cameras dekhne wali chhoti screen ko dekhiye. "
+                    "Woh on hai ya off?",
+                    "{place} मध्ये सुरक्षा कॅमेरे पाहण्याची छोटी स्क्रीन पाहा. ती चालू आहे की बंद?",
+                ),
+                "closet_light": (
+                    "Equipment room light",
+                    "When you switch on the light in {place}, does the ceiling light come on?",
+                    "{place} की बत्ती का स्विच चालू करने पर छत की बत्ती जलती है?",
+                    "{place} ki light ka switch on karne par chhat ki light jalti hai?",
+                    "{place} मधला दिवा लावल्यावर छताचा दिवा लागतो का?",
+                ),
+                "wan_led": (
+                    "Internet router light",
+                    "At {place}, look at the internet router. "
+                    "Is the light marked INTERNET green, red, or off?",
+                    "{place} में इंटरनेट राउटर देखें। INTERNET लिखी बत्ती हरी, लाल, या बंद है?",
+                    "{place} mein internet router dekhiye. "
+                    "INTERNET likhi light green, red, ya off hai?",
+                    "{place} मध्ये इंटरनेट राउटर पाहा. INTERNET लिहिलेला दिवा हिरवा, लाल, की बंद आहे?",
                 ),
                 "breaker_c2_7": (
-                    "Equipment room 2 breaker position",
-                    "At {place}, without touching anything, is the equipment room 2 "
-                    "breaker up or tripped down?",
-                    "{place} पर, बिना कुछ छुए, उपकरण कक्ष 2 का ब्रेकर ऊपर है या ट्रिप होकर नीचे?",
-                    "{place} par, bina kuch chhue, equipment room 2 ka breaker "
-                    "upar hai ya trip hokar neeche?",
-                    "{place} येथे, कशालाही हात न लावता, उपकरण कक्ष 2 चा ब्रेकर वर आहे की ट्रिप होऊन खाली?",
+                    "Equipment room power switch position",
+                    "At {place}, without touching anything, is the power switch for "
+                    "equipment room 2 up or down?",
+                    "{place} पर, बिना कुछ छुए, उपकरण कक्ष 2 का बिजली वाला स्विच ऊपर है या नीचे?",
+                    "{place} par, bina kuch chhue, equipment room 2 ka power switch "
+                    "upar hai ya neeche?",
+                    "{place} येथे, कशालाही हात न लावता, उपकरण कक्ष 2 चा वीजेचा स्विच वर आहे की खाली?",
                 ),
                 "breaker_c2_5": (
-                    "Lighting breaker position",
-                    "At {place}, without touching anything, is the lighting breaker "
-                    "up or tripped down?",
-                    "{place} पर, बिना कुछ छुए, लाइटों का ब्रेकर ऊपर है या ट्रिप होकर नीचे?",
-                    "{place} par, bina kuch chhue, lights ka breaker upar hai ya "
-                    "trip hokar neeche?",
-                    "{place} येथे, कशालाही हात न लावता, दिव्यांचा ब्रेकर वर आहे की ट्रिप होऊन खाली?",
+                    "Lights power switch position",
+                    "At {place}, without touching anything, is the power switch for "
+                    "the lights up or down?",
+                    "{place} पर, बिना कुछ छुए, लाइटों का बिजली वाला स्विच ऊपर है या नीचे?",
+                    "{place} par, bina kuch chhue, lights ka power switch upar hai ya neeche?",
+                    "{place} येथे, कशालाही हात न लावता, दिव्यांचा वीजेचा स्विच वर आहे की खाली?",
                 ),
                 "breaker_main_1": (
-                    "Main breaker position",
-                    "At {place}, without touching anything, is the main breaker up "
-                    "or tripped down?",
-                    "{place} पर, बिना कुछ छुए, मुख्य ब्रेकर ऊपर है या ट्रिप होकर नीचे?",
-                    "{place} par, bina kuch chhue, main breaker upar hai ya trip hokar neeche?",
-                    "{place} येथे, कशालाही हात न लावता, मुख्य ब्रेकर वर आहे की ट्रिप होऊन खाली?",
+                    "Main power switch position",
+                    "At {place}, without touching anything, is the main power switch up or down?",
+                    "{place} पर, बिना कुछ छुए, मुख्य बिजली का स्विच ऊपर है या नीचे?",
+                    "{place} par, bina kuch chhue, main power switch upar hai ya neeche?",
+                    "{place} येथे, कशालाही हात न लावता, मुख्य वीजेचा स्विच वर आहे की खाली?",
+                ),
+                "room_socket": (
+                    "Wall socket power",
+                    "At {place}, plug in a phone charger. Does the phone start charging?",
+                    "{place} में फ़ोन का चार्जर लगाएँ। क्या फ़ोन चार्ज होने लगता है?",
+                    "{place} mein phone charger lagaiye. Kya phone charge hone lagta hai?",
+                    "{place} मध्ये फोनचा चार्जर लावा. फोन चार्ज व्हायला लागतो का?",
+                ),
+                "fibre_light": (
+                    "Internet connection box light",
+                    "At {place}, look at the internet connection box. "
+                    "Is its status light green, red, or off?",
+                    "{place} में इंटरनेट कनेक्शन वाले डिब्बे को देखें। उसकी बत्ती हरी, लाल, या बंद है?",
+                    "{place} mein internet connection box dekhiye. "
+                    "Uski status light green, red, ya off hai?",
+                    "{place} मध्ये इंटरनेट जोडणीचा डबा पाहा. त्याची बत्ती हिरवी, लाल, की बंद आहे?",
                 ),
             }.get(probe_id)
             if probe_copy:
