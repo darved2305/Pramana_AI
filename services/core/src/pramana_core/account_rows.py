@@ -92,3 +92,39 @@ class InvitationRow(Base):
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     accepted_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OrganizationDomainRow(Base):
+    __tablename__ = "org_domains"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    domain: Mapped[str] = mapped_column(String(253), primary_key=True)
+    verification: Mapped[str] = mapped_column(String(16))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    join_policy: Mapped[str] = mapped_column(String(16), server_default="request")
+    verification_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    added_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class JoinRequestRow(Base):
+    __tablename__ = "join_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE")
+    )
+    requester_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    decided_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(16), server_default="pending")
+    roles: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    decision_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

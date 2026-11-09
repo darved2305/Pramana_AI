@@ -233,7 +233,11 @@ class GoogleSignIn:
                         delete(SessionRow).where(SessionRow.token_hash == token_hash(session_token))
                     )
                 token, resolved = await self.auth.issue_session(
-                    session, user, auth_method="google", user_agent=user_agent
+                    session,
+                    user,
+                    auth_method="google",
+                    user_agent=user_agent,
+                    hosted_domain=identity.hosted_domain if identity.email_verified else None,
                 )
                 await session.execute(
                     text("select set_config('app.user_id', :u, true)"), {"u": user.id}

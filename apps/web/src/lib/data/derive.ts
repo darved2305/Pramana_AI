@@ -2,7 +2,7 @@
  * Pure functions that derive views from API data. Nothing here invents numbers: every
  * output is a regrouping of values the core returned.
  */
-import type { EventEnvelope, InvestigationState, InvestigationStatus, Observation, SitePack } from "@/lib/api/types";
+import type { EventEnvelope, InvestigationState, InvestigationStatus, JoinRequestView, Observation, SitePack } from "@/lib/api/types";
 
 export interface Contradiction {
   key: string;
@@ -109,6 +109,16 @@ export function relative(iso: string, now = Date.now()) {
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+/** How a request to join by email domain reads to an admin. */
+export function joinRequestLabel(r: Pick<JoinRequestView, "status" | "decision_source">): { label: string; tone: Tone } {
+  if (r.status === "pending") return { label: "Waiting for you", tone: "warn" };
+  if (r.status === "approved") {
+    return r.decision_source === "auto" ? { label: "Joined as viewer", tone: "ok" } : { label: "Approved", tone: "ok" };
+  }
+  if (r.status === "declined") return { label: "Declined", tone: "muted" };
+  return { label: "Closed", tone: "muted" };
 }
 
 export function outcomeWord(o: string) {

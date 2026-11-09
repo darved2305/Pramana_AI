@@ -88,11 +88,46 @@ test("parallel: three people asked at once reach the S1 decision", async ({ page
     );
     // A question can be withdrawn while its person is answering; the others must succeed.
     expect(results.some((r) => r.status === "fulfilled")).toBe(true);
-    const failed = state.pending_questions.filter((_, i) => results[i].status === "rejected").map((q) => q.id);
+    const failed = state.pending_questions.flatMap((q, i) => {
+      const result = results[i];
+      if (result.status !== "rejected") return [];
+      const reason = result.reason;
+      return [
+        {
+          id: q.id,
+          participant_id: q.action.participant_id,
+          probe_id: q.action.probe_id,
+          error: reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason),
+        },
+      ];
+    });
     if (failed.length) {
-      const log = await api<{ type: string; payload: { question_id?: string } }[]>(request, "GET", `/v1/investigations/${invId}/events`);
+      const log = await api<
+        {
+          type: string;
+          payload: {
+            question_id?: string;
+            participant_id?: string;
+            probe_id?: string;
+            evidence?: { participant_id?: string; probe_id?: string };
+          };
+        }[]
+      >(request, "GET", `/v1/investigations/${invId}/events`);
       const gone = new Set(log.filter((e) => e.type === "QuestionWithdrawn").map((e) => e.payload.question_id));
-      expect(failed.filter((id) => !gone.has(id)), "only withdrawn questions may go unanswered").toEqual([]);
+      const unaccounted = failed.filter(({ id }) => !gone.has(id));
+      const answerAndWithdrawalEvents = log
+        .filter((e) => e.type === "ObservationRecorded" || e.type === "QuestionWithdrawn")
+        .map((e) => ({
+          type: e.type,
+          question_id: e.payload.question_id,
+          participant_id: e.payload.participant_id ?? e.payload.evidence?.participant_id,
+          probe_id: e.payload.probe_id ?? e.payload.evidence?.probe_id,
+        }));
+      expect(
+        unaccounted,
+        `only withdrawn questions may go unanswered; rejected answers: ${JSON.stringify(failed)}; ` +
+          `answer and withdrawal events: ${JSON.stringify(answerAndWithdrawalEvents)}`,
+      ).toEqual([]);
     }
     rounds++;
     await expect

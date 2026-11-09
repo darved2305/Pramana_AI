@@ -1049,7 +1049,7 @@ create table audit_log (
 );
 ```
 
-Also needed, each designed in the slice that first uses it (review, 2026-11-07): `join_requests` (ID-03), `participant_links` (§5.6), `api_keys` (§5.5), `rate_limits` (§3.9), `media_leases` (§3.4), `llm_cache` (§3.7), and `jobs` if an owned queue is chosen (§3.8). Checklist dismissal lives in `user_preferences.home_layout`.
+`join_requests` (ID-03 and ID-04) was implemented in migration `0018_workspace_domain_joins.py`. Still needed, each designed in the slice that first uses it: `participant_links` (§5.6), `api_keys` (§5.5), `rate_limits` (§3.9), `media_leases` (§3.4), `llm_cache` (§3.7), and `jobs` if an owned queue is chosen (§3.8). Checklist dismissal lives in `user_preferences.home_layout`.
 
 ### 4.4 Row-level security and database roles
 
@@ -1284,6 +1284,8 @@ stateDiagram-v2
 
 Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright with the mock OIDC issuer), **P** process-level end to end, **L** load, **C** chaos. The ids name the tests.
 
+Implementation status, 2026-11-09: ID-03 and ID-04 are implemented in migration `0018_workspace_domain_joins.py` and the onboarding and workspace settings screens. API coverage is in `test_domain_joins.py` and `test_google_auth.py`; `tests-real/domain-join.spec.ts` exercises both policies through the mock OIDC server with `hd` claims. The participant page clears an earlier "I understood" message when a new answer is submitted, so feedback cannot be reused while the next answer is still in flight.
+
 **Sign-in and identity**
 
 | Id | Scenario | Expected behaviour | Tests |
@@ -1291,7 +1293,7 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | ID-01 | New consumer Gmail user, no invitations | Survey, then an automatically created organization and sandbox (§7) | A, B |
 | ID-02 | New Workspace user (`hd=college.edu`); no organization owns that domain | Normal onboarding; later the admin may verify `college.edu` from the `hd` claim | A, B |
 | ID-03 | New Workspace user; an organization verified `college.edu` with `join_policy=request` | "Request to join Nava College" or "Create a separate organization". Admins are notified. Meanwhile the sandbox is available | A, B |
-| ID-04 | Same, with `join_policy=auto` | Joins as **viewer** (least privilege), and admins are notified. The default policy is `request` | A |
+| ID-04 | Same, with `join_policy=auto` | Joins as **viewer** (least privilege), and admins are notified. The default policy is `request` | A, B |
 | ID-05 | Invitation accepted with a matching Google account | Roles from the invitation; lands in that organization with a welcome banner | A, B |
 | ID-06 | Invitation opened while signed in to a different Google account | "This invitation is for a•••@college.edu", plus "Switch account" (`prompt=select_account&login_hint=...`). Never accepted with a mismatched email | A, B |
 | ID-07 | Invitation expired, revoked or already used | A clear message and "Ask Anita for a new invitation". Nothing about the organization is shown to a non-matching account | A, B |
@@ -1335,6 +1337,13 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | DA-07 | Thousands of investigations | Cursor pagination, server-side search and filters; no client-side full loads | A, L |
 | DA-08 | The site model changes while an investigation is open | The investigation stays on its pinned version: "A newer model (v8) exists; new investigations use it" | A |
 
+DA-04 status, 2026-11-09: saved-site investigations only plan web questions for people with
+current contact consent. The directory shows consent and can issue a single-use web consent
+request. If no one is eligible only because consent is missing or it is quiet hours, the case
+stays open and tells the operator what to do. Practice runs use synthetic participants and do not
+require contact consent. Starting an actual live investigation remains disabled until live
+delivery is configured.
+
 **Participants and live investigations**
 
 | Id | Scenario | Expected behaviour | Tests |
@@ -1347,13 +1356,20 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | PA-06 | Poor or lost network while answering | The answer is queued with its idempotency key and retried; the server keeps exactly one | B, C |
 | PA-07 | Person says "later" or declines | Cool-down and re-planning (exist today); the cool-down is a durable job | P |
 | PA-08 | Person is under 18 | Not contactable without recorded guardian consent (DPDP section 9); adults-only is the default | A |
-| PA-09 | Quiet hours | Treated as unavailable by the planner; an admin can override, and the override is logged | A |
+| PA-09 | Quiet hours | Treated as unavailable by the planner; an admin can override, and the override is logged | A, B |
 | PA-10 | Two people share one phone number | Allowed with a warning; consent is recorded per person | A |
 | PA-11 | A phone call rings out or reaches voicemail | Unavailable after the ring timeout (30 s today), one retry after 60 s, then a WhatsApp link | P |
 | PA-12 | A telephony or WhatsApp webhook arrives twice or out of order | The inbox deduplicates it; state transitions ignore events that are out of date | A |
 | PA-13 | The voice provider fails or the budget runs out mid-investigation | The current turn finishes; later questions go out as text; admins are told | P, C |
 | PA-14 | The requester opens the approval | `403 SELF_APPROVAL` (exists), shown in plain words | B |
 | PA-15 | A work order expires during a long walk | Collecting again returns the same live token or a new one after expiry (exists for capabilities) | P |
+
+PA-09 status, 2026-11-09: each person has an editable quiet-hours window and timezone, defaulting
+to Asia/Kolkata. Saved-site investigation planning records the evaluation time and each
+participant's availability decision. An owner or admin can override quiet hours for one
+investigation with a reason; the override appears on the investigation and in the audit log. The
+override never grants consent. Practice runs use simulated participants and bypass contact
+consent and quiet hours because they do not contact people.
 
 **People data and account lifecycle**
 
@@ -1669,8 +1685,9 @@ Run the existing benchmark harness (`pramana_eval`, logic mode) against the draf
 
 ### 9.3 Consent, quiet hours, minors and fatigue
 
-- **No consent, no contact.** Consent is recorded per person and purpose, with the notice version and language (`consents`). Withdrawal is honoured everywhere.
-- **Quiet hours** per person, treated by the planner as unavailability. An admin can override them in an emergency, and the override is audited.
+- **No consent, no contact.** Web questions in a site investigation require a current `contact_for_investigations` consent for the `web` channel. A person can grant or refuse through a single-use link; withdrawal cancels pending questions and replans. The notice version and language are recorded. The eligibility decisions used by the planner are logged for exact replay.
+- **Quiet hours** are a per-person local time window, defaulting to 22:00-08:00 in Asia/Kolkata. The planner treats the person as unavailable in that window. An owner or admin can record an emergency override for one investigation, with a reason visible in the investigation and audit log. The override does not grant consent.
+- **Practice and sandbox** use simulated people and do not require human consent or apply human quiet hours. Real live investigations remain disabled until live delivery is configured.
 - **Minors.** Adults only by default; minors need recorded verifiable guardian consent (DPDP section 9, §14).
 - **Fatigue.** The existing limits stay: at most 4 questions per person per incident, a 15-minute cool-down after "later" (PRODUCT §20). Add a cap per person per week [T].
 

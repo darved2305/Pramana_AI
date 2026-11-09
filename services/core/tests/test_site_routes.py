@@ -47,6 +47,18 @@ SITE_OPERATIONS = {
     ("get", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents/{purpose}/withdraw"),
+    ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consent-requests"),
+}
+
+DOMAIN_JOIN_OPERATIONS = {
+    ("get", "/v1/orgs/{org}/domains"),
+    ("post", "/v1/orgs/{org}/domains"),
+    ("post", "/v1/orgs/{org}/domains/{domain}/verify"),
+    ("patch", "/v1/orgs/{org}/domains/{domain}"),
+    ("delete", "/v1/orgs/{org}/domains/{domain}"),
+    ("get", "/v1/orgs/{org}/join-requests"),
+    ("post", "/v1/orgs/{org}/join-requests/{request_id}/approve"),
+    ("post", "/v1/orgs/{org}/join-requests/{request_id}/decline"),
 }
 
 
@@ -108,6 +120,37 @@ def test_site_operation_inventory_is_exhaustive(account_core: TestClient) -> Non
         if method in {"get", "post", "patch", "put", "delete"}
     }
     assert actual == SITE_OPERATIONS
+
+
+def test_domain_join_operation_inventory_is_exhaustive(account_core: TestClient) -> None:
+    actual = {
+        (method, path)
+        for path, definition in account_core.app.openapi()["paths"].items()
+        if path.startswith(("/v1/orgs/{org}/domains", "/v1/orgs/{org}/join-requests"))
+        for method in definition
+        if method in {"get", "post", "patch", "put", "delete"}
+    }
+    assert actual == DOMAIN_JOIN_OPERATIONS
+
+
+@pytest.mark.parametrize(("method", "template"), sorted(DOMAIN_JOIN_OPERATIONS))
+def test_other_member_cannot_access_domain_join_operations(
+    two_workspaces: tuple[TestClient, dict[str, Any], dict[str, Any]], method: str, template: str
+) -> None:
+    client, workspace, _ = two_workspaces
+    path = template.format(
+        org=workspace["organization"]["slug"],
+        domain="college.edu",
+        request_id=ids.new("join")[1],
+    )
+    response = client.request(
+        method,
+        path,
+        headers={**CSRF, "Idempotency-Key": "domain-cross-org-probe-001"},
+        json={},
+    )
+    assert response.status_code == 404, response.text
+    assert workspace["organization"]["name"] not in response.text
 
 
 @pytest.mark.parametrize(("method", "template"), sorted(SITE_OPERATIONS))

@@ -19,6 +19,7 @@ from pramana_contracts.accounts import (
     CurrentAccount,
     HomeLayout,
     IdentitySummary,
+    JoinSuggestion,
     OnboardingAnswers,
     OnboardingPatch,
     OnboardingState,
@@ -33,7 +34,14 @@ from pramana_contracts.accounts import (
 )
 
 from . import ids
-from .account_rows import InvitationRow, ModelTemplateRow, OnboardingRow, PreferenceRow
+from .account_rows import (
+    InvitationRow,
+    JoinRequestRow,
+    ModelTemplateRow,
+    OnboardingRow,
+    OrganizationDomainRow,
+    PreferenceRow,
+)
 from .auth.service import Principal
 from .db import (
     AuditLogRow,
@@ -184,7 +192,15 @@ class AccountService:
         return state, preferences
 
     async def me(self, principal: Principal) -> CurrentAccount:
-        with acting_for(None, principal.id):
+        hosted_domain = (
+            principal.hosted_domain.lower()
+            if principal.email_verified
+            and principal.auth_method == "google"
+            and principal.hosted_domain
+            and principal.hosted_domain.lower() == principal.email.rsplit("@", 1)[-1].lower()
+            else None
+        )
+        with acting_for(None, principal.id, hosted_domain=hosted_domain):
             async with self.db.transaction() as session:
                 state, preferences = await self._ensure(session, principal.id)
                 memberships = list(
@@ -240,6 +256,47 @@ class AccountService:
                     if principal.email_verified
                     else []
                 )
+                suggestions: list[JoinSuggestion] = []
+                if hosted_domain is not None:
+                    matching = (
+                        await session.execute(
+                            select(OrganizationDomainRow, OrganizationRow)
+                            .join(
+                                OrganizationRow,
+                                OrganizationRow.id == OrganizationDomainRow.org_id,
+                            )
+                            .where(
+                                OrganizationDomainRow.domain == hosted_domain,
+                                OrganizationDomainRow.verified_at.is_not(None),
+                                OrganizationDomainRow.join_policy.in_(("request", "auto")),
+                                OrganizationRow.deleted_at.is_(None),
+                            )
+                            .order_by(OrganizationRow.name, OrganizationRow.id)
+                        )
+                    ).all()
+                    pending = {
+                        request.org_id: request.id
+                        for request in await session.scalars(
+                            select(JoinRequestRow).where(
+                                JoinRequestRow.requester_id == principal.id,
+                                JoinRequestRow.status == "pending",
+                            )
+                        )
+                    }
+                    suggestions = [
+                        JoinSuggestion(
+                            organization_id=ids.encode("org", org.id),
+                            organization_name=org.name,
+                            domain=domain.domain,
+                            policy=domain.join_policy,
+                            request_id=ids.encode("join", pending[org.id])
+                            if org.id in pending
+                            else None,
+                            request_status="pending" if org.id in pending else None,
+                        )
+                        for domain, org in matching
+                        if org.id not in active_ids
+                    ]
                 await session.flush()
                 orgs = [organization_view(org, roles) for org, roles in memberships]
                 onboard = onboarding_view(state)
@@ -277,6 +334,7 @@ class AccountService:
                         for row, name in invited
                         if row.org_id not in active_ids
                     ],
+                    join_suggestions=suggestions,
                     onboarding=onboard,
                     destination=destination(onboard, orgs, preferred),
                     preferences=AccountPreferences(
