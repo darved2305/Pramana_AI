@@ -342,6 +342,27 @@ def test_domain_suggestions_and_join_requests_are_scoped_by_runtime_rls(
                 )
         with (
             acting_for(None, another, hosted_domain=domain_a),
+            pytest.raises(DBAPIError, match="requesters may only cancel"),
+        ):
+            async with db.transaction() as session:
+                await session.execute(
+                    text(
+                        "update join_requests set status = 'cancelled', decided_at = now(), "
+                        "org_id = :org, roles = array['admin']::text[] where id = :id"
+                    ),
+                    {"id": new_id, "org": b},
+                )
+        with acting_for(None, another, hosted_domain=domain_a):
+            async with db.transaction() as session:
+                await session.execute(
+                    text(
+                        "update join_requests set status = 'cancelled', decided_at = now() "
+                        "where id = :id"
+                    ),
+                    {"id": new_id},
+                )
+        with (
+            acting_for(None, another, hosted_domain=domain_a),
             pytest.raises(DBAPIError, match="row-level security"),
         ):
             async with db.transaction() as session:

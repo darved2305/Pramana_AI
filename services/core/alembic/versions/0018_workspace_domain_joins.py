@@ -195,6 +195,33 @@ def upgrade() -> None:
         f"{MANAGER.format(org_id='join_requests.org_id')}) "
         f"with check (org_id = {ORG} and {MANAGER.format(org_id='join_requests.org_id')})"
     )
+    # RLS checks rows, not which columns an UPDATE changes. A requester who can
+    # cancel must not be able to move the row or forge the decision metadata.
+    op.execute(
+        f"""create function guard_join_request_cancellation() returns trigger
+        language plpgsql as $$
+        begin
+          if old.requester_id = {USER}
+             and not coalesce((old.org_id = {ORG} and {MANAGER.format(org_id='old.org_id')}), false) then
+            if new.id is distinct from old.id
+               or new.org_id is distinct from old.org_id
+               or new.requester_id is distinct from old.requester_id
+               or new.decided_by is distinct from old.decided_by
+               or new.roles is distinct from old.roles
+               or new.requested_at is distinct from old.requested_at
+               or new.status <> 'cancelled'
+               or (new.decision_source is not null and new.decision_source <> 'auto') then
+              raise exception 'requesters may only cancel their own join requests'
+                using errcode = '42501';
+            end if;
+          end if;
+          return new;
+        end $$"""
+    )
+    op.execute(
+        "create trigger guard_join_request_cancellation before update on join_requests "
+        "for each row execute function guard_join_request_cancellation()"
+    )
 
     # A domain suggestion can reveal only the workspace that owns the user's own verified `hd`.
     op.execute(
@@ -227,5 +254,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("drop policy organization_domain_suggestion on organizations")
     op.drop_table("join_requests")
+    op.execute("drop function if exists guard_join_request_cancellation()")
     op.drop_table("org_domains")
     op.drop_column("sessions", "hosted_domain")
