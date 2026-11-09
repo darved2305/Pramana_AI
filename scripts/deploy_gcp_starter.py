@@ -75,13 +75,27 @@ ROTATION_ACKS = {
     "PRAMANA_GOOGLE_OAUTH_CLIENT_SECRET_ROTATED": "Google OAuth client secret",
     "PRAMANA_GMAIL_APP_PASSWORD_ROTATED": "Gmail app password",
 }
+DEPLOY_ENV_KEYS = frozenset(
+    {
+        "GCP_PROJECT_ID",
+        "GCP_BILLING_ACCOUNT_ID",
+        "PRAMANA_SUPABASE_REGION",
+        "PRAMANA_SUPABASE_REF",
+        "PRAMANA_SUPABASE_POOLER_HOST",
+        "PRAMANA_SUPABASE_DATABASE",
+        "PRAMANA_SUPABASE_DB_PASSWORD",
+        "PRAMANA_SUPABASE_APP_PASSWORD",
+        *ROTATION_ACKS,
+        *SECRET_ENV.values(),
+    }
+)
 
 
 class DeployError(RuntimeError):
     """A precondition or deploy operation failed without displaying sensitive values."""
 
 
-def dotenv_values(path: Path) -> dict[str, str]:
+def dotenv_values(path: Path, *, allowed_keys: frozenset[str]) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
         return values
@@ -90,7 +104,10 @@ def dotenv_values(path: Path) -> dict[str, str]:
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
-        key, value = key.strip(), value.strip()
+        key = key.strip()
+        if key not in allowed_keys:
+            continue
+        value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
         values[key] = value
@@ -129,8 +146,10 @@ class Context:
         if dry_run:
             self.env = dry_run_environment()
         else:
-            self.env = dotenv_values(ROOT / ".env")
-            self.env.update(os.environ)
+            self.env = dotenv_values(ROOT / ".env", allowed_keys=DEPLOY_ENV_KEYS)
+            self.env.update(
+                {key: value for key, value in os.environ.items() if key in DEPLOY_ENV_KEYS}
+            )
         self.project = self.env.get("GCP_PROJECT_ID", PROJECT_DEFAULT)
         self.billing = self.env.get("GCP_BILLING_ACCOUNT_ID", "")
         self.sha = self.git_output("rev-parse", "--short=12", "HEAD").strip()

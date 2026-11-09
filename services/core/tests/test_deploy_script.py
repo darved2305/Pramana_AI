@@ -40,6 +40,44 @@ def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     assert "planned; live smoke skipped in dry-run" in output
 
 
+def test_deploy_context_discards_unrelated_environment_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    supplied = {
+        "GCP_PROJECT_ID": deploy.PROJECT_DEFAULT,
+        "DATABASE_URL": "unrelated-db-value",
+        "SUPABASE_ACCESS_TOKEN": "unrelated-token-value",
+    }
+    monkeypatch.setattr(
+        deploy,
+        "dotenv_values",
+        lambda _path, *, allowed_keys: {
+            key: value for key, value in supplied.items() if key in allowed_keys
+        },
+    )
+    context = deploy.Context(Namespace(rotate_secret=[]))
+
+    assert context.env["GCP_PROJECT_ID"] == deploy.PROJECT_DEFAULT
+    assert "DATABASE_URL" not in context.env
+    assert "SUPABASE_ACCESS_TOKEN" not in context.env
+
+
+def test_dotenv_parser_returns_only_deploy_settings() -> None:
+    path = deploy.ROOT / ".deploy-env-test"
+    path.write_text(
+        "GCP_PROJECT_ID=luminous-slice-514102-f4\n"
+        "DATABASE_URL=unrelated-db-value\n"
+        "SUPABASE_ACCESS_TOKEN=unrelated-token-value\n",
+        encoding="utf-8",
+    )
+    try:
+        values = deploy.dotenv_values(path, allowed_keys=deploy.DEPLOY_ENV_KEYS)
+    finally:
+        path.unlink(missing_ok=True)
+
+    assert values == {"GCP_PROJECT_ID": deploy.PROJECT_DEFAULT}
+
+
 def test_deployment_requires_the_named_rotation_acknowledgements() -> None:
     context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
     context.env["PRAMANA_GMAIL_APP_PASSWORD_ROTATED"] = "false"
