@@ -40,6 +40,9 @@ def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     assert "dry-run-only-placeholder" not in output
     assert "Spend cap request body:" in output
     assert "planned; live smoke skipped in dry-run" in output
+    assert "DB_POOL_SIZE=6" in output
+    assert "DB_MAX_OVERFLOW=0" in output
+    assert "SIM_DATABASE_POOL_SIZE=1" in output
 
 
 def test_deploy_context_discards_unrelated_environment_secrets(

@@ -38,6 +38,14 @@ usage and regional prices in its [pricing table](https://cloud.google.com/run/pr
 | Billing budget and Cloud Run cap | INR 1,000 project alert; INR 500 monthly cap scoped to the Cloud Run service | No separate budget-resource charge. These limits do not cover Supabase or make an instantaneous project-wide spending guarantee ([cap behavior](https://docs.cloud.google.com/billing/docs/how-to/budgets-spend-caps)) |
 | Database backups | Supabase Free has no automatic backup guarantee. A pg_dump-based backup and restore drill is required below | Not priced until an approved India storage destination and schedule are chosen. Reserve part of the non-Run allowance |
 
+The core allows six database connections per instance with overflow disabled. With two maximum
+instances, that is at most twelve `pramana_app` sessions. The simulator allows one connection per
+instance, or two `pramana_sim` sessions. Supabase's Nano plan documents a default pool size of 15;
+the shared session pool is configurable, so confirm the approved project's value before deploy.
+This sizing accounts for investigation reads that load both the investigation and its pinned site
+model. See [Supabase connection pool limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)
+and [Nano compute limits](https://supabase.com/docs/guides/platform/compute-and-disk).
+
 Target normal GCP use is INR 0 to about INR 50 per month while the free usage allowances apply.
 Keep a separate INR 200 monthly allowance for registry growth, extra secret versions, log
 retention, egress and approved backup storage. The INR 500 Cloud Run cap is before any applicable
