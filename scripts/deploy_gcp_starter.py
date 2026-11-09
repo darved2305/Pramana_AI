@@ -33,7 +33,8 @@ NON_INDIA_DATABASE_ACK = "PRAMANA_ACCEPT_NON_INDIA_DATABASE"
 TRUE_VALUES = frozenset({"true", "1", "yes"})
 REPOSITORY = "pramana"
 SERVICES = ("pramana-web", "pramana-core", "pramana-sim")
-SERVICE_ACCOUNTS = ("web", "core", "sim", "migrate", "build")
+BUILD_ACCOUNT = "build"
+SERVICE_ACCOUNTS = ("web", "core", "sim", "migrate", BUILD_ACCOUNT)
 DEPLOY_ACCOUNT = "nikhilpise2006@gmail.com"
 ALERT_BUDGET_NAME = "pramana-inr-1000"
 LOG_FILTER = (
@@ -827,29 +828,116 @@ def record_budget(ctx: Context) -> None:
     )
 
 
+def build_bucket(ctx: Context) -> str:
+    return f"{ctx.project}-pramana-build"
+
+
+def ensure_build_identity(gcloud: Gcloud, ctx: Context) -> None:
+    """Give the dedicated build account only what a regional Cloud Build needs.
+
+    Cloud Build uses this account instead of the project's default Compute Engine account,
+    which has no roles in this project. It can write logs, push images to the Pramana
+    repository, and read and write only its own source staging bucket, which expires objects
+    after seven days.
+    """
+    bucket = build_bucket(ctx)
+    member = f"serviceAccount:{service_account_email(ctx.project, BUILD_ACCOUNT)}"
+    exists = gcloud.run(
+        ["storage", "buckets", "describe", f"gs://{bucket}", f"--project={ctx.project}"],
+        check=False,
+        quiet=True,
+    )
+    if exists.returncode:
+        gcloud.run(
+            [
+                "storage",
+                "buckets",
+                "create",
+                f"gs://{bucket}",
+                f"--location={REGION}",
+                "--uniform-bucket-level-access",
+                "--public-access-prevention",
+                f"--project={ctx.project}",
+            ]
+        )
+    lifecycle = [{"action": {"type": "Delete"}, "condition": {"age": 7}}]
+    lifecycle_path = write_temp_json(lifecycle)
+    try:
+        gcloud.run(
+            [
+                "storage",
+                "buckets",
+                "update",
+                f"gs://{bucket}",
+                f"--lifecycle-file={lifecycle_path}",
+                f"--project={ctx.project}",
+            ]
+        )
+    finally:
+        lifecycle_path.unlink(missing_ok=True)
+    gcloud.run(
+        [
+            "projects",
+            "add-iam-policy-binding",
+            ctx.project,
+            f"--member={member}",
+            "--role=roles/logging.logWriter",
+            "--condition=None",
+            "--quiet",
+        ],
+        quiet=True,
+    )
+    gcloud.run(
+        [
+            "artifacts",
+            "repositories",
+            "add-iam-policy-binding",
+            REPOSITORY,
+            f"--location={REGION}",
+            f"--member={member}",
+            "--role=roles/artifactregistry.writer",
+            f"--project={ctx.project}",
+            "--quiet",
+        ],
+        quiet=True,
+    )
+    gcloud.run(
+        [
+            "storage",
+            "buckets",
+            "add-iam-policy-binding",
+            f"gs://{bucket}",
+            f"--member={member}",
+            "--role=roles/storage.objectAdmin",
+            f"--project={ctx.project}",
+            "--quiet",
+        ],
+        quiet=True,
+    )
+
+
+def write_temp_json(payload: object) -> Path:
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", suffix=".json", delete=False, dir=ROOT
+    ) as file:
+        json.dump(payload, file, separators=(",", ":"))
+    return Path(file.name)
+
+
 def build_images(gcloud: Gcloud, ctx: Context) -> None:
-    gcloud.run(
-        [
-            "builds",
-            "submit",
-            ".",
-            f"--region={REGION}",
-            f"--tag={ctx.py_image}",
-            f"--project={ctx.project}",
-            "--quiet",
-        ]
-    )
-    gcloud.run(
-        [
-            "builds",
-            "submit",
-            "apps/web",
-            f"--region={REGION}",
-            f"--tag={ctx.web_image}",
-            f"--project={ctx.project}",
-            "--quiet",
-        ]
-    )
+    email = service_account_email(ctx.project, BUILD_ACCOUNT)
+    account = f"projects/{ctx.project}/serviceAccounts/{email}"
+    bucket = build_bucket(ctx)
+    common = [
+        f"--region={REGION}",
+        f"--project={ctx.project}",
+        f"--service-account={account}",
+        f"--gcs-source-staging-dir=gs://{bucket}/source",
+        f"--gcs-log-dir=gs://{bucket}/logs",
+        "--quiet",
+    ]
+    gcloud.run(["builds", "submit", ".", f"--tag={ctx.py_image}", *common])
+    gcloud.run(["builds", "submit", "apps/web", f"--tag={ctx.web_image}", *common])
 
 
 def service_describe(gcloud: Gcloud, ctx: Context, name: str) -> dict[str, Any] | None:
@@ -1084,6 +1172,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
     ensure_secrets(gcloud, ctx)
     secret_bindings(gcloud, ctx)
     remember_traffic(gcloud, ctx)
+    ensure_build_identity(gcloud, ctx)
     build_images(gcloud, ctx)
     deploy_migrator(gcloud, ctx)
 
