@@ -48,7 +48,7 @@ def test_production_environment_forces_secure_auth_and_isolates_web_secrets() ->
     }
 
     core, sim, web = staging.make_environments(
-        source, "https://pramana-staging.account.workers.dev"
+        source, "https://pramana-staging.account.workers.dev", inherited={}
     )
 
     assert core["PRAMANA_MODE"] == "demo"
@@ -83,6 +83,7 @@ def test_emulated_gnani_environment_does_not_forward_configured_credentials() ->
             "GNANI_BASE_URL": "https://api.vachana.ai",
         },
         "https://pramana-staging.account.workers.dev",
+        inherited={},
         fake_gnani=True,
     )
 
