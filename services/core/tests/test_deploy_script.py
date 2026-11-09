@@ -157,6 +157,18 @@ def test_artifact_registry_cleanup_uses_repository_command_group() -> None:
     assert "--no-dry-run" in cleanup
 
 
+def test_logging_bucket_location_is_read_from_its_resource_name() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+    expected_name = f"projects/{context.project}/locations/{deploy.REGION}/buckets/pramana-run"
+    parsed = {"name": expected_name, "retentionDays": 180}
+
+    deploy.validate_logging_bucket(parsed, context)
+
+    parsed["name"] = f"projects/{context.project}/locations/global/buckets/pramana-run"
+    with pytest.raises(deploy.DeployError, match="not in asia-south1"):
+        deploy.validate_logging_bucket(parsed, context)
+
+
 def test_budget_is_recorded_by_name_and_never_created_or_read(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

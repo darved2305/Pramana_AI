@@ -527,6 +527,12 @@ def ensure_artifact_registry(gcloud: Gcloud, ctx: Context) -> None:
         temp_path.unlink(missing_ok=True)
 
 
+def validate_logging_bucket(payload: dict[str, Any], ctx: Context) -> None:
+    expected_name = f"projects/{ctx.project}/locations/{REGION}/buckets/pramana-run"
+    if payload.get("name") != expected_name:
+        raise DeployError("existing pramana-run log bucket is not in asia-south1")
+
+
 def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
     bucket = gcloud.run(
         [
@@ -557,8 +563,7 @@ def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
         )
     else:
         parsed = json.loads(bucket.stdout or "{}")
-        if parsed.get("location") != REGION:
-            raise DeployError("existing pramana-run log bucket is not in asia-south1")
+        validate_logging_bucket(parsed, ctx)
         if int(parsed.get("retentionDays", 0)) != 180:
             gcloud.run(
                 [
