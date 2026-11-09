@@ -101,7 +101,7 @@ def test_edits_need_the_version_being_edited(account_core: TestClient) -> None:
     assert bad.json()["error"]["code"] == "UNKNOWN_ROLE"
     gone = client.post(root + "/p_ravi/remove", headers=key())
     assert gone.status_code == 204
-    assert client.get(root).json() == []
+    assert client.get(root).json()["items"] == []
 
 
 def test_the_health_check_uses_the_sites_people(account_core: TestClient) -> None:
@@ -120,3 +120,29 @@ def test_the_health_check_uses_the_sites_people(account_core: TestClient) -> Non
     checked = client.post(root + f"/draft/{draft['id']}/health", headers=key()).json()
     assert checked["health"]["cast"] == "directory"
     assert checked["health"]["people"] == 5
+
+
+def test_people_pages_search_ids_literally(account_core: TestClient) -> None:
+    client = account_core
+    workspace = with_draft(client)
+    root = site_root(workspace) + "/people"
+    for pid in ("p_ravi", "pxravi", "p_asha"):
+        added = client.post(root, json=person(pid, "plumber", "technician", "LOBBY"), headers=key())
+        assert added.status_code == 201, added.text
+
+    # "_" is a literal underscore, not a one-character wildcard.
+    found = client.get(root, params={"q": "p_r"}).json()
+    assert [p["person"]["id"] for p in found["items"]] == ["p_ravi"]
+    assert found["next_cursor"] is None
+
+    first = client.get(root, params={"limit": 2}).json()
+    assert len(first["items"]) == 2
+    rest = client.get(root, params={"limit": 2, "cursor": first["next_cursor"]}).json()
+    assert rest["next_cursor"] is None
+    ids = [p["person"]["id"] for p in first["items"] + rest["items"]]
+    assert sorted(ids) == ["p_asha", "p_ravi", "pxravi"]
+
+    # A cursor made for one search cannot continue a different one.
+    other = client.get(root, params={"limit": 2, "q": "ravi", "cursor": first["next_cursor"]})
+    assert other.status_code == 400
+    assert other.json()["error"]["code"] == "CURSOR_INVALID"

@@ -32,16 +32,12 @@ from pramana_contracts import (
 from pramana_domain import DomainPack, load_pack
 from pramana_domain.pack import default_packs_dir
 
-from .cursors import CursorCodec
+from .cursors import CursorCodec, like_escape
 from .db import Database, DirectoryParticipantRow, InvestigationRow, current_org
 from .errors import ApiError, not_found
 from .vault import ERASED_REPORT, SEALED, PersonVault
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-
-
-def _like_escape(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _entry(row: DirectoryParticipantRow) -> DirectoryParticipant:
@@ -170,7 +166,7 @@ class ConsoleQueries:
             conds.append(InvestigationRow.status.in_([s.value for s in statuses]))
         needle = q.strip() if q else ""
         if needle:
-            pattern = f"%{_like_escape(needle)}%"
+            pattern = f"%{like_escape(needle)}%"
             conds.append(
                 or_(
                     (report_text != SEALED) & report_text.ilike(pattern, escape="\\"),

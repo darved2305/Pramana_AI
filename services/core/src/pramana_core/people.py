@@ -44,7 +44,7 @@ from pramana_domain.spec_storage import load_spec
 from . import ids
 from .account_rows import IdempotencyRow
 from .auth.service import Principal
-from .cursors import CursorCodec
+from .cursors import CursorCodec, like_escape
 from .db import AuditLogRow, Base, Database, SiteModelRow, SiteRow, current_org
 from .errors import ApiError, not_found
 from .vault import SEALED, PersonKeyRow, PersonRef, PersonVault
@@ -233,7 +233,7 @@ class SitePeople:
             SitePersonRow.org_id == org_id, SitePersonRow.site_id == site_id
         )
         if needle:
-            query = query.where(SitePersonRow.id.ilike(f"%{needle}%"))
+            query = query.where(SitePersonRow.id.ilike(f"%{like_escape(needle)}%", escape="\\"))
         if sort is not None:
             try:
                 after_created = datetime.fromisoformat(str(sort[0]))

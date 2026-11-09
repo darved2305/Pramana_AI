@@ -725,9 +725,9 @@ async def _purge_one(session: AsyncSession, organization: OrganizationRow, now: 
         update(PreferenceRow).where(PreferenceRow.last_org_id == org_id).values(last_org_id=None)
     )
     await session.execute(
-        update(PreferenceRow).values(
-            last_site_by_org=PreferenceRow.last_site_by_org.op("-")(org_ref)
-        )
+        update(PreferenceRow)
+        .where(PreferenceRow.last_site_by_org.has_key(org_ref))
+        .values(last_site_by_org=PreferenceRow.last_site_by_org.op("-")(org_ref))
     )
 
     organization.name = "Deleted workspace"

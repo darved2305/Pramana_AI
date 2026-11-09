@@ -37,7 +37,7 @@ class CursorPage(StrictModel, Generic[T]):
 
     items: list[T]
     limit: int
-    next_cursor: str | None = None
+    next_cursor: str | None
 
 
 Role = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,47}$")]

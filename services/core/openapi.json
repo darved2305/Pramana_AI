@@ -928,7 +928,8 @@
     },
     "required": [
      "items",
-     "limit"
+     "limit",
+     "next_cursor"
     ],
     "title": "CursorPage[ConsentRecord]",
     "type": "object"
@@ -961,7 +962,8 @@
     },
     "required": [
      "items",
-     "limit"
+     "limit",
+     "next_cursor"
     ],
     "title": "CursorPage[InvitationView]",
     "type": "object"
@@ -994,7 +996,8 @@
     },
     "required": [
      "items",
-     "limit"
+     "limit",
+     "next_cursor"
     ],
     "title": "CursorPage[PersonTrackRecord]",
     "type": "object"
@@ -1027,7 +1030,8 @@
     },
     "required": [
      "items",
-     "limit"
+     "limit",
+     "next_cursor"
     ],
     "title": "CursorPage[SiteModelSummary]",
     "type": "object"
@@ -1060,7 +1064,8 @@
     },
     "required": [
      "items",
-     "limit"
+     "limit",
+     "next_cursor"
     ],
     "title": "CursorPage[SitePerson]",
     "type": "object"
@@ -1093,7 +1098,8 @@
     },
     "required": [
      "items",
-     "limit"
+     "limit",
+     "next_cursor"
     ],
     "title": "CursorPage[SiteSummary]",
     "type": "object"
@@ -1126,7 +1132,8 @@
     },
     "required": [
      "items",
-     "limit"
+     "limit",
+     "next_cursor"
     ],
     "title": "CursorPage[WorkspaceMember]",
     "type": "object"
@@ -2305,7 +2312,8 @@
     },
     "required": [
      "items",
-     "limit"
+     "limit",
+     "next_cursor"
     ],
     "title": "InvestigationPage",
     "type": "object"

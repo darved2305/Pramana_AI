@@ -1420,13 +1420,13 @@
               "type": "null"
             }
           ],
-          "default": null,
           "title": "Next Cursor"
         }
       },
       "required": [
         "items",
-        "limit"
+        "limit",
+        "next_cursor"
       ],
       "title": "InvestigationPage",
       "type": "object"

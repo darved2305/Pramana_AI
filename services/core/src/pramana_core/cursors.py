@@ -1,4 +1,4 @@
-"""Tamper-checked, organization- and filter-bound keyset cursors."""
+"""Tamper-checked, organization- and filter-bound keyset cursors, and list search helpers."""
 
 from __future__ import annotations
 
@@ -10,6 +10,11 @@ import json
 from typing import Any
 
 from .errors import ApiError
+
+
+def like_escape(text: str) -> str:
+    """Make ``%`` and ``_`` literal in a search term matched with a backslash escape."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _b64(value: bytes) -> str:
