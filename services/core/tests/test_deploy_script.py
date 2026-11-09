@@ -272,7 +272,10 @@ def test_cloud_run_log_filters_drop_auth_and_consent_capability_urls() -> None:
 
 def test_logging_sink_and_default_sink_exclude_sensitive_request_urls() -> None:
     context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
-    destination = f"logging.googleapis.com/projects/{context.project}/locations/{deploy.REGION}/buckets/pramana-run"
+    destination = (
+        f"logging.googleapis.com/projects/{context.project}/locations/"
+        f"{deploy.REGION}/buckets/pramana-run"
+    )
     old_filter = 'resource.type="cloud_run_revision"'
 
     class Recorder:
@@ -287,7 +290,9 @@ def test_logging_sink_and_default_sink_exclude_sensitive_request_urls() -> None:
             self.commands.append(args)
             if args[:3] == ["logging", "buckets", "describe"]:
                 payload = {
-                    "name": f"projects/{context.project}/locations/{deploy.REGION}/buckets/pramana-run",
+                    "name": (
+                        f"projects/{context.project}/locations/{deploy.REGION}/buckets/pramana-run"
+                    ),
                     "retentionDays": 180,
                 }
                 return deploy.subprocess.CompletedProcess(args, 0, deploy.json.dumps(payload), "")
