@@ -28,8 +28,14 @@ from joserfc.jwk import RSAKey
 class MockIssuer:
     """Used both by the local app and an in-process httpx.MockTransport in pytest."""
 
-    def __init__(self, issuer: str = "http://localhost:8410", client_id: str = "pramana-local"):
+    def __init__(
+        self,
+        issuer: str = "http://localhost:8410",
+        client_id: str = "pramana-local",
+        service_url: str | None = None,
+    ):
         self.issuer, self.client_id = issuer.rstrip("/"), client_id
+        self.service_url = (service_url or self.issuer).rstrip("/")
         self.key = RSAKey.generate_key(2048, parameters={"kid": "mock-key"})
         self.token_key: RSAKey | None = None
         self.codes: dict[str, dict[str, Any]] = {}
@@ -48,8 +54,8 @@ class MockIssuer:
         return {
             "issuer": self.issuer,
             "authorization_endpoint": f"{self.issuer}/authorize",
-            "token_endpoint": f"{self.issuer}/token",
-            "jwks_uri": f"{self.issuer}/jwks",
+            "token_endpoint": f"{self.service_url}/token",
+            "jwks_uri": f"{self.service_url}/jwks",
             "response_types_supported": ["code"],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256"],
@@ -114,8 +120,12 @@ class MockIssuer:
         return httpx.Response(404)
 
 
-def create_app(issuer: str = "http://localhost:8410", client_id: str = "pramana-local") -> FastAPI:
-    fake = MockIssuer(issuer, client_id)
+def create_app(
+    issuer: str = "http://localhost:8410",
+    client_id: str = "pramana-local",
+    service_url: str | None = None,
+) -> FastAPI:
+    fake = MockIssuer(issuer, client_id, service_url)
     app = FastAPI(title="Pramana local mock sign-in")
     app.state.issuer = fake
 
@@ -189,9 +199,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8410)
     parser.add_argument("--client-id", default="pramana-local")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--issuer", help="Public issuer URL used in browser redirects and tokens")
+    parser.add_argument(
+        "--service-url", help="URL backend containers use for token and key requests"
+    )
     args = parser.parse_args()
+    issuer = args.issuer or f"http://localhost:{args.port}"
     uvicorn.run(
-        create_app(f"http://localhost:{args.port}", args.client_id),
-        host="127.0.0.1",
+        create_app(issuer, args.client_id, args.service_url),
+        host=args.host,
         port=args.port,
     )

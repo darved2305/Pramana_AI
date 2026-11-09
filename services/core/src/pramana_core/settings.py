@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     )
 
     mode: Literal["dev", "test", "demo", "production"] = Field(default="dev", alias="PRAMANA_MODE")
+    local_production_test: bool = Field(default=False, alias="PRAMANA_LOCAL_PRODUCTION_TEST")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_json: bool = Field(default=True, alias="LOG_JSON")
 
@@ -29,6 +30,8 @@ class Settings(BaseSettings):
     sim_url: str = Field(default="http://127.0.0.1:8100", alias="SIM_URL")
     sim_public_url: str | None = Field(default=None, alias="SIM_PUBLIC_URL")
     """Simulator URL as reachable from participants' browsers (defaults to ``sim_url``)."""
+    sim_serverless_auth: bool = Field(default=False, alias="SIM_SERVERLESS_AUTH")
+    """Attach a Cloud Run service identity token when the private simulator is invoked."""
     sim_operator_key: SecretStr = Field(alias="SIM_OPERATOR_KEY")
     sim_timeout_s: float = Field(default=5.0, gt=0, alias="SIM_TIMEOUT_S")
     participant_signing_key: SecretStr = Field(alias="PARTICIPANT_SIGNING_KEY")
@@ -121,7 +124,31 @@ class Settings(BaseSettings):
         if self.mode == "production":
             if self.pii_master_key is None:
                 raise ValueError("production requires PRAMANA_PII_KEY")
-            if self.oidc_issuer != "https://accounts.google.com" or self.oidc_discovery_url != (
+            if self.local_production_test:
+                issuer = urlsplit(self.oidc_issuer)
+                discovery = urlsplit(self.oidc_discovery_url)
+                database_host = urlsplit(self.database_url).hostname
+                sim_host = urlsplit(self.sim_url).hostname
+                redirect = urlsplit(self.oidc_redirect_url)
+                if (
+                    issuer.scheme != "http"
+                    or issuer.hostname not in {"localhost", "127.0.0.1"}
+                    or issuer.port is None
+                    or discovery.scheme != "http"
+                    or discovery.hostname not in {"host.docker.internal", "mock-oidc"}
+                    or discovery.port != issuer.port
+                    or discovery.path != "/.well-known/openid-configuration"
+                    or database_host not in {"host.docker.internal", "localhost", "postgres"}
+                    or sim_host not in {"sim", "pramana-smoke-sim"}
+                    or redirect.scheme != "http"
+                    or redirect.hostname != "localhost"
+                    or redirect.path != "/api/core/v1/auth/google/callback"
+                    or self.sim_serverless_auth
+                ):
+                    raise ValueError(
+                        "local production test settings are restricted to the Docker harness"
+                    )
+            elif self.oidc_issuer != "https://accounts.google.com" or self.oidc_discovery_url != (
                 "https://accounts.google.com/.well-known/openid-configuration"
             ):
                 raise ValueError("production requires the Google issuer and discovery URL")
@@ -129,9 +156,29 @@ class Settings(BaseSettings):
                 raise ValueError("CORE_AUTOMATION_KEY is forbidden in production")
             if self.auth_required is False or self.session_cookie_secure is False:
                 raise ValueError("production requires authentication and Secure cookies")
+            database = urlsplit(self.database_url)
+            if (
+                database.scheme not in {"postgres", "postgresql", "postgresql+asyncpg"}
+                or not database.hostname
+                or (
+                    database.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+                    and not self.local_production_test
+                )
+            ):
+                raise ValueError("production requires an explicit remote PostgreSQL DATABASE_URL")
+            simulator = urlsplit(self.sim_url)
+            if (
+                simulator.scheme not in {"http", "https"}
+                or not simulator.hostname
+                or (
+                    simulator.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+                    and not self.local_production_test
+                )
+            ):
+                raise ValueError("production requires an explicit remote SIM_URL")
             redirect = urlsplit(self.oidc_redirect_url)
             if (
-                redirect.scheme != "https"
+                (redirect.scheme != "https" and not self.local_production_test)
                 or not redirect.hostname
                 or redirect.username
                 or redirect.password

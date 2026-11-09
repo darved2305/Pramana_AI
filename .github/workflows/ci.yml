@@ -143,3 +143,11 @@ jobs:
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false -input=false
       - run: terraform validate
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+      - name: Budget deploy plan stays synthetic without cloud credentials
+        run: |
+          uv sync --frozen
+          uv run python scripts/deploy_gcp_starter.py --dry-run
+        working-directory: .

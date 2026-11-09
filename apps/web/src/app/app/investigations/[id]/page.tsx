@@ -24,11 +24,11 @@ import { ApprovalPanel, ContradictionPanel, ConversationPanel, EvidenceLedger, T
 import { ForecastPanel } from "@/components/console/ForecastPanel";
 import { useInvestigation, useInvestigationPack } from "@/lib/data/hooks";
 import { useCurrentUser } from "@/lib/data/session";
-import { useOptionalWorkspace } from "@/lib/org/context";
 import { hasRole } from "@/lib/api/auth";
 import { STATUS_LABEL, STATUS_TONE, findContradictions, locationLabel, outcomeWord, participantName, probeLabel, relative } from "@/lib/data/derive";
 import { ApiError, describeError } from "@/lib/api/http";
 import { encodeJoin } from "@/lib/join";
+import { useOptionalWorkspace } from "@/lib/org/context";
 import type { InvestigationState, SitePack } from "@/lib/api/types";
 
 export default function CommandCenterPage() {
@@ -97,6 +97,7 @@ function CommandCenter({
   children: React.ReactNode;
 }) {
   const scope = useInvestigationScope();
+  const workspace = useOptionalWorkspace();
   const [selected, setSelected] = useState<string | null>(null);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [rechecking, setRechecking] = useState(false);
@@ -104,7 +105,6 @@ function CommandCenter({
   const contradictions = useMemo(() => findContradictions(s.observations), [s.observations]);
   // Workspace operators, owners and admins can reveal; approvers do not see the button.
   const me = useCurrentUser();
-  const workspace = useOptionalWorkspace();
   const canOverrideQuietHours = !!workspace &&
     (workspace.roles.has("owner") || workspace.roles.has("admin")) &&
     !!scope.overrideQuietHours;

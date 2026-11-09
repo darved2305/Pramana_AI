@@ -197,3 +197,46 @@ membership to model removal. During iteration on the uncommitted migration, the 
 database still had the earlier event-key constraint. It was aligned with the revised test schema
 before rerunning the full downgrade/upgrade and security checks. All 80 checks then passed. No
 committed migration was rewritten, and no demo or deployed database was involved.
+
+## Nov 9 budget deployment preparation
+
+Task B is locally ready for the human deploy gate on branch `nov9/budget-deploy`. Commit `432d71a`
+adds durable simulator state and restart/replay checks. Commit `27dde03` adds the standalone budget
+Cloud Run deploy script, synthetic no-network dry-run coverage, CI coverage and deployment variable
+template. Commits `20d366c` and `5438771` fail closed on mismatched budget resources and limit which
+environment keys the deploy can read. Commit `43e53cb` enables isolated local production containers.
+Commit `46fd58e` fixes PostgreSQL 16 role creation and adds a database integration check. Commit
+`727322f` puts disposable caches under `/tmp` for the non-root image. Commit `73d928f` permits the
+mock OIDC service hostname only in the local production test harness. Commit `c952a03` keeps a
+production route contract check independent of a local database URL. The cost plan and handoff are
+in [`DEPLOY_BUDGET_GCP.md`](DEPLOY_BUDGET_GCP.md).
+
+The local Python, web, Docker image, production-container browser and real-stack browser gates pass.
+The local production-container browser flow signed in through mock OIDC, completed onboarding and
+finished a practice investigation. The final Python run passed all 4,043 collected tests. The exact
+commands and other gate counts are in
+`C:\Dev\Pramana-AI\.claude\worktrees\production\.cache\nov9\out\B-report.md`.
+
+No GCP login, cloud deploy, Supabase connection, Supabase CLI/API call or personal-data operation
+was performed. The local `.env` still identifies the Singapore Supabase project and lacks the
+approved Mumbai pooler settings, linked INR billing account ID and five rotation acknowledgements.
+The deploy script refuses this state. Before a first deploy, Darshan must provide the approved
+Mumbai connection settings, rotate the required credentials, choose an India backup destination,
+and confirm spend-cap eligibility. A human must then sign in to gcloud and run the one deploy
+command in the runbook. Do not store real personal data until the database is in India and its
+backup restore is tested.
+
+An earlier interrupted pytest invocation omitted `TEST_DATABASE_URL` and followed the fixture's
+fallback to `pramana_test`, which is not in this worktree's database allowlist. The fixture
+attempted to create Supabase-like roles and public default privileges there, then failed before a
+migration or downgrade. No later query or cleanup targeted that database. All subsequent
+database-backed tests explicitly used `pramana_dp_test`. The owner of the shared local PostgreSQL
+cluster should review the unintended `pramana_test` role/default-privilege setup; this work did not
+inspect or alter it further.
+
+The first whole-suite attempt also omitted `PRAMANA_E2E_DATABASE_URL`. The E2E fixture therefore used
+its fallback `pramana_e2e`, outside this worktree's allowlist. Alembic found recorded revision `0019`,
+which this checkout does not contain, and stopped before applying a migration or downgrade. No later
+query or cleanup targeted that database. The passing whole-suite rerun explicitly used the allowlisted
+`pramana_dp_e2e`. The owner of the shared cluster should review the stale `pramana_e2e` migration
+state; this work did not inspect or alter that database further.

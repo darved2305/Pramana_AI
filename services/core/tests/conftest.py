@@ -46,6 +46,32 @@ async def _reachable() -> bool:
         await engine.dispose()
 
 
+async def _ensure_grant_audit_roles() -> None:
+    """Simulate the Supabase roles the deploy grant audit checks."""
+    engine = create_async_engine(TEST_DB_URL)
+    try:
+        async with engine.begin() as conn:
+            for name, attributes in (
+                ("anon", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
+                ("authenticated", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
+                ("service_role", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
+                ("pramana_sim", "login nosuperuser nobypassrls nocreatedb nocreaterole"),
+            ):
+                await conn.exec_driver_sql(
+                    f"do $$ begin if not exists (select 1 from pg_roles where rolname = '{name}') "
+                    f"then create role {name} {attributes}; end if; end $$"
+                )
+            # Like Supabase: new public objects are granted to its API roles by default. The
+            # migrations must still leave every Pramana object out of their reach.
+            for kind in ("tables", "sequences", "functions"):
+                await conn.exec_driver_sql(
+                    f"alter default privileges in schema public grant all on {kind} "
+                    "to anon, authenticated, service_role"
+                )
+    finally:
+        await engine.dispose()
+
+
 def _alembic(action: str) -> None:
     cfg = Config(str(CORE_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(CORE_DIR / "alembic"))
@@ -65,6 +91,7 @@ def migrated_db() -> str:
         )
     if not asyncio.run(_reachable()):
         pytest.skip("PostgreSQL test database unreachable; run `python scripts/dev_db.py start`")
+    asyncio.run(_ensure_grant_audit_roles())
     # Rows left by an earlier run (a status like "awaiting_approval") would not fit the older,
     # narrower columns the downgrade passes through.
     with contextlib.suppress(Exception):  # a fresh database has no tables yet
