@@ -52,12 +52,9 @@ def role_passwords(app_url: str, sim_url: str) -> dict[str, str]:
 
 
 def role_statement_template(*, exists: bool) -> str:
-    """Create or update runtime credentials while explicitly clearing elevated attributes."""
+    """Use safe creation defaults and audit attributes without requiring superuser rights."""
     action = "alter" if exists else "create"
-    return (
-        f"{action} role %I login nosuperuser nobypassrls nocreatedb "
-        "nocreaterole noreplication password %L"
-    )
+    return f"{action} role %I login password %L"
 
 
 async def ensure_roles(migrator_url: str, app_url: str, sim_url: str) -> None:
