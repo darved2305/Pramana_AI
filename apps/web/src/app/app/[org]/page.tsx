@@ -233,7 +233,7 @@ function InvestigationList({ items, base }: { items: HomeInvestigation[]; base: 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[14px] text-fg">{i.report_text || "Untitled report"}</p>
                 <p className="mt-0.5 truncate text-[12px] text-muted">
-                  {i.decision_label ?? "Still narrowing down the cause"} · {relative(i.updated_at)}
+                  {i.decision_label ?? (status === "closed" ? "Investigation closed" : status === "abstained" ? "No conclusion reached" : "Still narrowing down the cause")} · {relative(i.updated_at)}
                 </p>
                 {i.decision_probability != null ? (
                   <ProbBar className="mt-1.5 max-w-[220px]" value={i.decision_probability} label={`${Math.round(i.decision_probability * 100)}% confident`} />

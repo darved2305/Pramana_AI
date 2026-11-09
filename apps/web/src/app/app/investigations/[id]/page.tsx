@@ -119,10 +119,10 @@ function CommandCenter({
               <PreviewBadge />
             ) : feed.live ? (
               <Badge tone="ok">
-                <span className="h-1.5 w-1.5 rounded-full bg-current pulse-dot" /> Live
+                <span className="h-1.5 w-1.5 rounded-full bg-current pulse-dot" /> Live updates
               </Badge>
             ) : (
-              <Badge>Not polling: investigation closed</Badge>
+              <Badge>Updates stopped: investigation closed</Badge>
             )}
             <span className="text-[13px] text-muted">Opened {relative(s.created_at)}</span>
           </div>
