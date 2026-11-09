@@ -25,6 +25,10 @@ def _db_url() -> str:
     name = os.environ["E2E_DATABASE"]
     if not name.startswith("pramana_") or name in ("pramana", "pramana_test"):
         raise SystemExit(f"refusing to reset database {name!r}: use a dedicated e2e database")
+    # When the local allowlist is set (scripts/dev_db.py), only those databases may be reset.
+    allowlist = os.environ.get("PRAMANA_DB_NAMES")
+    if allowlist and name not in {item.strip() for item in allowlist.split(",")}:
+        raise SystemExit(f"refusing to reset database {name!r}: not in PRAMANA_DB_NAMES")
     port = os.environ.get("PRAMANA_DB_PORT", "5433")
     return f"postgresql+asyncpg://pramana@localhost:{port}/{name}"
 
