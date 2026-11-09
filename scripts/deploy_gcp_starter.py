@@ -787,7 +787,8 @@ def ensure_budget(gcloud: Gcloud, ctx: Context) -> None:
         quiet=True,
     )
     budgets = json.loads(found.stdout or "[]")
-    if not any(item.get("displayName") == ALERT_BUDGET_NAME for item in budgets):
+    alert = next((item for item in budgets if item.get("displayName") == ALERT_BUDGET_NAME), None)
+    if alert is None:
         gcloud.run(
             [
                 "billing",
@@ -806,7 +807,20 @@ def ensure_budget(gcloud: Gcloud, ctx: Context) -> None:
             ]
         )
     else:
-        print("The project alert budget already exists; leaving its settings unchanged.")
+        filter_ = alert.get("budgetFilter", {})
+        amount = alert.get("amount", {}).get("specifiedAmount", {})
+        thresholds = {rule.get("thresholdPercent") for rule in alert.get("thresholdRules", [])}
+        if (
+            f"projects/{ctx.project}" not in filter_.get("projects", [])
+            or filter_.get("calendarPeriod") != "MONTH"
+            or amount.get("currencyCode") != "INR"
+            or amount.get("units") != "1000"
+            or thresholds != {0.5, 0.8, 1.0}
+        ):
+            raise DeployError(
+                "existing project alert budget has different scope or amount; review it manually"
+            )
+        print("The project alert budget already has the expected scope, amount and thresholds.")
 
     try:
         project_number = gcloud.run(
@@ -862,14 +876,20 @@ def ensure_budget(gcloud: Gcloud, ctx: Context) -> None:
             if match:
                 filter_ = match.get("budgetFilter", {})
                 amount = match.get("amount", {}).get("specifiedAmount", {})
+                thresholds = {
+                    rule.get("thresholdPercent") for rule in match.get("thresholdRules", [])
+                }
                 if (
                     f"projects/{project_number}" not in filter_.get("projects", [])
                     or f"services/{RUN_SERVICE_ID}" not in filter_.get("services", [])
+                    or filter_.get("calendarPeriod") != "MONTH"
                     or amount.get("currencyCode") != "INR"
                     or amount.get("units") != "500"
+                    or match.get("spendCap", {}).get("inputState") != "CONFIGURED"
+                    or thresholds != {0.5, 0.8, 1.0}
                 ):
                     raise DeployError(
-                        "existing Cloud Run spend cap has different scope or amount; "
+                        "existing Cloud Run spend cap has different scope, amount or thresholds; "
                         "review it manually"
                     )
                 print("Cloud Run spend cap already has the expected project, service and amount.")
