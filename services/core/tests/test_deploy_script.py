@@ -308,10 +308,12 @@ def test_build_bucket_lifecycle_uses_cloud_storage_json_shape() -> None:
 
         def __init__(self) -> None:
             self.lifecycle: dict[str, object] | None = None
+            self.commands: list[list[str]] = []
 
         def run(
             self, args: list[str], **_kwargs: object
         ) -> deploy.subprocess.CompletedProcess[str]:
+            self.commands.append(args)
             if args[:3] == ["storage", "buckets", "update"]:
                 path = Path(args[4].split("=", 1)[1])
                 self.lifecycle = deploy.json.loads(path.read_text(encoding="utf-8"))
@@ -321,6 +323,14 @@ def test_build_bucket_lifecycle_uses_cloud_storage_json_shape() -> None:
     deploy.ensure_build_identity(recorder, context)
 
     assert recorder.lifecycle == {"rule": [{"action": {"type": "Delete"}, "condition": {"age": 7}}]}
+    bucket_grants = [
+        command
+        for command in recorder.commands
+        if command[:3] == ["storage", "buckets", "add-iam-policy-binding"]
+    ]
+    assert any("--role=roles/storage.bucketViewer" in command for command in bucket_grants)
+    assert any("--role=roles/storage.objectAdmin" in command for command in bucket_grants)
+    assert all(command[3] == f"gs://{deploy.build_bucket(context)}" for command in bucket_grants)
 
 
 def test_short_parked_passwords_warn_but_rotated_passwords_must_be_long(

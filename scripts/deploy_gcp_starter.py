@@ -972,6 +972,19 @@ def ensure_build_identity(gcloud: Gcloud, ctx: Context) -> None:
         ],
         quiet=True,
     )
+    gcloud.run(
+        [
+            "storage",
+            "buckets",
+            "add-iam-policy-binding",
+            f"gs://{bucket}",
+            f"--member={member}",
+            "--role=roles/storage.bucketViewer",
+            f"--project={ctx.project}",
+            "--quiet",
+        ],
+        quiet=True,
+    )
 
 
 def write_temp_json(payload: object) -> Path:
