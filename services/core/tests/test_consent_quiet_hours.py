@@ -6,6 +6,7 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,7 +20,7 @@ from test_practice import request as investigation_request
 
 from pramana_contracts import PlanDecision, PlanKind, QuestioningAvailability, QuietHours
 from pramana_core import ids
-from pramana_core.investigations import _waits_for_people
+from pramana_core.investigations import InvestigationService, _waits_for_people
 from pramana_core.mail import FakeMailer
 from pramana_core.questioning import decide_availability, in_quiet_hours
 from pramana_engine import EngineConfig
@@ -264,6 +265,57 @@ def test_everyone_declining_still_lets_the_case_conclude() -> None:
     assert not _waits_for_people(None, plan)
     confident = plan.model_copy(update={"kind": PlanKind.DECIDE, "rule": "confident"})
     assert not _waits_for_people(waiting, confident)
+
+
+def test_failed_repair_waits_when_consent_is_missing() -> None:
+    """The recursive diagnosis after a failed repair must keep the same eligibility guard."""
+    plan = PlanDecision(
+        kind=PlanKind.ABSTAIN,
+        action=None,
+        decision_class=None,
+        decision_probability=0.4,
+        reason="nobody available",
+        rule="no_feasible_action",
+        candidates=[],
+        infeasible=[],
+    )
+    verification_failed = plan.model_copy(
+        update={"kind": PlanKind.NOT_VERIFIED, "rule": "verification_failed"}
+    )
+
+    class ReopenedEngine:
+        def snapshot(self) -> SimpleNamespace:
+            return SimpleNamespace(repair=None, model_dump=lambda **_: {})
+
+        def reopen(self) -> None:
+            pass
+
+        def plan(self) -> PlanDecision:
+            return plan
+
+    class Session:
+        def __init__(self) -> None:
+            self.events: list[Any] = []
+
+        def add(self, event: Any) -> None:
+            self.events.append(event)
+
+    session = Session()
+    row = SimpleNamespace(id="inv_test", status="verifying", outcome=None)
+    service = object.__new__(InvestigationService)
+    waiting = QuestioningAvailability(
+        evaluated_at=datetime(2026, 11, 9, 12, tzinfo=UTC),
+        eligible_count=0,
+        no_consent_count=1,
+        quiet_hours_count=0,
+        unavailable_count=0,
+    )
+    service._apply_plan(session, row, ReopenedEngine(), verification_failed, waiting)
+
+    types = [event.type for event in session.events]
+    assert "QuestioningPaused" in types
+    assert "Abstained" not in types
+    assert row.status == "investigating"
 
 
 def test_failed_replanning_does_not_consume_the_consent_link(

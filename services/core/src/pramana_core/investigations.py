@@ -804,7 +804,7 @@ class InvestigationService:
         availability: QuestioningAvailability | None,
     ) -> None:
         if not _waits_for_people(availability, plan):
-            self._apply_plan(session, row, engine, plan)
+            self._apply_plan(session, row, engine, plan, availability)
             return
         # Nobody can be asked only because consent is missing or it is quiet time. Do not
         # conclude from what is known so far: record the plan as computed, keep the case open,
@@ -828,7 +828,12 @@ class InvestigationService:
         ).value
 
     def _apply_plan(
-        self, session: AsyncSession, row: InvestigationRow, engine: Engine, plan: PlanDecision
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        plan: PlanDecision,
+        availability: QuestioningAvailability | None,
     ) -> None:
         """Record the plan; ask the next question or conclude."""
         self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
@@ -859,7 +864,7 @@ class InvestigationService:
                 # The repair did not resolve it: reopen with the alternatives promoted.
                 engine.reopen()
                 self._event(session, row.id, "Reopened", {"reason": plan.reason})
-                self._apply_plan(session, row, engine, engine.plan())
+                self._apply_plan_or_wait(session, row, engine, engine.plan(), availability)
             return
         decided = plan.kind == PlanKind.DECIDE
         row.status = (
