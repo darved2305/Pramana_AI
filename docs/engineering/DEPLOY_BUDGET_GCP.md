@@ -45,7 +45,10 @@ instances, that is at most twelve `pramana_app` sessions. The simulator allows o
 instance, or two `pramana_sim` sessions. Supabase's Nano plan documents a default pool size of 15;
 the shared session pool is configurable, so confirm the approved project's value before deploy.
 This sizing accounts for investigation reads that load both the investigation and its pinned site
-model. See [Supabase connection pool limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)
+model. During a Cloud Run rollout the old and new revisions can run side by side for a short time,
+so the peak can reach twice the twelve `pramana_app` sessions above, 24, which is over the default
+pool size of 15 for the length of the overlap. Requests that cannot get a connection within five
+seconds fail rather than queue, so watch for 503s during a deploy and redeploy outside peak use. See [Supabase connection pool limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)
 and [Nano compute limits](https://supabase.com/docs/guides/platform/compute-and-disk).
 
 Target normal GCP use is INR 0 to about INR 50 per month while the free usage allowances apply.
