@@ -69,11 +69,12 @@ and [Nano compute limits](https://supabase.com/docs/guides/platform/compute-and-
 The planning target for normal GCP use is INR 0 to about INR 50 per month while the free usage
 allowances apply. Keep a separate INR 200 monthly allowance for registry growth, extra secret
 versions, log retention, egress and approved backup storage. These are estimates, not observed
-charges; this work did not read billing reports or list budgets. Minimum zero instances, two maximum
-instances per revision, one CPU, small memory, request-based billing and Artifact Registry cleanup
-limit peak usage and retained artifacts. They do not cap total spend. Continued usage can exceed the
-INR 1,000 alert, which notifies but does not stop spend. Review the first month's actual bill before
-accepting real users.
+charges; this work did not read billing reports or list budgets. Minimum zero instances; the Cloud
+Run cap is two service instances total, shared across revisions. One CPU, small memory,
+request-based billing and Artifact Registry cleanup limit peak usage and retained artifacts. Cloud
+Run can briefly exceed the maximum during replacements or traffic spikes. These controls do not cap
+total spend. Continued usage can exceed the INR 1,000 alert, which notifies but does not stop spend.
+Review the first month's actual bill before accepting real users.
 
 The project alert budget `pramana-inr-1000` is scoped to `luminous-slice-514102-f4` on billing
 account `014417-27A82C-ACEA10`, with INR 1,000 per calendar month and 50%, 80% and 100% thresholds.
@@ -146,7 +147,8 @@ No OAuth client edit was attempted.
    at least 16 characters. Keep secret values out of Git, command arguments and reports.
 3. Provision the approved Mumbai Supabase project. Set its region, ref, session-pooler host and
    distinct database and runtime passwords in the local `.env`. Confirm its actual session-pooler
-   limit and size runtime pools below that limit, including a two-revision rollout overlap.
+   limit, size runtime pools below that limit and leave headroom for brief Cloud Run overages during
+   replacements and traffic spikes.
 4. Choose a restricted encrypted backup destination in India, then complete and record a restore
    drill before putting real personal data in the app.
 5. Add the callback URI above by hand in Google Cloud Console. This work did not open a Google page,

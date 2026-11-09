@@ -400,6 +400,9 @@ def test_runbook_states_budget_and_missing_spend_cap() -> None:
     assert f"`{deploy.ALERT_BUDGET_NAME}`" in runbook
     assert "50%, 80% and 100%" in runbook
     assert "No Cloud Run spend cap is configured" in runbook
+    assert "cap is two service instances total, shared across revisions" in runbook
+    assert "brief Cloud Run overages during" in runbook
+    assert "instances per revision" not in runbook
     assert "50%, 90%" not in runbook
 
 
