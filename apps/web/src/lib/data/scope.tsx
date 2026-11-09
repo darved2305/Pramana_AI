@@ -42,6 +42,8 @@ export interface InvestigationScope {
   decideApproval(id: string, approvalId: string, body: { decision: "approve" | "deny"; note?: string }): Promise<InvestigationState>;
   reveal(id: string): Promise<InvestigationState>;
   participantToken(id: string, participantId: string): Promise<ParticipantToken>;
+  recheckAvailability?(id: string): Promise<InvestigationState>;
+  overrideQuietHours?(id: string, reason: string): Promise<InvestigationState>;
   /** The site map an investigation ran on: its pinned model version inside a workspace. */
   sitePack(state: InvestigationState, signal?: AbortSignal): Promise<SitePack>;
 }
@@ -81,6 +83,8 @@ export function workspaceScope(api: OrganizationApi): InvestigationScope {
     decideApproval: (id, approvalId, body) => api.decideApproval(id, approvalId, body, key("decision")),
     reveal: (id) => api.reveal(id, key("reveal")),
     participantToken: (id, pid) => api.participantToken(id, pid, key("link")),
+    recheckAvailability: (id) => api.recheckAvailability(id, key("availability-check")),
+    overrideQuietHours: (id, reason) => api.overrideQuietHours(id, reason, key("quiet-hours-override")),
     sitePack: async (state, signal) => {
       if (!state.site_id || !state.site_model_id) throw new Error("This investigation has no saved site model.");
       return packFromSpec((await api.model(state.site_id, state.site_model_id, signal)).spec);

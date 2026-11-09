@@ -1526,9 +1526,31 @@
           "title": "Presence Checks Enabled",
           "type": "boolean"
         },
+        "questioning_availability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuestioningAvailability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "questions_asked": {
           "title": "Questions Asked",
           "type": "integer"
+        },
+        "quiet_hours_override": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuietHoursOverrideView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "repair_options": {
           "items": {
@@ -3081,6 +3103,66 @@
       ],
       "title": "QuestionStatus",
       "type": "string"
+    },
+    "QuestioningAvailability": {
+      "additionalProperties": false,
+      "properties": {
+        "eligible_count": {
+          "title": "Eligible Count",
+          "type": "integer"
+        },
+        "evaluated_at": {
+          "format": "date-time",
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "no_consent_count": {
+          "title": "No Consent Count",
+          "type": "integer"
+        },
+        "quiet_hours_count": {
+          "title": "Quiet Hours Count",
+          "type": "integer"
+        },
+        "unavailable_count": {
+          "title": "Unavailable Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "evaluated_at",
+        "eligible_count",
+        "no_consent_count",
+        "quiet_hours_count",
+        "unavailable_count"
+      ],
+      "title": "QuestioningAvailability",
+      "type": "object"
+    },
+    "QuietHoursOverrideView": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "actor_id",
+        "created_at"
+      ],
+      "title": "QuietHoursOverrideView",
+      "type": "object"
     },
     "RepairOption": {
       "additionalProperties": false,
