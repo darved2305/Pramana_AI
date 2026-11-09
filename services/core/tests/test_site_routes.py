@@ -48,6 +48,7 @@ SITE_OPERATIONS = {
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consents/{purpose}/withdraw"),
     ("post", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consent-requests"),
+    ("get", "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consent-requests/{request_id}"),
 }
 
 DOMAIN_JOIN_OPERATIONS = {
@@ -107,6 +108,7 @@ def _path(template: str, workspace: dict[str, Any], *, org: str | None = None) -
         site_id=workspace["sandbox_site"]["id"],
         person_id="p_probe",
         purpose="voice_processing",
+        request_id="consent_probe",
         model_id=workspace["sandbox_site"]["current_model_id"],
     )
 

@@ -43,7 +43,7 @@ from .auth.service import AuthService, LoginThrottle
 from .cursors import CursorCodec
 from .db import Database, make_engine
 from .directory import make_queries
-from .domain_joins import DnsPythonResolver, DnsTxtResolver, DomainJoins, LocalOutbox
+from .domain_joins import DnsPythonResolver, DnsTxtResolver, DomainJoins
 from .errors import install_error_handlers
 from .investigations import InvestigationService
 from .invitations import Invitations
@@ -52,6 +52,7 @@ from .language.hybrid import HybridExtractor
 from .llm import LlmClient
 from .mail import GmailSmtp
 from .observability import RequestContextMiddleware, configure_logging, log
+from .outbox import EmailRelay
 from .people import SitePeople
 from .runtime.broadcast import EventBroadcaster
 from .runtime.recovery import recover
@@ -159,7 +160,7 @@ def create_app(
         app.state.workspace_lifecycle = WorkspaceLifecycle(db, app.state.vault)
         app.state.site_models = StoredModels(db)
         app.state.site_people = SitePeople(db, app.state.vault)
-        app.state.invitations = Invitations(db)
+        app.state.invitations = Invitations(db, app.state.vault.master)
         can_send_email = cfg.mode != "test" and cfg.oidc_issuer == "https://accounts.google.com"
         app.state.mailer = (
             GmailSmtp(cfg.gmail_address, cfg.gmail_app_password)
@@ -169,12 +170,9 @@ def create_app(
             and cfg.gmail_app_password
             else None
         )
+        app.state.email_relay = EmailRelay(db, app.state.mailer, app.state.vault.master)
         app.state.domain_joins = DomainJoins(
-            db,
-            dns_txt_resolver or DnsPythonResolver(),
-            GmailSmtp(cfg.gmail_address, cfg.gmail_app_password)
-            if can_send_email and cfg.gmail_address and cfg.gmail_app_password
-            else LocalOutbox(),
+            db, dns_txt_resolver or DnsPythonResolver(), app.state.vault.master
         )
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)

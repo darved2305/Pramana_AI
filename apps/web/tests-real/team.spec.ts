@@ -36,7 +36,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await page.getByRole("checkbox", { name: /Approver/ }).check();
   await page.getByRole("button", { name: "Create invitation link" }).click();
   const link = await page.locator("code").filter({ hasText: "/invite/org_" }).innerText();
-  await expect(page.getByText("Copy it now and send it to them")).toBeVisible(); // no Gmail set up here
+  await expect(page.getByText("We could not send the email, so please send this link yourself")).toBeVisible(); // no Gmail set up here
   await expect(page.getByRole("list", { name: "Invitations" }).getByText("pending")).toBeVisible();
 
   // Someone else with the link cannot use it.
@@ -44,7 +44,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await googleSignIn(page, `stranger-${stamp}`, "/app/account");
   await page.goto(new URL(link).pathname);
   await page.getByRole("button", { name: "Accept invitation" }).click();
-  await expect(page.getByText(/this invitation is for/)).toBeVisible();
+  await expect(page.getByText(/This invitation is for/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Use another account" })).toBeVisible();
 
   // The invited person joins and lands in the workspace with the role they were given.
@@ -66,6 +66,21 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await expect(page).toHaveURL(new RegExp(`${base}/settings$`));
   const memberList = page.getByRole("list", { name: "Members" });
   const row = memberList.getByRole("listitem").filter({ hasText: `${mate}@gmail.com` });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await row.scrollIntoViewIfNeeded();
+  const memberAddress = row.locator(".break-all");
+  const memberRole = row.getByText("approver", { exact: true });
+  const memberAddressBox = await memberAddress.boundingBox();
+  const memberRoleBox = await memberRole.boundingBox();
+  if (!memberAddressBox || !memberRoleBox) throw new Error("member address or role is not visible");
+  const memberOverlap =
+    memberAddressBox.x < memberRoleBox.x + memberRoleBox.width &&
+    memberAddressBox.x + memberAddressBox.width > memberRoleBox.x &&
+    memberAddressBox.y < memberRoleBox.y + memberRoleBox.height &&
+    memberAddressBox.y + memberAddressBox.height > memberRoleBox.y;
+  expect(memberOverlap).toBe(false);
+  expect(await memberAddress.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await row.getByRole("button", { name: "Change roles" }).click();
   await row.getByRole("checkbox", { name: "operator" }).check();
   await row.getByRole("button", { name: "Save roles" }).click();
@@ -76,7 +91,7 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   await me.getByRole("checkbox", { name: "owner" }).uncheck();
   await me.getByRole("checkbox", { name: "admin" }).check();
   await me.getByRole("button", { name: "Save roles" }).click();
-  await expect(me.getByText(/a workspace needs an owner/)).toBeVisible();
+  await expect(me.getByText(/A workspace needs an owner/)).toBeVisible();
   await me.getByRole("button", { name: "Cancel" }).click();
   await row.getByRole("button", { name: "Remove" }).click();
   await expect(memberList.getByRole("listitem").filter({ hasText: `${mate}@gmail.com` })).toHaveCount(0);
@@ -85,16 +100,64 @@ test("an owner invites a teammate, who joins with the invited address only", asy
   // because this stack has no Gmail account and never sends a real message.
   for (const [delivery, words] of [
     ["sent", "We emailed this link to"],
-    ["failed", "We could not confirm the email was sent"],
+    ["queued", "The email is queued. Copy the link now if you want to send it yourself"],
+    ["failed", "We could not send the email, so please send this link yourself"],
   ] as const) {
-    await page.route("**/invitations", async (route) => {
-      if (route.request().method() !== "POST") return route.continue();
+    let keepQueuedList = delivery === "queued";
+    await page.route("**/invitations**", async (route) => {
+      if (route.request().method() !== "POST") {
+        if (delivery !== "queued" || !keepQueuedList) return route.continue();
+        const response = await route.fetch();
+        const page = await response.json() as { items: Array<Record<string, unknown>> };
+        await route.fulfill({
+          response,
+          json: { ...page, items: page.items.map((row) => ({ ...row, email_delivery: "queued" })) },
+        });
+        return;
+      }
       const response = await route.fetch();
       await route.fulfill({ response, json: { ...(await response.json()), email_delivery: delivery } });
     });
-    await page.getByLabel("Their email address").fill(`${delivery}-${stamp}@example.com`);
+    const address = `${delivery}-${stamp}@example.com`;
+    await page.getByLabel("Their email address").fill(address);
+    const createdLink = page.waitForResponse((response) =>
+      response.request().method() === "POST" && response.url().endsWith("/invitations"),
+    );
     await page.getByRole("button", { name: "Create invitation link" }).click();
-    await expect(page.getByText(words)).toBeVisible();
-    await page.unroute("**/invitations");
+    await createdLink;
+    const deliveryNotice = page.getByText(`Invitation link for ${address}`, { exact: true }).locator("..");
+    await expect(deliveryNotice.getByText(words)).toBeVisible();
+    if (delivery === "queued") {
+      keepQueuedList = false;
+      await expect(deliveryNotice.getByText("We could not send the email, so please send this link yourself")).toBeVisible();
+    }
+    await page.unroute("**/invitations**");
   }
+
+  await page.route("**/invitations**", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const page = await response.json() as { items: Array<Record<string, unknown>> };
+    await route.fulfill({
+      response,
+      json: { ...page, items: page.items.map((row) => ({ ...row, email_delivery: "unknown" })) },
+    });
+  });
+  await page.reload();
+  await expect(page.getByText("Email status unavailable").first()).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const latestInvitation = page.getByRole("list", { name: "Invitations" }).getByRole("listitem").first();
+  await latestInvitation.scrollIntoViewIfNeeded();
+  const invitationEmail = latestInvitation.locator(":scope > span").first();
+  const invitationRoles = latestInvitation.locator(":scope > span").nth(1);
+  const invitationEmailBox = await invitationEmail.boundingBox();
+  const invitationRolesBox = await invitationRoles.boundingBox();
+  if (!invitationEmailBox || !invitationRolesBox) {
+    throw new Error("invitation address or roles are not visible");
+  }
+  expect(invitationRolesBox.y).toBeGreaterThanOrEqual(
+    invitationEmailBox.y + invitationEmailBox.height - 1,
+  );
+  expect(await invitationEmail.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.unroute("**/invitations**");
 });

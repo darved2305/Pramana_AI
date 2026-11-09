@@ -8,6 +8,7 @@ import secrets
 import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import httpx
 import pytest
@@ -19,6 +20,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from pramana_core import outbox
+from pramana_core.mail import FakeMailer
 from pramana_core.main import create_app
 
 pytestmark = pytest.mark.db
@@ -103,7 +106,10 @@ def domain_core(
         sim_transport=httpx.ASGITransport(app=sim_app),
         dns_txt_resolver=resolver,
     )
+    mailer = FakeMailer()
     with TestClient(app, raise_server_exceptions=False) as client:
+        client.app.state.email_relay.mailer = mailer
+        client.mailer = mailer  # type: ignore[attr-defined]
         client.user_ids = user_ids  # type: ignore[attr-defined]
         client.db_url = migrated_db  # type: ignore[attr-defined]
         client.resolver = resolver  # type: ignore[attr-defined]
@@ -162,19 +168,23 @@ def _as_owner(client: TestClient) -> None:
     _use_session(client, client.owner_token)  # type: ignore[attr-defined]
 
 
-def test_removing_domain_waits_for_inflight_request(domain_core: TestClient) -> None:
+def test_removing_domain_waits_for_inflight_request(
+    domain_core: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client = domain_core
     org_id = client.org_id  # type: ignore[attr-defined]
     requester = _as_requester(client)
     entered, release, removal_started = threading.Event(), threading.Event(), threading.Event()
+    domain_joins = client.app.state.domain_joins
+    queue_notice = domain_joins._queue_admin_notice
 
-    class BlockingMailer:
-        def send(self, to: str, subject: str, body: str) -> None:
-            entered.set()
-            if not release.wait(15):
-                raise TimeoutError("test did not release mailer")
+    async def wait_before_queue(*args: Any, **kwargs: Any) -> None:
+        entered.set()
+        if not await asyncio.to_thread(release.wait, 15):
+            raise TimeoutError("test did not release join transaction")
+        await queue_notice(*args, **kwargs)
 
-    client.app.state.domain_joins.mailer = BlockingMailer()
+    monkeypatch.setattr(domain_joins, "_queue_admin_notice", wait_before_queue)
 
     def create_request() -> httpx.Response:
         return client.post(
@@ -328,8 +338,7 @@ def test_verified_domain_suggestions_and_request_approval_notifications(
     requests = client.get(f"/v1/orgs/{org_id}/join-requests")
     assert requests.status_code == 200, requests.text
     assert [row["id"] for row in requests.json()["items"]] == [pending["id"]]
-    outbox = client.app.state.domain_joins.mailer
-    assert any("asked to join Nava College" in body for _, _, body in outbox.messages)
+    assert any("asked to join Nava College" in body for _, _, body in client.mailer.sent)
 
     approved = client.post(
         f"/v1/orgs/{org_id}/join-requests/{pending['id']}/approve",
@@ -421,10 +430,7 @@ def test_pending_request_uses_new_auto_policy_and_joins_as_viewer(domain_core: T
     assert any(
         row["status"] == "approved" and row["decision_source"] == "auto" for row in history["items"]
     )
-    assert any(
-        "joined Nava College as a viewer" in body
-        for _, _, body in client.app.state.domain_joins.mailer.messages
-    )
+    assert any("joined Nava College as a viewer" in body for _, _, body in client.mailer.sent)
 
 
 @pytest.mark.parametrize(
@@ -610,3 +616,94 @@ def test_workspace_home_lists_pending_join_requests_for_owners(domain_core: Test
     home = client.get(f"/v1/orgs/{org_id}/home")
     assert home.status_code == 200, home.text
     assert [row["id"] for row in home.json()["join_requests"]] == [created["id"]]
+
+
+def _outbox_rows(client: TestClient) -> list[tuple[str, str, str | None]]:
+    async def run() -> list[tuple[str, str, str | None]]:
+        engine = create_async_engine(client.db_url)  # type: ignore[attr-defined]
+        try:
+            async with engine.connect() as conn:
+                result = await conn.execute(
+                    text(
+                        "select id, org_id, kind, state, payload_enc from email_outbox "
+                        "order by created_at, id"
+                    )
+                )
+                return [
+                    (
+                        row.kind,
+                        row.state,
+                        outbox.open_envelope(
+                            client.app.state.vault.master,
+                            row.org_id,
+                            row.id,
+                            bytes(row.payload_enc),
+                        ).recipient
+                        if row.payload_enc is not None
+                        else None,
+                    )
+                    for row in result
+                ]
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(run())
+
+
+async def _held_relay() -> dict[str, int | bool]:
+    """Stands in for a relay that has not run yet, so queued mail stays visible."""
+    return {"locked": True, "sent": 0, "retried": 0, "dead": 0}
+
+
+def test_join_notices_wait_in_the_outbox_until_the_relay_sends_them(
+    domain_core: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = domain_core
+    org_id = client.org_id  # type: ignore[attr-defined]
+    relay = client.app.state.email_relay
+    send_now = relay.drain
+    monkeypatch.setattr(relay, "drain", _held_relay)
+    _as_requester(client)
+    created = _request(client, org_id, "notice-outbox-request-0001")
+    assert created.status_code == 201, created.text
+    # The request committed its notices and sent nothing itself.
+    assert client.mailer.sent == []  # type: ignore[attr-defined]
+    queued = _outbox_rows(client)
+    assert queued, "the admin notice was not queued"
+    assert all(kind == "domain_join_notice" and state == "queued" for kind, state, _ in queued)
+    assert ("domain_join_notice", "queued", "owner@college.edu") in queued
+    client.portal.call(send_now)  # type: ignore[attr-defined]
+    assert any(
+        to == "owner@college.edu" and "asked to join Nava College" in body
+        for to, _, body in client.mailer.sent  # type: ignore[attr-defined]
+    )
+    assert all(state == "sent" for _, state, _ in _outbox_rows(client))
+
+
+def test_decision_email_waits_in_the_outbox_with_the_decision(
+    domain_core: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = domain_core
+    org_id = client.org_id  # type: ignore[attr-defined]
+    _as_requester(client)
+    pending = _request(client, org_id, "decision-outbox-request-0001")
+    assert pending.status_code == 201, pending.text
+    request_id = pending.json()["request"]["id"]
+    _as_owner(client)
+    relay = client.app.state.email_relay
+    send_now = relay.drain
+    monkeypatch.setattr(relay, "drain", _held_relay)
+    sent_before = len(client.mailer.sent)  # type: ignore[attr-defined]
+    approved = client.post(
+        f"/v1/orgs/{org_id}/join-requests/{request_id}/approve",
+        json={"role": "viewer"},
+        headers=_headers("decision-outbox-approve-0001"),
+    )
+    assert approved.status_code == 200, approved.text
+    assert len(client.mailer.sent) == sent_before  # type: ignore[attr-defined]
+    assert ("domain_join_decision", "queued", "member@college.edu") in _outbox_rows(client)
+    client.portal.call(send_now)  # type: ignore[attr-defined]
+    assert any(
+        to == "member@college.edu" and "approved as viewer" in body
+        for to, _, body in client.mailer.sent  # type: ignore[attr-defined]
+    )

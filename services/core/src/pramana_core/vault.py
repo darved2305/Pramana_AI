@@ -88,6 +88,13 @@ class MasterKey:
     def open_response(self, body: bytes, context: bytes) -> bytes:
         return _open(self._aead, body, b"idempotency-response/" + context)
 
+    def seal_payload(self, body: bytes, context: bytes) -> bytes:
+        """Seal a small application payload with context bound as authenticated data."""
+        return _seal(self._aead, body, b"application-payload/" + context)
+
+    def open_payload(self, body: bytes, context: bytes) -> bytes:
+        return _open(self._aead, body, b"application-payload/" + context)
+
 
 def _seal(aead: AESGCM, plain: bytes, context: bytes) -> bytes:
     nonce = os.urandom(_NONCE)

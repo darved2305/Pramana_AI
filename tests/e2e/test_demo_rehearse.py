@@ -12,9 +12,9 @@ from pathlib import Path
 
 import httpx
 import pytest
-from e2e.harness import Services, e2e_database_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from e2e.harness import Services, e2e_database_url
 from pramana_contracts import StaffRole
 from pramana_core.auth.service import AuthService, LoginThrottle
 from pramana_core.db import Database

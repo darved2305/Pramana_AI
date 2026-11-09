@@ -85,9 +85,14 @@ class PersonTrackRecord(StrictModel):
 
 
 class ConsentRequestCreated(StrictModel):
+    request_id: str
     link_path: str
     expires_at: datetime
-    email_delivery: Literal["sent", "failed", "not_configured", "no_email"]
+    email_delivery: Literal["queued", "failed", "no_email"]
+
+
+class ConsentRequestDelivery(StrictModel):
+    email_delivery: Literal["sent", "queued", "failed", "no_email"]
 
 
 class ConsentLinkView(StrictModel):

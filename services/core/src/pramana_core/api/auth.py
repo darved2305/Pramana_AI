@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Request, Response
 from fastapi.responses import RedirectResponse
+from starlette.background import BackgroundTask
 
 from pramana_contracts import AuthSession, LoginRequest, SessionDevice, StaffRole
 
@@ -184,6 +185,8 @@ async def google_callback(request: Request) -> RedirectResponse:
         httponly=True,
         samesite="lax",
     )
+    # Sign-in can auto-join a workspace, which queues admin mail. Send it after the redirect.
+    response.background = BackgroundTask(request.app.state.email_relay.drain)
     return response
 
 

@@ -102,17 +102,34 @@ test("parallel: three people asked at once reach the S1 decision", async ({ page
       ];
     });
     if (failed.length) {
-      const log = await api<
-        {
-          type: string;
-          payload: {
-            question_id?: string;
-            participant_id?: string;
-            probe_id?: string;
-            evidence?: { participant_id?: string; probe_id?: string };
-          };
-        }[]
-      >(request, "GET", `/v1/investigations/${invId}/events`);
+      type EventRow = {
+        type: string;
+        payload: {
+          question_id?: string;
+          participant_id?: string;
+          probe_id?: string;
+          evidence?: { participant_id?: string; probe_id?: string };
+        };
+      };
+      // A withdrawal can land a moment after the rejected answer. Wait until every rejected
+      // question is either withdrawn or no longer pending, then judge the outcome strictly.
+      let log: EventRow[] = [];
+      await expect
+        .poll(
+          async () => {
+            const [events, current] = await Promise.all([
+              api<EventRow[]>(request, "GET", `/v1/investigations/${invId}/events`),
+              api<State>(request, "GET", `/v1/investigations/${invId}`),
+            ]);
+            log = events;
+            state = current;
+            const withdrawn = new Set(events.filter((e) => e.type === "QuestionWithdrawn").map((e) => e.payload.question_id));
+            const pending = new Set(current.pending_questions.map((q) => q.id));
+            return failed.filter(({ id }) => !withdrawn.has(id) && pending.has(id)).map(({ id }) => id);
+          },
+          { timeout: 10_000, intervals: [100, 250, 500, 1000] },
+        )
+        .toEqual([]);
       const gone = new Set(log.filter((e) => e.type === "QuestionWithdrawn").map((e) => e.payload.question_id));
       const unaccounted = failed.filter(({ id }) => !gone.has(id));
       const answerAndWithdrawalEvents = log
