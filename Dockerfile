@@ -35,6 +35,8 @@ ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=utf-8 \
     PRAMANA_PACKS_DIR=/app/packs \
+    TTS_CACHE_DIR=/tmp/pramana/tts \
+    LLM_CACHE_DIR=/tmp/pramana/llm \
     CORE_HOST=0.0.0.0 \
     SIM_HOST=0.0.0.0
 USER pramana
