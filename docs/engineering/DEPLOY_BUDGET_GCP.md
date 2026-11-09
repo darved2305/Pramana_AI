@@ -1,26 +1,25 @@
 # Pramana budget deployment on GCP
 
-Status: prepared and verified locally on 2026-11-09. Nothing in GCP or Supabase was changed by
-this work. The deployment is a separate lean path from `infra/gcp`, which remains the larger HA
-reference.
+Status: deployed and smoke-tested on 2026-11-09. The live stage uses the separate lean path in
+this runbook; `infra/gcp` remains the larger HA reference. The web URL is team-only and must not
+be shared outside the team.
 
 ## Readiness and residency gate
 
-The selected launch shape is a public Cloud Run web service with private Cloud Run core and
-simulator services in Mumbai (`asia-south1`), plus Supabase Free PostgreSQL in Mumbai (`ap-south-1`).
-The Cloud Run URL is the initial site origin. The current Supabase ref in the local environment is
-in Singapore (`ap-southeast-1`), which is not an eligible home for real personal data. The deploy
-script refuses any database outside `ap-south-1` unless `PRAMANA_ACCEPT_NON_INDIA_DATABASE=true` is
-set in the local `.env`. That acknowledgement is for a stage with no real personal data only, and
-the script prints a warning on every deploy while it is in effect. Do not put real personal data in
-the app until a Mumbai Supabase project exists, its session-pooler settings are in the local `.env`,
-and the required credentials have been rotated.
+The live stage has a public Cloud Run web service and private Cloud Run core and simulator services
+in Mumbai (`asia-south1`). Its Supabase PostgreSQL database is in Singapore (`ap-southeast-1`). The
+owner explicitly parked the India move and five credential rotations, so this stage is permitted
+only while it contains no real personal data. The deploy script requires
+`PRAMANA_ACCEPT_NON_INDIA_DATABASE=true` and `PRAMANA_ROTATIONS_PARKED=true` for this exception and
+prints the warning on every deploy. Do not share the live URL outside the team. Do not put real
+personal data in the app until a Mumbai Supabase project exists, its session-pooler settings are in
+the local `.env`, the database backup and restore path is tested in India, and all required
+credentials have been rotated. The current migrator password is also shorter than the 16-character
+rule and must be replaced before real data is allowed.
 
-The worktree `.env` is still missing deployment prerequisites: `GCP_BILLING_ACCOUNT_ID`, the
-approved Mumbai Supabase region/ref/pooler host/database settings, separate rotated migrator and
-runtime passwords, and the five rotation acknowledgements below. Existing Google OAuth and Gmail
-values also need Darshan's rotations. The script has only synthetic values in `--dry-run`; its
-default path does not load `.env` or contact Google Cloud.
+The deployment used the preconfigured local environment. This work did not print or commit any
+credential values. The `--dry-run` path uses synthetic values and does not load `.env`, invoke
+gcloud, or send HTTP requests.
 
 ## Resource and monthly cost plan
 
@@ -33,37 +32,58 @@ usage and regional prices in its [pricing table](https://cloud.google.com/run/pr
 |---|---|---:|
 | Cloud Run web, core and simulator | `asia-south1`, request billing, minimum 0 and maximum 2 instances each; one CPU each; 512 MiB web/sim and 1 GiB core; migration job runs only for deploys | INR 0 within the account-wide monthly allowance of 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests; otherwise metered by region |
 | Supabase PostgreSQL | Free plan in `ap-south-1`; one project, separate migrator, `pramana_app` and `pramana_sim` roles | INR 0 within Free limits; 500 MB database, may pause after inactivity, and no automatic backup guarantee |
-| Cloud Build | Two SHA-tagged images, default `e2-standard-2` workers | INR 0 for the first 2,500 build minutes per billing account each month; then about INR 0.50 per minute at the planning conversion ([pricing](https://cloud.google.com/build/pricing)) |
+| Cloud Build | Two SHA-tagged images, default `e2-standard-2` workers in Mumbai | INR 0 for the first 2,500 build minutes per billing account each month; then about INR 0.50 per minute at the planning conversion ([Mumbai pricing](https://cloud.google.com/build/pricing-update)) |
+| Cloud Build staging bucket | Regional Cloud Storage bucket in `asia-south1` with lifecycle cleanup | Estimate INR 0 to INR 10 per month at low transient volume; actual object bytes were not measured. Cloud Storage's Always Free storage quota applies only in US regions ([pricing](https://cloud.google.com/storage/pricing), [free tier](https://docs.cloud.google.com/free/docs/free-cloud-features)) |
 | Artifact Registry | One regional Docker repository; delete untagged images after 7 days, tagged images after 90 days, keep the five newest versions per image package | INR 0 for the first 0.5 GiB of storage; about INR 8.40 per GiB-month above that, before tax ([pricing](https://cloud.google.com/artifact-registry/pricing)) |
 | Secret Manager | Eleven active secrets replicated only in `asia-south1`; no service-account JSON keys | About INR 25 per month for five versions beyond the six-version account-wide free allowance, assuming no other project uses it; 10,000 access operations per month are free, then about INR 2.52 per 10,000 ([pricing](https://cloud.google.com/secret-manager/pricing)) |
-| Cloud Logging | Regional bucket with 180-day retention; only the three Cloud Run services and migration job are routed | First 50 GiB ingested per project per month is free; excess ingest is about INR 42 per GiB. Retention beyond 30 days is about INR 0.84 per GiB-month; at 1 GiB per month, roughly INR 4 at steady state ([pricing](https://cloud.google.com/logging)) |
+| Cloud Logging | Regional bucket with 180-day retention; ordinary logs from the three Cloud Run services and migration job are routed, sensitive request URLs are excluded | First 50 GiB ingested per project per month is free; excess ingest is about INR 42 per GiB. Retention beyond 30 days is about INR 0.84 per GiB-month; at 1 GiB per month, roughly INR 4 at steady state ([pricing](https://cloud.google.com/logging)) |
 | Billing budget | Existing INR 1,000 monthly project alert `pramana-inr-1000` (created by the billing owner, issue #7) at 50%, 80% and 100% of actual spend. No Cloud Run spend cap is configured | No separate budget-resource charge. An alert notifies; it does not stop spend, and it does not cover Supabase ([budgets](https://docs.cloud.google.com/billing/docs/how-to/budgets)) |
 | Database backups | Supabase Free has no automatic backup guarantee. A pg_dump-based backup and restore drill is required below | Not priced until an approved India storage destination and schedule are chosen. Reserve part of the non-Run allowance |
 
-The core allows six database connections per instance with overflow disabled. With two maximum
-instances, that is at most twelve `pramana_app` sessions. The simulator allows one connection per
-instance, or two `pramana_sim` sessions. Supabase's Nano plan documents a default pool size of 15;
-the shared session pool is configurable, so confirm the approved project's value before deploy.
-This sizing accounts for investigation reads that load both the investigation and its pinned site
-model. During a Cloud Run rollout the old and new revisions can run side by side for a short time,
-so the peak can reach twice the twelve `pramana_app` sessions above, 24, which is over the default
-pool size of 15 for the length of the overlap. Requests that cannot get a connection within five
-seconds fail rather than queue, so watch for 503s during a deploy and redeploy outside peak use. See [Supabase connection pool limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)
+Cloud Run request logs include the full request URL. The `pramana-run` sink excludes Google OAuth
+start and callback URLs, consent-link URLs and `/consent/` capability URLs. A matching exclusion on
+the `_Default` sink drops those request records instead of storing them in its default destination.
+Other Cloud Run request logs and the migration job logs remain in the regional bucket for 180 days.
+
+The deployed core uses a pool size of three and zero overflow, with a service-level maximum of two
+instances, for up to six `pramana_app` sessions. The simulator uses one connection per instance,
+with a service-level maximum of two instances, for up to two `pramana_sim` sessions. The deploy
+script's `--max=2` sets a service-level limit shared across revisions receiving traffic; the
+no-traffic bootstrap revision does not add another two-instance allowance. Cloud Run can briefly
+exceed a configured maximum during replacements or traffic spikes, so leave additional headroom
+([service maximum instances](https://docs.cloud.google.com/run/docs/configuring/max-instances),
+[gcloud deploy flags](https://docs.cloud.google.com/sdk/gcloud/reference/run/deploy)). The migration
+job uses the separate migrator role and finishes before service rollout.
+
+Supabase Nano's documented default pool size is 15 per database role, but the project's configured
+value was not available to the read-only database check ([compute limits](https://supabase.com/docs/guides/platform/compute-and-disk),
+[pooling limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)).
+PostgreSQL reported version 17.11 and `max_connections=60`; do not treat that as the Supavisor
+session pool size. Confirm the actual pool setting before increasing instance or database pool
+limits and before using real personal data.
+The five-second core pool timeout fails requests instead of queueing them. Deploy outside peak use
+and watch for 503s until the approved project's pooler limit and first month of use are confirmed.
+See [Supabase connection pool limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)
 and [Nano compute limits](https://supabase.com/docs/guides/platform/compute-and-disk).
 
-Target normal GCP use is INR 0 to about INR 50 per month while the free usage allowances apply.
-Keep a separate INR 200 monthly allowance for registry growth, extra secret versions, log
-retention, egress and approved backup storage. Without a spend cap, the bill is bounded by
-the controls in this runbook, not by a hard limit: minimum 0 instances, a maximum of two instances
-per service, one CPU and small memory per service, request-based billing, bounded concurrency and
-the Artifact Registry cleanup policy. Measure the first month's bill against the INR 1,000 alert
-before accepting real users. A spend cap was not configured because the deploy identity has no
-billing role; the billing owner can add one later if they want a hard stop.
+The planning target for normal GCP use is INR 0 to about INR 50 per month while the free usage
+allowances apply. Keep a separate INR 200 monthly allowance for registry growth, extra secret
+versions, log retention, egress and approved backup storage. These are estimates, not observed
+charges; this work did not read billing reports or list budgets. Minimum zero instances; the Cloud
+Run cap is two service instances total, shared across revisions. One CPU, small memory,
+request-based billing and Artifact Registry cleanup limit peak usage and retained artifacts. Cloud
+Run can briefly exceed the maximum during replacements or traffic spikes. These controls do not cap
+total spend. Continued usage can exceed the INR 1,000 alert, which notifies but does not stop spend.
+Review the first month's actual bill before accepting real users.
 
 The project alert budget `pramana-inr-1000` is scoped to `luminous-slice-514102-f4` on billing
 account `014417-27A82C-ACEA10`, with INR 1,000 per calendar month and 50%, 80% and 100% thresholds.
 The deploy script does not read, create or change budgets. It prints the budget name and the
 reminder that no spend cap exists, so the owner can confirm both in Billing.
+
+Other provisioned resources include five least-privilege service accounts, required API enablement,
+and scoped IAM bindings. They have no separate monthly resource fee. The one-task migration job is
+included in Cloud Run usage and incurs compute charges only while it runs.
 
 ## What the deploy script creates
 
@@ -82,25 +102,61 @@ reminder that no spend cap exists, so the owner can confirm both in Billing.
   until the final web deploy. The script checks `/`, `/login`, a Next static asset,
   `/api/core/health` and `/ready` through the public proxy.
 
-## First deployment
+## Current staging deployment
 
-1. Darshan provisions or selects the Supabase Free project for the database. For a Mumbai database
-   (required before real personal data), use the approved Mumbai project and set
-   `PRAMANA_SUPABASE_REGION=ap-south-1`. For the current Singapore project, set
-   `PRAMANA_SUPABASE_REGION=ap-southeast-1` and `PRAMANA_ACCEPT_NON_INDIA_DATABASE=true`; this is
-   accepted only for a stage with no real personal data. Set `PRAMANA_SUPABASE_REF`,
-   `PRAMANA_SUPABASE_POOLER_HOST` (the session pooler host of the same region),
-   `PRAMANA_SUPABASE_DATABASE=postgres`, `PRAMANA_SUPABASE_DB_PASSWORD` and
-   `PRAMANA_SUPABASE_APP_PASSWORD` from its connection settings. Use distinct passwords.
-2. Set `GCP_BILLING_ACCOUNT_ID` to the linked INR billing account. The GCP project ID is fixed to
-   `luminous-slice-514102-f4`. Confirm the INR 1,000 alert `pramana-inr-1000` still exists in
-   Billing and that the billing account's current month spend is low.
-3. Darshan rotates the Supabase database password, Supabase runtime role password, Supabase secret
-   API key, Google OAuth client secret and Gmail app password. Set each corresponding
-   `*_ROTATED=true` flag in `.env`. The secret API key is not read by the app or uploaded to Google
-   Cloud; the acknowledgement confirms the old exposed key was replaced. Keep the app password,
-   OAuth secret and database passwords only in `.env` and Secret Manager.
-4. From the repository root, review the synthetic plan and confirm the worktree is clean:
+The live stage was deployed from code commit `980bf4dd923c` on 2026-11-09. All three services are
+ready in `asia-south1` with 100% traffic on the revisions below:
+
+| Service | URL | Ready revision | Image digest |
+|---|---|---|---|
+| `pramana-web` | `https://pramana-web-nzxslh75pq-el.a.run.app` | `pramana-web-00009-k6j` | `pramana-web@sha256:c4de3687d6b0f1181f54b028b47cde1a451b443d3560d25ed8e9e12b4b4c64c6` |
+| `pramana-core` | `https://pramana-core-nzxslh75pq-el.a.run.app` | `pramana-core-00004-ctb` | `pramana-py@sha256:350168dbe5dfd27bd5e340897df5292292696926c2ecaa3ac567c75f9f762bc3` |
+| `pramana-sim` | `https://pramana-sim-nzxslh75pq-el.a.run.app` | `pramana-sim-00005-5dk` | `pramana-py@sha256:350168dbe5dfd27bd5e340897df5292292696926c2ecaa3ac567c75f9f762bc3` |
+
+The Cloud Run migration job completed successfully and the schema is at Alembic revision `0019`.
+Read-only checks found only the Alembic version table in `public`, confirmed the `pramana` and
+`pramana_sim` schemas, and confirmed the runtime roles cannot superuser, bypass row security, create
+databases or create roles. No tenant or personal-data rows were read or added.
+
+The deploy smoke returned 200 for `/`, `/login`, a Next static asset, `/api/core/health` through
+the web proxy, and `/ready`. Follow-up checks confirmed a 404 for an unknown path and these headers
+on the landing page, login page and 404 response: HSTS, CSP, `X-Content-Type-Options`,
+`X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy`. The HTTPS login page rendered in
+bundled headless Chromium, and the Google sign-in link was visible but not clicked. An HTTP-only
+request to the Google start endpoint returned 302 to `accounts.google.com`; the configured client
+ID and callback matched, and the state cookie had Secure, HttpOnly, SameSite and Path attributes.
+The redirect was not followed and no Google sign-in or email was attempted. Screenshots are in the
+ignored `apps/.cache/g-live-final-home.png` and `apps/.cache/g-live-final-login.png` files.
+
+Add this exact callback URI manually to the existing Google OAuth web client before testing a real
+sign-in:
+
+```text
+https://pramana-web-nzxslh75pq-el.a.run.app/api/core/v1/auth/google/callback
+```
+
+The app uses a server-side authorization-code redirect and does not require a JavaScript origin.
+No OAuth client edit was attempted.
+
+## Owner actions before real data
+
+1. Keep the URL team-only. The Singapore database is approved for staging only and contains no
+   real personal data. Do not use it for real people or backups.
+2. Rotate the Supabase database password, runtime role password, Supabase secret API key, Google
+   OAuth client secret and Gmail app password. Replace the short migrator password with a value of
+   at least 16 characters. Keep secret values out of Git, command arguments and reports.
+3. Provision the approved Mumbai Supabase project. Set its region, ref, session-pooler host and
+   distinct database and runtime passwords in the local `.env`. Confirm its actual session-pooler
+   limit, size runtime pools below that limit and leave headroom for brief Cloud Run overages during
+   replacements and traffic spikes.
+4. Choose a restricted encrypted backup destination in India, then complete and record a restore
+   drill before putting real personal data in the app.
+5. Add the callback URI above by hand in Google Cloud Console. This work did not open a Google page,
+   attempt sign-in or send email.
+6. Review the owner-confirmed INR 1,000/month alert `pramana-inr-1000` and the actual bill. The
+   deploy identity does not have a billing role, and this deployment neither listed nor changed
+   budgets. There is no spend cap.
+7. After those prerequisites, review the synthetic plan and deploy from a clean, committed tree:
 
    ```powershell
    uv run python scripts/deploy_gcp_starter.py --dry-run
@@ -108,25 +164,13 @@ reminder that no spend cap exists, so the owner can confirm both in Billing.
    ```
 
    The dry-run uses synthetic credentials and assumes resources are absent. It prints the planned
-   gcloud commands, migration job and smoke URLs. It does not load `.env`, invoke
-   gcloud, or send an HTTP request.
-5. After a human signs in with the authorized Google account, run the one deploy command from the
-   repository root:
+   gcloud commands, migration job and smoke URLs. It does not load `.env`, invoke gcloud, or send an
+   HTTP request. The normal deploy command uses the already authorized CLI identity and must not
+   be used to sign in or out:
 
    ```powershell
    uv run python scripts/deploy_gcp_starter.py
    ```
-
-   The script verifies that the active gcloud account is `nikhilpise2006@gmail.com`, enables
-   required APIs, records the existing budget, creates regional logs, image cleanup, service accounts and secrets, builds images tagged with
-   the committed git SHA, runs migrations and grant audit, deploys the services, then runs live
-   smoke checks. It prints the exact `run.app` OAuth callback URI. Darshan must add that URI to the
-   Google OAuth client's authorized redirect URIs before a real sign-in works. The scripted smoke
-   does not attempt Google sign-in.
-
-The exact sign-in command is `gcloud auth login`. No application-default credentials are required:
-the deploy uses the gcloud CLI account to run commands. This preparation did not run either sign-in
-command.
 
 ## Redeploy and rollback
 
@@ -207,14 +251,59 @@ re-run the migration grant audit before routing traffic.
 
 ## Human handoff and remaining limits
 
-- Provide the Supabase connection settings (Mumbai, or Singapore with the non-personal-data
-  acknowledgement) and all five rotation acknowledgements in this worktree's local `.env`; do not
-  commit it.
-- Sign in with `gcloud auth login`, then run
-  `uv run python scripts/deploy_gcp_starter.py` from a clean committed tree.
-- Add the printed callback URI to Google OAuth. Do not put real personal data in the app until the
-  Supabase database is in India and an India backup destination has been tested.
-- Review the INR 1,000 project alert and the actual bill weekly. No spend cap exists; the alert
-  does not stop spend.
+- Complete the owner actions above before the live stage is used with real personal data.
+- Review the INR 1,000 project alert and actual bill weekly. No spend cap exists; the alert does not
+  stop spend.
 - This path has no domain, Cloud SQL, load balancer, Cloud Armor, NAT, VPC connector, paid Supabase
   add-ons, media service, worker service or Cloud Scheduler.
+
+## Teardown
+
+Teardown is documented only; it was not run. These commands remove only the resources named by this
+deployment from project `luminous-slice-514102-f4`. They permanently remove the Cloud Run services,
+images, build staging objects, secrets and routed logs. Confirm the project and exact bucket URI
+before running them. Do not delete the Supabase project or database, the billing account, the
+`pramana-inr-1000` budget alert, or the GCP project.
+
+Delete service traffic and the migration job first:
+
+```powershell
+gcloud run services delete pramana-web --region=asia-south1 --project=luminous-slice-514102-f4 --quiet
+gcloud run services delete pramana-core --region=asia-south1 --project=luminous-slice-514102-f4 --quiet
+gcloud run services delete pramana-sim --region=asia-south1 --project=luminous-slice-514102-f4 --quiet
+gcloud run jobs delete pramana-migrate --region=asia-south1 --project=luminous-slice-514102-f4 --quiet
+```
+
+Delete the exact deployment secrets, routed logging resources, images and build staging bucket:
+
+```powershell
+gcloud secrets delete pramana-pii-key --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-database-simulator-url --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-google-oauth-client-id --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-google-oauth-client-secret --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-gmail-address --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-gmail-app-password --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-sim-operator-key --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-participant-signing-key --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-participant-public-key --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-database-migrator-url --project=luminous-slice-514102-f4 --quiet
+gcloud secrets delete pramana-database-runtime-url --project=luminous-slice-514102-f4 --quiet
+gcloud logging sinks delete pramana-run --project=luminous-slice-514102-f4 --quiet
+gcloud logging buckets delete pramana-run --location=asia-south1 --project=luminous-slice-514102-f4 --quiet
+gcloud artifacts repositories delete pramana --location=asia-south1 --project=luminous-slice-514102-f4 --quiet
+gcloud storage rm --recursive 'gs://luminous-slice-514102-f4-pramana-build/**'
+gcloud storage buckets delete gs://luminous-slice-514102-f4-pramana-build --project=luminous-slice-514102-f4 --quiet
+```
+
+Then delete only these deployment identities after checking for any other use:
+
+```powershell
+gcloud iam service-accounts delete pramana-web@luminous-slice-514102-f4.iam.gserviceaccount.com --project=luminous-slice-514102-f4 --quiet
+gcloud iam service-accounts delete pramana-core@luminous-slice-514102-f4.iam.gserviceaccount.com --project=luminous-slice-514102-f4 --quiet
+gcloud iam service-accounts delete pramana-sim@luminous-slice-514102-f4.iam.gserviceaccount.com --project=luminous-slice-514102-f4 --quiet
+gcloud iam service-accounts delete pramana-migrate@luminous-slice-514102-f4.iam.gserviceaccount.com --project=luminous-slice-514102-f4 --quiet
+gcloud iam service-accounts delete pramana-build@luminous-slice-514102-f4.iam.gserviceaccount.com --project=luminous-slice-514102-f4 --quiet
+```
+
+Review IAM for stale `pramana-*` service-account bindings and remove only those exact principals.
+Leave project APIs and all unrelated resources unchanged.

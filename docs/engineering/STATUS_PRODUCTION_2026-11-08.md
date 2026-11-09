@@ -16,8 +16,8 @@ and bypass human consent and quiet hours. Starting a real live investigation is 
 Focused API checks passed under both the database owner and `pramana_app`, including replay,
 withdrawal, override audit, link expiry and reuse, and tenant isolation. The mail test uses a
 fake transport and the live planner test uses the in-process simulator. Hindi and Marathi wording
-still needs native review. Deployment of each new migration in this candidate must repeat the
-schema revoke for
+still needs native review. Deployment of each new migration in this candidate, including migration
+0017, must repeat the schema revoke for
 `anon` and `authenticated`.
 
 The consent-request idempotency response is encrypted at rest so a retry can return the same
@@ -77,7 +77,6 @@ account, paid provider or cloud resource was used. Nothing was deployed or pushe
 | Answer words per outcome | Pushed | `e86e800`: `Probe.outcome_words`, `ServicePoint.words`, passed to all extractors. ruff, mypy, API drift and focused suites pass locally |
 | Pending invitations in `/v1/me` | Pushed | `ef29567`: migration 0015 adds read-only policies limited to the signed-in person's verified email; `POST /v1/invitations/accept-pending`; shown on the welcome step. Invitation, account and RLS tests pass as the restricted role; UI 48 passed. The join button has no browser journey of its own yet |
 | Personal data vault, consent, erasure | Pushed | `b7ad488`: migration 0016 `person_keys`, `personal_texts`, `consents`; AES-256-GCM with one data key per person, wrapped by a master key held in the process (`PRAMANA_PII_KEY`, required in production). Cloud KMS is not wired: it replaces `MasterKey` at deployment. Directory names sealed, and for site investigations names, reports and transcripts stay out of events and rows; erasure also scrubs saved idempotent responses. `POST .../people/{id}/erase` and consent routes added. The later consent gate and screens are described in the Nov 9 update above |
-| Cursor list pages and workspace retention | Implemented on `nov9/pagination-deletion` | Migrations 0017-0020 add consent gates, verified workspace domains, durable simulator state, signed organization- and filter-bound keyset cursors, bounded pages, deletion state and list indexes. Growing workspace lists and join-request history now return `items`, `limit` and `next_cursor`; owners can export a streamed JSON-per-table ZIP, delete with a 30-day restore window, and restore before scheduled purge. The purge job removes personal rows, redacts mutable personal data, preserves sealed events and audit entries, and aborts on readable personal text. API, RLS, browser and purge evidence is recorded in the C builder report. The daily maintenance job still needs deployment scheduling |
 
 | New kinds of site | Tested locally | `test_new_kinds_of_site.py`, through the real core and simulator by API, under owner and restricted database roles: a hospital, an office and a metro station built from empty, each reaching the right decision for two injected faults, with exact replay and seal. Also a contradicting witness, two simultaneous faults, self-approval refused, no hostel wording, nothing personal in the log. Medical gas and nurse call equipment types added. Not driven through the browser |
 | Real Google sign-in | Partly checked | First sign-in with the owner's account verified in the database on `localhost:3102`. Returning user, cancel at Google and wrong-account invitation not yet exercised on real Google |
@@ -90,11 +89,9 @@ Matched by test name and scope, not by re-reading each assertion.
 
 | Result | Rows |
 |---|---|
-| Automated test found | ID-01, 02, 03, 04, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 07, 09, 10; DA-01, 04, 05, 07; PA-09 |
+| Automated test found | ID-01, 02, 03, 04, 05, 07, 08, 09, 10, 12, 13, 14, 15, 16, 17; OR-03, 06, 09, 10; DA-01, 04, 05; PA-09 |
 | Partly covered | ID-06 (address check and switch-account prompt; the masked message is not asserted in a browser); ID-11 (disabled sign-in only); OR-01, OR-02 (saved preference, no switcher journey); OR-04 (access ends; stream closing not tested for removal); OR-05 (roles change; mid-session refresh not tested); OR-08 (suggestions; slug change and redirects not built); OR-11 (self-approval refused; "Invite an approver" not tested); DA-02, DA-03, DA-06, DA-08 (server rules; banners not tested) |
-| Not built | None of the listed slice rows |
-
-OR-07 has API coverage for export isolation, deleted-route refusal, member access, restore and purge, plus a browser journey for the deleted-workspace notice and owner restore. DA-07 has a 2,000-row SQL-seeded pagination test, insertion-between-pages and cursor-binding checks, restricted-role coverage, and a browser request-count assertion. See the C builder report for exact commands and results.
+| Not built | OR-07 (organization deletion, R3); DA-07 (list pages use offset, not cursor) |
 
 ## 2026-11-09: verified workspace domain joining
 
@@ -147,11 +144,6 @@ Done since the morning plan: onboarding, the workspace console on organization r
 preferences, people per site, the adaptive home, practice investigations on a workspace's own
 model, team invitations, model health and settings pages. Still open:
 
-- Deployment of the cursor and deletion work (not done): apply migrations 0017 to 0020, repeat the
-  revoke of `anon` and `authenticated` on the Pramana schema, provision the non-superuser
-  maintenance role described in `WORKSPACE_RETENTION.md`, then schedule
-  `scripts/purge_deleted_workspaces.py` as a daily job. Until the job runs, workspaces past their
-  30-day window are not purged.
 - The legacy single-site console pages remain for accounts with global staff roles and their
   tests; retire them (and `DEFAULT_PACK`) once the real-stack fixtures use workspaces.
 - Live investigations with real people (calls, messages, work orders) are R3; a live site can
@@ -227,7 +219,10 @@ database still had the earlier event-key constraint. It was aligned with the rev
 before rerunning the full downgrade/upgrade and security checks. All 80 checks then passed. No
 committed migration was rewritten, and no demo or deployed database was involved.
 
-## Nov 9 budget deployment preparation
+## Nov 9 budget deployment preparation (historical)
+
+The following records the state before Task G and is superseded by the final live deployment update
+below.
 
 Task B is locally ready for the human deploy gate on branch `nov9/budget-deploy`. Commit `432d71a`
 adds durable simulator state and restart/replay checks. Commit `27dde03` adds the standalone budget
@@ -277,3 +272,72 @@ list, and reset it. The real-stack runner now refuses unless `E2E_DATABASE` is e
 allowlisted, and the Python suites, the e2e harness and the load test use the same check
 (`scripts/db_guard.py`). The Python suites no longer default to any database, and CI runs the
 safety tests in both the web and Python jobs.
+
+## Task G live deployment update, 2026-11-09
+
+The budget deployment is live in GCP project luminous-slice-514102-f4, region
+asia-south1. Commit 980bf4d adds security headers and deploys the final stage image.
+The URL is https://pramana-web-nzxslh75pq-el.a.run.app and must remain team-only.
+The three Cloud Run services are ready with 100% traffic on these revisions:
+
+| Service | Revision | Image digest |
+|---|---|---|
+| pramana-web | pramana-web-00009-k6j | pramana-web@sha256:c4de3687d6b0f1181f54b028b47cde1a451b443d3560d25ed8e9e12b4b4c64c6 |
+| pramana-core | pramana-core-00004-ctb | pramana-py@sha256:350168dbe5dfd27bd5e340897df5292292696926c2ecaa3ac567c75f9f762bc3 |
+| pramana-sim | pramana-sim-00005-5dk | pramana-py@sha256:350168dbe5dfd27bd5e340897df5292292696926c2ecaa3ac567c75f9f762bc3 |
+
+The migration job and grant audit completed successfully at schema revision 0019.
+Read-only database checks confirmed the runtime roles cannot superuser, bypass row
+security, create databases or create roles. No tenant or personal-data rows were read
+or added. Supabase remains in Singapore under the owner's staging-only exception. The
+database move and five credential rotations are still parked, and the migrator password
+remains shorter than the documented 16-character minimum. Do not put real personal data
+in the app and do not share the URL outside the team.
+
+The public smoke passed the landing page, login page, Next static asset, core health
+through the web proxy and /ready. Follow-up checks confirmed the unknown route returns
+404; HSTS, CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy and
+Permissions-Policy are present on pages and 404s. Bundled headless Chromium rendered the
+landing and login pages with no browser errors and showed the Google sign-in button.
+The HTTP-only Google start request returned a 302 to accounts.google.com; its configured
+client ID and callback matched, and its flow cookie had Secure, HttpOnly, SameSite and
+Path attributes. The redirect was not followed. No real Google sign-in, email or
+personal-data operation was attempted. Nikhil must add this callback manually to the
+existing OAuth client's authorized redirect URIs:
+
+https://pramana-web-nzxslh75pq-el.a.run.app/api/core/v1/auth/google/callback
+
+No JavaScript origin is used by this server-side authorization-code flow. Budget listing,
+billing report reads and budget changes were not performed. The owner-confirmed INR 1,000
+monthly alert is not a spend cap.
+
+After the security-header update, web typecheck, lint, copy check, worklet check and the
+one-worker Playwright suite all passed; the suite had 53 tests. The full Python suite
+passed 4,127 tests before this web-only change. The exact commands, earlier build fixes,
+rollout details and teardown steps are in the report at
+C:\Dev\Pramana-AI\.claude\worktrees\production\.cache\nov9\out\G-report.md
+and in [DEPLOY_BUDGET_GCP.md](DEPLOY_BUDGET_GCP.md).
+
+## Final real-stack verification, 2026-11-10
+
+The final real-stack Playwright gate passed 32 tests using one worker and the root worktree
+.env. Before starting it, I verified that the configured E2E database was in
+PRAMANA_DB_NAMES and that all four configured test ports were free. Migration downgrade and
+upgrade completed on the allowlisted pramana_dp_e2e database. Playwright stopped the mock
+OIDC, simulator, core and web servers; no listener remains on the configured ports.
+
+A preceding attempt was misconfigured: it ran from apps/web while its environment loader looked
+for .env relative to that directory. The loader found no file, so Playwright fell back to its
+default E2E_DATABASE value pramana_web_e2e and no PRAMANA_DB_NAMES allowlist was set. The backend
+started an Alembic downgrade on that database and failed at 0017 to 0016 because consent_links
+did not exist. The command did not reach the browser tests. The database transaction outcome and
+final schema state were not verified. I did not query or clean that database afterwards. The owner
+should inspect pramana_web_e2e before any further use. All servers from that failed attempt have
+stopped.
+
+## Logging privacy follow-up, 2026-11-10
+
+The audit found that Cloud Run managed request logs include the full request URL even though the
+application suppresses OAuth and consent-route request logging. The GCP log sink filters now drop
+Google OAuth start and callback URLs, consent-link URLs and `/consent/` capability URLs from both
+the regional Pramana bucket and the default project sink. Regression tests cover both sink filters.

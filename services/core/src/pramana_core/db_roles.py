@@ -39,18 +39,25 @@ def scram_verifier(password: str, *, salt: bytes | None = None) -> str:
 
 def role_passwords(app_url: str, sim_url: str) -> dict[str, str]:
     app, sim = make_url(app_url), make_url(sim_url)
-    app_credential = app.password
-    sim_credential = sim.password
-    if not app_credential or not sim_credential:
+    if not app.password or not sim.password:
         raise ValueError("runtime database URLs must include their role passwords")
     # The Supabase pooler user name is "<role>.<project ref>".
     if (app.username or "").split(".", 1)[0] != "pramana_app":
         raise ValueError("DATABASE_RUNTIME_URL must connect as pramana_app")
     if (sim.username or "").split(".", 1)[0] != "pramana_sim":
         raise ValueError("DATABASE_SIMULATOR_URL must connect as pramana_sim")
-    if app_credential == sim_credential:
+    if app.password == sim.password:
         raise ValueError("core and simulator database passwords must be different")
-    return {"pramana_app": app_credential, "pramana_sim": sim_credential}
+    return {"pramana_app": app.password, "pramana_sim": sim.password}
+
+
+def role_statement_template(*, exists: bool) -> str:
+    """Create or update runtime credentials while explicitly clearing elevated attributes."""
+    action = "alter" if exists else "create"
+    return (
+        f"{action} role %I login nosuperuser nobypassrls nocreatedb "
+        "nocreaterole noreplication password %L"
+    )
 
 
 async def ensure_roles(migrator_url: str, app_url: str, sim_url: str) -> None:
@@ -63,17 +70,13 @@ async def ensure_roles(migrator_url: str, app_url: str, sim_url: str) -> None:
                     text("select exists(select 1 from pg_roles where rolname = :role)"),
                     {"role": role},
                 )
-                action = "alter" if exists else "create"
                 statement = await connection.scalar(
                     text(
                         "select format(cast(:template as text), cast(:role as text), "
                         "cast(:verifier as text))"
                     ),
                     {
-                        "template": (
-                            f"{action} role %I login nosuperuser nobypassrls nocreatedb "
-                            "nocreaterole noreplication password %L"
-                        ),
+                        "template": role_statement_template(exists=bool(exists)),
                         "role": role,
                         "verifier": scram_verifier(passwords[role]),
                     },

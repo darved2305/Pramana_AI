@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROJECT_DEFAULT = "luminous-slice-514102-f4"
 REGION = "asia-south1"
 INDIA_DATABASE_REGION = "ap-south-1"
+SUPABASE_REF = "lhgxsrechpucdbyqljfu"
 NON_INDIA_DATABASE_ACK = "PRAMANA_ACCEPT_NON_INDIA_DATABASE"
 TRUE_VALUES = frozenset({"true", "1", "yes"})
 REPOSITORY = "pramana"
@@ -37,12 +38,26 @@ BUILD_ACCOUNT = "build"
 SERVICE_ACCOUNTS = ("web", "core", "sim", "migrate", BUILD_ACCOUNT)
 DEPLOY_ACCOUNT = "nikhilpise2006@gmail.com"
 ALERT_BUDGET_NAME = "pramana-inr-1000"
-LOG_FILTER = (
-    '((resource.type="cloud_run_revision" AND resource.labels.location="asia-south1" AND '
+RUN_SERVICE_LOGS_FILTER = (
+    'resource.type="cloud_run_revision" AND resource.labels.location="asia-south1" AND '
     '(resource.labels.service_name="pramana-web" OR resource.labels.service_name="pramana-core" '
-    'OR resource.labels.service_name="pramana-sim")) OR '
-    '(resource.type="cloud_run_job" AND resource.labels.location="asia-south1" '
-    'AND resource.labels.job_name="pramana-migrate"))'
+    'OR resource.labels.service_name="pramana-sim")'
+)
+MIGRATION_LOGS_FILTER = (
+    'resource.type="cloud_run_job" AND resource.labels.location="asia-south1" '
+    'AND resource.labels.job_name="pramana-migrate"'
+)
+SENSITIVE_REQUEST_URL_FILTER = (
+    'httpRequest.requestUrl =~ "auth/google/(start|callback)" OR '
+    'httpRequest.requestUrl =~ "consent-links/" OR '
+    'httpRequest.requestUrl =~ "/consent/"'
+)
+# Cloud Run request logs include the complete URL, including OAuth codes and consent capabilities.
+# Keep those entries out of both the regional sink and the default project log bucket.
+SENSITIVE_REQUEST_LOGS_FILTER = f"({RUN_SERVICE_LOGS_FILTER}) AND ({SENSITIVE_REQUEST_URL_FILTER})"
+LOG_FILTER = (
+    f"(({RUN_SERVICE_LOGS_FILTER}) AND NOT ({SENSITIVE_REQUEST_URL_FILTER})) OR "
+    f"({MIGRATION_LOGS_FILTER})"
 )
 API_SERVICES = (
     "artifactregistry.googleapis.com",
@@ -128,14 +143,15 @@ def dry_run_environment() -> dict[str, str]:
     values = {
         "GCP_PROJECT_ID": PROJECT_DEFAULT,
         "GCP_BILLING_ACCOUNT_ID": "000000-000000-000000",
-        "PRAMANA_SUPABASE_REGION": "ap-south-1",
+        "PRAMANA_SUPABASE_REGION": "ap-southeast-1",
+        NON_INDIA_DATABASE_ACK: "true",
         "PRAMANA_SUPABASE_CREDENTIALS_ROTATED": "true",
         "PRAMANA_SUPABASE_APP_PASSWORD_ROTATED": "true",
         "PRAMANA_SUPABASE_SECRET_KEY_ROTATED": "true",
         "PRAMANA_GOOGLE_OAUTH_CLIENT_SECRET_ROTATED": "true",
         "PRAMANA_GMAIL_APP_PASSWORD_ROTATED": "true",
-        "PRAMANA_SUPABASE_REF": "dryrunref123456",
-        "PRAMANA_SUPABASE_POOLER_HOST": "aws-0-ap-south-1.pooler.supabase.com",
+        "PRAMANA_SUPABASE_REF": SUPABASE_REF,
+        "PRAMANA_SUPABASE_POOLER_HOST": "aws-0-ap-southeast-1.pooler.supabase.com",
         "PRAMANA_SUPABASE_DATABASE": "postgres",
         "PRAMANA_SUPABASE_DB_PASSWORD": "dry-run-migrator-placeholder",
         "PRAMANA_SUPABASE_APP_PASSWORD": "dry-run-runtime-placeholder",
@@ -364,6 +380,8 @@ def validate_environment(ctx: Context) -> None:
         )
     if not re.fullmatch(r"[A-Za-z0-9-]{6,64}", ctx.value("PRAMANA_SUPABASE_REF")):
         raise DeployError("PRAMANA_SUPABASE_REF has an invalid format")
+    if ctx.value("PRAMANA_SUPABASE_REF") != SUPABASE_REF:
+        raise DeployError("PRAMANA_SUPABASE_REF must identify the authorized Pramana project")
     host = ctx.value("PRAMANA_SUPABASE_POOLER_HOST").lower()
     if not re.fullmatch(r"[a-z0-9.-]+\.pooler\.supabase\.com", host) or f"-{region}." not in host:
         raise DeployError(f"PRAMANA_SUPABASE_POOLER_HOST must be the {region} session pooler host")
@@ -377,16 +395,14 @@ def validate_environment(ctx: Context) -> None:
         raise DeployError("PARTICIPANT_SIGNING_KEY must encode a 32-byte Ed25519 seed") from exc
     if len(signing_seed) != 32:
         raise DeployError("PARTICIPANT_SIGNING_KEY must encode a 32-byte Ed25519 seed")
-    short = []
-    for index, env_name in enumerate(
-        (
-            "PRAMANA_SUPABASE_DB_PASSWORD",
-            "PRAMANA_SUPABASE_APP_PASSWORD",
+    short = [
+        label
+        for setting, label in (
+            ("PRAMANA_SUPABASE_DB_PASSWORD", "migrator"),
+            ("PRAMANA_SUPABASE_APP_PASSWORD", "runtime"),
         )
-    ):
-        configured_value = ctx.value(env_name)
-        if len(configured_value) < MIN_PASSWORD_LENGTH:
-            short.append("migrator" if index == 0 else "runtime")
+        if len(ctx.value(setting)) < MIN_PASSWORD_LENGTH
+    ]
     if short and not outstanding:
         raise DeployError(
             f"the rotated Supabase {short[0]} password is too short; use at least "
@@ -511,6 +527,7 @@ def ensure_artifact_registry(gcloud: Gcloud, ctx: Context) -> None:
         gcloud.run(
             [
                 "artifacts",
+                "repositories",
                 "set-cleanup-policies",
                 REPOSITORY,
                 f"--location={REGION}",
@@ -522,6 +539,12 @@ def ensure_artifact_registry(gcloud: Gcloud, ctx: Context) -> None:
         )
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+def validate_logging_bucket(payload: dict[str, Any], ctx: Context) -> None:
+    expected_name = f"projects/{ctx.project}/locations/{REGION}/buckets/pramana-run"
+    if payload.get("name") != expected_name:
+        raise DeployError("existing pramana-run log bucket is not in asia-south1")
 
 
 def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
@@ -554,8 +577,7 @@ def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
         )
     else:
         parsed = json.loads(bucket.stdout or "{}")
-        if parsed.get("location") != REGION:
-            raise DeployError("existing pramana-run log bucket is not in asia-south1")
+        validate_logging_bucket(parsed, ctx)
         if int(parsed.get("retentionDays", 0)) != 180:
             gcloud.run(
                 [
@@ -649,7 +671,38 @@ def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
                 "sinks",
                 "update",
                 "_Default",
-                f"--update-exclusion=name=pramana-run,filter={LOG_FILTER}",
+                f"--update-exclusion=name=pramana-run,filter={LOG_FILTER},disabled=",
+                f"--project={ctx.project}",
+                "--quiet",
+            ]
+        )
+    sensitive = next(
+        (entry for entry in exclusions if entry.get("name") == "pramana-sensitive-requests"),
+        None,
+    )
+    if sensitive is None:
+        gcloud.run(
+            [
+                "logging",
+                "sinks",
+                "update",
+                "_Default",
+                f"--add-exclusion=name=pramana-sensitive-requests,filter={SENSITIVE_REQUEST_LOGS_FILTER}",
+                f"--project={ctx.project}",
+                "--quiet",
+            ]
+        )
+    elif (
+        sensitive.get("filter") != SENSITIVE_REQUEST_LOGS_FILTER
+        or sensitive.get("disabled") is True
+    ):
+        gcloud.run(
+            [
+                "logging",
+                "sinks",
+                "update",
+                "_Default",
+                f"--update-exclusion=name=pramana-sensitive-requests,filter={SENSITIVE_REQUEST_LOGS_FILTER},disabled=",
                 f"--project={ctx.project}",
                 "--quiet",
             ]
@@ -910,7 +963,7 @@ def ensure_build_identity(gcloud: Gcloud, ctx: Context) -> None:
                 f"--project={ctx.project}",
             ]
         )
-    lifecycle = [{"action": {"type": "Delete"}, "condition": {"age": 7}}]
+    lifecycle = {"rule": [{"action": {"type": "Delete"}, "condition": {"age": 7}}]}
     lifecycle_path = write_temp_json(lifecycle)
     try:
         gcloud.run(
@@ -959,6 +1012,19 @@ def ensure_build_identity(gcloud: Gcloud, ctx: Context) -> None:
             f"gs://{bucket}",
             f"--member={member}",
             "--role=roles/storage.objectAdmin",
+            f"--project={ctx.project}",
+            "--quiet",
+        ],
+        quiet=True,
+    )
+    gcloud.run(
+        [
+            "storage",
+            "buckets",
+            "add-iam-policy-binding",
+            f"gs://{bucket}",
+            f"--member={member}",
+            "--role=roles/storage.bucketViewer",
             f"--project={ctx.project}",
             "--quiet",
         ],
@@ -1060,6 +1126,7 @@ def deploy_service(
     timeout: str,
     probe_path: str,
     public: bool,
+    container_args: Sequence[str] = (),
     max_instances: int = 2,
     no_traffic: bool = False,
 ) -> str:
@@ -1088,6 +1155,8 @@ def deploy_service(
         f"--liveness-probe=httpGet.path={probe_path},periodSeconds=60,timeoutSeconds=5,failureThreshold=3",
         "--quiet",
     ]
+    if container_args:
+        args.append(f"--args={','.join(container_args)}")
     if secret_map:
         args.append(f"--set-secrets={secret_map}")
     args.append("--allow-unauthenticated" if public else "--no-allow-unauthenticated")
@@ -1177,8 +1246,12 @@ def smoke(gcloud: Gcloud, ctx: Context) -> None:
     status, home, _ = get("/")
     if status != 200:
         raise DeployError("web home smoke check failed")
-    status, login, _ = get("/login")
-    if status != 200 or b"Continue with Google" not in login:
+    status, login, login_content_type = get("/login")
+    if (
+        status != 200
+        or "text/html" not in login_content_type.lower()
+        or b"<title>Pramana" not in login
+    ):
         raise DeployError("sign-in page smoke check failed")
     match = re.search(rb'(?:src|href)="(/_next/static/[^"?]+)', home)
     if not match:
@@ -1271,6 +1344,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
         timeout="300s",
         probe_path="/ready",
         public=False,
+        container_args=("sim",),
     )
     bind_invoker(gcloud, ctx, "pramana-sim", "web")
     bind_invoker(gcloud, ctx, "pramana-sim", "core")
@@ -1313,6 +1387,7 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
         timeout="3600s",
         probe_path="/ready",
         public=False,
+        container_args=("core",),
     )
     bind_invoker(gcloud, ctx, "pramana-core", "web")
     web_url = deploy_service(
@@ -1333,6 +1408,19 @@ def execute(gcloud: Gcloud, ctx: Context) -> None:
         timeout="300s",
         probe_path="/",
         public=True,
+    )
+    # --no-traffic pins the previous revision. Restore traffic to latest after backend URLs are set.
+    gcloud.run(
+        [
+            "run",
+            "services",
+            "update-traffic",
+            "pramana-web",
+            "--to-latest",
+            f"--region={REGION}",
+            f"--project={ctx.project}",
+            "--quiet",
+        ]
     )
     smoke(gcloud, ctx)
     print(f"Web URL: {web_url}")
