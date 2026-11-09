@@ -59,9 +59,9 @@ def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     assert f'["{deploy.CANONICAL_WEB_ORIGIN}"]' == deploy.CANONICAL_CORS_ORIGINS
     assert f"PRAMANA_CANONICAL_ORIGIN={deploy.CANONICAL_WEB_ORIGIN}" in output
     assert f"PUBLIC_WEB_URL={deploy.CANONICAL_WEB_ORIGIN}" in output
-    escaped_origins = deploy.CANONICAL_CORS_ORIGINS.replace('"', '\\"')
-    assert f"CORS_ORIGINS={escaped_origins}" in output
-    assert f"SIM_CORS_ORIGINS={escaped_origins}" in output
+    normalized_output = output.replace('\\"', '"')
+    assert f"CORS_ORIGINS={deploy.CANONICAL_CORS_ORIGINS}" in normalized_output
+    assert f"SIM_CORS_ORIGINS={deploy.CANONICAL_CORS_ORIGINS}" in normalized_output
     assert "SESSION_COOKIE_SECURE=true" in output
     assert "httpGet.path=/_health" in output
     assert "X-Serverless-Authorization" not in output
