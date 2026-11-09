@@ -9935,6 +9935,26 @@
        ],
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "purpose",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "contact_for_investigations",
+          "voice_processing"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Purpose"
+      }
      }
     ],
     "responses": {

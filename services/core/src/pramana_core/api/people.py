@@ -198,9 +198,15 @@ async def list_consents(
     response: Response,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     cursor: Annotated[str | None, Query(max_length=4096)] = None,
+    purpose: Annotated[ConsentPurpose | None, Query()] = None,
 ) -> CursorPage[ConsentRecord]:
     rows, next_cursor = await _people(request, response).consent_page(
-        _site(site_id), person_id, limit=limit, cursor=cursor, codec=request.app.state.cursor_codec
+        _site(site_id),
+        person_id,
+        limit=limit,
+        cursor=cursor,
+        purpose=purpose,
+        codec=request.app.state.cursor_codec,
     )
     return CursorPage[ConsentRecord](
         items=[consent_view(r) for r in rows], limit=limit, next_cursor=next_cursor

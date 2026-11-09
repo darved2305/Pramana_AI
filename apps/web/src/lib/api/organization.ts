@@ -139,8 +139,22 @@ export function organizationApi(org: string) {
       mutate<void>(`${site(siteId)}/people/${enc(personId)}/remove`, undefined, action),
     erasePerson: (siteId: string, personId: string, action: OrganizationAction) =>
       mutate<void>(`${site(siteId)}/people/${enc(personId)}/erase`, undefined, action),
-    consents: (siteId: string, personId: string, signal?: AbortSignal) =>
-      request<CursorPage<ConsentRecord>>("core", `${site(siteId)}/people/${enc(personId)}/consents?limit=100`, { signal }),
+    consents: (
+      siteId: string,
+      personId: string,
+      query: { limit?: number; cursor?: string; purpose?: ConsentRecord["purpose"] } = {},
+      signal?: AbortSignal,
+    ) => {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor) params.set("cursor", query.cursor);
+      if (query.purpose) params.set("purpose", query.purpose);
+      return request<CursorPage<ConsentRecord>>(
+        "core",
+        `${site(siteId)}/people/${enc(personId)}/consents${params.size ? `?${params}` : ""}`,
+        { signal },
+      );
+    },
     recordConsent: (siteId: string, personId: string, body: RecordConsent, action: OrganizationAction) =>
       mutate<ConsentRecord>(`${site(siteId)}/people/${enc(personId)}/consents`, body, action),
     withdrawConsent: (siteId: string, personId: string, purpose: RecordConsent["purpose"], action: OrganizationAction) =>

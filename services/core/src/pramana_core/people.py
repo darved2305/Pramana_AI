@@ -396,10 +396,11 @@ class SitePeople:
         *,
         limit: int,
         cursor: str | None,
+        purpose: str | None,
         codec: CursorCodec,
     ) -> tuple[list[ConsentRow], str | None]:
         org_id = self._org()
-        filters: dict[str, object] = {"person_id": person_id}
+        filters: dict[str, object] = {"person_id": person_id, "purpose": purpose}
         scope = f"consents:{site_id}"
         sort = codec.decode(cursor, scope=scope, org_id=str(org_id), filters=filters)
         query = select(ConsentRow).where(
@@ -407,6 +408,8 @@ class SitePeople:
             ConsentRow.site_id == site_id,
             ConsentRow.person_id == person_id,
         )
+        if purpose is not None:
+            query = query.where(ConsentRow.purpose == purpose)
         if sort is not None:
             try:
                 after_created = datetime.fromisoformat(str(sort[0]))

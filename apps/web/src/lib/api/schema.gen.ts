@@ -6478,6 +6478,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string | null;
+                purpose?: ("contact_for_investigations" | "voice_processing") | null;
             };
             header?: never;
             path: {

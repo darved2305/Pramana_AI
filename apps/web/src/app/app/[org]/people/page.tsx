@@ -101,8 +101,14 @@ export default function PeoplePage() {
     const missing = list.filter((x) => !cache.has(`${siteId}|${x.person.id}`));
     for (let i = 0; i < missing.length; i += 6) {
       const part = missing.slice(i, i + 6);
-      const rows = await Promise.all(part.map((x) => ws.api.consents(siteId as string, x.person.id, s)));
-      part.forEach((x, n) => cache.set(`${siteId}|${x.person.id}`, rows[n].items));
+      const rows = await Promise.all(part.map(async (x) => {
+        const latest = await Promise.all([
+          ws.api.consents(siteId as string, x.person.id, { limit: 1, purpose: "contact_for_investigations" }, s),
+          ws.api.consents(siteId as string, x.person.id, { limit: 1, purpose: "voice_processing" }, s),
+        ]);
+        return latest.flatMap((page) => page.items);
+      }));
+      part.forEach((x, n) => cache.set(`${siteId}|${x.person.id}`, rows[n]));
     }
     return new Map(list.map((x) => [x.person.id, cache.get(`${siteId}|${x.person.id}`) ?? []]));
   });

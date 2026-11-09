@@ -144,6 +144,56 @@ def test_consent_is_recorded_replaced_and_withdrawn(account_core: TestClient) ->
     assert len(client.get(base).json()["items"]) == 2
 
 
+def test_consent_purpose_filter_keeps_current_status_after_long_history(
+    account_core: TestClient,
+) -> None:
+    client = account_core
+    org, _, site = workspace(client)
+    add_person(client, org, site)
+    base = f"/v1/orgs/{org}/sites/{site}/people/ananya/consents"
+    contact = {
+        "purpose": "contact_for_investigations",
+        "notice_version": "contact-1",
+        "language": "en",
+        "channel": "paper",
+        "evidence": {},
+    }
+    voice = {
+        "purpose": "voice_processing",
+        "notice_version": "voice-0",
+        "language": "en",
+        "channel": "paper",
+        "evidence": {},
+    }
+    assert post(client, base, contact).status_code == 201
+    for version in range(101):
+        response = post(client, base, {**voice, "notice_version": f"voice-{version}"})
+        assert response.status_code == 201, response.text
+
+    first_page = client.get(base, params={"limit": 100}).json()
+    assert len(first_page["items"]) == 100
+    assert all(row["purpose"] == "voice_processing" for row in first_page["items"])
+    assert first_page["next_cursor"]
+
+    latest_contact = client.get(base, params={"limit": 1, "purpose": "contact_for_investigations"})
+    assert latest_contact.status_code == 200, latest_contact.text
+    assert [row["notice_version"] for row in latest_contact.json()["items"]] == ["contact-1"]
+    latest_voice = client.get(base, params={"limit": 1, "purpose": "voice_processing"})
+    assert latest_voice.status_code == 200, latest_voice.text
+    assert [row["notice_version"] for row in latest_voice.json()["items"]] == ["voice-100"]
+
+    wrong_filter = client.get(
+        base,
+        params={
+            "limit": 1,
+            "purpose": "contact_for_investigations",
+            "cursor": latest_voice.json()["next_cursor"],
+        },
+    )
+    assert wrong_filter.status_code == 400
+    assert wrong_filter.json()["error"]["code"] == "CURSOR_INVALID"
+
+
 def test_a_ciphertext_cannot_be_moved_to_another_person() -> None:
     a = PersonRef(uuid.uuid4(), uuid.uuid4(), "a")
     b = PersonRef(a.org_id, a.site_id, "b")
