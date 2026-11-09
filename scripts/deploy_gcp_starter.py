@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROJECT_DEFAULT = "luminous-slice-514102-f4"
 REGION = "asia-south1"
 INDIA_DATABASE_REGION = "ap-south-1"
+SUPABASE_REF = "lhgxsrechpucdbyqljfu"
 NON_INDIA_DATABASE_ACK = "PRAMANA_ACCEPT_NON_INDIA_DATABASE"
 TRUE_VALUES = frozenset({"true", "1", "yes"})
 REPOSITORY = "pramana"
@@ -128,14 +129,15 @@ def dry_run_environment() -> dict[str, str]:
     values = {
         "GCP_PROJECT_ID": PROJECT_DEFAULT,
         "GCP_BILLING_ACCOUNT_ID": "000000-000000-000000",
-        "PRAMANA_SUPABASE_REGION": "ap-south-1",
+        "PRAMANA_SUPABASE_REGION": "ap-southeast-1",
+        NON_INDIA_DATABASE_ACK: "true",
         "PRAMANA_SUPABASE_CREDENTIALS_ROTATED": "true",
         "PRAMANA_SUPABASE_APP_PASSWORD_ROTATED": "true",
         "PRAMANA_SUPABASE_SECRET_KEY_ROTATED": "true",
         "PRAMANA_GOOGLE_OAUTH_CLIENT_SECRET_ROTATED": "true",
         "PRAMANA_GMAIL_APP_PASSWORD_ROTATED": "true",
-        "PRAMANA_SUPABASE_REF": "dryrunref123456",
-        "PRAMANA_SUPABASE_POOLER_HOST": "aws-0-ap-south-1.pooler.supabase.com",
+        "PRAMANA_SUPABASE_REF": SUPABASE_REF,
+        "PRAMANA_SUPABASE_POOLER_HOST": "aws-0-ap-southeast-1.pooler.supabase.com",
         "PRAMANA_SUPABASE_DATABASE": "postgres",
         "PRAMANA_SUPABASE_DB_PASSWORD": "dry-run-migrator-placeholder",
         "PRAMANA_SUPABASE_APP_PASSWORD": "dry-run-runtime-placeholder",
@@ -364,6 +366,8 @@ def validate_environment(ctx: Context) -> None:
         )
     if not re.fullmatch(r"[A-Za-z0-9-]{6,64}", ctx.value("PRAMANA_SUPABASE_REF")):
         raise DeployError("PRAMANA_SUPABASE_REF has an invalid format")
+    if ctx.value("PRAMANA_SUPABASE_REF") != SUPABASE_REF:
+        raise DeployError("PRAMANA_SUPABASE_REF must identify the authorized Pramana project")
     host = ctx.value("PRAMANA_SUPABASE_POOLER_HOST").lower()
     if not re.fullmatch(r"[a-z0-9.-]+\.pooler\.supabase\.com", host) or f"-{region}." not in host:
         raise DeployError(f"PRAMANA_SUPABASE_POOLER_HOST must be the {region} session pooler host")
@@ -377,16 +381,14 @@ def validate_environment(ctx: Context) -> None:
         raise DeployError("PARTICIPANT_SIGNING_KEY must encode a 32-byte Ed25519 seed") from exc
     if len(signing_seed) != 32:
         raise DeployError("PARTICIPANT_SIGNING_KEY must encode a 32-byte Ed25519 seed")
-    short = []
-    for index, env_name in enumerate(
-        (
-            "PRAMANA_SUPABASE_DB_PASSWORD",
-            "PRAMANA_SUPABASE_APP_PASSWORD",
+    short = [
+        label
+        for setting, label in (
+            ("PRAMANA_SUPABASE_DB_PASSWORD", "migrator"),
+            ("PRAMANA_SUPABASE_APP_PASSWORD", "runtime"),
         )
-    ):
-        configured_value = ctx.value(env_name)
-        if len(configured_value) < MIN_PASSWORD_LENGTH:
-            short.append("migrator" if index == 0 else "runtime")
+        if len(ctx.value(setting)) < MIN_PASSWORD_LENGTH
+    ]
     if short and not outstanding:
         raise DeployError(
             f"the rotated Supabase {short[0]} password is too short; use at least "
@@ -511,6 +513,7 @@ def ensure_artifact_registry(gcloud: Gcloud, ctx: Context) -> None:
         gcloud.run(
             [
                 "artifacts",
+                "repositories",
                 "set-cleanup-policies",
                 REPOSITORY,
                 f"--location={REGION}",
@@ -522,6 +525,12 @@ def ensure_artifact_registry(gcloud: Gcloud, ctx: Context) -> None:
         )
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+def validate_logging_bucket(payload: dict[str, Any], ctx: Context) -> None:
+    expected_name = f"projects/{ctx.project}/locations/{REGION}/buckets/pramana-run"
+    if payload.get("name") != expected_name:
+        raise DeployError("existing pramana-run log bucket is not in asia-south1")
 
 
 def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
@@ -554,8 +563,7 @@ def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
         )
     else:
         parsed = json.loads(bucket.stdout or "{}")
-        if parsed.get("location") != REGION:
-            raise DeployError("existing pramana-run log bucket is not in asia-south1")
+        validate_logging_bucket(parsed, ctx)
         if int(parsed.get("retentionDays", 0)) != 180:
             gcloud.run(
                 [
@@ -910,7 +918,7 @@ def ensure_build_identity(gcloud: Gcloud, ctx: Context) -> None:
                 f"--project={ctx.project}",
             ]
         )
-    lifecycle = [{"action": {"type": "Delete"}, "condition": {"age": 7}}]
+    lifecycle = {"rule": [{"action": {"type": "Delete"}, "condition": {"age": 7}}]}
     lifecycle_path = write_temp_json(lifecycle)
     try:
         gcloud.run(
@@ -959,6 +967,19 @@ def ensure_build_identity(gcloud: Gcloud, ctx: Context) -> None:
             f"gs://{bucket}",
             f"--member={member}",
             "--role=roles/storage.objectAdmin",
+            f"--project={ctx.project}",
+            "--quiet",
+        ],
+        quiet=True,
+    )
+    gcloud.run(
+        [
+            "storage",
+            "buckets",
+            "add-iam-policy-binding",
+            f"gs://{bucket}",
+            f"--member={member}",
+            "--role=roles/storage.bucketViewer",
             f"--project={ctx.project}",
             "--quiet",
         ],

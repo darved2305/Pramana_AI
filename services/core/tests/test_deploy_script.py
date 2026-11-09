@@ -18,6 +18,20 @@ SPEC.loader.exec_module(deploy)
 assert isinstance(deploy, ModuleType)
 
 
+def test_runtime_image_makes_the_entrypoint_executable() -> None:
+    dockerfile = deploy.ROOT / "Dockerfile"
+    lines = dockerfile.read_text(encoding="utf-8").splitlines()
+    copy_entrypoint = lines.index("COPY docker/entrypoint.sh /usr/local/bin/pramana-entrypoint")
+    chmod_line = (
+        "RUN chmod 0755 /usr/local/bin/pramana-entrypoint && "
+        "test -x /usr/local/bin/pramana-entrypoint"
+    )
+    chmod_entrypoint = lines.index(chmod_line)
+    create_runtime_user = lines.index("USER pramana")
+
+    assert copy_entrypoint < chmod_entrypoint < create_runtime_user
+
+
 def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -94,6 +108,7 @@ def test_non_india_database_needs_an_explicit_acknowledgement() -> None:
     context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
     context.env["PRAMANA_SUPABASE_REGION"] = "ap-southeast-1"
     context.env["PRAMANA_SUPABASE_POOLER_HOST"] = "aws-0-ap-southeast-1.pooler.supabase.com"
+    context.env[deploy.NON_INDIA_DATABASE_ACK] = "false"
 
     with pytest.raises(deploy.DeployError, match=r"not ap-south-1 .* Real personal data"):
         deploy.validate_environment(context)
@@ -106,13 +121,66 @@ def test_non_india_database_needs_an_explicit_acknowledgement() -> None:
     deploy.validate_environment(context)
 
 
+def test_deployment_refuses_an_unrelated_supabase_project() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+    context.env["PRAMANA_SUPABASE_REF"] = "llpjrfugwktlaizmxrtq"
+
+    with pytest.raises(deploy.DeployError, match="authorized Pramana project"):
+        deploy.validate_environment(context)
+
+
 def test_pooler_host_must_belong_to_the_configured_database_region() -> None:
     context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
     context.env["PRAMANA_SUPABASE_REGION"] = "ap-southeast-1"
+    context.env["PRAMANA_SUPABASE_POOLER_HOST"] = "aws-0-ap-south-1.pooler.supabase.com"
     context.env[deploy.NON_INDIA_DATABASE_ACK] = "true"
 
     with pytest.raises(deploy.DeployError, match="ap-southeast-1 session pooler host"):
         deploy.validate_environment(context)
+
+
+def test_artifact_registry_cleanup_uses_repository_command_group() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+
+    class Recorder:
+        dry_run = True
+
+        def __init__(self) -> None:
+            self.commands: list[list[str]] = []
+
+        def run(
+            self, args: list[str], **_kwargs: object
+        ) -> deploy.subprocess.CompletedProcess[str]:
+            self.commands.append(args)
+            return deploy.subprocess.CompletedProcess(args, 0, "{}", "")
+
+    recorder = Recorder()
+    deploy.ensure_artifact_registry(recorder, context)
+
+    cleanup = next(
+        command
+        for command in recorder.commands
+        if command[:3]
+        == [
+            "artifacts",
+            "repositories",
+            "set-cleanup-policies",
+        ]
+    )
+    assert cleanup[3] == deploy.REPOSITORY
+    assert "--no-dry-run" in cleanup
+
+
+def test_logging_bucket_location_is_read_from_its_resource_name() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+    expected_name = f"projects/{context.project}/locations/{deploy.REGION}/buckets/pramana-run"
+    parsed = {"name": expected_name, "retentionDays": 180}
+
+    deploy.validate_logging_bucket(parsed, context)
+
+    parsed["name"] = f"projects/{context.project}/locations/global/buckets/pramana-run"
+    with pytest.raises(deploy.DeployError, match="not in asia-south1"):
+        deploy.validate_logging_bucket(parsed, context)
 
 
 def test_budget_is_recorded_by_name_and_never_created_or_read(
@@ -244,6 +312,39 @@ def test_images_are_built_by_the_dedicated_build_account_and_bucket() -> None:
         )
         assert f"--gcs-source-staging-dir=gs://{deploy.build_bucket(context)}/source" in command
         assert f"--gcs-log-dir=gs://{deploy.build_bucket(context)}/logs" in command
+
+
+def test_build_bucket_lifecycle_uses_cloud_storage_json_shape() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+
+    class Recorder:
+        dry_run = True
+
+        def __init__(self) -> None:
+            self.lifecycle: dict[str, object] | None = None
+            self.commands: list[list[str]] = []
+
+        def run(
+            self, args: list[str], **_kwargs: object
+        ) -> deploy.subprocess.CompletedProcess[str]:
+            self.commands.append(args)
+            if args[:3] == ["storage", "buckets", "update"]:
+                path = Path(args[4].split("=", 1)[1])
+                self.lifecycle = deploy.json.loads(path.read_text(encoding="utf-8"))
+            return deploy.subprocess.CompletedProcess(args, 0, "{}", "")
+
+    recorder = Recorder()
+    deploy.ensure_build_identity(recorder, context)
+
+    assert recorder.lifecycle == {"rule": [{"action": {"type": "Delete"}, "condition": {"age": 7}}]}
+    bucket_grants = [
+        command
+        for command in recorder.commands
+        if command[:3] == ["storage", "buckets", "add-iam-policy-binding"]
+    ]
+    assert any("--role=roles/storage.bucketViewer" in command for command in bucket_grants)
+    assert any("--role=roles/storage.objectAdmin" in command for command in bucket_grants)
+    assert all(command[3] == f"gs://{deploy.build_bucket(context)}" for command in bucket_grants)
 
 
 def test_short_parked_passwords_warn_but_rotated_passwords_must_be_long(
