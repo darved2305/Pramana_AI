@@ -140,7 +140,7 @@ def test_or_09_create_org_once_after_lost_response(
     assert client.get(f"/v1/orgs/{org['slug']}").json() == org
 
 
-def test_stored_sandbox_is_identical_to_frozen_template(
+def test_stored_sandbox_is_identical_to_latest_frozen_template(
     account_core: TestClient, migrated_db: str
 ) -> None:
     data = create(account_core).json()
@@ -149,7 +149,7 @@ def test_stored_sandbox_is_identical_to_frozen_template(
         migrated_db,
         "select m.spec, m.spec_sha256, t.spec as template, "
         "t.spec_sha256 as template_hash from site_models m cross join model_templates t "
-        "where m.id = :id and t.purpose = 'sandbox'",
+        "where m.id = :id and t.purpose = 'sandbox' order by t.version desc limit 1",
         {"id": model_id},
     )
     assert rows[0]["spec"] == rows[0]["template"]
