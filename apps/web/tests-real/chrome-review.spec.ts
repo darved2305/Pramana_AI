@@ -52,6 +52,18 @@ async function capture(page: Page, label: string) {
     width: innerWidth,
     documentWidth: document.documentElement.scrollWidth,
     offenders: [...document.body.querySelectorAll("*")]
+      .filter((element) => {
+        // Content inside a scroll box does not widen the page, except absolutely positioned
+        // content, which escapes a scroll box that is not itself positioned.
+        if (["absolute", "fixed"].includes(getComputedStyle(element).position)) return true;
+        let parent = element.parentElement;
+        while (parent && parent !== document.body) {
+          const css = getComputedStyle(parent);
+          if (["auto", "scroll", "hidden", "clip"].includes(css.overflowX)) return false;
+          parent = parent.parentElement;
+        }
+        return true;
+      })
       .map((element) => {
         const rect = element.getBoundingClientRect();
         return {
@@ -95,6 +107,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await page.getByRole("link", { name: /Open the console/ }).first().click();
   await expect(page.getByRole("link", { name: "Continue with Google" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Log in", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log in", exact: true })).toHaveCSS("background-color", "rgb(255, 252, 247)");
   await capture(page, "sign-in");
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement !== document.body)).toBeTruthy();
@@ -144,6 +157,8 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
 
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page).toHaveURL(/\/onboarding\/org$/);
+  await expect(page.locator("main")).toContainText("guided example and a blank site to describe");
+  await expect(page.locator("main")).not.toContainText(/hospital or clinic|hostel/i);
   await capture(page, "onboarding-workspace-empty");
   const name = page.getByLabel("Workspace name");
   const longHindiName = "कार्यालय ".repeat(40);
@@ -158,12 +173,15 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
 
   await page.getByRole("link", { name: "Start a practice investigation" }).click();
   await expect(page).toHaveURL(/\/app\/.+\/investigations\/new\?practice=1$/);
+  await expect(page.getByRole("checkbox", { name: /Include .*\(simulated\)/ }).first()).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Hidden fault" })).toBeVisible();
   await expect(page.locator("main")).not.toContainText(/hostel/i);
   await capture(page, "practice-investigation-new");
   await page.getByLabel("What is wrong, in the reporter's words").fill("Internet access is not working");
   await page.getByRole("button", { name: "Start investigation" }).click();
   await expect(page).toHaveURL(/\/app\/.+\/investigations\/inv_[0-9A-HJKMNP-TV-Z]{26}$/);
   await expect(page.getByRole("heading", { name: "Internet access is not working" })).toBeVisible();
+  await expect(page.getByText("Live updates", { exact: true })).toBeVisible();
   await capture(page, "practice-investigation-started");
 
   const workspaceSlug = new URL(page.url()).pathname.split("/")[2];
@@ -184,6 +202,18 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
       `/api/core/v1/orgs/${workspaceSlug}/sites/${practiceState.site_id}/models/${practiceState.site_model_id}`,
     )
   ).json();
+  const practiceCopy = [
+    model.spec.title,
+    ...model.spec.roles.map((role: { label: string }) => role.label),
+    ...model.spec.locations.map((location: { label: { en: string } }) => location.label.en),
+    ...model.spec.components.map((component: { label: string }) => component.label),
+    ...model.spec.components.flatMap((component: { failure_modes: { label: string }[] }) => component.failure_modes.map((failure) => failure.label)),
+    ...model.spec.probes.flatMap((probe: { label: string; templates: Record<string, string> }) => [probe.label, ...Object.values(probe.templates)]),
+    ...model.spec.decision_classes.map((decision: { label: string }) => decision.label),
+    ...model.spec.presence_tokens.flatMap((token: { label: string; templates: Record<string, string> }) => [token.label, ...Object.values(token.templates)]),
+  ].join(" ");
+  expect(practiceCopy).not.toMatch(/hostel|guard desk|student|NAVA-WiFi|IP test page|Wi-Fi box|IDF-[12]|DB-C2/i);
+  await expect(page.locator("main")).not.toContainText(/\(simulated\) (student|guard|electrician|it_tech|housekeeping)\b/i);
   const phones = new Map<string, Page>();
   async function phoneFor(participantId: string) {
     const found = phones.get(participantId);
@@ -211,6 +241,8 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
     const probeLabel = model.spec.probes.find((probe: { id: string }) => probe.id === question.action.probe_id)?.label;
     expect(probeLabel).toBeTruthy();
     await expect(phone.getByRole("heading", { level: 1 })).toHaveText(question.text);
+    await expect(phone.getByRole("button", { name: "Accept", exact: true })).toHaveCSS("background-color", "rgb(255, 252, 247)");
+    await expect(phone.locator("main")).not.toContainText(/hostel|guard desk|student|NAVA-WiFi|IP test page|Wi-Fi box/i);
     await phone.screenshot({ path: path.join(output, `${runId}-practice-participant-pending-${answered}-390.png`) });
     await expect(phone.locator("main")).not.toContainText(/hostel/i);
     const before = practiceState.questions_asked;
@@ -230,6 +262,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await expect.poll(async () => (practiceState = await readState()).status).toBe("closed");
   expect(practiceState.ground_truth?.reveal.commitment_verified).toBe(true);
   expect([true, false, null]).toContain(practiceState.ground_truth?.correct);
+  await expect(page.getByText("Updates stopped: investigation closed")).toBeVisible();
   await capture(page, "practice-investigation-revealed");
   await page.goto("/onboarding/sandbox");
   await expect(page).toHaveURL(/\/onboarding\/sandbox$/);
@@ -247,6 +280,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await expect(page).toHaveURL(/\/app\/.+$/);
   await expect(page.locator('[aria-label="Loading your home"]')).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Your sites" })).toBeVisible();
+  await expect(page.getByText("Still narrowing down the cause")).toHaveCount(0);
   await capture(page, "workspace-home");
 
   const base = new URL(page.url()).pathname;
@@ -264,6 +298,109 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await capture(page, "workspace-practice-site");
 
   expect(signals.filter((x) => x.kind === "pageerror")).toEqual([]);
+});
+
+test("real Chrome review: drafts warn about changes in another tab", async ({ page, context }) => {
+  test.setTimeout(120_000);
+  const who = `draft-review-${Date.now()}`;
+  await page.goto("/api/core/v1/auth/google/start?next=/app/account");
+  await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+  await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+  await page.getByRole("button", { name: "Continue with mock account" }).click();
+  await expect(page).toHaveURL(/\/app\/account$/);
+  const made = await page.request.post("/api/core/v1/orgs", {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${who}-workspace` },
+    data: { name: "Draft review", kind: "office" },
+  });
+  expect(made.status()).toBe(201);
+  const ws = await made.json();
+  const path = `/app/${ws.organization.slug}/sites/${ws.live_site.id}`;
+  await page.goto(path);
+  await page.getByRole("button", { name: /Office water supply/ }).click();
+  await expect(page.getByRole("heading", { name: "Draft, version 1" })).toBeVisible();
+  // On a laptop screen the whole equipment table fits without scrolling sideways.
+  const table = page.getByRole("table").first();
+  expect(await table.evaluate((t) => t.parentElement!.scrollWidth - t.parentElement!.clientWidth)).toBeLessThanOrEqual(0);
+  await capture(page, "draft-template");
+  const second = await context.newPage();
+  watch(second);
+  await second.goto(path);
+  await expect(second.getByRole("heading", { name: "Draft, version 1" })).toBeVisible();
+  await page.getByRole("tab", { name: /Equipment/ }).click();
+  await second.getByRole("tab", { name: /Equipment/ }).click();
+  await second.getByRole("textbox", { name: "Equipment name" }).first().fill("Second tab change");
+  await page.getByRole("textbox", { name: "Equipment name" }).first().fill("First tab change");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await second.getByRole("button", { name: "Save draft" }).click();
+  await expect(second.getByText("Someone else changed this draft. Reload it to see their version.")).toBeVisible();
+  await capture(second, "draft-conflict");
+  const draftPath = `/api/core/v1/orgs/${ws.organization.slug}/sites/${ws.live_site.id}/draft`;
+  const current = await (await page.request.get(draftPath)).json();
+  const missing = await page.request.post(draftPath, {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${who}-missing-match` },
+    data: { description: current.description },
+  });
+  expect(missing.status()).toBe(428);
+  await second.close();
+  await page.getByRole("button", { name: "Discard draft" }).click();
+  await expect(page.getByRole("button", { name: "Start from scratch" })).toBeVisible();
+  await capture(page, "draft-discarded");
+  await page.getByRole("button", { name: "Start from scratch" }).click();
+  await expect(page.getByRole("heading", { name: "Draft, version 1" })).toBeVisible();
+  await capture(page, "draft-from-scratch");
+});
+
+test("real Chrome review: an owner describes, checks and publishes a site", async ({ page }) => {
+  test.setTimeout(180_000);
+  const who = `builder-review-${Date.now()}`;
+  await page.goto("/api/core/v1/auth/google/start?next=/app/account");
+  await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+  await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+  await page.getByRole("button", { name: "Continue with mock account" }).click();
+  const made = await page.request.post("/api/core/v1/orgs", {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${who}-workspace` },
+    data: { name: "Builder review", kind: "office" },
+  });
+  expect(made.status()).toBe(201);
+  const ws = await made.json();
+  const sitePath = `/app/${ws.organization.slug}/sites/${ws.live_site.id}`;
+  await page.goto(sitePath);
+  await expect(page.getByRole("heading", { name: "Describe this site" })).toBeVisible();
+  await capture(page, "builder-start-options");
+
+  await page.getByRole("button", { name: /Office water supply/ }).click();
+  await expect(page.getByRole("heading", { name: "Draft, version 1" })).toBeVisible();
+  await capture(page, "builder-template-draft");
+  await page.getByRole("button", { name: "Check this model" }).click();
+  await expect(page.getByText("Ready to publish")).toBeVisible({ timeout: 60_000 });
+  await capture(page, "builder-health-ready");
+  await page.getByRole("button", { name: "Publish version 1" }).click();
+  await expect(page.getByText("Version 1 is published")).toBeVisible();
+  await capture(page, "builder-published");
+
+  await page.getByRole("button", { name: "Edit as a new version" }).click();
+  await expect(page.getByRole("heading", { name: "Draft, version 2" })).toBeVisible();
+  await page.getByRole("tab", { name: /Equipment/ }).click();
+  await capture(page, "builder-equipment");
+  const upload = (name: string, body: string) =>
+    page.getByLabel("Import equipment from CSV").setInputFiles({ name, mimeType: "text/csv", buffer: Buffer.from(body) });
+  await upload("review-bad.csv", "name,type,location\nBooster,not_a_type,Plant room\n");
+  await expect(page.getByText('Row 2: unknown equipment type "not_a_type".')).toBeVisible();
+  await capture(page, "builder-csv-error");
+  await upload("review-good.csv", "name,type,location,floor,depends_on\nBooster unit,pump,Plant room,1,mains power\n");
+  await expect(page.getByText(/Imported: 1 added/)).toBeVisible();
+  await capture(page, "builder-csv-imported");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Discard draft" }).click();
+  await expect(page.getByRole("button", { name: "Start from scratch" })).toBeVisible();
+  await capture(page, "builder-draft-discarded");
+
+  await page.getByRole("button", { name: "Start from scratch" }).click();
+  await expect(page.getByRole("heading", { name: "Draft, version 2" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Site name" })).toHaveValue("Your first building");
+  await capture(page, "builder-start-from-scratch");
 });
 
 test("real Chrome review: invitations can be withdrawn or joined from welcome", async ({ page }) => {
@@ -297,14 +434,23 @@ test("real Chrome review: invitations can be withdrawn or joined from welcome", 
   const pending = page.getByRole("list", { name: "Invitations" }).getByRole("listitem").filter({ hasText: `${withdrawn}@gmail.com` });
   await pending.getByRole("button", { name: "Withdraw" }).click();
   await expect(pending.getByText("revoked")).toBeVisible();
+  await expect(page.locator("code").filter({ hasText: "/invite/org_" })).toHaveCount(0);
   await capture(page, "invitation-withdrawn");
   await page.getByLabel("Their email address").fill(`${invitee}@gmail.com`);
   await page.getByRole("button", { name: "Create invitation link" }).click();
   await expect(page.getByRole("list", { name: "Invitations" }).getByText("pending")).toBeVisible();
+  const activeLink = await page.locator("code").filter({ hasText: "/invite/org_" }).innerText();
+  await logout();
+  await signIn(`review-wrong-${stamp}`, new URL(activeLink).pathname);
+  await page.getByRole("button", { name: "Accept invitation" }).click();
+  await expect(page.locator("main").getByRole("alert")).toContainText("this invitation is for");
+  await expect(page.getByRole("button", { name: "Use another account" })).toBeVisible();
+  await capture(page, "invitation-wrong-account");
   await logout();
   await signIn(withdrawn, new URL(link).pathname);
   await page.getByRole("button", { name: "Accept invitation" }).click();
   await expect(page.locator("main").getByRole("alert")).toContainText("withdrawn");
+  await expect(page.getByRole("button", { name: "Invitation unavailable" })).toBeDisabled();
   await capture(page, "invitation-withdrawn-error");
   await logout();
   await signIn(invitee, "/onboarding/welcome");
@@ -326,4 +472,60 @@ test("real Chrome review: invitations can be withdrawn or joined from welcome", 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/(login|$)/);
   await capture(page, "signed-out");
+});
+
+test("real Chrome review: an expired invitation cannot be accepted", async ({ page }) => {
+  const stamp = Date.now();
+  const who = `review-expired-${stamp}`;
+  await page.goto("/api/core/v1/auth/google/start?next=/app/account");
+  await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+  await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+  await page.getByRole("button", { name: "Continue with mock account" }).click();
+  await page.route("**/api/core/v1/invitations/accept", (route) =>
+    route.fulfill({
+      status: 410,
+      contentType: "application/problem+json",
+      json: { error: { code: "INVITATION_EXPIRED", message: "this invitation has expired" } },
+    }),
+  );
+  await page.goto("/invite/org_expired-review-token");
+  await page.getByRole("button", { name: "Accept invitation" }).click();
+  await expect(page.locator("main").getByRole("alert")).toHaveText("this invitation has expired");
+  await expect(page.getByRole("button", { name: "Invitation unavailable" })).toBeDisabled();
+  await capture(page, "invitation-expired");
+});
+
+test("real Chrome review: a returning owner finds their workspace and an expired session is refused", async ({ page, context }) => {
+  const stamp = Date.now();
+  const who = `review-returning-${stamp}`;
+  const signIn = async (next: string) => {
+    await page.goto(`/api/core/v1/auth/google/start?next=${encodeURIComponent(next)}`);
+    await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+    await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+    await page.getByRole("button", { name: "Continue with mock account" }).click();
+  };
+  await signIn("/app/account");
+  const made = await page.request.post("/api/core/v1/orgs", {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${who}-workspace` },
+    data: { name: "Returning owner", kind: "office" },
+  });
+  expect(made.status()).toBe(201);
+  const ws = await made.json();
+  const base = `/app/${ws.organization.slug}`;
+  await page.goto(base);
+  await expect(page.getByRole("heading", { name: "Your sites" })).toBeVisible();
+  await capture(page, "returning-workspace");
+
+  await page.request.post("/api/core/v1/auth/logout", { headers: { "X-Pramana-CSRF": "1" } });
+  await signIn(base);
+  await expect(page).toHaveURL(new RegExp(`${base}$`));
+  await expect(page.getByRole("heading", { name: "Your sites" })).toBeVisible();
+  await capture(page, "returning-workspace-restored");
+
+  const session = (await context.cookies()).find((cookie) => cookie.name === "pramana_session");
+  expect(session).toBeTruthy();
+  await context.addCookies([{ ...session!, expires: Math.floor(Date.now() / 1000) - 1 }]);
+  await page.goto(base);
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await capture(page, "returning-session-expired");
 });
