@@ -67,7 +67,8 @@ Focused API, Google auth, route inventory and RLS suites passed (202 tests, exit
 `0018` downgraded to `0016` and upgraded back to head on `pramana_dj_test` (exit 0). Web static
 checks passed, the UI browser gate passed 48 tests, and the real-stack browser gate passed 31 tests,
 including the ID-03 and ID-04 journey through mock OIDC with `hd` claims. The full Python regression
-suite is pending.
+suite passed 4,052 tests (exit 0) on `pramana_dj_test` and `pramana_dj_e2e`; process-level tests
+used ports 8170 and 8270.
 
 Known limit of sealing: investigation search matches ids only for sealed reports, because the
 text is encrypted.
