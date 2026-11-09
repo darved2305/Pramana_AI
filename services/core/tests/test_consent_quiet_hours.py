@@ -322,6 +322,105 @@ def test_expired_consent_email_is_purged_before_relay_sends(
     assert "https://pramana.example" + valid["link_path"] in mailer.sent[0][2]
 
 
+def queue_consent_email(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, root: str, person_id: str
+) -> tuple[FakeMailer, dict[str, Any]]:
+    """Request a consent link while the relay is held, so its email stays queued."""
+    mailer = FakeMailer()
+    client.app.state.mailer = mailer
+    client.app.state.email_relay.mailer = mailer
+    client.app.state.settings = client.app.state.settings.model_copy(
+        update={
+            "gmail_address": "sender@example.test",
+            "gmail_app_password": SecretStr("fake"),
+            "public_web_url": "https://pramana.example",
+        }
+    )
+    relay = client.app.state.email_relay
+    drain = relay.drain
+
+    async def held_drain() -> dict[str, int | bool]:
+        return {"locked": False, "sent": 0, "retried": 0, "dead": 0}
+
+    monkeypatch.setattr(relay, "drain", held_drain)
+    created = post(client, f"{root}/{person_id}/consent-requests").json()
+    monkeypatch.setattr(relay, "drain", drain)
+    return mailer, created
+
+
+@pytest.mark.parametrize("retire", ["erase", "remove"])
+def test_retiring_a_person_stops_their_queued_consent_email(
+    account_core: TestClient,
+    migrated_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+    retire: str,
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace)
+    assert patch_person(client, root, {"contact_email": "ravi@example.test"}).status_code == 200
+    mailer, queued = queue_consent_email(client, monkeypatch, root, "p_ravi")
+    assert queued["email_delivery"] == "queued"
+
+    retired = post(client, f"{root}/p_ravi/{retire}")
+    assert retired.status_code == 204, retired.text
+    # Any later consent request runs the relay, which must not send the retired person's email.
+    meena = client.patch(
+        root + "/p_sunil",
+        json={"contact_email": "meena@example.test"},
+        headers={**CSRF, "Idempotency-Key": uuid.uuid4().hex, "If-Match": '"1"'},
+    )
+    assert meena.status_code == 200, meena.text
+    assert post(client, root + "/p_sunil/consent-requests").status_code == 201
+
+    # Retiring the person deletes their consent links, and the outbox row cascades with them,
+    # so the queued address is gone from the database as well as from the send path.
+    rows = sql(
+        migrated_db,
+        "select consent_link_id from email_outbox where kind='consent_request'",
+    )
+    assert queued["request_id"] not in {
+        ids.encode("consent", row["consent_link_id"]) for row in rows
+    }
+    assert [sent[0] for sent in mailer.sent] == ["meena@example.test"]
+    code = queued["link_path"].removeprefix("/consent/")
+    assert client.post("/v1/consent-links/" + code, json={"decision": "granted"}).status_code == 410
+
+
+def test_changing_contact_email_stops_the_email_queued_for_the_old_address(
+    account_core: TestClient,
+    migrated_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace)
+    first = patch_person(client, root, {"contact_email": "ravi@example.test"})
+    assert first.status_code == 200, first.text
+    mailer, queued = queue_consent_email(client, monkeypatch, root, "p_ravi")
+    changed = client.patch(
+        root + "/p_ravi",
+        json={"contact_email": "ravi.new@example.test"},
+        headers={**CSRF, "Idempotency-Key": uuid.uuid4().hex, "If-Match": first.headers["ETag"]},
+    )
+    assert changed.status_code == 200, changed.text
+    meena = client.patch(
+        root + "/p_sunil",
+        json={"contact_email": "meena@example.test"},
+        headers={**CSRF, "Idempotency-Key": uuid.uuid4().hex, "If-Match": '"1"'},
+    )
+    assert meena.status_code == 200, meena.text
+    assert post(client, root + "/p_sunil/consent-requests").status_code == 201
+
+    row = sql(
+        migrated_db,
+        "select state, recipient, subject, body from email_outbox where consent_link_id=:id",
+        {"id": ids.decode("consent", queued["request_id"])},
+    )[0]
+    assert row == {"state": "dead", "recipient": None, "subject": None, "body": None}
+    assert [sent[0] for sent in mailer.sent] == ["meena@example.test"]
+
+
 def test_unconfigured_consent_email_is_failed_without_storing_contact_data(
     account_core: TestClient, migrated_db: str
 ) -> None:

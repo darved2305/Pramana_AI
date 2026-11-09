@@ -67,6 +67,17 @@ INVALID_CONSENT_LINK = (
 )
 
 
+def _clear_queued_email(outbox: EmailOutboxRow, now: datetime, reason: str) -> None:
+    """Dead-letter a queued email and drop the address and bearer link it carries."""
+    outbox.state = "dead"
+    outbox.dead_at = now
+    outbox.locked_until = None
+    outbox.recipient = None
+    outbox.subject = None
+    outbox.body = None
+    outbox.last_error = reason
+
+
 async def _cancel_queued_consent_email(
     session: AsyncSession, consent_link_id: uuid.UUID, now: datetime
 ) -> None:
@@ -77,13 +88,29 @@ async def _cancel_queued_consent_email(
         .with_for_update()
     )
     if outbox is not None and outbox.state == "queued":
-        outbox.state = "dead"
-        outbox.dead_at = now
-        outbox.locked_until = None
-        outbox.recipient = None
-        outbox.subject = None
-        outbox.body = None
-        outbox.last_error = "ConsentLinkNoLongerValid"
+        _clear_queued_email(outbox, now, "ConsentLinkNoLongerValid")
+
+
+async def _cancel_person_queued_consent_emails(
+    session: AsyncSession, org_id: uuid.UUID, site_id: uuid.UUID, person_id: str, now: datetime
+) -> None:
+    """Clear queued consent emails for a person whose contact address just changed."""
+    link_ids = select(ConsentLinkRow.id).where(
+        ConsentLinkRow.org_id == org_id,
+        ConsentLinkRow.site_id == site_id,
+        ConsentLinkRow.person_id == person_id,
+    )
+    queued = await session.scalars(
+        select(EmailOutboxRow)
+        .where(
+            EmailOutboxRow.org_id == org_id,
+            EmailOutboxRow.consent_link_id.in_(link_ids),
+            EmailOutboxRow.state == "queued",
+        )
+        .with_for_update()
+    )
+    for outbox in queued:
+        _clear_queued_email(outbox, now, "ContactEmailChanged")
 
 
 class SitePersonRow(Base):
@@ -356,6 +383,10 @@ class SitePeople:
                 session, row, name or inspect(row).info.get("name") or spec.display_name
             )
             if email_changed:
+                # A consent email already queued for the old address must not reach it.
+                await _cancel_person_queued_consent_emails(
+                    session, site.org_id, site.id, person_id, datetime.now(UTC)
+                )
                 row.contact_email_enc = None
                 if email:
                     ref = PersonRef(site.org_id, site.id, person_id)
