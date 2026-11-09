@@ -16,8 +16,8 @@ and bypass human consent and quiet hours. Starting a real live investigation is 
 Focused API checks passed under both the database owner and `pramana_app`, including replay,
 withdrawal, override audit, link expiry and reuse, and tenant isolation. The mail test uses a
 fake transport and the live planner test uses the in-process simulator. Hindi and Marathi wording
-still needs native review. Deployment of migration 0017 must repeat the schema revoke for
-`anon` and `authenticated`.
+still needs native review. Deployment of any migration on this branch (0017 to 0019, the last one
+adds workspace deletion) must repeat the schema revoke for `anon` and `authenticated`.
 
 The consent-request idempotency response is encrypted at rest so a retry can return the same
 link without leaving its bearer secret in plaintext in the database. On migration rollback,
@@ -131,6 +131,11 @@ Done since the morning plan: onboarding, the workspace console on organization r
 preferences, people per site, the adaptive home, practice investigations on a workspace's own
 model, team invitations, model health and settings pages. Still open:
 
+- Deployment of the cursor and deletion work (not done): apply migrations 0017 to 0019, repeat the
+  revoke of `anon` and `authenticated` on the Pramana schema, provision the non-superuser
+  maintenance role described in `WORKSPACE_RETENTION.md`, then schedule
+  `scripts/purge_deleted_workspaces.py` as a daily job. Until the job runs, workspaces past their
+  30-day window are not purged.
 - The legacy single-site console pages remain for accounts with global staff roles and their
   tests; retire them (and `DEFAULT_PACK`) once the real-stack fixtures use workspaces.
 - Live investigations with real people (calls, messages, work orders) are R3; a live site can
@@ -181,3 +186,9 @@ membership to model removal. During iteration on the uncommitted migration, the 
 database still had the earlier event-key constraint. It was aligned with the revised test schema
 before rerunning the full downgrade/upgrade and security checks. All 80 checks then passed. No
 committed migration was rewritten, and no demo or deployed database was involved.
+
+A local browser run could fall back to a database that the checkout's `PRAMANA_DB_NAMES` did not
+list, and reset it. The real-stack runner now refuses unless `E2E_DATABASE` is explicit and
+allowlisted, and the Python suites, the e2e harness and the load test use the same check
+(`scripts/db_guard.py`). The Python suites no longer default to any database, and CI runs the
+safety tests in both the web and Python jobs.

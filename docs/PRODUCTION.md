@@ -1347,7 +1347,8 @@ delivery is configured.
 OR-07 status, 2026-11-09: an owner can download a streamed workspace archive before deletion,
 then soft-delete the workspace after typing its name. Members see a restore notice; owners can
 export or restore it for 30 days. The purge job removes tenant data after that window, shreds
-person keys, and preserves sealed events and append-only audit records.
+person keys, and preserves sealed events and append-only audit records. The scheduled job and its
+maintenance role are a deployment step that has not been run yet (`docs/engineering/WORKSPACE_RETENTION.md`).
 
 DA-07 status, 2026-11-09: growing organization lists, including workspace join-request history,
 use bounded keyset pages with cursors bound to the organization and active filters. Search and
