@@ -97,7 +97,7 @@ class SimSettings(BaseSettings):
                 or not url.host
                 or (
                     self.local_production_test
-                    and url.host.lower() not in {"host.docker.internal", "localhost"}
+                    and url.host.lower() not in {"host.docker.internal", "localhost", "postgres"}
                 )
                 or (
                     url.host.lower() in {"localhost", "127.0.0.1", "::1"}
