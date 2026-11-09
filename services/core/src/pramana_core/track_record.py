@@ -27,17 +27,31 @@ COUNTED_STATES = ("committed", "superseded")
 
 
 async def track_records(
-    session: AsyncSession, org_id: uuid.UUID, site_id: uuid.UUID
+    session: AsyncSession,
+    org_id: uuid.UUID,
+    site_id: uuid.UUID,
+    person_ids: set[str] | None = None,
 ) -> list[PersonTrackRecord]:
-    investigations = list(
-        await session.scalars(
-            select(InvestigationRow).where(
-                InvestigationRow.org_id == org_id,
-                InvestigationRow.site_id == site_id,
-                InvestigationRow.ground_truth.is_not(None),
+    if person_ids is not None and not person_ids:
+        return []
+    investigations_query = select(InvestigationRow).where(
+        InvestigationRow.org_id == org_id,
+        InvestigationRow.site_id == site_id,
+        InvestigationRow.ground_truth.is_not(None),
+    )
+    if person_ids is not None:
+        investigations_query = investigations_query.where(
+            InvestigationRow.id.in_(
+                select(ObservationRow.investigation_id)
+                .where(
+                    ObservationRow.org_id == org_id,
+                    ObservationRow.participant_id.in_(person_ids),
+                    ObservationRow.state.in_(COUNTED_STATES),
+                )
+                .distinct()
             )
         )
-    )
+    investigations = list(await session.scalars(investigations_query))
     if not investigations:
         return []
     inv_ids = [i.id for i in investigations]
@@ -55,6 +69,7 @@ async def track_records(
             await session.execute(
                 select(EventRow.investigation_id, func.min(EventRow.ts))
                 .where(
+                    EventRow.org_id == org_id,
                     EventRow.investigation_id.in_(inv_ids),
                     EventRow.type == "InterventionReported",
                 )
@@ -62,14 +77,14 @@ async def track_records(
             )
         ).all()
     )
-    observations = list(
-        await session.scalars(
-            select(ObservationRow).where(
-                ObservationRow.investigation_id.in_(inv_ids),
-                ObservationRow.state.in_(COUNTED_STATES),
-            )
-        )
+    observation_query = select(ObservationRow).where(
+        ObservationRow.org_id == org_id,
+        ObservationRow.investigation_id.in_(inv_ids),
+        ObservationRow.state.in_(COUNTED_STATES),
     )
+    if person_ids is not None:
+        observation_query = observation_query.where(ObservationRow.participant_id.in_(person_ids))
+    observations = list(await session.scalars(observation_query))
 
     worlds: dict[str, tuple[Any, World]] = {}
     for inv in investigations:

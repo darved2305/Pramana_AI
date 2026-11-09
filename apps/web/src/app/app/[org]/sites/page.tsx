@@ -2,23 +2,24 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
-import { Badge, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
+import { useEffect, useMemo } from "react";
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { IconBuilding, IconChevronRight } from "@/components/ui/icons";
-import { useLoad } from "@/lib/data/hooks";
+import { useCursorList } from "@/lib/data/hooks";
 import { useWorkspace } from "@/lib/org/context";
 
 export default function SitesPage() {
   const ws = useWorkspace();
-  const sites = useLoad(`sites|${ws.org.id}`, (s) => ws.api.sites(s));
+  const sites = useCursorList(`sites|${ws.org.id}`, (cursor, s) => ws.api.sites({ limit: 25, cursor }, s));
+  const rows = useMemo(() => sites.data?.items ?? [], [sites.data]);
   const router = useRouter();
   const suggested = useSearchParams().get("template");
   // Coming from setup with a suggested template: open the one site still to describe.
   useEffect(() => {
     if (!suggested || sites.status !== "ready") return;
-    const empty = sites.data.filter((s) => s.mode === "live" && !s.current_model_id);
+    const empty = rows.filter((s) => s.mode === "live" && !s.current_model_id);
     if (empty.length === 1) router.replace(`${ws.base}/sites/${empty[0].id}?template=${encodeURIComponent(suggested)}`);
-  }, [suggested, sites, router, ws.base]);
+  }, [suggested, sites, rows, router, ws.base]);
   return (
     <div className="flex flex-col gap-6 pt-4">
       <PageHeader
@@ -29,11 +30,11 @@ export default function SitesPage() {
         <Skeleton className="h-40" />
       ) : sites.status === "error" ? (
         <ErrorState error={sites.error} onRetry={sites.reload} />
-      ) : sites.data.length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState title="No sites yet" body="Sites are created with the workspace." icon={<IconBuilding />} />
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
-          {sites.data.map((s) => (
+          {rows.map((s) => (
             <li key={s.id}>
               <Link href={`${ws.base}/sites/${s.id}`} className="card group flex h-full items-start gap-4 p-5 transition-colors hover:bg-white/[.03]">
                 <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[12px] bg-accent-soft text-accent">
@@ -59,6 +60,14 @@ export default function SitesPage() {
           ))}
         </ul>
       )}
+      {sites.status === "ready" && sites.data.next_cursor ? (
+        <div className="flex justify-center">
+          <Button size="sm" onClick={sites.loadMore} disabled={sites.loadingMore}>
+            {sites.loadingMore ? "Loading..." : "Load more sites"}
+          </Button>
+        </div>
+      ) : null}
+      {sites.moreError ? <p role="alert" className="text-[13px] text-bad">Could not load more sites. <button className="underline" onClick={sites.loadMore}>Try again</button></p> : null}
     </div>
   );
 }

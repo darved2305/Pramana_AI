@@ -16,7 +16,7 @@ from typing import Any
 
 import yaml
 from pydantic import ValidationError
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select, tuple_
 
 from pramana_contracts import (
     DirectoryParticipant,
@@ -32,15 +32,12 @@ from pramana_contracts import (
 from pramana_domain import DomainPack, load_pack
 from pramana_domain.pack import default_packs_dir
 
+from .cursors import CursorCodec, like_escape
 from .db import Database, DirectoryParticipantRow, InvestigationRow, current_org
 from .errors import ApiError, not_found
 from .vault import ERASED_REPORT, SEALED, PersonVault
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-
-
-def _like_escape(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _entry(row: DirectoryParticipantRow) -> DirectoryParticipant:
@@ -156,43 +153,54 @@ class ConsoleQueries:
         statuses: list[InvestigationStatus],
         q: str | None,
         limit: int,
-        offset: int,
+        cursor: str | None,
+        codec: CursorCodec,
     ) -> InvestigationPage:
         report_text = InvestigationRow.request["report"]["text"].astext
         conds: list[Any] = []
-        if current_org.get() is not None:
-            conds.append(InvestigationRow.org_id == current_org.get())
+        org = current_org.get()
+        org_ref = str(org) if org is not None else "legacy"
+        if org is not None:
+            conds.append(InvestigationRow.org_id == org)
         if statuses:
             conds.append(InvestigationRow.status.in_([s.value for s in statuses]))
-        if q:
-            pattern = f"%{_like_escape(q.strip())}%"
+        needle = q.strip() if q else ""
+        if needle:
+            pattern = f"%{like_escape(needle)}%"
             conds.append(
                 or_(
-                    report_text.ilike(pattern, escape="\\"),
+                    (report_text != SEALED) & report_text.ilike(pattern, escape="\\"),
                     InvestigationRow.id.ilike(pattern, escape="\\"),
                 )
             )
+        filters = {"status": sorted(s.value for s in statuses), "q": needle}
+        sort = codec.decode(cursor, scope="investigations", org_id=org_ref, filters=filters)
+        if sort is not None:
+            try:
+                after_created = datetime.fromisoformat(str(sort[0]))
+            except ValueError as exc:
+                raise ValueError("validated investigation cursor had an invalid timestamp") from exc
+            after_id = str(sort[1])
+            conds.append(
+                tuple_(InvestigationRow.created_at, InvestigationRow.id)
+                < tuple_(after_created, after_id)
+            )
         async with self.db.read() as session:
-            total = (
-                await session.execute(
-                    select(func.count()).select_from(InvestigationRow).where(*conds)
-                )
-            ).scalar_one()
             rows = (
                 (
                     await session.execute(
                         select(InvestigationRow)
                         .where(*conds)
                         .order_by(InvestigationRow.created_at.desc(), InvestigationRow.id.desc())
-                        .limit(limit)
-                        .offset(offset)
+                        .limit(limit + 1)
                     )
                 )
                 .scalars()
                 .all()
             )
+            has_more = len(rows) > limit
+            rows = rows[:limit]
             sealed = [r.id for r in rows if r.request["report"]["text"] == SEALED]
-            org = current_org.get()
             texts = (
                 await self.vault.texts(session, org, sealed)
                 if self.vault is not None and org is not None
@@ -219,7 +227,17 @@ class ConsoleQueries:
             )
             for r in rows
         ]
-        return InvestigationPage(items=items, total=int(total), limit=limit, offset=offset)
+        next_cursor = (
+            codec.encode(
+                scope="investigations",
+                org_id=org_ref,
+                filters=filters,
+                sort=[rows[-1].created_at.isoformat(), rows[-1].id],
+            )
+            if has_more and rows
+            else None
+        )
+        return InvestigationPage(items=items, limit=limit, next_cursor=next_cursor)
 
     # -- evaluation reports --------------------------------------------------------------------
 

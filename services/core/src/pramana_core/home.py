@@ -7,6 +7,7 @@ for the current organization (row-level security and an explicit org filter both
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -185,19 +186,42 @@ async def load_facts(
         await session.scalars(
             select(SiteRow)
             .where(SiteRow.org_id == org_id, SiteRow.archived_at.is_(None))
-            .order_by(SiteRow.created_at, SiteRow.id)
+            .order_by(SiteRow.mode.desc(), SiteRow.created_at.desc(), SiteRow.id.desc())
+            .limit(100)
         )
     )
+    site_ids = [site.id for site in sites]
+    current_model_ids = [site.current_model_id for site in sites if site.current_model_id]
     models = {
-        m.id: m
-        for m in await session.scalars(select(SiteModelRow).where(SiteModelRow.org_id == org_id))
+        model.id: model
+        for model in await session.scalars(
+            select(SiteModelRow).where(
+                SiteModelRow.org_id == org_id,
+                SiteModelRow.id.in_(current_model_ids),
+            )
+        )
     }
-    drafts = {m.site_id: m for m in models.values() if m.status == "draft"}
+    draft_rows = list(
+        await session.scalars(
+            select(SiteModelRow)
+            .where(
+                SiteModelRow.org_id == org_id,
+                SiteModelRow.site_id.in_(site_ids),
+                SiteModelRow.status == "draft",
+            )
+            .order_by(SiteModelRow.site_id, SiteModelRow.created_at.desc(), SiteModelRow.id.desc())
+            .limit(100)
+        )
+    )
+    drafts: dict[uuid.UUID, SiteModelRow] = {}
+    for model in draft_rows:
+        drafts.setdefault(model.site_id, model)
+        models[model.id] = model
     rows = list(
         await session.scalars(
             select(InvestigationRow)
             .where(InvestigationRow.org_id == org_id)
-            .order_by(InvestigationRow.updated_at.desc())
+            .order_by(InvestigationRow.updated_at.desc(), InvestigationRow.id.desc())
             .limit(200)
         )
     )

@@ -7,13 +7,15 @@ import uuid
 import weakref
 from collections import OrderedDict
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 
 from pramana_domain.spec_storage import load_spec, spec_digest
 from pramana_engine import CompiledModel, compile_pack
 
+from .cursors import CursorCodec
 from .db import Database, SiteModelRow, SiteRow, current_org
 from .errors import ApiError, not_found
 
@@ -47,16 +49,41 @@ class StoredModels:
             raise not_found("site")
         return org
 
-    async def sites(self) -> list[SiteRow]:
+    async def sites(
+        self, limit: int, cursor: str | None, codec: CursorCodec
+    ) -> tuple[list[SiteRow], str | None]:
         org = self._org()
+        filters: dict[str, object] = {}
+        sort = codec.decode(cursor, scope="sites", org_id=str(org), filters=filters)
+        query = select(SiteRow).where(SiteRow.org_id == org, SiteRow.archived_at.is_(None))
+        if sort is not None:
+            try:
+                after_created = datetime.fromisoformat(str(sort[0]))
+                after_id = uuid.UUID(str(sort[1]))
+            except ValueError as exc:
+                raise ApiError(400, "CURSOR_INVALID", "Restart from the first page.") from exc
+            query = query.where(
+                tuple_(SiteRow.created_at, SiteRow.id) < tuple_(after_created, after_id)
+            )
         async with self.db.read() as session:
-            return list(
+            rows = list(
                 await session.scalars(
-                    select(SiteRow)
-                    .where(SiteRow.org_id == org, SiteRow.archived_at.is_(None))
-                    .order_by(SiteRow.created_at, SiteRow.id)
+                    query.order_by(SiteRow.created_at.desc(), SiteRow.id.desc()).limit(limit + 1)
                 )
             )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = (
+            codec.encode(
+                scope="sites",
+                org_id=str(org),
+                filters=filters,
+                sort=[rows[-1].created_at.isoformat(), str(rows[-1].id)],
+            )
+            if has_more and rows
+            else None
+        )
+        return rows, next_cursor
 
     async def site(self, site_id: uuid.UUID) -> SiteRow:
         org = self._org()
@@ -70,20 +97,48 @@ class StoredModels:
             raise not_found("site")
         return site
 
-    async def versions(self, site_id: uuid.UUID) -> list[SiteModelRow]:
+    async def versions(
+        self, site_id: uuid.UUID, limit: int, cursor: str | None, codec: CursorCodec
+    ) -> tuple[list[SiteModelRow], str | None]:
         site = await self.site(site_id)
+        filters: dict[str, object] = {}
+        scope = f"models:{site_id}"
+        sort = codec.decode(cursor, scope=scope, org_id=str(site.org_id), filters=filters)
+        query = select(SiteModelRow).where(
+            SiteModelRow.org_id == site.org_id,
+            SiteModelRow.site_id == site.id,
+            SiteModelRow.status.in_(("published", "retired")),
+        )
+        if sort is not None:
+            try:
+                after_created = datetime.fromisoformat(str(sort[0]))
+                after_id = uuid.UUID(str(sort[1]))
+            except ValueError as exc:
+                raise ApiError(400, "CURSOR_INVALID", "Restart from the first page.") from exc
+            query = query.where(
+                tuple_(SiteModelRow.created_at, SiteModelRow.id) < tuple_(after_created, after_id)
+            )
         async with self.db.read() as session:
-            return list(
+            rows = list(
                 await session.scalars(
-                    select(SiteModelRow)
-                    .where(
-                        SiteModelRow.org_id == site.org_id,
-                        SiteModelRow.site_id == site.id,
-                        SiteModelRow.status.in_(("published", "retired")),
+                    query.order_by(SiteModelRow.created_at.desc(), SiteModelRow.id.desc()).limit(
+                        limit + 1
                     )
-                    .order_by(SiteModelRow.version.desc())
                 )
             )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = (
+            codec.encode(
+                scope=scope,
+                org_id=str(site.org_id),
+                filters=filters,
+                sort=[rows[-1].created_at.isoformat(), str(rows[-1].id)],
+            )
+            if has_more and rows
+            else None
+        )
+        return rows, next_cursor
 
     async def row(
         self, site_id: uuid.UUID, model_id: uuid.UUID, *, allow_draft: bool = False

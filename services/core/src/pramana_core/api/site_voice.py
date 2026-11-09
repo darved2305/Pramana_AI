@@ -9,9 +9,10 @@ organization's row-level security context, and require the token's organization 
 
 from fastapi import APIRouter, Request, WebSocket
 from fastapi.routing import APIRoute
+from sqlalchemy import select
 
 from .. import ids
-from ..db import acting_for
+from ..db import Database, OrganizationRow, acting_for
 from ..org_access import require_user
 from ..tenant_routes import organization_router
 from ..voice.call import ParticipantCall
@@ -43,6 +44,14 @@ def _organization(org: str) -> str | None:
     return org
 
 
+async def _active_organization(db: Database, organization: str) -> bool:
+    org_id = ids.decode("org", organization)
+    with acting_for(org_id, actor="participant:socket"):
+        async with db.read() as session:
+            row = await session.scalar(select(OrganizationRow).where(OrganizationRow.id == org_id))
+    return row is not None and row.deleted_at is None
+
+
 @sockets.websocket("/{inv_id}/questions/{question_id}/media")
 async def question_media(ws: WebSocket, org: str, inv_id: str, question_id: str) -> None:
     organization = _organization(org)
@@ -50,6 +59,9 @@ async def question_media(ws: WebSocket, org: str, inv_id: str, question_id: str)
         await ws.close(code=4404)
         return
     state = ws.app.state
+    if not await _active_organization(state.db, organization):
+        await ws.close(code=4404)
+        return
     with acting_for(ids.decode("org", organization), None, actor="participant:socket"):
         await MediaSession(
             ws,
@@ -72,6 +84,9 @@ async def participant_call(ws: WebSocket, org: str, inv_id: str, participant_id:
         await ws.close(code=4404)
         return
     state = ws.app.state
+    if not await _active_organization(state.db, organization):
+        await ws.close(code=4404)
+        return
     with acting_for(ids.decode("org", organization), None, actor="participant:socket"):
         await ParticipantCall(
             ws,

@@ -6,6 +6,12 @@ import type { components } from "./schema.gen";
 
 type S = components["schemas"];
 
+export interface CursorPage<T> {
+  items: T[];
+  limit: number;
+  next_cursor: string | null;
+}
+
 export type InvestigationState = S["InvestigationState"];
 export type InvestigationStatus = S["InvestigationStatus"];
 export type BeliefSnapshot = S["BeliefSnapshot"];
@@ -38,12 +44,14 @@ export type CreateSiteInvestigation = S["CreateSiteInvestigation"];
 export type SiteSummary = S["SiteSummary"];
 export type CurrentAccount = S["CurrentAccount"];
 export type OrganizationSummary = S["OrganizationSummary"];
+export type OrganizationDeletion = S["OrganizationDeletion"];
 export type OrganizationRole = OrganizationSummary["roles"][number];
 export type OnboardingState = S["OnboardingState"];
 export type OnboardingPatch = S["OnboardingPatch"];
 export type OnboardingAnswers = OnboardingState["answers"];
 export type OnboardingStep = OnboardingState["step"];
 export type CreateOrganization = S["CreateOrganization"];
+export type DeleteOrganization = S["DeleteOrganization"];
 export type OrganizationCreated = S["OrganizationCreated"];
 export type AccountPreferences = CurrentAccount["preferences"];
 export type SiteModelSummary = S["SiteModelSummary"];

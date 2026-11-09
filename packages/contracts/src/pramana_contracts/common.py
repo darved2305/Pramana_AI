@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -27,6 +27,17 @@ class StrictModel(BaseModel):
     """Base for all contracts: unknown fields are errors, instances are immutable."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+
+T = TypeVar("T")
+
+
+class CursorPage(StrictModel, Generic[T]):
+    """One bounded page from a stable, server-side keyset query."""
+
+    items: list[T]
+    limit: int
+    next_cursor: str | None
 
 
 Role = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,47}$")]

@@ -35,10 +35,12 @@ from .api import sites as sites_api
 from .api import stream as stream_api
 from .api import voice as voice_api
 from .api import voice_turns as voice_turns_api
+from .api import workspace as workspace_api
 from .auth.deps import participant_public_key
 from .auth.google import GoogleSignIn
 from .auth.oidc import GoogleOidc
 from .auth.service import AuthService, LoginThrottle
+from .cursors import CursorCodec
 from .db import Database, make_engine
 from .directory import make_queries
 from .domain_joins import DnsPythonResolver, DnsTxtResolver, DomainJoins, LocalOutbox
@@ -62,6 +64,7 @@ from .voice.conversation import QuestionAudioCache
 from .voice.gnani import GnaniClient
 from .voice.governor import DbLedger, GovernorLimits, VoiceGovernor
 from .voice.media import ActiveSessions
+from .workspace_lifecycle import WorkspaceLifecycle
 
 
 def _llm_extractor(cfg: Settings) -> LlmClient | None:
@@ -130,6 +133,7 @@ def create_app(
         )
         app.state.settings = cfg
         app.state.db = db
+        app.state.cursor_codec = CursorCodec(cfg.participant_signing_key.get_secret_value())
         app.state.sim = sim
         app.state.gnani = gnani
         app.state.question_audio = QuestionAudioCache(
@@ -152,6 +156,7 @@ def create_app(
             idle_s=cfg.session_idle_ttl_s,
         )
         app.state.accounts = AccountService(db)
+        app.state.workspace_lifecycle = WorkspaceLifecycle(db, app.state.vault)
         app.state.site_models = StoredModels(db)
         app.state.site_people = SitePeople(db, app.state.vault)
         app.state.invitations = Invitations(db)
@@ -257,6 +262,7 @@ def create_app(
 
     app.include_router(auth_api.router)
     app.include_router(accounts_api.router)
+    app.include_router(workspace_api.router)
     app.include_router(domain_joins_api.user_router)
     app.include_router(domain_joins_api.org_router)
     app.include_router(sites_api.router)

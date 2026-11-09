@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import Field
 
-from .common import Identifier, Role, Skill, StrictModel
+from .common import CursorPage, Identifier, Role, Skill, StrictModel
 from .investigation import InvestigationStatus
 from .participants import LanguageProfile, ParticipantSpec
 
@@ -86,11 +86,8 @@ class InvestigationSummary(StrictModel):
     decision_probability: float | None = None
 
 
-class InvestigationPage(StrictModel):
-    items: list[InvestigationSummary]
-    total: int
-    limit: int
-    offset: int
+class InvestigationPage(CursorPage[InvestigationSummary]):
+    pass
 
 
 class PackSummary(StrictModel):

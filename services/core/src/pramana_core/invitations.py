@@ -15,7 +15,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, select, tuple_
 
 from pramana_contracts import CreateInvitation, InvitationAccepted, InvitationView
 
@@ -23,6 +23,7 @@ from . import ids
 from .account_rows import InvitationRow
 from .accounts import organization_view
 from .auth.service import Principal
+from .cursors import CursorCodec
 from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, acting_for
 from .errors import ApiError, not_found
 from .mail import Mailer
@@ -162,18 +163,46 @@ class Invitations:
             await session.flush()
         return row, f"{ids.encode('org', org_id)}.{secret}"
 
-    async def listing(self, org_id: uuid.UUID) -> list[tuple[InvitationRow, str | None]]:
+    async def listing(
+        self, org_id: uuid.UUID, limit: int, cursor: str | None, codec: CursorCodec
+    ) -> tuple[list[tuple[InvitationRow, str | None]], str | None]:
+        filters: dict[str, object] = {}
+        sort = codec.decode(cursor, scope="invitations", org_id=str(org_id), filters=filters)
+        query = (
+            select(InvitationRow, UserRow.display_name)
+            .outerjoin(UserRow, UserRow.id == InvitationRow.invited_by)
+            .where(InvitationRow.org_id == org_id)
+        )
+        if sort is not None:
+            try:
+                after_created = datetime.fromisoformat(str(sort[0]))
+            except ValueError as exc:
+                raise ApiError(400, "CURSOR_INVALID", "Restart from the first page.") from exc
+            query = query.where(
+                tuple_(InvitationRow.created_at, InvitationRow.id)
+                < tuple_(after_created, uuid.UUID(str(sort[1])))
+            )
         async with self.db.read() as session:
             rows = (
                 await session.execute(
-                    select(InvitationRow, UserRow.display_name)
-                    .outerjoin(UserRow, UserRow.id == InvitationRow.invited_by)
-                    .where(InvitationRow.org_id == org_id)
-                    .order_by(InvitationRow.created_at.desc())
-                    .limit(200)
+                    query.order_by(InvitationRow.created_at.desc(), InvitationRow.id.desc()).limit(
+                        limit + 1
+                    )
                 )
             ).all()
-        return [(r, name) for r, name in rows]
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = (
+            codec.encode(
+                scope="invitations",
+                org_id=str(org_id),
+                filters=filters,
+                sort=[rows[-1][0].created_at.isoformat(), str(rows[-1][0].id)],
+            )
+            if has_more and rows
+            else None
+        )
+        return [(r, name) for r, name in rows], next_cursor
 
     async def revoke(self, org_id: uuid.UUID, principal: Principal, invite_id: uuid.UUID) -> None:
         async with self.db.transaction() as session:

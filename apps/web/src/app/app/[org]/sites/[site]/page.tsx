@@ -13,7 +13,7 @@ import { libraryApi } from "@/lib/api/library";
 import type { SiteModelDraft } from "@/lib/api/types";
 import { blankDescription, stableJson, type SiteDescription } from "@/lib/builder/description";
 import { relative } from "@/lib/data/derive";
-import { useLoad } from "@/lib/data/hooks";
+import { useCursorList, useLoad } from "@/lib/data/hooks";
 import { useWorkspace } from "@/lib/org/context";
 
 type Busy = null | "save" | "check" | "publish" | "discard" | "start";
@@ -23,7 +23,7 @@ export default function SitePage() {
   const { site: siteId } = useParams<{ site: string }>();
   const suggested = useSearchParams().get("template");
   const site = useLoad(`site|${ws.org.id}|${siteId}`, (s) => ws.api.site(siteId, s));
-  const versions = useLoad(`models|${ws.org.id}|${siteId}`, (s) => ws.api.models(siteId, s));
+  const versions = useCursorList(`models|${ws.org.id}|${siteId}`, (cursor, s) => ws.api.models(siteId, { limit: 25, cursor }, s));
   const equipment = useLoad("library|equipment", (s) => libraryApi.equipment(s));
   const templates = useLoad("library|templates", (s) => libraryApi.templates(s));
   const draft = useLoad(`draft|${ws.org.id}|${siteId}`, async (s) => {
@@ -313,9 +313,9 @@ export default function SitePage() {
       <Card className="p-5">
         <CardHeader title="Published versions" subtitle="Each investigation keeps the exact version it ran on, so its replay never changes." />
         {versions.status === "ready" ? (
-          versions.data.length ? (
+            versions.data.items.length ? (
             <ul className="mt-3 flex flex-col divide-y divide-white/[.06] text-[14px]">
-              {versions.data.map((v) => (
+              {versions.data.items.map((v) => (
                 <li key={v.id} className="flex items-center gap-3 py-2.5">
                   <span className="font-medium text-fg">Version {v.version}</span>
                   <Badge tone={v.status === "published" ? "ok" : "muted"}>{v.status === "published" ? "In use" : "Retired"}</Badge>
@@ -331,6 +331,10 @@ export default function SitePage() {
         ) : (
           <Skeleton className="mt-3 h-16" />
         )}
+        {versions.status === "ready" && versions.data.next_cursor ? (
+          <div className="mt-3"><Button size="sm" onClick={versions.loadMore} disabled={versions.loadingMore}>{versions.loadingMore ? "Loading..." : "Load more versions"}</Button></div>
+        ) : null}
+        {versions.moreError ? <p role="alert" className="mt-3 text-[13px] text-bad">Could not load more versions. <button className="underline" onClick={versions.loadMore}>Try again</button></p> : null}
       </Card>
     </div>
   );

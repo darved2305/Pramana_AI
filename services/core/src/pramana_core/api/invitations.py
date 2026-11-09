@@ -2,19 +2,22 @@
 """Invite people into a workspace, and accept an invitation."""
 
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 
 from pramana_contracts import (
     AcceptInvitation,
     AcceptPendingInvitation,
     CreateInvitation,
+    CursorPage,
     InvitationAccepted,
     InvitationCreated,
     InvitationView,
 )
 
 from .. import ids
+from ..cursors import CursorCodec
 from ..errors import not_found
 from ..idempotency import IdempotencyRoute, idempotent
 from ..invitations import Invitations, email_invitation, invitation_view
@@ -37,12 +40,25 @@ def _service(request: Request, response: Response) -> Invitations:
 
 
 @router.get("")
-async def list_invitations(org: str, request: Request, response: Response) -> list[InvitationView]:
+async def list_invitations(
+    org: str,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
+) -> CursorPage[InvitationView]:
     access = request.state.organization
+    codec: CursorCodec = request.app.state.cursor_codec
     if not set(MANAGERS) & set(access.roles):
-        return []  # members who cannot invite do not see who else was invited
-    rows = await _service(request, response).listing(access.organization.id)
-    return [invitation_view(row, name) for row, name in rows]
+        return CursorPage[InvitationView](items=[], limit=limit, next_cursor=None)
+    rows, next_cursor = await _service(request, response).listing(
+        access.organization.id, limit, cursor, codec
+    )
+    return CursorPage[InvitationView](
+        items=[invitation_view(row, name) for row, name in rows],
+        limit=limit,
+        next_cursor=next_cursor,
+    )
 
 
 @router.post("", status_code=201)
