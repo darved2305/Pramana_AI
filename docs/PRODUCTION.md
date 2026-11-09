@@ -1115,9 +1115,9 @@ If an in-place migration is ever needed, use expand and contract:
 | Data | Where | Retention [T] | Erasure |
 |---|---|---|---|
 | Staff accounts | `users`, `user_identities`, `sessions` | Life of the account plus 30 days | Delete identities and sessions; audit entries keep a hashed actor id |
-| People directory (names, phone numbers) | `people`, encrypted per person | While active, plus 90 days after last use | Delete the person's data key (crypto-shredding); the row stays as a tombstone |
+| People directory (names, phone numbers) | `site_people` and `personal_texts`, encrypted per person | While active, plus 90 days after last use | Delete the person's data key (crypto-shredding); the row stays as a tombstone |
 | Consent records | `consents` | As long as needed to prove consent | Keep the minimal proof |
-| Reports, transcripts, readings | `utterances`, encrypted per person | 30 days (the prototype's NFR-07 said 7 days in development) | Purge job, or key deletion |
+| Reports and transcripts | `personal_texts`, encrypted per person | 30 days (the prototype's NFR-07 said 7 days in development) | Purge job, or key deletion |
 | Raw audio | Not stored (NFR-07) | None | Nothing to erase |
 | Event log | `events`: ids, outcomes, numbers | Life of the organization | Survives erasure; names render as "Erased person" |
 | Audit and security logs | `audit_log`, Cloud Logging | At least 180 days in India (CERT-In); 1 year [T] | Pseudonymized actor |
@@ -1893,11 +1893,13 @@ This is a strong base. The new layers below target tenancy, identity, retries an
 
 1. Pull request: the existing gates, plus the tenant-leak generator, migration tests and Schemathesis.
 2. Merge to `main`: build images once, tagged by SHA. GitHub Actions authenticates to Google Cloud with Workload Identity Federation, so no long-lived keys exist.
-3. Deploy to staging: run the migration job (expand only), deploy new revisions, run smoke tests (preflight adapted for staging) and the synthetic checks.
-4. Promote to production with manual approval: migrate (expand), then send 10% of traffic to the new revision, watch SLO burn for 30 minutes, then go to 100%. Roll back automatically by shifting traffic to the previous revision.
+3. Deploy to staging: run the migration job (expand only), run the personal data backfill with `uv run python scripts/backfill_personal_data.py --batch-size 100`, deploy new revisions, run smoke tests (preflight adapted for staging) and the synthetic checks.
+4. Promote to production with manual approval: migrate (expand), re-run the `REVOKE ALL` statements for `anon` and `authenticated` on the private `pramana` schema, run the resumable personal data backfill, then send 10% of traffic to the new revision, watch SLO burn for 30 minutes, then go to 100%. Roll back automatically by shifting traffic to the previous revision.
 5. Contract migrations (drops) ship in a later release, once no revision needs the old shape.
 
 Infrastructure is code (Terraform or OpenTofu), one workspace per environment. Feature flags decouple deploying from releasing.
+
+After every migration on Supabase, run `REVOKE ALL ON SCHEMA pramana FROM anon, authenticated`, `REVOKE ALL ON ALL TABLES IN SCHEMA pramana FROM anon, authenticated`, and the matching revoke on sequences and functions. Migration 0020 repeats these revokes against its current schema as a guard. The personal data backfill is a separate command rather than an Alembic data migration because it requires `PRAMANA_PII_KEY`, needs bounded transactions and resumable progress, and must not put personal values in migration output. Run it with the schema-owner migration connection before the new core revision receives traffic.
 
 ### 13.6 Secrets and keys
 

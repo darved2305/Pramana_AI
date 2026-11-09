@@ -17,6 +17,7 @@ from test_google_auth import sql
 from test_practice import published_water_site
 from test_practice import request as practice_request
 
+from pramana_core.investigations import person_token, tokenized_names
 from pramana_core.vault import MasterKey, PersonRef, PersonVault
 
 pytestmark = pytest.mark.db
@@ -30,6 +31,17 @@ PERSON = {
     "location_id": "LOBBY",
     "languages": {"stt_candidates": ["hi-IN", "en-IN"], "template_language": "hi"},
 }
+
+
+def test_name_tokenization_changes_text_without_touching_identifiers() -> None:
+    payload = {
+        "reason": "Ask A about a valve.",
+        "action": {"participant_id": "A", "probe_id": "a"},
+    }
+    assert tokenized_names(payload, {"A": "A"}) == {
+        "reason": f"Ask {person_token('A')} about a valve.",
+        "action": {"participant_id": "A", "probe_id": "a"},
+    }
 
 
 def post(client: TestClient, path: str, json: Any = None) -> Any:
@@ -208,7 +220,19 @@ def test_erasing_a_person_keeps_the_replay_identical(
     )
     for row in rows:
         assert words not in row["payload"], row["type"]
+        assert name not in row["payload"], row["type"]
         assert f'"display_name": "{name}"' not in row["payload"], row["type"]
+    outcome = sql(
+        migrated_db,
+        "select outcome::text as outcome from investigations where id = :inv",
+        {"inv": inv},
+    )[0]["outcome"]
+    assert name not in outcome
+    public_events = client.get(f"{state_path}/events?after_seq=0&limit=200").json()
+    plan_reasons = [
+        event["payload"]["reason"] for event in public_events if event["type"] == "PlanComputed"
+    ]
+    assert any(name in reason for reason in plan_reasons)
     stored = sql(
         migrated_db,
         "select transcript from observations "

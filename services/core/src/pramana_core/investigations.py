@@ -174,6 +174,29 @@ def named(
     return loaded
 
 
+def tokenized_names(payload: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
+    """Replace participant names in user-facing text with stable person tokens."""
+    text_fields = {"explanation", "message", "reason", "reasons", "summary", "text"}
+    replacements = sorted(names.items(), key=lambda item: (-len(item[1]), item[0]))
+
+    def visit(value: Any, *, is_text: bool = False) -> Any:
+        if isinstance(value, dict):
+            return {key: visit(item, is_text=key in text_fields) for key, item in value.items()}
+        if isinstance(value, list):
+            return [visit(item, is_text=is_text) for item in value]
+        if is_text and isinstance(value, str):
+            for person_id, name in replacements:
+                if name:
+                    value = re.sub(
+                        rf"(?<![\w]){re.escape(name)}(?![\w])",
+                        person_token(person_id),
+                        value,
+                    )
+        return value
+
+    return cast(dict[str, Any], visit(payload))
+
+
 def _real_people(
     people: list[ParticipantSpec], inv_id: str, texts: dict[tuple[str, str, str], str]
 ) -> list[ParticipantSpec]:
@@ -331,7 +354,11 @@ class InvestigationService:
     async def _rebuild(self, session: AsyncSession, row: InvestigationRow) -> tuple[Engine, int]:
         """A fresh engine built only from the event log; also returns how many events it read."""
         req = self._request(row)
-        engine = Engine(self._model_for(row), list(req.participants), self._engine_config)
+        texts = await self._texts(session, row)
+        participants = (
+            _real_people(req.participants, row.id, texts) if row.site_id else req.participants
+        )
+        engine = Engine(self._model_for(row), participants, self._engine_config)
         events = await session.execute(
             select(EventRow.type, EventRow.payload)
             .where(EventRow.investigation_id == row.id)
@@ -611,7 +638,14 @@ class InvestigationService:
     ) -> None:
         """Record the plan; ask the next question or conclude."""
         self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
-        self._event(session, row.id, "PlanComputed", plan.model_dump(mode="json"))
+        payload = plan.model_dump(mode="json")
+        if row.site_id is not None:
+            names = {
+                person.spec.id: person.spec.display_name for person in engine.participants.values()
+            }
+            payload = tokenized_names(payload, names)
+        self._event(session, row.id, "PlanComputed", payload)
+        stored_reason = str(payload["reason"])
         if plan.kind == PlanKind.ASK:
             assert plan.action is not None
             self._ask(session, row, engine, plan.action)
@@ -630,14 +664,14 @@ class InvestigationService:
                 "kind": plan.kind.value,
                 "rule": plan.rule,
                 "fixed_probability": plan.decision_probability,
-                "reason": plan.reason,
+                "reason": stored_reason,
             }
             row.outcome = {**(row.outcome or {}), "verification": verdict}
             self._event(session, row.id, "VerificationResult", verdict)
             if plan.rule == "verification_failed":
                 # The repair did not resolve it: reopen with the alternatives promoted.
                 engine.reopen()
-                self._event(session, row.id, "Reopened", {"reason": plan.reason})
+                self._event(session, row.id, "Reopened", {"reason": stored_reason})
                 self._apply_plan(session, row, engine, engine.plan())
             return
         decided = plan.kind == PlanKind.DECIDE
@@ -650,7 +684,7 @@ class InvestigationService:
             "decision_probability": plan.decision_probability,
             "rule": plan.rule,
             "moderate_confidence": plan.moderate_confidence,
-            "reason": plan.reason,
+            "reason": stored_reason,
         }
         self._event(session, row.id, "DecisionReached" if decided else "Abstained", row.outcome)
 
@@ -1338,7 +1372,10 @@ class InvestigationService:
                     .limit(1)
                 )
             ).scalar_one()
-            plan = PlanDecision.model_validate(plan_payload)
+            texts = await self._texts(session, row)
+            plan = PlanDecision.model_validate(
+                named(plan_payload, inv_id, texts) if row.site_id else plan_payload
+            )
             req = self._request(row)
             questions = (
                 (
@@ -1385,7 +1422,6 @@ class InvestigationService:
                     .order_by(EventRow.seq)
                 )
             ).all()
-            texts = await self._texts(session, row)
         checks: dict[str, PresenceCheckView] = {}
         disagreements: list[DisagreementView] = []
         for type_, payload in testimony:
@@ -1563,7 +1599,15 @@ class InvestigationService:
                 .scalars()
                 .all()
             )
-            needs_names = any(r.type == "DisagreementExplained" for r in rows)
+            name_bearing = {
+                "DisagreementExplained",
+                "PlanComputed",
+                "VerificationResult",
+                "Reopened",
+                "DecisionReached",
+                "Abstained",
+            }
+            needs_names = any(r.type in name_bearing for r in rows)
             texts = await self._texts(session, row) if needs_names else {}
         return [
             EventEnvelope(
@@ -1571,7 +1615,7 @@ class InvestigationService:
                 investigation_id=r.investigation_id,
                 type=r.type,
                 payload=named(r.payload, inv_id, texts)
-                if r.type == "DisagreementExplained" and row.site_id
+                if r.type in name_bearing and row.site_id
                 else r.payload,
                 ts=r.ts,
             )
