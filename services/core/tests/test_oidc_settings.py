@@ -47,6 +47,8 @@ def test_production_uses_host_cookies_and_google() -> None:
         "postgresql+asyncpg://pramana_app@localhost:5433/pramana_prod_test",
         PRAMANA_MODE="production",
         CORE_AUTOMATION_KEY="",
+        OIDC_ISSUER="https://accounts.google.com",
+        OIDC_DISCOVERY_URL="https://accounts.google.com/.well-known/openid-configuration",
         OIDC_REDIRECT_URL="https://pramana.example/api/core/v1/auth/google/callback",
         PRAMANA_PII_KEY="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
     )
