@@ -207,7 +207,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink text-cream">
-      <header className="flex items-center justify-between px-6 py-6 sm:px-[50px]">
+      <header className="flex items-center justify-between gap-4 px-6 py-6 sm:px-[50px]">
         <Wordmark />
         {workspace ? (
           <button type="button" className="btn-line" disabled={busy} onClick={async () => {
