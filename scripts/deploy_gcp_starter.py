@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROJECT_DEFAULT = "luminous-slice-514102-f4"
 REGION = "asia-south1"
 INDIA_DATABASE_REGION = "ap-south-1"
+SUPABASE_REF = "lhgxsrechpucdbyqljfu"
 NON_INDIA_DATABASE_ACK = "PRAMANA_ACCEPT_NON_INDIA_DATABASE"
 TRUE_VALUES = frozenset({"true", "1", "yes"})
 REPOSITORY = "pramana"
@@ -128,14 +129,15 @@ def dry_run_environment() -> dict[str, str]:
     values = {
         "GCP_PROJECT_ID": PROJECT_DEFAULT,
         "GCP_BILLING_ACCOUNT_ID": "000000-000000-000000",
-        "PRAMANA_SUPABASE_REGION": "ap-south-1",
+        "PRAMANA_SUPABASE_REGION": "ap-southeast-1",
+        NON_INDIA_DATABASE_ACK: "true",
         "PRAMANA_SUPABASE_CREDENTIALS_ROTATED": "true",
         "PRAMANA_SUPABASE_APP_PASSWORD_ROTATED": "true",
         "PRAMANA_SUPABASE_SECRET_KEY_ROTATED": "true",
         "PRAMANA_GOOGLE_OAUTH_CLIENT_SECRET_ROTATED": "true",
         "PRAMANA_GMAIL_APP_PASSWORD_ROTATED": "true",
-        "PRAMANA_SUPABASE_REF": "dryrunref123456",
-        "PRAMANA_SUPABASE_POOLER_HOST": "aws-0-ap-south-1.pooler.supabase.com",
+        "PRAMANA_SUPABASE_REF": SUPABASE_REF,
+        "PRAMANA_SUPABASE_POOLER_HOST": "aws-0-ap-southeast-1.pooler.supabase.com",
         "PRAMANA_SUPABASE_DATABASE": "postgres",
         "PRAMANA_SUPABASE_DB_PASSWORD": "dry-run-migrator-placeholder",
         "PRAMANA_SUPABASE_APP_PASSWORD": "dry-run-runtime-placeholder",
@@ -364,6 +366,8 @@ def validate_environment(ctx: Context) -> None:
         )
     if not re.fullmatch(r"[A-Za-z0-9-]{6,64}", ctx.value("PRAMANA_SUPABASE_REF")):
         raise DeployError("PRAMANA_SUPABASE_REF has an invalid format")
+    if ctx.value("PRAMANA_SUPABASE_REF") != SUPABASE_REF:
+        raise DeployError("PRAMANA_SUPABASE_REF must identify the authorized Pramana project")
     host = ctx.value("PRAMANA_SUPABASE_POOLER_HOST").lower()
     if not re.fullmatch(r"[a-z0-9.-]+\.pooler\.supabase\.com", host) or f"-{region}." not in host:
         raise DeployError(f"PRAMANA_SUPABASE_POOLER_HOST must be the {region} session pooler host")
