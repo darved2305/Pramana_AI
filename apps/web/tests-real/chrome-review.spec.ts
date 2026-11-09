@@ -7,6 +7,7 @@ const output = path.resolve(process.cwd(), "../../.cache/review-shots");
 let runId = "";
 let steps: { label: string; path: string; width: number; documentWidth: number; screenshot: string }[] = [];
 let signals: { kind: string; page: string; detail: string }[] = [];
+const nonGenericPracticeCopy = /hostel|guard desk|student|nava[- ]?wifi|\bwifi\b|wi[- ]?fi|वाई.?फ़ाई|वाय-?फाय|ip test page|bookmark|\bont\b|\bpon\b|\bidf\b|db[- ]?c2|\bisp\b|\bdhcp\b|\bdns\b|\bcctv\b|\bnvr\b|\bpoe\b|\bhvac\b|access point|\brack\b|main-1|c2-[57]|\bgateway\b/i;
 
 function safeUrl(value: string) {
   try {
@@ -80,10 +81,14 @@ async function capture(page: Page, label: string) {
       .slice(0, 8),
   }));
   const phoneShot = file(390);
+  const desktopScrollY = await page.evaluate(() => window.scrollY);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await page.screenshot({ path: phoneShot });
   steps.push({ label, path: safeUrl(page.url()), width: layout.width, documentWidth: layout.documentWidth, screenshot: path.relative(path.resolve(process.cwd(), "../.."), phoneShot) });
   expect(layout.documentWidth, `${label} overflows at 390 px: ${JSON.stringify(layout.offenders)}`).toBeLessThanOrEqual(390);
   await page.setViewportSize(original);
+  await page.evaluate((y) => window.scrollTo(0, y), desktopScrollY);
 }
 
 test.beforeEach(async ({ page }, info) => {
@@ -130,6 +135,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await page.getByRole("textbox", { name: "Name", exact: true }).fill("मयूरी कुलकर्णी");
   await page.getByRole("button", { name: "Continue with mock account" }).click();
   await expect(page).toHaveURL(/\/onboarding\/welcome$/);
+  await expect(page.getByRole("heading", { name: "Find out what is wrong by asking the people who are there" })).toBeVisible();
   await capture(page, "onboarding-welcome");
 
   await page.getByRole("button", { name: "Get started" }).click();
@@ -212,7 +218,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
     ...model.spec.decision_classes.map((decision: { label: string }) => decision.label),
     ...model.spec.presence_tokens.flatMap((token: { label: string; templates: Record<string, string> }) => [token.label, ...Object.values(token.templates)]),
   ].join(" ");
-  expect(practiceCopy).not.toMatch(/hostel|guard desk|student|NAVA-WiFi|IP test page|Wi-Fi box|IDF-[12]|DB-C2/i);
+  expect(practiceCopy).not.toMatch(nonGenericPracticeCopy);
   await expect(page.locator("main")).not.toContainText(/\(simulated\) (student|guard|electrician|it_tech|housekeeping)\b/i);
   const phones = new Map<string, Page>();
   async function phoneFor(participantId: string) {
@@ -242,7 +248,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
     expect(probeLabel).toBeTruthy();
     await expect(phone.getByRole("heading", { level: 1 })).toHaveText(question.text);
     await expect(phone.getByRole("button", { name: "Accept", exact: true })).toHaveCSS("background-color", "rgb(255, 252, 247)");
-    await expect(phone.locator("main")).not.toContainText(/hostel|guard desk|student|NAVA-WiFi|IP test page|Wi-Fi box/i);
+    await expect(phone.locator("main")).not.toContainText(nonGenericPracticeCopy);
     await phone.screenshot({ path: path.join(output, `${runId}-practice-participant-pending-${answered}-390.png`) });
     await expect(phone.locator("main")).not.toContainText(/hostel/i);
     const before = practiceState.questions_asked;
@@ -469,6 +475,8 @@ test("real Chrome review: invitations can be withdrawn or joined from welcome", 
   await capture(page, "invitation-welcome");
   await page.getByRole("region", { name: "Invitations" }).getByRole("button", { name: "Join" }).click();
   await expect(page).toHaveURL(new RegExp(`${base}$`));
+  await expect(page.locator('[aria-label="Loading your home"]')).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Your sites" })).toBeVisible();
   await capture(page, "invitation-joined");
   await logout();
   await signIn(owner, `${base}/settings`);
