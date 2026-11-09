@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { answerTruthfully, openParticipant } from "./helpers";
+import { answerTruthfully, openParticipant, PEOPLE } from "./helpers";
 
 /** A brand-new person: mock Google sign-in, then a workspace of their own. */
 async function newWorkspace(page: Page, who: string) {
@@ -13,7 +13,11 @@ async function newWorkspace(page: Page, who: string) {
     data: { name: "Riverside Offices", kind: "office" },
   });
   expect(created.status(), await created.text()).toBe(201);
-  return (await created.json()) as { organization: { slug: string; id: string }; live_site: { id: string } };
+  return (await created.json()) as {
+    organization: { slug: string; id: string; name: string };
+    live_site: { id: string };
+    sandbox_site: { id: string };
+  };
 }
 
 test("a new workspace describes its own site, checks it and publishes it", async ({ page, browser }) => {
@@ -133,4 +137,132 @@ test("someone else's workspace shows no data", async ({ page }) => {
   await newWorkspace(page, `outsider-${Date.now()}`);
   await page.goto("/app/somebody-elses-campus");
   await expect(page.getByText("You do not have access to this workspace")).toBeVisible();
+});
+
+test("investigation history requests bounded cursor pages only when asked", async ({ page }) => {
+  const ws = await newWorkspace(page, `cursor-${Date.now()}`);
+  const collection = `/api/core/v1/orgs/${ws.organization.slug}/investigations`;
+  for (let i = 0; i < 26; i += 1) {
+    const response = await page.request.post(collection, {
+      headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${ws.organization.id}-inv-${i}` },
+      data: {
+        participants: PEOPLE,
+        report: { text: `Pagination cursor check ${i}`, reporter_id: "p_riya" },
+        scenario: { seed: i + 1, fault: "random" },
+        site_id: ws.sandbox_site.id,
+      },
+    });
+    expect(response.status(), await response.text()).toBe(201);
+  }
+
+  const listRequests: URL[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === collection) listRequests.push(url);
+  });
+  // Site investigations seal report text, so search must use IDs. All generated IDs share this prefix.
+  const path = `/app/${ws.organization.slug}/investigations?filter=active&q=inv_`;
+  await page.goto(path);
+  const list = page.getByRole("list", { name: "Investigations" });
+  await expect(list.getByRole("listitem")).toHaveCount(24);
+  const loadMore = page.getByRole("button", { name: "Load more investigations" });
+  await expect(loadMore).toBeVisible();
+  expect(listRequests).toHaveLength(1);
+  expect(listRequests[0].searchParams.get("limit")).toBe("24");
+  expect(listRequests[0].searchParams.get("offset")).toBeNull();
+  expect(listRequests[0].searchParams.get("q")).toBe("inv_");
+
+  await loadMore.focus();
+  await page.keyboard.press("Enter");
+  await expect(list.getByRole("listitem")).toHaveCount(26);
+  expect(listRequests).toHaveLength(2);
+  expect(listRequests[1].searchParams.get("limit")).toBe("24");
+  expect(listRequests[1].searchParams.get("cursor")).toBeTruthy();
+  expect(listRequests[1].searchParams.get("offset")).toBeNull();
+
+  await page.goto(`/app/${ws.organization.slug}/investigations?view=board&filter=active&q=inv_`);
+  await expect(page.getByRole("heading", { name: "Asking people" })).toBeVisible();
+  expect(listRequests).toHaveLength(3);
+  expect(listRequests[2].searchParams.get("q")).toBe("inv_");
+  expect(listRequests[2].searchParams.getAll("status")).toContain("investigating");
+});
+
+async function mockSignIn(page: Page, who: string, next: string) {
+  await page.goto(`/api/core/v1/auth/google/start?next=${encodeURIComponent(next)}`);
+  await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+  await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+  await page.getByRole("button", { name: "Continue with mock account" }).click();
+}
+
+async function signOut(page: Page) {
+  const out = await page.request.post("/api/core/v1/auth/logout", { headers: { "X-Pramana-CSRF": "1" } });
+  expect(out.ok(), await out.text()).toBe(true);
+}
+
+test("workspace owner exports, deletes, members see the notice, and the owner restores", async ({ page }) => {
+  test.setTimeout(180_000);
+  const stamp = Date.now();
+  const owner = `delete-${stamp}`;
+  const mate = `mate-${stamp}`;
+  const ws = await newWorkspace(page, owner);
+  const base = `/app/${ws.organization.slug}`;
+  const invited = await page.request.post(`/api/core/v1/orgs/${ws.organization.slug}/invitations`, {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${owner}-invite-0001` },
+    data: { email: `${mate}@gmail.com`, roles: ["operator"] },
+  });
+  expect(invited.status(), await invited.text()).toBe(201);
+  const token = ((await invited.json()) as { accept_path: string }).accept_path.split("/").pop() as string;
+
+  // The teammate joins first, so they still belong to the workspace when it is deleted.
+  await signOut(page);
+  await mockSignIn(page, mate, "/app/account");
+  await expect(page).toHaveURL(/\/app\/account$/);
+  const accepted = await page.request.post("/api/core/v1/invitations/accept", {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${mate}-accept-0001` },
+    data: { token },
+  });
+  expect(accepted.status(), await accepted.text()).toBeLessThan(300);
+  await page.goto(`${base}/settings`);
+  await expect(page.getByRole("heading", { name: "Delete workspace" })).toHaveCount(0); // owners only
+
+  await signOut(page);
+  await mockSignIn(page, owner, `${base}/settings`);
+  await expect(page).toHaveURL(new RegExp(`${base}/settings$`));
+  const exportLink = page.getByRole("link", { name: "Download workspace export" });
+  await expect(exportLink).toBeVisible();
+  const downloadReady = page.waitForEvent("download");
+  await exportLink.click();
+  const download = await downloadReady;
+  expect(download.suggestedFilename()).toMatch(/export-.*\.zip$/);
+
+  const remove = page.getByRole("button", { name: "Delete workspace" });
+  await expect(remove).toBeDisabled();
+  await page.getByRole("checkbox", { name: "I downloaded the export or have decided I do not need a copy." }).check();
+  const confirm = page.getByRole("textbox", { name: `Type ${ws.organization.name} to confirm` });
+  await confirm.fill(ws.organization.name.toLowerCase());
+  await expect(remove).toBeDisabled(); // the name must match exactly
+  await confirm.fill(ws.organization.name);
+  await remove.click();
+  // Their only workspace is gone, so they land on the first step of setting one up.
+  await expect(page).toHaveURL(/\/onboarding\/welcome$/);
+
+  // The teammate sees a notice, not an error, and cannot restore.
+  await signOut(page);
+  await mockSignIn(page, mate, base);
+  await expect(page.getByRole("heading", { name: `${ws.organization.name} was deleted` })).toBeVisible();
+  await expect(page.getByText("Ask a workspace owner to restore this workspace")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restore workspace" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Download workspace export" })).toHaveCount(0);
+  const blocked = await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/sites`);
+  expect(blocked.status()).toBe(410);
+
+  await signOut(page);
+  await mockSignIn(page, owner, base);
+  await expect(page.getByRole("heading", { name: `${ws.organization.name} was deleted` })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download workspace export" })).toBeVisible();
+  await page.getByRole("button", { name: "Restore workspace" }).click();
+  await expect(page.getByRole("heading", { name: `${ws.organization.name} was deleted` })).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`${base}$`));
+  const sites = await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/sites`);
+  expect(sites.status(), await sites.text()).toBe(200);
 });

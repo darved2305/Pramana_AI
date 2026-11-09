@@ -78,11 +78,38 @@ The core never stores the fault; only the simulator does.
 
 ### Listing investigations
 
-`GET /v1/investigations?status=decided&status=verified&q=wifi&limit=25&offset=0` returns
-`InvestigationPage {items, total, limit, offset}`, newest first. `status` may repeat; `q` matches
-the report text or the id (case-insensitive; `%` and `_` are literal). Each item has `status`,
-`report_text`, `reporter_id`, `participant_count` and, once concluded, `decision_class` and
-`decision_probability`.
+`GET /v1/investigations?status=decided&status=verified&q=wifi&limit=25` returns
+`InvestigationPage {items, limit, next_cursor}`, newest first. `status` may repeat; `q` matches the
+report text or the id (case-insensitive; `%` and `_` are literal). The opaque cursor is signed and
+bound to the organization and filters. Keep requesting the same filters with `cursor=<next_cursor>`
+until `next_cursor` is `null`. Limits are capped at 100. Sealed report text matches by id only.
+Each item has `status`, `report_text`, `reporter_id`, `participant_count` and, once concluded,
+`decision_class` and `decision_probability`.
+
+Organization lists use the same `{items, limit, next_cursor}` shape for sites and model versions,
+people and consents, members, invitations, and per-person track records. Cursors are opaque and must
+be restarted after changing a filter. The workspace UI keeps investigation search and status filters
+in the URL and provides keyboard-accessible Load more controls.
+
+### Workspace export and deletion
+
+`GET /v1/orgs/{org}/export` returns a streamed ZIP with JSON files for workspace metadata, sites,
+model versions, people, consents, investigations, events, members, invitations and audit entries.
+People names and investigation reports are decrypted for the owner. The archive contains personal
+data and excludes credentials, session/OAuth records and key material. Export requests are audited.
+
+`DELETE /v1/orgs/{org}` requires an owner, a CSRF header, an `Idempotency-Key`, and
+`{"confirmation":"<exact workspace name>"}`. It starts a 30-day restore period. Every other
+organization route returns `410 WORKSPACE_DELETED`; owners can still export or restore during the
+window. `POST /v1/orgs/{org}/restore` is owner-only, audited and idempotent. `/v1/me` retains the
+deleted membership for routing and history, but chooses an active workspace or onboarding when no
+active membership remains. Members see the workspace deletion notice in the console.
+
+After the window, run `uv run python scripts/purge_deleted_workspaces.py` with a maintenance database
+URL. The job crypto-shreds person keys, deletes private rows in dependency order, redacts mutable
+personal-data projections, and preserves append-only events and audit rows for exact replay and
+seals. It refuses a purge if an event log contains readable personal text. See
+`docs/engineering/WORKSPACE_RETENTION.md` for the maintenance role and scheduling requirements.
 
 ### `InvestigationState`: what to render
 

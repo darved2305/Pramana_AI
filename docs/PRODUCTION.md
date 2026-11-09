@@ -1316,7 +1316,7 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | OR-04 | Membership removed while the user is active | The next call fails; the event stream closes; "You no longer have access to Nava College" | A, B |
 | OR-05 | Role reduced (operator to viewer) mid-session | The server refuses at once; the UI refreshes its permissions on the next response | A, B |
 | OR-06 | The last owner tries to leave or step down | Refused: "Make someone else an owner first" (Sarvam enforces the same rule) | A |
-| OR-07 | Organization deleted | Soft-deleted with 30-day restore; members see a notice; an export is offered first; purge afterwards | A |
+| OR-07 | Organization deleted | Soft-deleted with 30-day restore; members see a notice; an export is offered first; purge afterwards | A, B |
 | OR-08 | Slug already taken | Suggestions offered; a later slug change keeps redirects | A |
 | OR-09 | "Create organization" double-clicked, or retried after a timeout | Exactly one organization (idempotency key) | A, B, C |
 | OR-10 | Onboarding open in two tabs | State is server-side; the second tab moves to the current step | B |
@@ -1332,7 +1332,7 @@ Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright wi
 | DA-04 | People added, nobody has consented yet | Investigations may start, but questions go only to people who consented; consent chips and "Send consent request" | A, B |
 | DA-05 | Returning user with history | Home leads with active work; history is paginated; unfinished checklist items stay, and can be dismissed | B |
 | DA-06 | Sandbox data alongside live data | Separate `mode`; sandbox never counts in live metrics; a badge on every sandbox screen; "Delete sample site" | A, B |
-| DA-07 | Thousands of investigations | Cursor pagination, server-side search and filters; no client-side full loads | A, L |
+| DA-07 | Thousands of investigations | Cursor pagination, server-side search and filters; no client-side full loads | A, B, L |
 | DA-08 | The site model changes while an investigation is open | The investigation stays on its pinned version: "A newer model (v8) exists; new investigations use it" | A |
 
 **Participants and live investigations**

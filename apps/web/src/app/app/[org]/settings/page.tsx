@@ -10,7 +10,7 @@ import { describeError } from "@/lib/api/http";
 import type { CreateInvitation, InvitationCreated, WorkspaceMember } from "@/lib/api/types";
 import { refreshAccount } from "@/lib/data/account";
 import { relative } from "@/lib/data/derive";
-import { useLoad } from "@/lib/data/hooks";
+import { useCursorList } from "@/lib/data/hooks";
 import { useWorkspace } from "@/lib/org/context";
 
 type InvitedRole = CreateInvitation["roles"][number];
@@ -27,14 +27,18 @@ export default function WorkspaceSettingsPage() {
   const ws = useWorkspace();
   const router = useRouter();
   const canManage = ws.roles.has("owner") || ws.roles.has("admin");
-  const members = useLoad(`members|${ws.org.id}`, (s) => ws.api.members(s));
-  const invitations = useLoad(canManage ? `invitations|${ws.org.id}` : null, (s) => ws.api.invitations(s));
+  const members = useCursorList(`members|${ws.org.id}`, (cursor, s) => ws.api.members({ limit: 25, cursor }, s));
+  const invitations = useCursorList(canManage ? `invitations|${ws.org.id}` : null, (cursor, s) => ws.api.invitations({ limit: 25, cursor }, s));
   const [email, setEmail] = useState("");
   const [roles, setRoles] = useState<InvitedRole[]>(["operator"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<{ email: string; url: string; delivery: InvitationCreated["email_delivery"] } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const [exportAcknowledged, setExportAcknowledged] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deletionError, setDeletionError] = useState<string | null>(null);
 
   async function invite(e: React.FormEvent) {
     e.preventDefault();
@@ -58,6 +62,24 @@ export default function WorkspaceSettingsPage() {
     }
   }
 
+  async function deleteWorkspace() {
+    if (confirmation !== ws.org.name || !exportAcknowledged) return;
+    setDeleting(true);
+    setDeletionError(null);
+    try {
+      await ws.api.deleteWorkspace(
+        { confirmation },
+        { key: actionKey("delete-workspace") },
+      );
+      await refreshAccount();
+      router.replace("/app");
+      router.refresh();
+    } catch (x) {
+      setDeletionError(describeError(x));
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6 pt-4">
       <PageHeader title="Workspace settings" subtitle="Who is in this workspace, what each role may do, and inviting your team." />
@@ -72,13 +94,59 @@ export default function WorkspaceSettingsPage() {
         </dl>
       </Card>
 
+      {ws.roles.has("owner") ? (
+        <Card className="flex flex-col gap-4 border-bad/30 p-5">
+          <CardHeader title="Delete workspace" subtitle="Pause access now, then permanently erase personal data after 30 days." />
+          <p className="text-[14px] text-fg-2">
+            Download an archive first. It contains site models, members, consent records, investigation reports, and participant names. Treat it as personal data and store it securely. The owner can restore this workspace during the 30-day window.
+          </p>
+          <div>
+            <a
+              href={`/api/core${ws.api.exportHref}`}
+              className="text-[14px] text-accent underline underline-offset-4"
+            >
+              Download workspace export
+            </a>
+          </div>
+          <label className="flex items-start gap-3 text-[13px] text-fg-2">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={exportAcknowledged}
+              onChange={(event) => setExportAcknowledged(event.target.checked)}
+            />
+            <span>I downloaded the export or have decided I do not need a copy.</span>
+          </label>
+          <Field label={`Type ${ws.org.name} to confirm`}>
+            {(a) => (
+              <Input
+                {...a}
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                autoComplete="off"
+              />
+            )}
+          </Field>
+          {deletionError ? <p role="alert" className="text-[13px] text-bad">{deletionError}</p> : null}
+          <div>
+            <Button
+              variant="danger"
+              disabled={deleting || !exportAcknowledged || confirmation !== ws.org.name}
+              onClick={() => void deleteWorkspace()}
+            >
+              {deleting ? "Deleting workspace..." : "Delete workspace"}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       <Card className="flex flex-col gap-4 p-5">
         <CardHeader title="Members" subtitle="People with an account here. The people asked during investigations are listed per site under People." />
         {members.status === "loading" ? <Skeleton className="h-24" /> : null}
         {members.status === "error" ? <ErrorState error={members.error} onRetry={members.reload} /> : null}
         {members.status === "ready" ? (
           <ul className="flex flex-col divide-y divide-white/[.06]" aria-label="Members">
-            {members.data.map((m) => (
+            {members.data.items.map((m) => (
               <MemberRow
                 key={m.id}
                 member={m}
@@ -93,6 +161,10 @@ export default function WorkspaceSettingsPage() {
             ))}
           </ul>
         ) : null}
+        {members.status === "ready" && members.data.next_cursor ? (
+          <div className="flex justify-center"><Button size="sm" onClick={members.loadMore} disabled={members.loadingMore}>{members.loadingMore ? "Loading..." : "Load more members"}</Button></div>
+        ) : null}
+        {members.moreError ? <p role="alert" className="text-[13px] text-bad">Could not load more members. <button className="underline" onClick={members.loadMore}>Try again</button></p> : null}
       </Card>
 
       {canManage ? (
@@ -153,9 +225,10 @@ export default function WorkspaceSettingsPage() {
               </div>
             </Notice>
           ) : null}
-          {invitations.status === "ready" && invitations.data.length ? (
+          {invitations.status === "error" ? <ErrorState error={invitations.error} onRetry={invitations.reload} /> : null}
+          {invitations.status === "ready" && invitations.data.items.length ? (
             <ul className="flex flex-col divide-y divide-white/[.06]" aria-label="Invitations">
-              {invitations.data.map((i) => (
+              {invitations.data.items.map((i) => (
                 <li key={i.id} className="flex flex-wrap items-center gap-3 py-2.5 text-[14px]">
                   <span className="min-w-0 flex-1 truncate text-fg">{i.email}</span>
                   <span className="text-[12px] text-muted">{i.roles.join(", ")} · {relative(i.created_at)}</span>
@@ -180,6 +253,10 @@ export default function WorkspaceSettingsPage() {
               ))}
             </ul>
           ) : null}
+          {invitations.status === "ready" && invitations.data.next_cursor ? (
+            <div className="flex justify-center"><Button size="sm" onClick={invitations.loadMore} disabled={invitations.loadingMore}>{invitations.loadingMore ? "Loading..." : "Load more invitations"}</Button></div>
+          ) : null}
+          {invitations.moreError ? <p role="alert" className="text-[13px] text-bad">Could not load more invitations. <button className="underline" onClick={invitations.loadMore}>Try again</button></p> : null}
         </Card>
       ) : null}
 

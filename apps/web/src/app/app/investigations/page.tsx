@@ -3,7 +3,7 @@
 import { useInvestigationScope } from "@/lib/data/scope";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   Badge,
   Button,
@@ -59,18 +59,39 @@ function InvestigationsInner() {
   const params = useSearchParams();
   const router = useRouter();
   const preview = usePreviewMode();
-  const [q, setQ] = useState(params.get("q") ?? "");
-  const [filter, setFilter] = useState<Filter>("all");
-  const [page, setPage] = useState(0);
+  // The URL is the source of truth for filters so a filtered list can be shared or bookmarked.
+  // The search box keeps its own text while typing and follows the URL on back/forward.
+  const urlQ = params.get("q") ?? "";
+  const filterParam = params.get("filter");
+  const filter: Filter = filterParam === "active" || filterParam === "settled" ? filterParam : "all";
+  const [q, setQ] = useState(urlQ);
+  const [seenUrlQ, setSeenUrlQ] = useState(urlQ);
+  if (urlQ !== seenUrlQ) {
+    setSeenUrlQ(urlQ);
+    if (urlQ !== q.trim()) setQ(urlQ);
+  }
   const [openId, setOpenId] = useState(false);
   const board = params.get("view") === "board";
-  const setView = (next: "list" | "board") =>
-    router.replace(`${scope.base}/investigations${next === "board" ? "?view=board" : ""}`, { scroll: false });
+  const updateUrl = (values: { q?: string; filter?: Filter; view?: "list" | "board" }) => {
+    const next = new URLSearchParams(params.toString());
+    const nextQ = values.q ?? q;
+    const nextFilter = values.filter ?? filter;
+    const nextView = values.view ?? (board ? "board" : "list");
+    if (nextQ.trim()) next.set("q", nextQ.trim());
+    else next.delete("q");
+    if (nextFilter !== "all") next.set("filter", nextFilter);
+    else next.delete("filter");
+    if (nextView === "board") next.set("view", "board");
+    else next.delete("view");
+    router.replace(`${scope.base}/investigations${next.size ? `?${next}` : ""}`, { scroll: false });
+  };
+  const setView = (next: "list" | "board") => updateUrl({ view: next });
   const needle = useDebounced(q, 250);
-  const query = useMemo(() => ({ status: STATUS_FILTER[filter], q: needle, limit: PAGE, offset: page * PAGE }), [filter, needle, page]);
+  // The list hook keys on the serialized query, so a fresh object each render is fine.
+  const query = { status: STATUS_FILTER[filter], q: needle, limit: PAGE };
   const list = useInvestigationList(query);
   const rows = list.data?.items ?? [];
-  const total = list.data?.total ?? 0;
+  const nextCursor = list.data?.next_cursor;
   const filtering = filter !== "all" || needle.trim() !== "";
 
   return (
@@ -96,19 +117,27 @@ function InvestigationsInner() {
         }
       />
 
-      {board ? <InvestigationBoard /> : null}
+      {board ? (
+        <InvestigationBoard
+          list={list}
+          filtering={filtering}
+          onClearFilters={() => {
+            setQ("");
+            updateUrl({ q: "", filter: "all" });
+          }}
+        />
+      ) : null}
       <div className={board ? "hidden" : "flex flex-wrap items-center justify-between gap-3"}>
         <Tabs<Filter>
           label="Filter investigations"
           value={filter}
           onChange={(f) => {
-            setFilter(f);
-            setPage(0);
+            updateUrl({ filter: f });
           }}
           items={[
-            { value: "all", label: "All", count: filter === "all" ? total : undefined },
-            { value: "active", label: "In progress", count: filter === "active" ? total : undefined },
-            { value: "settled", label: "Settled", count: filter === "settled" ? total : undefined },
+            { value: "all", label: "All" },
+            { value: "active", label: "In progress" },
+            { value: "settled", label: "Settled" },
           ]}
         />
         <div className="flex h-[38px] w-full max-w-[300px] items-center gap-2 rounded-full border-[0.8px] border-line px-3.5 focus-within:border-accent/60">
@@ -121,8 +150,7 @@ function InvestigationsInner() {
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
-              setPage(0);
-              router.replace(`${scope.base}/investigations${e.target.value ? `?q=${encodeURIComponent(e.target.value)}` : ""}`, { scroll: false });
+              updateUrl({ q: e.target.value });
             }}
             placeholder="Search by report or ID"
             className="w-full bg-transparent text-[14px] outline-none placeholder:text-muted"
@@ -140,7 +168,7 @@ function InvestigationsInner() {
         <Card>
           <ErrorState error={list.error} onRetry={list.reload} />
         </Card>
-      ) : rows.length === 0 && !filtering && page === 0 ? (
+      ) : rows.length === 0 && !filtering ? (
         <Card>
           <EmptyState
             icon={<IconHistory />}
@@ -162,8 +190,7 @@ function InvestigationsInner() {
               <Button
                 onClick={() => {
                   setQ("");
-                  setFilter("all");
-                  setPage(0);
+                  updateUrl({ q: "", filter: "all" });
                 }}
               >
                 Clear filters
@@ -178,20 +205,15 @@ function InvestigationsInner() {
               <InvestigationCard key={r.id} r={r} />
             ))}
           </ul>
-          {total > PAGE ? (
-            <nav className="flex items-center justify-between gap-3 text-[13px] text-muted" aria-label="Pages">
-              <span>
-                {page * PAGE + 1} to {Math.min(total, (page + 1) * PAGE)} of {total}
-              </span>
-              <span className="flex gap-2">
-                <Button size="sm" onClick={() => setPage((p) => p - 1)} disabled={page === 0}>
-                  Previous
-                </Button>
-                <Button size="sm" onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * PAGE >= total}>
-                  Next
-                </Button>
-              </span>
-            </nav>
+          {list.moreError ? (
+            <p role="alert" className="text-[13px] text-bad">Could not load more investigations. <button className="underline" onClick={list.loadMore}>Try again</button></p>
+          ) : null}
+          {nextCursor ? (
+            <div className="flex justify-center">
+              <Button size="sm" onClick={list.loadMore} disabled={list.loadingMore}>
+                {list.loadingMore ? "Loading..." : "Load more investigations"}
+              </Button>
+            </div>
           ) : null}
         </>
       )}

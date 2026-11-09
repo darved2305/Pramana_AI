@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { HealthReport } from "@/components/builder/HealthReport";
-import { Badge, ButtonLink, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
+import { Badge, Button, ButtonLink, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { IconChart } from "@/components/ui/icons";
 import type { ModelHealth, SiteSummary } from "@/lib/api/types";
-import { useLoad } from "@/lib/data/hooks";
+import { useCursorList, useLoad } from "@/lib/data/hooks";
 import { useWorkspace } from "@/lib/org/context";
 
 interface SiteHealth {
@@ -25,10 +25,13 @@ function summary(h: ModelHealth) {
 /** Each published model with the check it passed: what Pramana can and cannot tell apart. */
 export default function ModelHealthPage() {
   const ws = useWorkspace();
-  const load = useLoad(`health|${ws.org.id}`, async (signal): Promise<SiteHealth[]> => {
-    const sites = await ws.api.sites(signal);
+  const sites = useCursorList(`health-sites|${ws.org.id}`, (cursor, signal) => ws.api.sites({ limit: 25, cursor }, signal));
+  const siteRows = sites.data?.items ?? [];
+  const siteKey = siteRows.map((site) => site.id).join(",");
+  // Waits for the site page; an empty workspace still resolves to an empty list.
+  const load = useLoad(sites.status === "ready" ? `health|${ws.org.id}|${siteKey}` : null, async (signal): Promise<SiteHealth[]> => {
     return Promise.all(
-      sites.map(async (site) => {
+      siteRows.map(async (site) => {
         if (!site.current_model_id) return { site, version: null, health: null };
         const doc = await ws.api.model(site.id, site.current_model_id, signal);
         return { site, version: doc.version, health: doc.health ?? null };
@@ -42,7 +45,9 @@ export default function ModelHealthPage() {
         title="Model health"
         subtitle="For every site, what its people and checks can tell apart, and how often a simulated investigation reaches the right decision when some answers are wrong. Holding back is the right answer when a cause cannot be told apart."
       />
-      {load.status === "loading" ? (
+      {sites.status === "error" ? (
+        <ErrorState error={sites.error} onRetry={sites.reload} />
+      ) : sites.status === "loading" || load.status === "loading" ? (
         <Skeleton className="h-64" />
       ) : load.status === "error" ? (
         <ErrorState error={load.error} onRetry={load.reload} />
@@ -84,6 +89,10 @@ export default function ModelHealthPage() {
             );
           })
       )}
+      {sites.status === "ready" && sites.data.next_cursor ? (
+        <div className="flex justify-center"><Button size="sm" onClick={sites.loadMore} disabled={sites.loadingMore}>{sites.loadingMore ? "Loading..." : "Load more sites"}</Button></div>
+      ) : null}
+      {sites.moreError ? <p role="alert" className="text-[13px] text-bad">Could not load more sites. <button className="underline" onClick={sites.loadMore}>Try again</button></p> : null}
     </div>
   );
 }
