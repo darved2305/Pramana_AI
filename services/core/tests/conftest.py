@@ -1,7 +1,8 @@
-"""Core test harness: real PostgreSQL (``pramana_test``) and the real simulator app in-process.
+"""Core test harness: real PostgreSQL and the real simulator app in-process.
 
-Start the database with ``python scripts/dev_db.py start``. Tests needing it are skipped with an
-explicit reason when it is unreachable, never silently passed.
+The database is named by ``TEST_DATABASE_URL``, which is required. Start the cluster with
+``python scripts/dev_db.py start``. Tests needing it are skipped with an explicit reason when it
+is unreachable, never silently passed.
 """
 
 from __future__ import annotations
@@ -27,9 +28,9 @@ from pramana_core.main import create_app
 from pramana_sim.app import SimSettings
 from pramana_sim.app import create_app as create_sim_app
 
-TEST_DB_URL = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql+asyncpg://pramana@localhost:5433/pramana_test"
-)
+# No default: these tests truncate the database they point at, so a silent fallback to a shared
+# database (the old default was ``pramana_test``) would wipe another checkout's data.
+TEST_DB_URL = os.environ.get("TEST_DATABASE_URL", "")
 CORE_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -57,6 +58,11 @@ def _alembic(action: str) -> None:
 
 @pytest.fixture(scope="session")
 def migrated_db() -> str:
+    if not TEST_DB_URL:
+        pytest.fail(
+            "TEST_DATABASE_URL is not set. Point it at this checkout's test database "
+            "(PRAMANA_DB_NAMES in .env). The tests truncate that database, so there is no default."
+        )
     if not asyncio.run(_reachable()):
         pytest.skip("PostgreSQL test database unreachable; run `python scripts/dev_db.py start`")
     # Rows left by an earlier run (a status like "awaiting_approval") would not fit the older,
