@@ -205,7 +205,7 @@ def test_drafts_and_archived_sites_are_not_exposed(
         original=original,
     )
     root = _path("/v1/orgs/{org}/sites/{site_id}", workspace)
-    assert len(client.get(root + "/models").json()) == 1
+    assert len(client.get(root + "/models").json()["items"]) == 1
     assert client.get(root + "/models/" + ids.encode("model", draft_id)).status_code == 404
     sql(
         migrated_db,
@@ -310,7 +310,9 @@ def test_simultaneous_organizations_do_not_share_request_context(
             _path("/v1/orgs/{org}/sites", workspace), headers={"Cookie": f"{cookie_name}={cookie}"}
         )
         assert response.status_code == 200, response.text
-        assert {site["org_id"] for site in response.json()} == {workspace["organization"]["id"]}
+        assert {site["org_id"] for site in response.json()["items"]} == {
+            workspace["organization"]["id"]
+        }
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         pending = [
