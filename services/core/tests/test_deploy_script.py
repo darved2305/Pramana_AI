@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import io
-import json
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -38,7 +36,7 @@ def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     assert "run jobs execute pramana-migrate" in output
     assert "X-Serverless-Authorization" not in output
     assert "dry-run-only-placeholder" not in output
-    assert "Spend cap request body:" in output
+    assert "Budget: existing INR 1,000 project alert" in output
     assert "planned; live smoke skipped in dry-run" in output
     assert "DB_POOL_SIZE=6" in output
     assert "DB_MAX_OVERFLOW=0" in output
@@ -116,88 +114,73 @@ def test_pooler_host_must_belong_to_the_configured_database_region() -> None:
         deploy.validate_environment(context)
 
 
-def test_existing_alert_budget_with_wrong_amount_fails_closed() -> None:
-    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
-
-    class ExistingBudgetCloud:
-        dry_run = False
-
-        def run(self, args: list[str], **_kwargs: object):
-            if args[:2] == ["projects", "describe"]:
-                return deploy.subprocess.CompletedProcess(args, 0, "123456789\n", "")
-            assert args[:3] == ["billing", "budgets", "list"]
-            return deploy.subprocess.CompletedProcess(
-                args,
-                0,
-                '[{"displayName":"Pramana monthly project alert INR 1000",'
-                '"budgetFilter":{"projects":["projects/luminous-slice-514102-f4"],'
-                '"calendarPeriod":"MONTH"},"amount":{"specifiedAmount":'
-                '{"currencyCode":"INR","units":"100"}},"thresholdRules":[]}]',
-                "",
-            )
-
-    with pytest.raises(deploy.DeployError, match="different scope or amount"):
-        deploy.ensure_budget(ExistingBudgetCloud(), context)
-
-
-def test_existing_alert_budget_with_project_number_is_idempotent(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_budget_is_recorded_by_name_and_never_created_or_read(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
-    budgets = [
-        {
-            "displayName": deploy.ALERT_BUDGET_NAME,
-            "budgetFilter": {
-                "projects": ["projects/123456789"],
-                "calendarPeriod": "MONTH",
-            },
-            "amount": {"specifiedAmount": {"currencyCode": "INR", "units": "1000"}},
-            "thresholdRules": [{"thresholdPercent": value} for value in (0.5, 0.8, 1.0)],
-        },
-        {
-            "displayName": deploy.SPEND_CAP_NAME,
-            "budgetFilter": {
-                "projects": ["projects/123456789"],
-                "services": [f"services/{deploy.RUN_SERVICE_ID}"],
-                "calendarPeriod": "MONTH",
-            },
-            "amount": {"specifiedAmount": {"currencyCode": "INR", "units": "500"}},
-            "thresholdRules": [{"thresholdPercent": value} for value in (0.5, 0.8, 1.0)],
-            "spendCap": {"inputState": "CONFIGURED"},
-        },
-    ]
 
-    class ExistingBudgetCloud:
-        dry_run = False
+    deploy.record_budget(context)
 
-        def run(self, args: list[str], **_kwargs: object):
-            if args[:2] == ["projects", "describe"]:
-                return deploy.subprocess.CompletedProcess(args, 0, "123456789\n", "")
-            if args[:3] == ["billing", "budgets", "list"]:
-                return deploy.subprocess.CompletedProcess(args, 0, json.dumps([budgets[0]]), "")
-            if args[:2] == ["auth", "print-access-token"]:
-                return deploy.subprocess.CompletedProcess(args, 0, "token\n", "")
-            raise AssertionError(f"unexpected gcloud call: {args}")
-
-    monkeypatch.setattr(
-        deploy.urllib.request,
-        "urlopen",
-        lambda *_args, **_kwargs: io.BytesIO(json.dumps({"budgets": [budgets[1]]}).encode()),
-    )
-    deploy.ensure_budget(ExistingBudgetCloud(), context)
-
-    assert "Cloud Run spend cap already has the expected project, service and amount." in (
-        capsys.readouterr().out
-    )
+    output = capsys.readouterr().out
+    assert f"'{deploy.ALERT_BUDGET_NAME}'" in output
+    assert "thresholds 50%, 80% and 100%" in output
+    assert "not read or changed by this script" in output
+    assert not hasattr(deploy, "ensure_budget")
 
 
-def test_runbook_describes_project_wide_cloud_run_cap() -> None:
+def test_live_script_never_calls_billing_or_forbidden_identity_commands() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    for forbidden in (
+        '"billing"',
+        '"budgets"',
+        '"print-access-token"',
+        '"login"',
+        '"application-default"',
+        '"revoke"',
+        '"activate-service-account"',
+        "billingbudgets",
+        "--impersonate",
+    ):
+        assert forbidden not in source, forbidden
+
+
+def test_parked_rotations_need_the_stage_acknowledgements(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def parked_context(region: str, host: str) -> deploy.Context:
+        context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+        for setting in deploy.ROTATION_ACKS:
+            context.env[setting] = "false"
+        context.env["PRAMANA_SUPABASE_REGION"] = region
+        context.env["PRAMANA_SUPABASE_POOLER_HOST"] = host
+        return context
+
+    singapore = "aws-0-ap-southeast-1.pooler.supabase.com"
+    context = parked_context("ap-southeast-1", singapore)
+    context.env[deploy.NON_INDIA_DATABASE_ACK] = "true"
+    with pytest.raises(deploy.DeployError, match="Darshan must rotate"):
+        deploy.validate_environment(context)
+
+    context.env[deploy.ROTATIONS_PARKED_ACK] = "true"
+    deploy.validate_environment(context)
+    warning = capsys.readouterr().out
+    assert "credential rotations are parked" in warning
+    assert "Supabase database password" in warning
+
+    india = parked_context("ap-south-1", "aws-0-ap-south-1.pooler.supabase.com")
+    india.env[deploy.ROTATIONS_PARKED_ACK] = "true"
+    with pytest.raises(deploy.DeployError, match="Darshan must rotate"):
+        deploy.validate_environment(india)
+
+
+def test_runbook_states_budget_and_missing_spend_cap() -> None:
     runbook = (deploy.ROOT / "docs" / "engineering" / "DEPLOY_BUDGET_GCP.md").read_text(
         encoding="utf-8"
     )
-    assert "applies to all Cloud Run resource types" in runbook
-    assert "including services and jobs" in runbook
-    assert "products and projects keep running" in runbook
+    assert f"`{deploy.ALERT_BUDGET_NAME}`" in runbook
+    assert "50%, 80% and 100%" in runbook
+    assert "No Cloud Run spend cap is configured" in runbook
+    assert "50%, 90%" not in runbook
 
 
 def test_backup_runbook_checks_native_command_exit_codes() -> None:

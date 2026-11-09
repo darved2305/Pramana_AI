@@ -31,13 +31,13 @@ usage and regional prices in its [pricing table](https://cloud.google.com/run/pr
 
 | Resource | Configuration | Planning cost per month |
 |---|---|---:|
-| Cloud Run web, core and simulator | `asia-south1`, request billing, minimum 0 and maximum 2 instances each; one CPU each; 512 MiB web/sim and 1 GiB core; migration job runs only for deploys | INR 0 within the account-wide monthly allowance of 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests; otherwise metered by region. A project-scoped Cloud Run spend cap covers all Cloud Run workloads when eligible |
+| Cloud Run web, core and simulator | `asia-south1`, request billing, minimum 0 and maximum 2 instances each; one CPU each; 512 MiB web/sim and 1 GiB core; migration job runs only for deploys | INR 0 within the account-wide monthly allowance of 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests; otherwise metered by region |
 | Supabase PostgreSQL | Free plan in `ap-south-1`; one project, separate migrator, `pramana_app` and `pramana_sim` roles | INR 0 within Free limits; 500 MB database, may pause after inactivity, and no automatic backup guarantee |
 | Cloud Build | Two SHA-tagged images, default `e2-standard-2` workers | INR 0 for the first 2,500 build minutes per billing account each month; then about INR 0.50 per minute at the planning conversion ([pricing](https://cloud.google.com/build/pricing)) |
 | Artifact Registry | One regional Docker repository; delete untagged images after 7 days, tagged images after 90 days, keep the five newest versions per image package | INR 0 for the first 0.5 GiB of storage; about INR 8.40 per GiB-month above that, before tax ([pricing](https://cloud.google.com/artifact-registry/pricing)) |
 | Secret Manager | Eleven active secrets replicated only in `asia-south1`; no service-account JSON keys | About INR 25 per month for five versions beyond the six-version account-wide free allowance, assuming no other project uses it; 10,000 access operations per month are free, then about INR 2.52 per 10,000 ([pricing](https://cloud.google.com/secret-manager/pricing)) |
 | Cloud Logging | Regional bucket with 180-day retention; only the three Cloud Run services and migration job are routed | First 50 GiB ingested per project per month is free; excess ingest is about INR 42 per GiB. Retention beyond 30 days is about INR 0.84 per GiB-month; at 1 GiB per month, roughly INR 4 at steady state ([pricing](https://cloud.google.com/logging)) |
-| Billing budget and Cloud Run cap | INR 1,000 project alert; INR 500 monthly cap scoped to the Cloud Run service | No separate budget-resource charge. These limits do not cover Supabase or make an instantaneous project-wide spending guarantee ([cap behavior](https://docs.cloud.google.com/billing/docs/how-to/budgets-spend-caps)) |
+| Billing budget | Existing INR 1,000 monthly project alert `pramana-inr-1000` (created by the billing owner, issue #7) at 50%, 80% and 100% of actual spend. No Cloud Run spend cap is configured | No separate budget-resource charge. An alert notifies; it does not stop spend, and it does not cover Supabase ([budgets](https://docs.cloud.google.com/billing/docs/how-to/budgets)) |
 | Database backups | Supabase Free has no automatic backup guarantee. A pg_dump-based backup and restore drill is required below | Not priced until an approved India storage destination and schedule are chosen. Reserve part of the non-Run allowance |
 
 The core allows six database connections per instance with overflow disabled. With two maximum
@@ -53,19 +53,17 @@ and [Nano compute limits](https://supabase.com/docs/guides/platform/compute-and-
 
 Target normal GCP use is INR 0 to about INR 50 per month while the free usage allowances apply.
 Keep a separate INR 200 monthly allowance for registry growth, extra secret versions, log
-retention, egress and approved backup storage. The INR 500 Cloud Run cap is before any applicable
-tax; an 18% planning allowance makes that INR 590, leaving about INR 210 of the INR 1,000 ceiling
-for unmodelled usage. Measure the first month's bill before accepting real users. The cap and
-allowance are controls, not a promise that the whole project cannot exceed INR 1,000.
+retention, egress and approved backup storage. Without a spend cap, the bill is bounded by
+the controls in this runbook, not by a hard limit: minimum 0 instances, a maximum of two instances
+per service, one CPU and small memory per service, request-based billing, bounded concurrency and
+the Artifact Registry cleanup policy. Measure the first month's bill against the INR 1,000 alert
+before accepting real users. A spend cap was not configured because the deploy identity has no
+billing role; the billing owner can add one later if they want a hard stop.
 
-The project alert budget is scoped to `luminous-slice-514102-f4` with 50%, 80% and 100% thresholds.
-The Cloud Run spend cap uses service ID `152E-C115-5142` and applies to all Cloud Run resource types
-in the selected project, including services and jobs. It pauses Cloud Run workloads in that project
-for the rest of the monthly period when gross estimated spend reaches the cap. Enforcement can
-overshoot because it is not instant and in-flight requests can finish. The cap resets at the next
-month. Manually lifting it disables re-triggering for the rest of that month. Other Google Cloud
-products and projects keep running. Reseller billing accounts are out of scope. The deploy script
-warns if it cannot create a cap; verify it in Billing before enabling real-user traffic.
+The project alert budget `pramana-inr-1000` is scoped to `luminous-slice-514102-f4` on billing
+account `014417-27A82C-ACEA10`, with INR 1,000 per calendar month and 50%, 80% and 100% thresholds.
+The deploy script does not read, create or change budgets. It prints the budget name and the
+reminder that no spend cap exists, so the owner can confirm both in Billing.
 
 ## What the deploy script creates
 
@@ -95,8 +93,8 @@ warns if it cannot create a cap; verify it in Billing before enabling real-user 
    `PRAMANA_SUPABASE_DATABASE=postgres`, `PRAMANA_SUPABASE_DB_PASSWORD` and
    `PRAMANA_SUPABASE_APP_PASSWORD` from its connection settings. Use distinct passwords.
 2. Set `GCP_BILLING_ACCOUNT_ID` to the linked INR billing account. The GCP project ID is fixed to
-   `luminous-slice-514102-f4`. Confirm Cloud Run spend-cap eligibility, project access, and the
-   billing account's current total usage.
+   `luminous-slice-514102-f4`. Confirm the INR 1,000 alert `pramana-inr-1000` still exists in
+   Billing and that the billing account's current month spend is low.
 3. Darshan rotates the Supabase database password, Supabase runtime role password, Supabase secret
    API key, Google OAuth client secret and Gmail app password. Set each corresponding
    `*_ROTATED=true` flag in `.env`. The secret API key is not read by the app or uploaded to Google
@@ -110,7 +108,7 @@ warns if it cannot create a cap; verify it in Billing before enabling real-user 
    ```
 
    The dry-run uses synthetic credentials and assumes resources are absent. It prints the planned
-   gcloud commands, migration job, cap request and smoke URLs. It does not load `.env`, invoke
+   gcloud commands, migration job and smoke URLs. It does not load `.env`, invoke
    gcloud, or send an HTTP request.
 5. After a human signs in with the authorized Google account, run the one deploy command from the
    repository root:
@@ -119,16 +117,16 @@ warns if it cannot create a cap; verify it in Billing before enabling real-user 
    uv run python scripts/deploy_gcp_starter.py
    ```
 
-   The script verifies the active gcloud account and INR currency, enables required APIs, prepares
-   budgets, regional logs, image cleanup, service accounts and secrets, builds images tagged with
+   The script verifies that the active gcloud account is `nikhilpise2006@gmail.com`, enables
+   required APIs, records the existing budget, creates regional logs, image cleanup, service accounts and secrets, builds images tagged with
    the committed git SHA, runs migrations and grant audit, deploys the services, then runs live
    smoke checks. It prints the exact `run.app` OAuth callback URI. Darshan must add that URI to the
    Google OAuth client's authorized redirect URIs before a real sign-in works. The scripted smoke
    does not attempt Google sign-in.
 
 The exact sign-in command is `gcloud auth login`. No application-default credentials are required:
-the deploy uses the gcloud CLI account to request the budget API access token. This preparation did
-not run either sign-in command.
+the deploy uses the gcloud CLI account to run commands. This preparation did not run either sign-in
+command.
 
 ## Redeploy and rollback
 
@@ -212,11 +210,11 @@ re-run the migration grant audit before routing traffic.
 - Provide the Supabase connection settings (Mumbai, or Singapore with the non-personal-data
   acknowledgement) and all five rotation acknowledgements in this worktree's local `.env`; do not
   commit it.
-- Sign in with `gcloud auth login`, check cap eligibility, then run
+- Sign in with `gcloud auth login`, then run
   `uv run python scripts/deploy_gcp_starter.py` from a clean committed tree.
 - Add the printed callback URI to Google OAuth. Do not put real personal data in the app until the
   Supabase database is in India and an India backup destination has been tested.
-- Review the INR 1,000 project alert, INR 500 Cloud Run service cap and actual bill weekly. The
-  GCP cap is not a project-wide hard ceiling.
+- Review the INR 1,000 project alert and the actual bill weekly. No spend cap exists; the alert
+  does not stop spend.
 - This path has no domain, Cloud SQL, load balancer, Cloud Armor, NAT, VPC connector, paid Supabase
   add-ons, media service, worker service or Cloud Scheduler.
