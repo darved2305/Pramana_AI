@@ -48,7 +48,7 @@ def test_production_environment_forces_secure_auth_and_isolates_web_secrets() ->
     }
 
     core, sim, web = staging.make_environments(
-        source, "https://pramana-staging.account.workers.dev"
+        source, "https://pramana-staging.account.workers.dev", inherited={}
     )
 
     assert core["PRAMANA_MODE"] == "demo"
