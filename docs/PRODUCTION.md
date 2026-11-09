@@ -1945,7 +1945,7 @@ the database is confirmed in India and its backup restore has been tested.
 
 Infrastructure is code (Terraform or OpenTofu), one workspace per environment. Feature flags decouple deploying from releasing.
 
-After every migration on Supabase, run `REVOKE ALL ON SCHEMA pramana FROM anon, authenticated`, `REVOKE ALL ON ALL TABLES IN SCHEMA pramana FROM anon, authenticated`, and the matching revoke on sequences and functions. Migration 0020 repeats these revokes against its current schema as a guard. The personal data backfill is a separate command rather than an Alembic data migration because it requires `PRAMANA_PII_KEY`, needs bounded transactions and resumable progress, and must not put personal values in migration output. Run it with the schema-owner migration connection before the new core revision receives traffic.
+After every migration on Supabase, run `REVOKE ALL ON SCHEMA pramana FROM anon, authenticated`, `REVOKE ALL ON ALL TABLES IN SCHEMA pramana FROM anon, authenticated`, and the matching revoke on sequences and functions. Migration 0022 repeats these revokes against its current schema as a guard. The personal data backfill is a separate command rather than an Alembic data migration because it requires `PRAMANA_PII_KEY`, needs bounded transactions and resumable progress, and must not put personal values in migration output. Run it with the schema-owner migration connection before the new core revision receives traffic.
 
 ### 13.6 Secrets and keys
 

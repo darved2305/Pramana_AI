@@ -30,7 +30,7 @@ No demo database, main worktree file or unrelated process was changed. Terraform
 
 ## Update, 2026-11-09: email relay and sealing backfill
 
-Task F is implemented locally on `nov9/outbox-backfill`. Migration 0020 adds the transactional
+Task F is implemented locally on `nov9/outbox-backfill`. Migration 0022 adds the transactional
 email outbox and attempt history. Invitation and consent request emails are relayed after the
 response and through a bounded Cloud Run Job entry point. The UI reports sent, queued or failed.
 SMTP remains at-least-once
@@ -210,8 +210,8 @@ The hospital onboarding journey described its practice site as a hostel. The onb
 list and practice-site detail now use general practice-site wording. A new immutable sandbox model
 uses neutral practice labels and questions, and the Chrome journey runs through the reveal. Workspace
 owners and operators can now reveal the practice result using their workspace permissions.
-After applying the new migration on Supabase, rerun the revoke of anon and authenticated access
-to the Pramana schema.
+After applying migration 0021 on Supabase, rerun the revoke of anon and authenticated access to
+the Pramana schema.
 
 Invitation email uses a transactional PostgreSQL outbox, with a bounded request relay and a Cloud
 Run Job entry point. Live delivery still requires a configured provider and sending identity; no

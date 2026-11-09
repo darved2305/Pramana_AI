@@ -11,6 +11,6 @@ def test_migrations_have_one_head_after_production_merge() -> None:
 
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["0020"]
-    assert script.get_current_head() == "0020"
-    assert script.get_revision("0020").down_revision == "0019"
+    assert script.get_heads() == ["0022"]
+    assert script.get_current_head() == "0022"
+    assert script.get_revision("0022").down_revision == "0021"
