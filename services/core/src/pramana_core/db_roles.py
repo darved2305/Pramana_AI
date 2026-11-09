@@ -17,6 +17,7 @@ import secrets
 
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 ROLES = ("pramana_app", "pramana_sim")
@@ -57,8 +58,25 @@ def role_statement_template(*, exists: bool) -> str:
     return f"{action} role %I login password %L"
 
 
+async def credentials_work(url: str) -> bool:
+    """Avoid replacing an unchanged SCRAM verifier on every deployment."""
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    try:
+        try:
+            async with engine.connect() as connection:
+                await connection.scalar(text("select 1"))
+            return True
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "28P01":
+                return False
+            raise
+    finally:
+        await engine.dispose()
+
+
 async def ensure_roles(migrator_url: str, app_url: str, sim_url: str) -> None:
     passwords = role_passwords(app_url, sim_url)
+    urls = dict(zip(ROLES, (app_url, sim_url), strict=True))
     engine = create_async_engine(migrator_url, pool_size=1, max_overflow=0)
     try:
         async with engine.begin() as connection:
@@ -67,6 +85,8 @@ async def ensure_roles(migrator_url: str, app_url: str, sim_url: str) -> None:
                     text("select exists(select 1 from pg_roles where rolname = :role)"),
                     {"role": role},
                 )
+                if exists and await credentials_work(urls[role]):
+                    continue
                 statement = await connection.scalar(
                     text(
                         "select format(cast(:template as text), cast(:role as text), "

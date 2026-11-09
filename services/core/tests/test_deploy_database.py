@@ -32,6 +32,7 @@ from test_recovery import assert_identical
 
 from pramana_contracts.tokens import mint, mint_capability, private_key_from_b64, public_key_b64
 from pramana_core.db_roles import (
+    credentials_work,
     ensure_roles,
     role_passwords,
     role_statement_template,
@@ -365,6 +366,86 @@ def test_runtime_role_statements_use_safe_managed_postgres_defaults() -> None:
     # Even NOSUPERUSER requires superuser privileges on managed PostgreSQL.
     assert role_statement_template(exists=False) == "create role %I login password %L"
     assert role_statement_template(exists=True) == "alter role %I login password %L"
+
+
+@pytest.mark.parametrize(
+    ("sqlstate", "expected"), [(None, True), ("28P01", False), ("08006", None)]
+)
+def test_runtime_credential_probe_only_treats_bad_password_as_rotation(
+    monkeypatch: pytest.MonkeyPatch, sqlstate: str | None, expected: bool | None
+) -> None:
+    class OriginalError(Exception):
+        pass
+
+    class Connection:
+        async def __aenter__(self) -> Connection:
+            if sqlstate:
+                error = OriginalError()
+                error.sqlstate = sqlstate  # type: ignore[attr-defined]
+                raise DBAPIError(None, None, error)
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+        async def scalar(self, statement: object) -> int:
+            return 1
+
+    class Engine:
+        disposed = False
+
+        def connect(self) -> Connection:
+            return Connection()
+
+        async def dispose(self) -> None:
+            self.disposed = True
+
+    engine = Engine()
+    monkeypatch.setattr("pramana_core.db_roles.create_async_engine", lambda *a, **kw: engine)
+    if expected is None:
+        with pytest.raises(DBAPIError):
+            asyncio.run(credentials_work("unused"))
+    else:
+        assert asyncio.run(credentials_work("unused")) is expected
+    assert engine.disposed
+
+
+def test_working_runtime_credentials_are_not_rewritten(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Connection:
+        async def __aenter__(self) -> Connection:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+        async def scalar(self, statement: object, parameters: object = None) -> bool:
+            return True
+
+        async def execute(self, statement: object) -> list[object]:
+            return []
+
+        async def exec_driver_sql(self, statement: str) -> None:
+            pytest.fail("working credentials must not be rewritten")
+
+    class Engine:
+        def begin(self) -> Connection:
+            return Connection()
+
+        async def dispose(self) -> None:
+            pass
+
+    async def works(url: str) -> bool:
+        return True
+
+    monkeypatch.setattr("pramana_core.db_roles.create_async_engine", lambda *a, **kw: Engine())
+    monkeypatch.setattr("pramana_core.db_roles.credentials_work", works)
+    asyncio.run(
+        ensure_roles(
+            "postgresql://migrator/test",
+            "postgresql://pramana_app:a@test/db",
+            "postgresql://pramana_sim:b@test/db",
+        )
+    )
 
 
 def test_postgres_stores_the_verifier_as_is_so_no_password_reaches_the_server(
