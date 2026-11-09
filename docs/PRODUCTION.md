@@ -1342,6 +1342,15 @@ stays open and tells the operator what to do. Practice runs use synthetic partic
 require contact consent. Starting an actual live investigation remains disabled until live
 delivery is configured.
 
+OR-07 status, 2026-11-09: an owner can download a streamed workspace archive before deletion,
+then soft-delete the workspace after typing its name. Members see a restore notice; owners can
+export or restore it for 30 days. The purge job removes tenant data after that window, shreds
+person keys, and preserves sealed events and append-only audit records.
+
+DA-07 status, 2026-11-09: growing organization lists use bounded keyset pages with cursors bound
+to the organization and active filters. Search and filters run on the server, and pages expose a
+keyboard-accessible Load more action. Sealed investigation reports continue to match ids only.
+
 **Participants and live investigations**
 
 | Id | Scenario | Expected behaviour | Tests |
