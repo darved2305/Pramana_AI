@@ -51,16 +51,14 @@ MIGRATION_LOGS_FILTER = (
     'resource.type="cloud_run_job" AND resource.labels.location="asia-south1" '
     'AND resource.labels.job_name="pramana-migrate"'
 )
-SENSITIVE_REQUEST_URL_FILTER = (
-    'httpRequest.requestUrl =~ "auth/google/(start|callback)" OR '
-    'httpRequest.requestUrl =~ "consent-links/" OR '
-    'httpRequest.requestUrl =~ "/consent/"'
+# Cloud Run managed request logs include full URLs, client IP addresses and user-agent headers.
+# Keep every request record out of both sinks; application and migration logs remain available.
+CLOUD_RUN_REQUEST_LOG_FILTER = (
+    f'logName="projects/{PROJECT_DEFAULT}/logs/run.googleapis.com%2Frequests"'
 )
-# Cloud Run request logs include the complete URL, including OAuth codes and consent capabilities.
-# Keep those entries out of both the regional sink and the default project log bucket.
-SENSITIVE_REQUEST_LOGS_FILTER = f"({RUN_SERVICE_LOGS_FILTER}) AND ({SENSITIVE_REQUEST_URL_FILTER})"
+REQUEST_METADATA_LOGS_FILTER = f"({RUN_SERVICE_LOGS_FILTER}) AND ({CLOUD_RUN_REQUEST_LOG_FILTER})"
 LOG_FILTER = (
-    f"(({RUN_SERVICE_LOGS_FILTER}) AND NOT ({SENSITIVE_REQUEST_URL_FILTER})) OR "
+    f"(({RUN_SERVICE_LOGS_FILTER}) AND NOT ({CLOUD_RUN_REQUEST_LOG_FILTER})) OR "
     f"({MIGRATION_LOGS_FILTER})"
 )
 API_SERVICES = (
@@ -343,7 +341,10 @@ def run_plan(ctx: Context) -> None:
     print("Secrets: 11 regional Secret Manager secrets; values are hidden.")
     print("Images: two Cloud Build SHA tags; keep five rollback versions.")
     print("Budget: existing INR 1,000 project alert, recorded by name; no spend cap is created.")
-    print("Logs: asia-south1 bucket, 180 day retention; only Pramana services routed.")
+    print(
+        "Logs: 180 day regional retention for application and migration logs; managed request "
+        "metadata excluded."
+    )
     print("Not planned: Cloud SQL, load balancer, Cloud Armor, NAT, media or worker services.")
     print("Synthetic settings are used below. --dry-run does not read .env secrets or contact GCP.")
     execute(Gcloud(dry_run=True), ctx)
@@ -691,14 +692,13 @@ def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
                 "sinks",
                 "update",
                 "_Default",
-                f"--add-exclusion=name=pramana-sensitive-requests,filter={SENSITIVE_REQUEST_LOGS_FILTER}",
+                f"--add-exclusion=name=pramana-sensitive-requests,filter={REQUEST_METADATA_LOGS_FILTER}",
                 f"--project={ctx.project}",
                 "--quiet",
             ]
         )
     elif (
-        sensitive.get("filter") != SENSITIVE_REQUEST_LOGS_FILTER
-        or sensitive.get("disabled") is True
+        sensitive.get("filter") != REQUEST_METADATA_LOGS_FILTER or sensitive.get("disabled") is True
     ):
         gcloud.run(
             [
@@ -706,7 +706,7 @@ def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
                 "sinks",
                 "update",
                 "_Default",
-                f"--update-exclusion=name=pramana-sensitive-requests,filter={SENSITIVE_REQUEST_LOGS_FILTER},disabled=",
+                f"--update-exclusion=name=pramana-sensitive-requests,filter={REQUEST_METADATA_LOGS_FILTER},disabled=",
                 f"--project={ctx.project}",
                 "--quiet",
             ]

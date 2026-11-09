@@ -337,7 +337,9 @@ stopped.
 
 ## Logging privacy follow-up, 2026-11-10
 
-The audit found that Cloud Run managed request logs include the full request URL even though the
-application suppresses OAuth and consent-route request logging. The GCP log sink filters now drop
-Google OAuth start and callback URLs, consent-link URLs and `/consent/` capability URLs from both
-the regional Pramana bucket and the default project sink. Regression tests cover both sink filters.
+The audit found that Cloud Run managed request logs include the full request URL, client IP and
+user-agent fields even though the application suppresses OAuth and consent-route request logging.
+Both GCP log sinks now drop all managed request records for the three services. Container and
+migration logs remain in the regional bucket. The filter changes apply to newly routed entries;
+previously stored request records remain subject to the existing bucket retention. Regression tests
+cover both sink filters.
