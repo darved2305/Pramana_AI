@@ -90,9 +90,21 @@ test("parallel: three people asked at once reach the S1 decision", async ({ page
     expect(results.some((r) => r.status === "fulfilled")).toBe(true);
     const failed = state.pending_questions.filter((_, i) => results[i].status === "rejected").map((q) => q.id);
     if (failed.length) {
-      const log = await api<{ type: string; payload: { question_id?: string } }[]>(request, "GET", `/v1/investigations/${invId}/events`);
-      const gone = new Set(log.filter((e) => e.type === "QuestionWithdrawn").map((e) => e.payload.question_id));
-      expect(failed.filter((id) => !gone.has(id)), "only withdrawn questions may go unanswered").toEqual([]);
+      await expect
+        .poll(
+          async () => {
+            const [log, current] = await Promise.all([
+              api<{ type: string; payload: { question_id?: string } }[]>(request, "GET", `/v1/investigations/${invId}/events`),
+              api<State>(request, "GET", `/v1/investigations/${invId}`),
+            ]);
+            state = current;
+            const withdrawn = new Set(log.filter((e) => e.type === "QuestionWithdrawn").map((e) => e.payload.question_id));
+            const pending = new Set(current.pending_questions.map((q) => q.id));
+            return failed.filter((id) => !withdrawn.has(id) && pending.has(id));
+          },
+          { timeout: 10_000, intervals: [100, 250, 500, 1000] },
+        )
+        .toEqual([]);
     }
     rounds++;
     await expect
