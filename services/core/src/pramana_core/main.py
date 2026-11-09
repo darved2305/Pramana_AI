@@ -154,7 +154,7 @@ def create_app(
         app.state.accounts = AccountService(db)
         app.state.site_models = StoredModels(db)
         app.state.site_people = SitePeople(db, app.state.vault)
-        app.state.invitations = Invitations(db)
+        app.state.invitations = Invitations(db, app.state.vault.master)
         can_send_email = cfg.mode != "test" and cfg.oidc_issuer == "https://accounts.google.com"
         app.state.mailer = (
             GmailSmtp(cfg.gmail_address, cfg.gmail_app_password)
@@ -164,8 +164,10 @@ def create_app(
             and cfg.gmail_app_password
             else None
         )
-        app.state.email_relay = EmailRelay(db, app.state.mailer)
-        app.state.domain_joins = DomainJoins(db, dns_txt_resolver or DnsPythonResolver())
+        app.state.email_relay = EmailRelay(db, app.state.mailer, app.state.vault.master)
+        app.state.domain_joins = DomainJoins(
+            db, dns_txt_resolver or DnsPythonResolver(), app.state.vault.master
+        )
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
         app.state.google_sign_in = GoogleSignIn(db, oidc, app.state.auth)

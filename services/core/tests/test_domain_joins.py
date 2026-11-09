@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from pramana_core import outbox
 from pramana_core.mail import FakeMailer
 from pramana_core.main import create_app
 
@@ -564,9 +565,26 @@ def _outbox_rows(client: TestClient) -> list[tuple[str, str, str | None]]:
         try:
             async with engine.connect() as conn:
                 result = await conn.execute(
-                    text("select kind, state, recipient from email_outbox order by created_at, id")
+                    text(
+                        "select id, org_id, kind, state, payload_enc from email_outbox "
+                        "order by created_at, id"
+                    )
                 )
-                return [(row.kind, row.state, row.recipient) for row in result]
+                return [
+                    (
+                        row.kind,
+                        row.state,
+                        outbox.open_envelope(
+                            client.app.state.vault.master,
+                            row.org_id,
+                            row.id,
+                            bytes(row.payload_enc),
+                        ).recipient
+                        if row.payload_enc is not None
+                        else None,
+                    )
+                    for row in result
+                ]
         finally:
             await engine.dispose()
 

@@ -24,7 +24,8 @@ from .accounts import organization_view
 from .auth.service import Principal
 from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, acting_for
 from .errors import ApiError, not_found
-from .outbox import EmailEnvelope, EmailOutboxRow, delivery_status, invitation_email
+from .outbox import EmailEnvelope, EmailOutboxRow, delivery_status, invitation_email, seal_envelope
+from .vault import MasterKey
 
 LIFETIME = timedelta(days=7)
 INVALID = "this invitation link is not valid"
@@ -83,9 +84,7 @@ async def _cancel_queued_email(
         outbox.state = "dead"
         outbox.dead_at = now
         outbox.locked_until = None
-        outbox.recipient = None
-        outbox.subject = None
-        outbox.body = None
+        outbox.payload_enc = None
         outbox.last_error = "InvitationNoLongerValid"
 
 
@@ -95,8 +94,9 @@ def _mask(email: str) -> str:
 
 
 class Invitations:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, master: MasterKey) -> None:
         self.db = db
+        self.master = master
 
     async def create(
         self,
@@ -160,16 +160,17 @@ class Invitations:
             session.add(_audit(org_id, principal.id, "invitation.created", row))
             # The invitation and its delivery intent commit together. If email is not configured,
             # keep an explicit dead record so the admin sees that no email was sent.
+            outbox_id = ids.uuid7()
             session.add(
                 EmailOutboxRow(
-                    id=ids.uuid7(),
+                    id=outbox_id,
                     org_id=org_id,
                     kind="invitation",
                     invitation_id=row.id,
                     state="queued" if email else "dead",
-                    recipient=email.recipient if email else None,
-                    subject=email.subject if email else None,
-                    body=email.body if email else None,
+                    payload_enc=seal_envelope(self.master, org_id, outbox_id, email)
+                    if email
+                    else None,
                     attempts=0,
                     available_at=now,
                     dead_at=None if email else now,

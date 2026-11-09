@@ -54,7 +54,7 @@ from .auth.service import Principal
 from .consent import consent_request_email
 from .db import AuditLogRow, Base, Database, SiteModelRow, SiteRow, acting_for, current_org
 from .errors import ApiError, not_found
-from .outbox import EmailOutboxRow, delivery_status
+from .outbox import EmailOutboxRow, delivery_status, seal_envelope
 from .vault import SEALED, PersonKeyRow, PersonRef, PersonVault
 
 _ERASED_RESPONSE = json.dumps(
@@ -72,9 +72,7 @@ def _clear_queued_email(outbox: EmailOutboxRow, now: datetime, reason: str) -> N
     outbox.state = "dead"
     outbox.dead_at = now
     outbox.locked_until = None
-    outbox.recipient = None
-    outbox.subject = None
-    outbox.body = None
+    outbox.payload_enc = None
     outbox.last_error = reason
 
 
@@ -545,16 +543,19 @@ class SitePeople:
                     if link_base
                     else None
                 )
+                outbox_id = ids.uuid7()
                 session.add(
                     EmailOutboxRow(
-                        id=ids.uuid7(),
+                        id=outbox_id,
                         org_id=site.org_id,
                         kind="consent_request",
                         consent_link_id=row.id,
                         state="queued" if envelope else "dead",
-                        recipient=envelope.recipient if envelope else None,
-                        subject=envelope.subject if envelope else None,
-                        body=envelope.body if envelope else None,
+                        payload_enc=seal_envelope(
+                            self.vault.master, site.org_id, outbox_id, envelope
+                        )
+                        if envelope
+                        else None,
                         attempts=0,
                         available_at=now,
                         dead_at=None if envelope else now,

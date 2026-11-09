@@ -6,8 +6,8 @@ Revises: 0018
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
 revision = "0020"
@@ -43,9 +43,7 @@ def upgrade() -> None:
         ),
         sa.Column("kind", sa.String(48), server_default="invitation", nullable=False),
         sa.Column("state", sa.String(16), nullable=False),
-        sa.Column("recipient", sa.String(254), nullable=True),
-        sa.Column("subject", sa.String(998), nullable=True),
-        sa.Column("body", sa.Text(), nullable=True),
+        sa.Column("payload_enc", sa.LargeBinary(), nullable=True),
         sa.Column("attempts", sa.Integer(), server_default="0", nullable=False),
         sa.Column(
             "available_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
@@ -65,17 +63,17 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "(kind = 'invitation' and invitation_id is not null and consent_link_id is null) or "
-            "(kind = 'consent_request' and consent_link_id is not null and invitation_id is null) or "
+            "(kind = 'consent_request' and consent_link_id is not null "
+            "and invitation_id is null) or "
             "(kind not in ('invitation', 'consent_request') and invitation_id is null "
             "and consent_link_id is null)",
             name="email_outbox_source",
         ),
         sa.CheckConstraint("attempts between 0 and 5", name="email_outbox_attempts"),
         sa.CheckConstraint(
-            "((state in ('queued', 'sending')) and recipient is not null and subject is not null "
-            "and body is not null) or ((state in ('sent', 'dead')) and recipient is null "
-            "and subject is null and body is null)",
-            name="email_outbox_body_lifecycle",
+            "((state in ('queued', 'sending')) and payload_enc is not null) or "
+            "((state in ('sent', 'dead')) and payload_enc is null)",
+            name="email_outbox_payload_lifecycle",
         ),
     )
     op.create_index(
@@ -170,9 +168,15 @@ def upgrade() -> None:
           foreach api_role in array array['anon'::name, 'authenticated'::name] loop
             if exists (select 1 from pg_roles where rolname = api_role) then
               execute format('revoke all on schema %I from %I', target_schema, api_role);
-              execute format('revoke all on all tables in schema %I from %I', target_schema, api_role);
-              execute format('revoke all on all sequences in schema %I from %I', target_schema, api_role);
-              execute format('revoke all on all functions in schema %I from %I', target_schema, api_role);
+              execute format(
+                'revoke all on all tables in schema %I from %I', target_schema, api_role
+              );
+              execute format(
+                'revoke all on all sequences in schema %I from %I', target_schema, api_role
+              );
+              execute format(
+                'revoke all on all functions in schema %I from %I', target_schema, api_role
+              );
             end if;
           end loop;
         end

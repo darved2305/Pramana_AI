@@ -8,6 +8,7 @@ id, so that narrow uncertainty is visible and can be correlated instead of being
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import uuid
 from collections.abc import AsyncIterator
@@ -15,14 +16,15 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from cryptography.exceptions import InvalidTag
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
+    LargeBinary,
     String,
-    Text,
     UniqueConstraint,
     and_,
     func,
@@ -38,6 +40,7 @@ from . import ids
 from .account_rows import InvitationRow
 from .db import Base, Database, acting_as_job, acting_for, apply_context
 from .mail import Mailer
+from .vault import MasterKey
 
 RELAY_JOB = "email-outbox-relay"
 RELAY_LOCK_KEY = 0x5052414D414E41
@@ -73,9 +76,7 @@ class EmailOutboxRow(Base):
         UUID(as_uuid=True), ForeignKey("consent_links.id", ondelete="CASCADE"), nullable=True
     )
     state: Mapped[str] = mapped_column(String(16))
-    recipient: Mapped[str | None] = mapped_column(String(254), nullable=True)
-    subject: Mapped[str | None] = mapped_column(String(998), nullable=True)
-    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     available_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -137,9 +138,43 @@ def invitation_email(
     return EmailEnvelope(email, subject, body)
 
 
+def _payload_context(org_id: uuid.UUID, outbox_id: uuid.UUID) -> bytes:
+    return f"email-outbox/{org_id}/{outbox_id}".encode()
+
+
+def seal_envelope(
+    master: MasterKey, org_id: uuid.UUID, outbox_id: uuid.UUID, envelope: EmailEnvelope
+) -> bytes:
+    """Encrypt every address, subject and message body before it reaches PostgreSQL."""
+    serialized = json.dumps(
+        {
+            "recipient": envelope.recipient,
+            "subject": envelope.subject,
+            "body": envelope.body,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    return master.seal_payload(serialized, _payload_context(org_id, outbox_id))
+
+
+def open_envelope(
+    master: MasterKey, org_id: uuid.UUID, outbox_id: uuid.UUID, payload_enc: bytes
+) -> EmailEnvelope:
+    """Open only the ciphertext that was sealed for this organization and outbox id."""
+    payload = json.loads(master.open_payload(payload_enc, _payload_context(org_id, outbox_id)))
+    if not isinstance(payload, dict) or set(payload) != {"recipient", "subject", "body"}:
+        raise ValueError("invalid email payload")
+    recipient, subject, body = (payload[field] for field in ("recipient", "subject", "body"))
+    if not all(isinstance(value, str) for value in (recipient, subject, body)):
+        raise ValueError("invalid email payload")
+    return EmailEnvelope(recipient, subject, body)
+
+
 def queue_email(
     session: AsyncSession,
     *,
+    master: MasterKey,
     org_id: uuid.UUID,
     kind: str,
     envelope: EmailEnvelope,
@@ -147,15 +182,14 @@ def queue_email(
 ) -> None:
     """Queue a message that belongs to no invitation or consent link. It joins the caller's
     transaction, so the state change and the send intent commit or roll back together."""
+    outbox_id = ids.uuid7()
     session.add(
         EmailOutboxRow(
-            id=ids.uuid7(),
+            id=outbox_id,
             org_id=org_id,
             kind=kind,
             state="queued",
-            recipient=envelope.recipient,
-            subject=envelope.subject,
-            body=envelope.body,
+            payload_enc=seal_envelope(master, org_id, outbox_id, envelope),
             attempts=0,
             available_at=now,
         )
@@ -182,18 +216,17 @@ def _backoff(attempt: int) -> timedelta:
 class EmailRelay:
     """A short-lived drain operation suitable for request background tasks and Cloud Run Jobs."""
 
-    def __init__(self, db: Database, mailer: Mailer | None) -> None:
+    def __init__(self, db: Database, mailer: Mailer | None, master: MasterKey) -> None:
         self.db = db
         self.mailer = mailer
+        self.master = master
 
     @staticmethod
     def _dead_letter(row: EmailOutboxRow, now: datetime, reason: str) -> None:
         row.state = "dead"
         row.dead_at = now
         row.locked_until = None
-        row.recipient = None
-        row.subject = None
-        row.body = None
+        row.payload_enc = None
         row.last_error = reason[:80]
 
     async def drain(self) -> dict[str, int | bool]:
@@ -332,8 +365,14 @@ class EmailRelay:
                     )
                     return "dead", None
 
-                if row.recipient is None or row.subject is None or row.body is None:
+                if row.payload_enc is None:
                     self._dead_letter(row, now, "OutboxBodyMissing")
+                    return "dead", None
+
+                try:
+                    envelope = open_envelope(self.master, row.org_id, row.id, row.payload_enc)
+                except (InvalidTag, UnicodeDecodeError, TypeError, ValueError):
+                    self._dead_letter(row, now, "OutboxPayloadInvalid")
                     return "dead", None
 
                 row.attempts += 1
@@ -353,9 +392,9 @@ class EmailRelay:
                         org_id=row.org_id,
                         outbox_id=row.id,
                         number=row.attempts,
-                        recipient=row.recipient,
-                        subject=row.subject,
-                        body=row.body,
+                        recipient=envelope.recipient,
+                        subject=envelope.subject,
+                        body=envelope.body,
                     ),
                 )
 
@@ -382,9 +421,7 @@ class EmailRelay:
                 row.sent_at = now
                 row.locked_until = None
                 row.last_error = None
-                row.recipient = None
-                row.subject = None
-                row.body = None
+                row.payload_enc = None
                 history.finished_at = now
                 history.result = "sent"
 
@@ -416,9 +453,7 @@ class EmailRelay:
                 row.locked_until = None
                 row.last_error = error_type[:80]
                 if dead:
-                    row.recipient = None
-                    row.subject = None
-                    row.body = None
+                    row.payload_enc = None
                 history.finished_at = now
                 history.result = "dead" if dead else "retry"
                 history.error_type = error_type[:80]

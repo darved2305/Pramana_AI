@@ -69,10 +69,54 @@ def test_the_link_is_emailed_when_gmail_is_set_up(
     assert listed[0]["email_delivery"] == "sent"
     sent_row = sql(
         migrated_db,
-        "select state, recipient, subject, body from email_outbox where invitation_id = :id",
+        "select state, payload_enc from email_outbox where invitation_id = :id",
         {"id": ids.decode("invite", body["invitation"]["id"])},
     )
-    assert sent_row == [{"state": "sent", "recipient": None, "subject": None, "body": None}]
+    assert sent_row == [{"state": "sent", "payload_enc": None}]
+
+
+def test_queued_invitation_payload_is_encrypted_until_the_relay_sends_it(
+    account_core: TestClient, migrated_db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = account_core
+    org = workspace(client)
+    mailer = FakeMailer()
+    configure(client, mailer, "https://pramana.example")
+    relay = client.app.state.email_relay
+
+    async def no_op() -> dict[str, int | bool]:
+        return {"locked": True, "sent": 0, "retried": 0, "dead": 0}
+
+    monkeypatch.setattr(relay, "drain", no_op)
+    created = post(client, f"/v1/orgs/{org}/invitations", INVITE)
+    assert created.status_code == 201, created.text
+    invitation_id = ids.decode("invite", created.json()["invitation"]["id"])
+    rows = sql(
+        migrated_db,
+        "select id, org_id, state, payload_enc from email_outbox where invitation_id=:id",
+        {"id": invitation_id},
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    ciphertext = bytes(row["payload_enc"])
+    assert row["state"] == "queued"
+    assert INVITE["email"].encode() not in ciphertext
+    assert created.json()["accept_path"].encode() not in ciphertext
+    envelope = outbox.open_envelope(
+        client.app.state.vault.master, row["org_id"], row["id"], ciphertext
+    )
+    assert envelope.recipient == INVITE["email"]
+    assert created.json()["accept_path"] in envelope.body
+    assert mailer.sent == []
+
+    monkeypatch.undo()
+    assert client.portal.call(relay.drain)["sent"] == 1
+    assert len(mailer.sent) == 1
+    assert sql(
+        migrated_db,
+        "select payload_enc from email_outbox where invitation_id=:id",
+        {"id": invitation_id},
+    ) == [{"payload_enc": None}]
 
 
 def test_a_retry_replays_without_sending_again(account_core: TestClient) -> None:
@@ -108,14 +152,12 @@ def test_revoking_a_queued_invitation_purges_its_email(
     assert post(client, f"/v1/orgs/{org}/invitations/{invitation_id}/revoke", {}).status_code == 204
     queued = sql(
         migrated_db,
-        "select state, recipient, subject, body, last_error from email_outbox",
+        "select state, payload_enc, last_error from email_outbox",
     )
     assert queued == [
         {
             "state": "dead",
-            "recipient": None,
-            "subject": None,
-            "body": None,
+            "payload_enc": None,
             "last_error": "InvitationNoLongerValid",
         }
     ]
@@ -141,7 +183,7 @@ def test_replacing_a_queued_invitation_only_keeps_the_new_email_eligible(
     second = post(client, f"/v1/orgs/{org}/invitations", INVITE).json()
     rows = sql(
         migrated_db,
-        "select invitation_id::text as invitation_id, state, recipient, subject, body "
+        "select invitation_id::text as invitation_id, state, payload_enc "
         "from email_outbox order by created_at",
     )
     by_invitation = {row["invitation_id"]: row for row in rows}
@@ -150,12 +192,10 @@ def test_replacing_a_queued_invitation_only_keeps_the_new_email_eligible(
     assert by_invitation[first_id] == {
         "invitation_id": first_id,
         "state": "dead",
-        "recipient": None,
-        "subject": None,
-        "body": None,
+        "payload_enc": None,
     }
     assert by_invitation[second_id]["state"] == "queued"
-    assert by_invitation[second_id]["body"] is not None
+    assert by_invitation[second_id]["payload_enc"] is not None
     assert mailer.sent == []
 
 
@@ -186,10 +226,10 @@ def test_accepting_a_queued_invitation_purges_its_email(
     assert accepted.status_code == 200, accepted.text
     row = sql(
         migrated_db,
-        "select state, recipient, subject, body from email_outbox where invitation_id = :id",
+        "select state, payload_enc from email_outbox where invitation_id = :id",
         {"id": ids.decode("invite", invited["invitation"]["id"])},
     )
-    assert row == [{"state": "dead", "recipient": None, "subject": None, "body": None}]
+    assert row == [{"state": "dead", "payload_enc": None}]
     assert mailer.sent == []
 
 
@@ -216,8 +256,8 @@ def test_expired_invitation_is_dead_lettered_without_sending(
     result = client.portal.call(relay.drain)
     assert result["dead"] == 1
     assert mailer.sent == []
-    dead = sql(migrated_db, "select state, body, last_error from email_outbox")
-    assert dead == [{"state": "dead", "body": None, "last_error": "InvitationNoLongerValid"}]
+    dead = sql(migrated_db, "select state, payload_enc, last_error from email_outbox")
+    assert dead == [{"state": "dead", "payload_enc": None, "last_error": "InvitationNoLongerValid"}]
 
 
 def test_without_gmail_email_is_failed_and_the_owner_can_share_the_link(
@@ -374,12 +414,17 @@ def test_relay_drains_bounded_batches_for_generic_email_kinds(
         sql(
             migrated_db,
             "insert into email_outbox "
-            "(id, org_id, kind, state, recipient, subject, body) "
-            "values (:id, :org, 'notice', 'queued', :recipient, 'Hello', 'Message body')",
+            "(id, org_id, kind, state, payload_enc) "
+            "values (:id, :org, 'notice', 'queued', :payload_enc)",
             {
                 "id": outbox_id,
                 "org": org_id,
-                "recipient": f"person{index}@example.test",
+                "payload_enc": outbox.seal_envelope(
+                    client.app.state.vault.master,
+                    org_id,
+                    outbox_id,
+                    outbox.EmailEnvelope(f"person{index}@example.test", "Hello", "Message body"),
+                ),
             },
         )
 
@@ -416,11 +461,9 @@ def test_dead_letter_is_visible_and_message_body_is_purged(
     assert by_email[second["email"]] == "queued"
     dead = sql(
         migrated_db,
-        "select state, body, recipient, last_error from email_outbox where state = 'dead'",
+        "select state, payload_enc, last_error from email_outbox where state = 'dead'",
     )
-    assert dead == [
-        {"state": "dead", "body": None, "recipient": None, "last_error": "SMTPException"}
-    ]
+    assert dead == [{"state": "dead", "payload_enc": None, "last_error": "SMTPException"}]
     assert "private transport details" not in repr(dead)
 
 

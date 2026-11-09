@@ -31,6 +31,7 @@ from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, 
 from .errors import ApiError, not_found
 from .observability import log
 from .outbox import EmailEnvelope, queue_email
+from .vault import MasterKey
 
 MANAGERS = ("owner", "admin")
 DOMAIN_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -161,8 +162,8 @@ def join_request_view(row: JoinRequestRow, org: OrganizationRow, user: UserRow) 
 
 
 class DomainJoins:
-    def __init__(self, db: Database, resolver: DnsTxtResolver) -> None:
-        self.db, self.resolver = db, resolver
+    def __init__(self, db: Database, resolver: DnsTxtResolver, master: MasterKey) -> None:
+        self.db, self.resolver, self.master = db, resolver, master
 
     @staticmethod
     async def _lock_domain(session: AsyncSession, org_id: uuid.UUID, domain: str) -> None:
@@ -698,6 +699,7 @@ class DomainJoins:
             )
             queue_email(
                 session,
+                master=self.master,
                 org_id=org_id,
                 kind=JOIN_DECISION_KIND,
                 envelope=EmailEnvelope(requester_email, subject, text_body),
@@ -847,6 +849,7 @@ class DomainJoins:
         for address in addresses:
             queue_email(
                 session,
+                master=self.master,
                 org_id=org_id,
                 kind=JOIN_NOTICE_KIND,
                 envelope=EmailEnvelope(address, subject, body),

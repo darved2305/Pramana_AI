@@ -547,7 +547,7 @@ Browser                         api                                   provider /
      mutations or via `scripts/reap_idempotency.py`; a scheduled worker remains deployment work.
 3. **Commands with external effects** ("approve and notify the technician", "place a call"). One local transaction commits the state change and an outbox row. The worker calls the provider with a provider-side idempotency key derived from the outbox id, where the provider supports one. Where it does not, record the attempt and reconcile through status APIs or webhooks; never retry a non-idempotent call blindly (brandur).
 
-   Invitation and consent request emails commit their outbox row with the invitation or consent link. The API starts a bounded drain after it sends the HTTP response, and `scripts/drain_email_outbox.py` repeats bounded drains until the due queue is empty for a Cloud Run Job. A PostgreSQL advisory lock elects one relay. Attempts are recorded before SMTP, retry uses exponential backoff with jitter, and delivery stops after five attempts. A stable `Message-ID` and outbox id help correlate delivery, but SMTP has no idempotency key: if SMTP accepts a message and the process crashes before recording success, a later attempt can send it again. This is at-least-once delivery. The uncertain attempt remains in `email_outbox_attempts`; SMTP error text and message bodies are never logged. Recipient, subject and body are cleared after success or after the row becomes dead. Consent emails are cancelled and purged when their link is replaced, consumed, revoked or found expired before delivery, and when the person's contact address changes. Removing or erasing a person deletes their consent links, and the queued email row goes with them.
+   Invitation, consent request, and domain join emails commit an encrypted outbox payload with the state change that requested the message. The payload contains only the recipient, subject and body, sealed with AES-GCM under `PRAMANA_PII_KEY`; organization id and outbox id are authenticated as context. The API starts a bounded drain after it sends the HTTP response, and `scripts/drain_email_outbox.py` repeats bounded drains until the due queue is empty for a Cloud Run Job. A PostgreSQL advisory lock elects one relay. Attempts are recorded before SMTP, retry uses exponential backoff with jitter, and delivery stops after five attempts. A stable `Message-ID` and outbox id help correlate delivery, but SMTP has no idempotency key: if SMTP accepts a message and the process crashes before recording success, a later attempt can send it again. This is at-least-once delivery. The uncertain attempt remains in `email_outbox_attempts`; SMTP error text and message bodies are never logged. The encrypted payload is cleared after success or after the row becomes dead. Consent emails are cancelled and purged when their link is replaced, consumed, revoked or found expired before delivery, and when the person's contact address changes. Removing or erasing a person deletes their consent links, and the queued email row goes with them.
 
    The consent-request response returns `queued` when the email intent is durable. Managers can poll the site and person scoped `GET /consent-requests/{request_id}` route for sent, queued, failed or no-email status; the bearer link itself is returned only by the create request. The dialog checks at most 20 times, about 20 seconds, and then tells the operator to copy the link if the email has still not arrived.
 
@@ -994,9 +994,7 @@ create table email_outbox (
   invitation_id    uuid unique references invitations(id), -- set for invitations
   consent_link_id  uuid unique references consent_links(id), -- set for consent request email
   state            text not null check (state in ('queued', 'sending', 'sent', 'dead')),
-  recipient        text,                              -- needed only until success or dead letter
-  subject          text,
-  body             text,                              -- contains the one-time link; purged on success/dead
+  payload_enc      bytea,                              -- AEAD recipient, subject and body; purged on success/dead
   attempts         int not null default 0 check (attempts between 0 and 5),
   available_at     timestamptz not null default now(),
   locked_until     timestamptz,
@@ -1007,8 +1005,8 @@ create table email_outbox (
   check ((kind = 'invitation' and invitation_id is not null and consent_link_id is null)
       or (kind = 'consent_request' and consent_link_id is not null and invitation_id is null)
       or (kind not in ('invitation', 'consent_request') and invitation_id is null and consent_link_id is null)),
-  check (((state in ('queued', 'sending')) and recipient is not null and subject is not null and body is not null)
-      or ((state in ('sent', 'dead')) and recipient is null and subject is null and body is null))
+  check (((state in ('queued', 'sending')) and payload_enc is not null)
+      or ((state in ('sent', 'dead')) and payload_enc is null))
 );
 create index email_outbox_ready on email_outbox (available_at, created_at) where state = 'queued';
 

@@ -22,7 +22,7 @@ from test_practice import published_water_site
 from test_practice import request as investigation_request
 
 from pramana_contracts import PlanDecision, PlanKind, QuestioningAvailability, QuietHours
-from pramana_core import ids
+from pramana_core import ids, outbox
 from pramana_core.investigations import InvestigationService, _waits_for_people
 from pramana_core.mail import FakeMailer
 from pramana_core.questioning import decide_availability, in_quiet_hours
@@ -151,15 +151,13 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
     assert client.get(wrong_person).status_code == 404
     outbox_rows = sql(
         migrated_db,
-        "select state, recipient, subject, body from email_outbox where consent_link_id=:id",
+        "select state, payload_enc from email_outbox where consent_link_id=:id",
         {"id": ids.decode("consent", created.json()["request_id"])},
     )
     assert len(outbox_rows) == 1
     assert outbox_rows[0] == {
         "state": "sent",
-        "recipient": None,
-        "subject": None,
-        "body": None,
+        "payload_enc": None,
     }
 
     code = created.json()["link_path"].removeprefix("/consent/")
@@ -190,7 +188,6 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
     assert records[0]["decision"] == "refused"
     assert records[1]["decision"] == "granted"
     assert records[1]["withdrawn_at"] is not None
-
     expired = post(client, request_path).json()["link_path"].removeprefix("/consent/")
     expired_secret = expired.split(".", 1)[1]
     sql(
@@ -210,6 +207,62 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
         {"slug": workspace["organization"]["slug"]},
     )
     assert client.get(status_path).status_code == 403
+
+
+def test_queued_consent_email_seals_the_recipient_and_bearer_link(
+    account_core: TestClient, migrated_db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace)
+    assert (
+        patch_person(client, root, {"contact_email": "synthetic@example.test"}).status_code == 200
+    )
+    mailer = FakeMailer()
+    client.app.state.mailer = mailer
+    client.app.state.email_relay.mailer = mailer
+    client.app.state.settings = client.app.state.settings.model_copy(
+        update={
+            "gmail_address": "sender@example.test",
+            "gmail_app_password": SecretStr("fake"),
+            "public_web_url": "https://pramana.example",
+        }
+    )
+    relay = client.app.state.email_relay
+
+    async def no_op() -> dict[str, int | bool]:
+        return {"locked": True, "sent": 0, "retried": 0, "dead": 0}
+
+    monkeypatch.setattr(relay, "drain", no_op)
+    created = post(client, root + "/p_ravi/consent-requests")
+    assert created.status_code == 201, created.text
+    request_id = ids.decode("consent", created.json()["request_id"])
+    rows = sql(
+        migrated_db,
+        "select id, org_id, payload_enc from email_outbox where consent_link_id=:id",
+        {"id": request_id},
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    ciphertext = bytes(row["payload_enc"])
+    assert b"synthetic@example.test" not in ciphertext
+    assert created.json()["link_path"].encode() not in ciphertext
+    envelope = outbox.open_envelope(
+        client.app.state.vault.master, row["org_id"], row["id"], ciphertext
+    )
+    assert envelope.recipient == "synthetic@example.test"
+    assert "https://pramana.example" + created.json()["link_path"] in envelope.body
+    assert mailer.sent == []
+
+    monkeypatch.undo()
+    assert client.portal.call(relay.drain)["sent"] == 1
+    assert mailer.sent[0][0] == "synthetic@example.test"
+    assert created.json()["link_path"] in mailer.sent[0][2]
+    assert sql(
+        migrated_db,
+        "select payload_enc from email_outbox where consent_link_id=:id",
+        {"id": request_id},
+    ) == [{"payload_enc": None}]
 
 
 def test_replacing_consent_link_cancels_queued_email(
@@ -248,14 +301,14 @@ def test_replacing_consent_link_cancels_queued_email(
 
     rows = sql(
         migrated_db,
-        "select consent_link_id, state, recipient, subject, body from email_outbox "
+        "select consent_link_id, state, payload_enc from email_outbox "
         "where kind='consent_request' order by created_at",
     )
     by_id = {ids.encode("consent", row["consent_link_id"]): row for row in rows}
     for stale in (first, second):
         row = by_id[stale["request_id"]]
         assert row["state"] == "dead"
-        assert row["recipient"] is row["subject"] is row["body"] is None
+        assert row["payload_enc"] is None
     assert by_id[third["request_id"]]["state"] == "sent"
     assert len(mailer.sent) == 1
     assert "https://pramana.example" + third["link_path"] in mailer.sent[0][2]
@@ -306,13 +359,13 @@ def test_expired_consent_email_is_purged_before_relay_sends(
 
     rows = sql(
         migrated_db,
-        "select consent_link_id, state, recipient, subject, body from email_outbox "
+        "select consent_link_id, state, payload_enc from email_outbox "
         "where kind='consent_request' order by created_at",
     )
     by_id = {ids.encode("consent", row["consent_link_id"]): row for row in rows}
     stale = by_id[expired["request_id"]]
     assert stale["state"] == "dead"
-    assert stale["recipient"] is stale["subject"] is stale["body"] is None
+    assert stale["payload_enc"] is None
     assert by_id[valid["request_id"]]["state"] == "sent"
     assert client.get(request_path + "/" + expired["request_id"]).json() == {
         "email_delivery": "failed"
@@ -414,10 +467,10 @@ def test_changing_contact_email_stops_the_email_queued_for_the_old_address(
 
     row = sql(
         migrated_db,
-        "select state, recipient, subject, body from email_outbox where consent_link_id=:id",
+        "select state, payload_enc from email_outbox where consent_link_id=:id",
         {"id": ids.decode("consent", queued["request_id"])},
     )[0]
-    assert row == {"state": "dead", "recipient": None, "subject": None, "body": None}
+    assert row == {"state": "dead", "payload_enc": None}
     assert [sent[0] for sent in mailer.sent] == ["meena@example.test"]
 
 
@@ -446,15 +499,12 @@ def test_unconfigured_consent_email_is_failed_without_storing_contact_data(
     }
     row = sql(
         migrated_db,
-        "select state, recipient, subject, body, last_error from email_outbox "
-        "where consent_link_id=:id",
+        "select state, payload_enc, last_error from email_outbox where consent_link_id=:id",
         {"id": ids.decode("consent", created["request_id"])},
     )[0]
     assert row == {
         "state": "dead",
-        "recipient": None,
-        "subject": None,
-        "body": None,
+        "payload_enc": None,
         "last_error": "EmailNotConfigured",
     }
 

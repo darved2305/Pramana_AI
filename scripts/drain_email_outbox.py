@@ -18,6 +18,7 @@ from pramana_core.db import Database
 from pramana_core.mail import GmailSmtp
 from pramana_core.outbox import MAX_MESSAGES_PER_DRAIN, EmailRelay
 from pramana_core.settings import Settings
+from pramana_core.vault import master_key
 
 
 async def run() -> None:
@@ -30,7 +31,7 @@ async def run() -> None:
             if cfg.gmail_address and cfg.gmail_app_password
             else None
         )
-        relay = EmailRelay(db, mailer)
+        relay = EmailRelay(db, mailer, master_key(cfg))
         result: dict[str, int | bool] = {
             "locked": False,
             "sent": 0,
