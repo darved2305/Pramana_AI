@@ -94,6 +94,47 @@ def test_live_smoke_accepts_the_server_rendered_login_shell(
     assert "Live smoke passed" in capsys.readouterr().out
 
 
+def test_deploy_max_flag_caps_service_across_revisions() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+
+    class Recorder:
+        dry_run = True
+
+        def __init__(self) -> None:
+            self.commands: list[list[str]] = []
+
+        def run(
+            self, args: list[str], **_kwargs: object
+        ) -> deploy.subprocess.CompletedProcess[str]:
+            self.commands.append(args)
+            if args[:3] == ["run", "services", "describe"]:
+                result = {"status": {"url": "https://core.example.run.app", "traffic": []}}
+                return deploy.subprocess.CompletedProcess(args, 0, deploy.json.dumps(result), "")
+            return deploy.subprocess.CompletedProcess(args, 0, "", "")
+
+    recorder = Recorder()
+    deploy.deploy_service(
+        recorder,
+        context,
+        name="pramana-core",
+        image=context.py_image,
+        account="core",
+        env_vars={"PRAMANA_MODE": "production"},
+        secrets={},
+        memory="1Gi",
+        concurrency=8,
+        timeout="3600s",
+        probe_path="/ready",
+        public=False,
+        max_instances=2,
+    )
+
+    command = next(args for args in recorder.commands if args[:2] == ["run", "deploy"])
+    assert "--max=2" in command
+    assert "--min=0" in command
+    assert not any(argument.startswith("--max-instances=") for argument in command)
+
+
 def test_deploy_context_discards_unrelated_environment_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

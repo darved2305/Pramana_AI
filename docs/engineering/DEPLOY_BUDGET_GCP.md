@@ -45,12 +45,22 @@ start and callback URLs, consent-link URLs and `/consent/` capability URLs. A ma
 the `_Default` sink drops those request records instead of storing them in its default destination.
 Other Cloud Run request logs and the migration job logs remain in the regional bucket for 180 days.
 
-The deployed core uses a pool size of three and zero overflow, with a maximum of two instances.
-That is six `pramana_app` sessions on one revision. The simulator uses one connection per instance,
-or two `pramana_sim` sessions. During a rollout, old and new revisions can overlap, so the
-configured peak can reach twelve core sessions and four simulator sessions. A read-only database
-check reported PostgreSQL 17.11 and `max_connections=60`; the session pooler's configured session
-limit was not available to this check. Do not infer that the pooler allows 60 application sessions.
+The deployed core uses a pool size of three and zero overflow, with a service-level maximum of two
+instances, for up to six `pramana_app` sessions. The simulator uses one connection per instance,
+with a service-level maximum of two instances, for up to two `pramana_sim` sessions. The deploy
+script's `--max=2` sets a service-level limit shared across revisions receiving traffic; the
+no-traffic bootstrap revision does not add another two-instance allowance. Cloud Run can briefly
+exceed a configured maximum during replacements or traffic spikes, so leave additional headroom
+([service maximum instances](https://docs.cloud.google.com/run/docs/configuring/max-instances),
+[gcloud deploy flags](https://docs.cloud.google.com/sdk/gcloud/reference/run/deploy)). The migration
+job uses the separate migrator role and finishes before service rollout.
+
+Supabase Nano's documented default pool size is 15 per database role, but the project's configured
+value was not available to the read-only database check ([compute limits](https://supabase.com/docs/guides/platform/compute-and-disk),
+[pooling limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)).
+PostgreSQL reported version 17.11 and `max_connections=60`; do not treat that as the Supavisor
+session pool size. Confirm the actual pool setting before increasing instance or database pool
+limits and before using real personal data.
 The five-second core pool timeout fails requests instead of queueing them. Deploy outside peak use
 and watch for 503s until the approved project's pooler limit and first month of use are confirmed.
 See [Supabase connection pool limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)
