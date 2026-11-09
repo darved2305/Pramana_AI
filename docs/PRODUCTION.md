@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Written | 2026-11-07 (system date), against `main` at `e8194cb`. Release candidate `v1.0-rc1` is `8b24d0d`. |
-| Status | Production implementation started on the isolated `production` branch with the user's approval on 2026-11-07. R0 code and infrastructure definitions are committed; no cloud resources have been applied. Submission scope and `main` remain frozen. See the dated production status report for implementation and verification evidence. |
+| Status | The production branch includes the Nov 9 features and a team-only GCP staging deployment. The stage uses a Singapore database and must not contain real personal data until the documented India, backup and credential requirements are met. See `docs/engineering/STATUS_PRODUCTION_2026-11-09.md` for evidence and open actions. |
 | Goal | Turn one simulated building served by one process into a multi-tenant product that campuses, hospitals, offices and hotels in India can sign up for, model their own buildings in, and run with real people, real calls and real repairs. |
 | Read with | `README.md`, `docs/PRODUCT.md`, `docs/PLAN.md`, `docs/engineering/ARCHITECTURE_REVIEW.md`, ADRs 0001 to 0014 |
 
@@ -1315,6 +1315,8 @@ stateDiagram-v2
 Test layers: **U** unit, **A** API with PostgreSQL, **B** browser (Playwright with the mock OIDC issuer), **P** process-level end to end, **L** load, **C** chaos. The ids name the tests.
 
 Implementation status, 2026-11-09: ID-03 and ID-04 are implemented in migration `0018_workspace_domain_joins.py` and the onboarding and workspace settings screens. API coverage is in `test_domain_joins.py` and `test_google_auth.py`; `tests-real/domain-join.spec.ts` exercises both policies through the mock OIDC server with `hd` claims. The participant page clears an earlier "I understood" message when a new answer is submitted, so feedback cannot be reused while the next answer is still in flight.
+
+The Nov 9 landing also covers ID-07, ID-13 and OR-09 through invitation, session and idempotency checks; OR-07 and DA-07 through workspace export, restore and paged lists; and DA-04 and PA-09 through consent and quiet-hours checks. The dated status report records the remaining first-time-user journey verification.
 
 **Sign-in and identity**
 

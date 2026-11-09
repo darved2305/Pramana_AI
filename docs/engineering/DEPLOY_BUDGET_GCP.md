@@ -111,7 +111,10 @@ included in Cloud Run usage and incurs compute charges only while it runs.
   until the final web deploy. The script checks `/`, `/login`, a Next static asset,
   `/api/core/health` and `/ready` through the public proxy.
 
-## Current staging deployment
+## Earlier staging deployment
+
+The following records the earlier 0019 deployment. For the later 0022 deploy, serving revisions,
+image digests and live checks, see `STATUS_PRODUCTION_2026-11-09.md`.
 
 The live stage was deployed from code commit `980bf4dd923c` on 2026-11-09. All three services are
 ready in `asia-south1` with 100% traffic on the revisions below:
