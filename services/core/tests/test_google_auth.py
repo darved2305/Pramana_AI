@@ -143,6 +143,78 @@ def test_id_02_workspace_hd_is_recorded(
     assert client.get("/v1/auth/session").json()["email_verified"] is True
 
 
+def test_google_sign_in_auto_joins_pending_request_as_viewer(
+    oauth_core: tuple[TestClient, MockIssuer], migrated_db: str
+) -> None:
+    client, fake = oauth_core
+    fake.claims.update(sub="domain-owner", email="owner@college.edu", hd="college.edu")
+    assert finish(client, fake, start(client)).status_code == 302
+    created = client.post(
+        "/v1/orgs",
+        json={"name": "Nava College"},
+        headers={**CSRF, "Idempotency-Key": "oauth-domain-org-create-001"},
+    )
+    assert created.status_code == 201, created.text
+    org_id = created.json()["organization"]["id"]
+    added = client.post(
+        f"/v1/orgs/{org_id}/domains",
+        json={"domain": "college.edu", "verification": "google_hd"},
+        headers={**CSRF, "Idempotency-Key": "oauth-domain-add-claim-001"},
+    )
+    assert added.status_code == 201, added.text
+    verified = client.post(
+        f"/v1/orgs/{org_id}/domains/college.edu/verify",
+        headers={**CSRF, "Idempotency-Key": "oauth-domain-verify-001"},
+    )
+    assert verified.status_code == 200, verified.text
+    assert client.post("/v1/auth/logout", headers=CSRF).status_code == 204
+
+    fake.claims.update(sub="domain-member", email="member@college.edu", hd="college.edu")
+    assert finish(client, fake, start(client)).status_code == 302
+    pending = client.post(
+        "/v1/join-requests",
+        json={"organization_id": org_id},
+        headers={**CSRF, "Idempotency-Key": "oauth-domain-join-request-001"},
+    )
+    assert pending.status_code == 201, pending.text
+    assert pending.json()["request"]["status"] == "pending"
+    assert client.post("/v1/auth/logout", headers=CSRF).status_code == 204
+
+    fake.claims.update(sub="domain-owner", email="owner@college.edu", hd="college.edu")
+    assert finish(client, fake, start(client)).status_code == 302
+    changed = client.patch(
+        f"/v1/orgs/{org_id}/domains/college.edu",
+        json={"join_policy": "auto"},
+        headers={**CSRF, "Idempotency-Key": "oauth-domain-auto-policy-001"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert client.post("/v1/auth/logout", headers=CSRF).status_code == 204
+
+    fake.claims.update(sub="domain-member", email="member@college.edu", hd="college.edu")
+    response = finish(client, fake, start(client))
+    assert response.status_code == 302, response.text
+    account = client.get("/v1/me").json()
+    assert any(org["id"] == org_id and org["roles"] == ["viewer"] for org in account["memberships"])
+    history = sql(
+        migrated_db,
+        "select status, roles, decision_source from join_requests order by requested_at",
+    )
+    assert [row["status"] for row in history] == ["cancelled", "approved"]
+    assert history[1]["roles"] == ["viewer"]
+    assert history[1]["decision_source"] == "auto"
+    assert (
+        sql(
+            migrated_db,
+            "select count(*) as n from audit_log where action = 'membership.domain_auto_joined'",
+        )[0]["n"]
+        == 1
+    )
+    assert any(
+        address == "owner@college.edu" and "joined Nava College as a viewer" in body
+        for address, _, body in client.app.state.domain_joins.mailer.messages
+    )
+
+
 def test_custom_email_without_hd_needs_email_verification(
     oauth_core: tuple[TestClient, MockIssuer],
 ) -> None:

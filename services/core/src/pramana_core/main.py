@@ -19,6 +19,7 @@ from .accounts import AccountService
 from .api import accounts as accounts_api
 from .api import auth as auth_api
 from .api import directory as directory_api
+from .api import domain_joins as domain_joins_api
 from .api import evaluation as evaluation_api
 from .api import home as home_api
 from .api import investigations as investigations_api
@@ -39,6 +40,7 @@ from .auth.oidc import GoogleOidc
 from .auth.service import AuthService, LoginThrottle
 from .db import Database, make_engine
 from .directory import make_queries
+from .domain_joins import DnsPythonResolver, DnsTxtResolver, DomainJoins, LocalOutbox
 from .errors import install_error_handlers
 from .investigations import InvestigationService
 from .invitations import Invitations
@@ -87,6 +89,7 @@ def create_app(
     sim_transport: httpx.AsyncBaseTransport | None = None,
     gnani_transport: httpx.AsyncBaseTransport | None = None,
     oidc_transport: httpx.AsyncBaseTransport | None = None,
+    dns_txt_resolver: DnsTxtResolver | None = None,
 ) -> FastAPI:
     cfg = settings or get_settings()
     configure_logging(cfg.log_level, cfg.log_json)
@@ -150,10 +153,21 @@ def create_app(
         app.state.site_models = StoredModels(db)
         app.state.site_people = SitePeople(db, app.state.vault)
         app.state.invitations = Invitations(db)
+        can_send_email = cfg.mode != "test" and cfg.oidc_issuer == "https://accounts.google.com"
         app.state.mailer = (
             GmailSmtp(cfg.gmail_address, cfg.gmail_app_password)
-            if cfg.invitation_link_base and cfg.gmail_address and cfg.gmail_app_password
+            if can_send_email
+            and cfg.invitation_link_base
+            and cfg.gmail_address
+            and cfg.gmail_app_password
             else None
+        )
+        app.state.domain_joins = DomainJoins(
+            db,
+            dns_txt_resolver or DnsPythonResolver(),
+            GmailSmtp(cfg.gmail_address, cfg.gmail_app_password)
+            if can_send_email and cfg.gmail_address and cfg.gmail_app_password
+            else LocalOutbox(),
         )
         app.state.site_builder = SiteBuilder(db, app.state.site_people)
         oidc = GoogleOidc(cfg, transport=oidc_transport)
@@ -241,6 +255,8 @@ def create_app(
 
     app.include_router(auth_api.router)
     app.include_router(accounts_api.router)
+    app.include_router(domain_joins_api.user_router)
+    app.include_router(domain_joins_api.org_router)
     app.include_router(sites_api.router)
     app.include_router(site_builder_api.library)
     app.include_router(site_builder_api.router)
