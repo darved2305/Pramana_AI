@@ -265,3 +265,46 @@ def test_short_parked_passwords_warn_but_rotated_passwords_must_be_long(
         context.env[setting] = "true"
     with pytest.raises(deploy.DeployError, match="too short"):
         deploy.validate_environment(context)
+
+
+def test_gcloud_passes_quoted_log_filters_as_one_argument(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gcloud = deploy.Gcloud.__new__(deploy.Gcloud)
+    gcloud.dry_run = False
+    gcloud.binary = "gcloud.cmd"
+    gcloud.prefix = ["bundled-python", "gcloud.py"]
+    gcloud.env = None
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(command: list[str], **_kwargs: object) -> deploy.subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        return deploy.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(deploy.subprocess, "run", fake_run)
+    gcloud.run(["logging", "read", deploy.LOG_FILTER, "--limit=1"], quiet=True)
+
+    assert captured["command"] == [
+        "bundled-python",
+        "gcloud.py",
+        "logging",
+        "read",
+        deploy.LOG_FILTER,
+        "--limit=1",
+    ]
+
+
+def test_sdk_root_is_found_from_the_launcher_or_a_shim(tmp_path: Path) -> None:
+    sdk = tmp_path / "google-cloud-sdk"
+    (sdk / "bin").mkdir(parents=True)
+    (sdk / "lib").mkdir()
+    launcher = sdk / "bin" / "gcloud.cmd"
+    launcher.write_text("@rem launcher\n", encoding="utf-8")
+    (sdk / "lib" / "gcloud.py").write_text("", encoding="utf-8")
+    assert deploy.sdk_root_from_launcher(launcher) == sdk
+
+    shim_dir = tmp_path / "shims"
+    shim_dir.mkdir()
+    shim = shim_dir / "gcloud.cmd"
+    shim.write_text(f'@"{launcher}"  %*\n', encoding="utf-8")
+    assert deploy.sdk_root_from_launcher(shim) == sdk

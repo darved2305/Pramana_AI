@@ -185,6 +185,30 @@ class Context:
         return result.stdout
 
 
+def sdk_root_from_launcher(launcher: Path) -> Path | None:
+    """Find the Google Cloud SDK root that a gcloud launcher belongs to.
+
+    Windows launchers are batch files. Passing arguments through cmd.exe mangles quoted values
+    such as log filters, so the script runs the SDK's bundled Python on lib/gcloud.py directly.
+    Package-manager shims (for example Scoop) only forward to the real launcher, so their
+    target is read from the shim.
+    """
+
+    def root_of(path: Path) -> Path | None:
+        candidate = path.parent.parent
+        return candidate if (candidate / "lib" / "gcloud.py").is_file() else None
+
+    root = root_of(launcher)
+    if root is not None:
+        return root
+    try:
+        text = launcher.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    match = re.search(r'"([^"\r\n]*gcloud\.cmd)"', text)
+    return root_of(Path(match.group(1))) if match else None
+
+
 class Gcloud:
     def __init__(self, *, dry_run: bool = False) -> None:
         self.dry_run = dry_run
@@ -193,6 +217,22 @@ class Gcloud:
         )
         if not dry_run and not self.binary:
             raise DeployError("gcloud is required; install the Google Cloud SDK")
+        self.prefix: list[str] = [self.binary or "gcloud"]
+        self.env: dict[str, str] | None = None
+        if os.name == "nt" and self.binary:
+            root = (
+                Path(os.environ["CLOUDSDK_ROOT_DIR"])
+                if os.environ.get("CLOUDSDK_ROOT_DIR")
+                else sdk_root_from_launcher(Path(self.binary))
+            )
+            if root is None:
+                raise DeployError(
+                    "cannot find the Google Cloud SDK root; set CLOUDSDK_ROOT_DIR to the folder "
+                    "that contains lib/gcloud.py"
+                )
+            python = root / "platform" / "bundledpython" / "python.exe"
+            self.prefix = [str(python), str(root / "lib" / "gcloud.py")]
+            self.env = {**os.environ, "CLOUDSDK_ROOT_DIR": str(root), "PYTHONHOME": ""}
 
     @staticmethod
     def display(args: Sequence[str]) -> str:
@@ -213,20 +253,12 @@ class Gcloud:
         print(f"$ {display}")
         if self.dry_run:
             return self._dry_result(args, full)
-        if os.name == "nt" and str(self.binary).lower().endswith((".cmd", ".bat")):
-            command: str | Sequence[str] = [
-                os.environ.get("COMSPEC", "cmd.exe"),
-                "/d",
-                "/s",
-                "/c",
-                f'call "{self.binary}" {subprocess.list2cmdline(list(args))}',
-            ]
-        else:
-            command = full
+        command = [*self.prefix, *args]
         try:
             result = subprocess.run(
                 command,
                 cwd=ROOT,
+                env=self.env,
                 input=input_data,
                 capture_output=True,
                 text=isinstance(input_data, str) or input_data is None,
