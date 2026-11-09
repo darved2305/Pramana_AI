@@ -24,7 +24,12 @@ def _url() -> str:
 
 
 def _run(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=Base.metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=Base.metadata,
+        compare_type=True,
+        version_table_schema="public",
+    )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -32,12 +37,22 @@ def _run(connection: Connection) -> None:
 async def _run_async() -> None:
     engine = create_async_engine(_url())
     async with engine.connect() as conn:
+        # Set per session, not as a startup setting: the Supabase pooler drops those. Until 0022
+        # creates ``pramana`` new objects land in ``public``; 0022 moves them.
+        await conn.exec_driver_sql("set search_path to pramana, public")
+        await conn.commit()  # a session-level SET outlives this transaction
         await conn.run_sync(_run)
+        await conn.commit()
     await engine.dispose()
 
 
 if context.is_offline_mode():
-    context.configure(url=_url(), target_metadata=Base.metadata, literal_binds=True)
+    context.configure(
+        url=_url(),
+        target_metadata=Base.metadata,
+        literal_binds=True,
+        version_table_schema="public",
+    )
     with context.begin_transaction():
         context.run_migrations()
 else:

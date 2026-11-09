@@ -95,7 +95,7 @@ async def _tenant_tables(conn: Any) -> list[str]:
     rows = await conn.execute(
         text(
             "select table_name from information_schema.columns "
-            "where table_schema = 'public' and column_name = 'org_id' order by table_name"
+            "where table_schema = 'pramana' and column_name = 'org_id' order by table_name"
         )
     )
     return [r[0] for r in rows]
@@ -115,8 +115,10 @@ def test_every_table_with_org_id_forces_rls(db_urls: tuple[str, str]) -> None:
                 row = await conn.execute(
                     text(
                         "select relrowsecurity, relforcerowsecurity, "
-                        "(select count(*) from pg_policies where tablename = :t) "
-                        "from pg_class where relname = :t and relkind = 'r'"
+                        "(select count(*) from pg_policies "
+                        "where tablename = :t and schemaname = 'pramana') "
+                        "from pg_class c join pg_namespace n on n.oid = c.relnamespace "
+                        "where c.relname = :t and c.relkind = 'r' and n.nspname = 'pramana'"
                     ),
                     {"t": table},
                 )
