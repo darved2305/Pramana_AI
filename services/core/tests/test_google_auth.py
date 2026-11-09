@@ -190,7 +190,24 @@ def test_google_sign_in_auto_joins_pending_request_as_viewer(
     assert changed.status_code == 200, changed.text
     assert client.post("/v1/auth/logout", headers=CSRF).status_code == 204
 
-    fake.claims.update(sub="domain-member", email="member@college.edu", hd="college.edu")
+    # A previously verified account must not inherit verification for a new token
+    # whose email_verified claim is false, even when that token has a matching hd.
+    fake.claims.update(
+        sub="domain-member", email="member@college.edu", hd="college.edu", email_verified=False
+    )
+    assert finish(client, fake, start(client)).status_code == 302
+    account = client.get("/v1/me").json()
+    assert account["join_suggestions"] == []
+    assert all(org["id"] != org_id for org in account["memberships"])
+    denied = client.post(
+        "/v1/join-requests",
+        json={"organization_id": org_id},
+        headers={**CSRF, "Idempotency-Key": "oauth-domain-unverified-001"},
+    )
+    assert denied.status_code == 403, denied.text
+    assert client.post("/v1/auth/logout", headers=CSRF).status_code == 204
+
+    fake.claims.update(email_verified=True)
     response = finish(client, fake, start(client))
     assert response.status_code == 302, response.text
     account = client.get("/v1/me").json()

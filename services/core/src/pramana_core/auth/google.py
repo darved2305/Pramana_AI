@@ -237,7 +237,7 @@ class GoogleSignIn:
                     user,
                     auth_method="google",
                     user_agent=user_agent,
-                    hosted_domain=identity.hosted_domain,
+                    hosted_domain=identity.hosted_domain if identity.email_verified else None,
                 )
                 await session.execute(
                     text("select set_config('app.user_id', :u, true)"), {"u": user.id}
