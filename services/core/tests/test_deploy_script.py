@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import sys
+import urllib.parse
+import urllib.request
 from argparse import Namespace
 from pathlib import Path
 from types import ModuleType
@@ -58,6 +61,36 @@ def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     assert "DB_POOL_SIZE=6" not in output
     assert "DB_MAX_OVERFLOW=0" in output
     assert "SIM_DATABASE_POOL_SIZE=1" in output
+
+
+def test_live_smoke_accepts_the_server_rendered_login_shell(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    responses = {
+        "/": b'<html><title>Pramana</title><script src="/_next/static/app.js"></script></html>',
+        "/login": b"<html><title>Pramana</title></html>",
+        "/_next/static/app.js": b"asset",
+        "/api/core/health": b'{"status":"ok"}',
+        "/ready": b'{"status":"ready"}',
+    }
+
+    class Response(io.BytesIO):
+        def __init__(self, body: bytes) -> None:
+            super().__init__(body)
+            self.status = 200
+            self.headers = {"Content-Type": "text/html; charset=utf-8"}
+
+    def fake_urlopen(request: urllib.request.Request, *, timeout: int) -> Response:
+        del timeout
+        path = urllib.parse.urlsplit(request.full_url).path
+        return Response(responses[path])
+
+    monkeypatch.setattr(deploy.urllib.request, "urlopen", fake_urlopen)
+    context = Namespace(service_urls={"pramana-web": "https://example.test"})
+
+    deploy.smoke(Namespace(dry_run=False), context)
+
+    assert "Live smoke passed" in capsys.readouterr().out
 
 
 def test_deploy_context_discards_unrelated_environment_secrets(

@@ -1201,8 +1201,12 @@ def smoke(gcloud: Gcloud, ctx: Context) -> None:
     status, home, _ = get("/")
     if status != 200:
         raise DeployError("web home smoke check failed")
-    status, login, _ = get("/login")
-    if status != 200 or b"Continue with Google" not in login:
+    status, login, login_content_type = get("/login")
+    if (
+        status != 200
+        or "text/html" not in login_content_type.lower()
+        or b"<title>Pramana" not in login
+    ):
         raise DeployError("sign-in page smoke check failed")
     match = re.search(rb'(?:src|href)="(/_next/static/[^"?]+)', home)
     if not match:
