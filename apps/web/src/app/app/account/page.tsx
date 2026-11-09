@@ -48,7 +48,7 @@ export default function AccountPage() {
             <div>
               <p className="text-[18px] font-medium">{me ? me.displayName : preview ? "Preview" : "Not signed in"}</p>
               <p className="text-[14px] text-muted">
-                {me?.method === "open" ? "This core does not enforce sign-in." : me ? me.email : preview ? "Sample data, no account." : ""}
+                {me?.method === "open" ? "Sign-in is not required here." : me ? me.email : preview ? "Sample data, no account." : ""}
               </p>
             </div>
           </div>

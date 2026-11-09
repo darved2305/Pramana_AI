@@ -1,6 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
 import { answerTruthfully, openParticipant, PEOPLE } from "./helpers";
 
+type WorkspaceInvestigation = {
+  status: string;
+  questions_asked: number;
+  site_model_id: string;
+  participants: { id: string; display_name: string }[];
+  pending_question: { text: string; action: { participant_id: string; probe_id: string } } | null;
+  pending_questions?: { text: string; action: { participant_id: string; probe_id: string } }[];
+};
+
+function finished(status: string) {
+  return ["decided", "abstained", "verified", "not_verified", "closed"].includes(status);
+}
+
 /** A brand-new person: mock Google sign-in, then a workspace of their own. */
 async function newWorkspace(page: Page, who: string) {
   await page.goto("/api/core/v1/auth/google/start?next=/app/account");
@@ -56,6 +69,13 @@ test("a new workspace describes its own site, checks it and publishes it", async
     page.getByLabel("Import equipment from CSV").setInputFiles({ name: "assets.csv", mimeType: "text/csv", buffer: Buffer.from(body) });
   await upload("name,type,location\nBooster,not_a_type,Plant room\n");
   await expect(page.getByText('Row 2: unknown equipment type "not_a_type".')).toBeVisible();
+  await page.getByLabel("Import equipment from CSV").setInputFiles({
+    name: "huge-assets.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.alloc(5 * 1024 * 1024 + 1, 0x61),
+  });
+  await expect(page.getByRole("alert", { name: "Import result" })).toContainText("Choose a CSV file no larger than 5 MB.");
+  await expect(page.getByRole("textbox", { name: "Equipment name" }).first()).toHaveValue("main power");
   await upload("name,type,location,floor,depends_on\nBooster unit,pump,Plant room,1,main power\n");
   await expect(page.getByText("Imported: 1 added, 0 updated, 1 new places.", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Save draft" }).click();
@@ -80,6 +100,7 @@ test("a new workspace describes its own site, checks it and publishes it", async
   await expect(page.getByText("Ravi", { exact: true })).toBeVisible();
   await expect(page.getByText("Plumber")).toBeVisible();
   await expect(page.getByText(/Can make \d+ checks? at this site\./)).toBeVisible();
+  await expect(page.getByText(/No track record yet: it builds up from investigations whose cause was revealed or confirmed\./)).toBeVisible();
 
   // Home now reflects the published site, the added person and the open draft.
   await page.goto(base);
@@ -102,11 +123,19 @@ test("a new workspace describes its own site, checks it and publishes it", async
 
   // A participant link from the workspace works on its own, with no staff session.
   const invId = page.url().split("/").pop() as string;
-  const state = await (await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/investigations/${invId}`)).json();
+  const readState = async () => {
+    const response = await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/investigations/${invId}`);
+    expect(response.status()).toBe(200);
+    return (await response.json()) as WorkspaceInvestigation;
+  };
+  const state = await readState();
   const q = state.pending_question;
+  if (!q) throw new Error("The investigation should have a pending question.");
   const model = await (await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/sites/${ws.live_site.id}/models/${state.site_model_id}`)).json();
-  const probeLabel = model.spec.probes.find((p: { id: string }) => p.id === q.action.probe_id).label as string;
-  const who = state.participants.find((p: { id: string }) => p.id === q.action.participant_id).display_name as string;
+  const probeLabel = model.spec.probes.find((p: { id: string }) => p.id === q.action.probe_id)?.label as string | undefined;
+  const participant = state.participants.find((p: { id: string }) => p.id === q.action.participant_id);
+  if (!probeLabel || !participant) throw new Error("The pending question should match its model and person.");
+  const who = participant.display_name;
   await page.getByRole("button", { name: "Participant links" }).first().click();
   const row = page.getByRole("dialog", { name: "Participant links" }).getByRole("listitem").filter({ hasText: who });
   await row.getByRole("button", { name: "Create link" }).click();
@@ -114,8 +143,44 @@ test("a new workspace describes its own site, checks it and publishes it", async
   await page.keyboard.press("Escape");
   const phone = await openParticipant(browser, joinUrl);
   await answerTruthfully(phone, q.text, probeLabel, false);
-  await expect.poll(async () => (await (await page.request.get(`/api/core/v1/orgs/${ws.organization.slug}/investigations/${invId}`)).json()).questions_asked).toBeGreaterThan(state.questions_asked);
+
+  let current = await readState();
+  await expect.poll(async () => {
+    current = await readState();
+    return current.questions_asked > state.questions_asked || finished(current.status);
+  }).toBe(true);
+  for (let answered = 1; answered < 20 && !finished(current.status); answered++) {
+    const question = current.pending_question ?? current.pending_questions?.[0] ?? null;
+    if (!question) {
+      await expect.poll(async () => {
+        current = await readState();
+        return finished(current.status) || Boolean(current.pending_question) || Boolean(current.pending_questions?.length);
+      }).toBe(true);
+      continue;
+    }
+    const label = model.spec.probes.find((p: { id: string }) => p.id === question.action.probe_id)?.label as string | undefined;
+    if (!label) throw new Error("The model should include the pending question's check.");
+    const before = current.questions_asked;
+    await answerTruthfully(phone, question.text, label, false);
+    await expect.poll(async () => {
+      current = await readState();
+      return current.questions_asked > before || finished(current.status);
+    }).toBe(true);
+  }
+  expect(finished(current.status), "the practice investigation should reach a finished state").toBe(true);
+  if (current.status !== "closed") {
+    await expect(page.getByRole("button", { name: "Reveal ground truth" })).toBeVisible();
+    await page.getByRole("button", { name: "Reveal ground truth" }).click();
+    const reveal = page.getByRole("dialog", { name: "Reveal the ground truth?" });
+    await reveal.getByRole("button", { name: "Reveal", exact: true }).click();
+  }
+  await expect.poll(async () => (current = await readState()).status).toBe("closed");
   await phone.context().close();
+
+  // The revealed answer now appears on the same person's track record in the People page.
+  await page.goto(`${base}/people?site=${ws.live_site.id}`);
+  const ravi = page.getByRole("listitem").filter({ hasText: "Ravi" });
+  await expect(ravi.getByText(/\d+% of \d+ answers? matched the cause found later/)).toBeVisible();
 
   await page.goto(`${base}/investigations`);
   await expect(page.getByText("No water on the second floor since morning")).toBeVisible();

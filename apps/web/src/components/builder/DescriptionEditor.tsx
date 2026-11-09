@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { clsx } from "clsx";
 import { Button, Input, Select, Tabs, Textarea } from "@/components/ui";
 import { IconPlus, IconTrash } from "@/components/ui/icons";
@@ -26,6 +26,7 @@ type Tab = "places" | "roles" | "equipment" | "noticed";
 
 const cell = "px-2 py-2 align-top";
 const head = "px-2 pb-2 text-left text-[12px] font-medium uppercase tracking-[0.06em] text-muted";
+const MAX_CSV_BYTES = 5 * 1024 * 1024;
 
 /** Edits a site description in place. Every change goes through ``onChange``; nothing saves here. */
 export function DescriptionEditor({
@@ -42,7 +43,7 @@ export function DescriptionEditor({
   const [tab, setTab] = useState<Tab>("equipment");
   const set = (patch: Partial<SiteDescription>) => onChange({ ...value, ...patch });
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-[240px] flex-1 flex-col gap-1.5 text-[13px] text-fg-2">
           Site name
@@ -60,7 +61,7 @@ export function DescriptionEditor({
           { value: "noticed", label: "Where problems are noticed", count: value.service_points.length },
         ]}
       />
-      <fieldset disabled={readOnly} className="min-w-0">
+      <fieldset disabled={readOnly} className="w-full min-w-0">
         {tab === "places" ? <Places value={value} set={set} /> : null}
         {tab === "roles" ? <Roles value={value} set={set} /> : null}
         {tab === "equipment" ? <Equipment value={value} set={set} library={equipment} /> : null}
@@ -79,9 +80,9 @@ function replaceAt<T>(list: T[], i: number, item: T): T[] {
 function Places({ value, set }: { value: SiteDescription; set: Setter }) {
   const update = (i: number, p: PlaceSpec) => set({ places: replaceAt(value.places, i, p) });
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <p className="text-[13px] text-muted">Every place someone could be asked to look. Restricted places list the roles that may enter.</p>
-      <div className="overflow-x-auto">
+      <div className="relative w-full min-w-0 max-w-full overflow-x-auto">
         <table className="w-full min-w-[720px] text-[14px]">
           <thead>
             <tr>
@@ -161,7 +162,7 @@ function RoleToggle({ on, label, onClick }: { on: boolean; label: string; onClic
 function Roles({ value, set }: { value: SiteDescription; set: Setter }) {
   const update = (i: number, r: RoleSpec) => set({ roles: replaceAt(value.roles, i, r) });
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <p className="text-[13px] text-muted">The kinds of people at this site. Skill decides which checks Pramana may ask of them and how much it trusts the answer.</p>
       <ul className="flex flex-col gap-2">
         {value.roles.map((r, i) => (
@@ -191,13 +192,13 @@ function Equipment({ value, set, library }: { value: SiteDescription; set: Sette
   const update = (i: number, e: EquipmentSpec) => set({ equipment: replaceAt(value.equipment, i, e) });
   const byType = new Map(library.map((t) => [t.id, t]));
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <p className="text-[13px] text-muted">
-        What can break, and what each thing depends on. Write dependencies as ids separated by commas; use{" "}
-        <code className="font-mono">A | B</code> when either one is enough (a backup pump).
+        Add the short IDs of things each item needs to work, separated by commas. Use{" "}
+        <code className="font-mono">A | B</code> when either one can do the job, such as a backup pump.
       </p>
       <CsvImport value={value} set={set} library={library} />
-      <div className="overflow-x-auto">
+      <div className="relative w-full min-w-0 max-w-full overflow-x-auto">
         <table className="w-full min-w-[860px] text-[14px]">
           <thead>
             <tr>
@@ -275,8 +276,13 @@ function Equipment({ value, set, library }: { value: SiteDescription; set: Sette
 
 function CsvImport({ value, set, library }: { value: SiteDescription; set: Setter; library: EquipmentType[] }) {
   const [result, setResult] = useState<{ ok: boolean; lines: string[] } | null>(null);
+  const input = useRef<HTMLInputElement>(null);
   const read = async (file: File | undefined) => {
     if (!file) return;
+    if (file.size > MAX_CSV_BYTES) {
+      setResult({ ok: false, lines: ["This file is too large to import. Choose a CSV file no larger than 5 MB."] });
+      return;
+    }
     const r = importEquipment(value, await file.text(), library);
     if (!r.description) {
       setResult({ ok: false, lines: r.errors });
@@ -291,24 +297,27 @@ function CsvImport({ value, set, library }: { value: SiteDescription; set: Sette
   return (
     <div className="flex flex-col gap-2 rounded-[12px] bg-white/[.02] p-3 text-[13px] text-fg-2">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2">
+        <Button size="sm" onClick={() => input.current?.click()}>
           Import a spreadsheet (CSV)
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            aria-label="Import equipment from CSV"
-            onChange={(e) => {
-              void read(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </label>
+        </Button>
+        <input
+          ref={input}
+          type="file"
+          accept=".csv,text/csv"
+          className="sr-only"
+          tabIndex={-1}
+          aria-label="Import equipment from CSV"
+          onChange={(e) => {
+            void read(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
         <a className="underline" download="equipment.csv" href={`data:text/csv;charset=utf-8,${encodeURIComponent(csvSample(library))}`}>
           Download a sample
         </a>
       </div>
       {result ? (
-        <ul aria-label="Import result" className={result.ok ? "text-fg" : "text-[var(--app-bad,#f87171)]"}>
+        <ul role={result.ok ? "status" : "alert"} aria-label="Import result" className={result.ok ? "text-fg" : "text-[var(--app-bad,#f87171)]"}>
           {result.lines.map((l) => (
             <li key={l}>{l}</li>
           ))}

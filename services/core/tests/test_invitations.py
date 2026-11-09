@@ -70,7 +70,8 @@ def test_the_link_works_only_for_the_invited_address(account_core: TestClient) -
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "INVITATION_EMAIL_MISMATCH"
     message = r.json()["error"]["message"]
-    assert "so****" in message  # masked, so the invited address is not disclosed
+    assert "s•••@example.com" in message
+    assert "so****" not in message
     assert "someone.else" not in message
 
 

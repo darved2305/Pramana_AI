@@ -30,9 +30,6 @@ import { useAccount } from "@/lib/data/account";
 import { findMembership } from "@/lib/org/context";
 import type { OrganizationSummary } from "@/lib/api/types";
 
-/** The core the web app's proxy forwards to (from PRAMANA_CORE_URL at build or dev start). */
-const CORE_ADDRESS = process.env.NEXT_PUBLIC_CORE_ADDRESS ?? "the core";
-
 const NAV = [
   { href: "/app", label: "Overview", icon: IconGrid, exact: true },
   { href: "/app/investigations", label: "Investigations", icon: IconHistory },
@@ -347,7 +344,7 @@ function ConnectionCard({ collapsed }: { collapsed: boolean }) {
   const preview = usePreviewMode();
   const tone =
     health === "online" ? "bg-ok" : health === "offline" ? "bg-bad" : "bg-muted";
-  const label = health === "online" ? "Core connected" : health === "offline" ? "Core offline" : "Checking core";
+  const label = health === "online" ? "Connected" : health === "offline" ? "Offline" : "Connecting";
   if (collapsed)
     return (
       <div className="mx-auto grid h-10 w-10 place-items-center rounded-[12px] bg-white/[.04]" title={label}>
@@ -360,13 +357,11 @@ function ConnectionCard({ collapsed }: { collapsed: boolean }) {
         <span className={clsx("h-2 w-2 rounded-full", tone, health === "checking" && "pulse-dot")} aria-hidden />
         {label}
       </div>
-      <p className="mt-0.5 text-[12px] text-muted">
-        {preview
-          ? "Preview mode shows sample data"
-          : health === "offline"
-            ? `No core at ${CORE_ADDRESS}. Start it with scripts/dev.py`
-            : `${CORE_ADDRESS} via proxy`}
-      </p>
+      {preview || health === "offline" ? (
+        <p className="mt-0.5 text-[12px] text-muted">
+          {preview ? "Preview mode shows sample data" : "Pramana cannot be reached. Check your internet connection; it keeps trying."}
+        </p>
+      ) : null}
     </div>
   );
 }

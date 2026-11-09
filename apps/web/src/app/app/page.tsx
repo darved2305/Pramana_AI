@@ -38,6 +38,7 @@ export default function OverviewPage() {
   const people = directory.data ?? [];
   const all = useInvestigationList(ALL);
   const running = useInvestigationList(RUNNING);
+  const total = all.data?.total ?? 0;
   const hasInvestigations = (all.data?.items.length ?? 0) > 0 || Boolean(all.data?.next_cursor);
   const active = (running.data?.items ?? []).map((r) => ({
     id: r.id,
@@ -144,7 +145,15 @@ export default function OverviewPage() {
           href="/app/investigations"
           icon={<IconHistory />}
           title="Investigations"
-          body={all.status === "error" ? "List unavailable" : hasInvestigations ? "Search and filter past work" : "None yet"}
+          body={
+            all.status === "error"
+              ? "List unavailable"
+              : hasInvestigations
+                ? total
+                  ? `${total} so far`
+                  : "Search and filter past work"
+                : "None yet"
+          }
         />
         <QuickCard
           href="/app/participants"

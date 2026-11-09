@@ -1423,7 +1423,7 @@ consent and quiet hours because they do not contact people.
 | 0 | **Landing page:** "Watch Pramana find a hidden fault" plays a recorded, labelled sandbox replay without sign-in. The call to action is "Run it yourself" | Gradual engagement (Duolingo): show value before asking for anything. Running live costs voice credits, so it needs an account |
 | 1 | **Sign in:** "Continue with Google" is primary; "Use email instead" is secondary. "Pramana uses your name and email only." | One click; no password to invent |
 | 2 | **Three questions** (§7.3), at most 30 seconds, skippable | Each answer changes the next screens (Notion, ElevenLabs, survey guidance) |
-| 3 | **"Setting up your workspace":** creates the organization (named from Google's `hd` or their name, editable), a sandbox site ("Sample hostel, simulated") and a draft live site of the chosen kind | Sarvam creates the organization and workspace automatically. Nobody starts on an empty screen |
+| 3 | **"Setting up your workspace":** creates the organization (named from Google's `hd` or their name, editable), a sandbox site ("Practice site, simulated") and a draft live site of the chosen kind | Sarvam creates the organization and workspace automatically. Nobody starts on an empty screen |
 | 4 | **Guided sandbox investigation** (§7.6): they play the reporter on screen or on their phone via QR, while simulated colleagues answer the other questions | The aha moment, using the demo that already exists |
 | 5 | **"Now your building":** a template for their building kind, plus a few questions (floors, rooms per floor, where the network closets and power panels are, how many Wi-Fi access points, network names). This produces a draft model, which the health check then scores (§8.6) | The value of Pramana depends on the model, so make it easy |
 | 6 | **"Who can help":** invite staff by email (operator, approver); add the people to ask (guards, electricians, housekeeping, residents) by form or CSV; send consent requests in their language | Team activation; separation of duties needs a second person |
@@ -1518,7 +1518,7 @@ The home screen is a list of modules, ordered for each person by explicit, expla
 
 The simulator, the sealed fault, the reveal and the replay already exist and are tested. As a product feature [R]:
 
-- Every new organization gets a sandbox site, "Sample hostel (simulated)", built from `campus_block_c`. It stays labelled as simulated on every screen, as the README insists today.
+- Every new organization gets a sandbox site, "Practice site (simulated)", built from a neutral practice template. It stays labelled as simulated on every screen, as the README insists today.
 - **Guided run.** A split screen shows the console on the left and a phone frame on the right. The person plays the reporter by typing or speaking. Bots answer as the other simulated colleagues, clearly labelled "simulated person" (the voice bots already exist). The person can also open any participant's link on their own phone via QR.
 - **Approval.** Their own repair request cannot be approved by them, and the sandbox shows why: "In a live site, a second person approves. Here a simulated approver plays that part." This teaches separation of duties instead of hiding it.
 - **Reveal.** After the reveal, a four-line "What just happened" explains why it asked the guard about the CCTV, why it stopped, how the approval worked, and how it checked the fix.

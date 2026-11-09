@@ -118,6 +118,28 @@ def test_editing_needs_the_version_being_edited(account_core: TestClient) -> Non
     assert saved.headers["etag"] != etag
 
 
+def test_empty_lists_say_what_to_add(account_core: TestClient) -> None:
+    client = account_core
+    workspace = create(client).json()
+    description = {
+        "id": "empty_site",
+        "title": "Empty site",
+        "roles": [],
+        "places": [],
+        "equipment": [],
+        "service_points": [],
+    }
+    response = client.post(draft_path(workspace), json={"description": description}, headers=key())
+    assert response.status_code == 422, response.text
+    problems = response.json()["error"]["details"]["problems"]
+    assert problems == [
+        "Add at least one role.",
+        "Add at least one place.",
+        "Add at least one piece of equipment.",
+        "Add at least one place where problems are noticed.",
+    ]
+
+
 def test_problems_come_back_readable(account_core: TestClient) -> None:
     client = account_core
     workspace = create(client).json()

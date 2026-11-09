@@ -19,6 +19,7 @@ export default function InvitePage() {
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const key = useRef(actionKey("accept"));
   const here = `/invite/${token}`;
+  const unavailable = ["INVITATION_EXPIRED", "INVITATION_NOT_FOUND", "INVITATION_REVOKED", "INVITATION_USED"].includes(error?.code ?? "");
   // Whoever is signed in now (possibly after switching accounts) decides what is shown.
   useEffect(() => {
     void refreshAccount();
@@ -62,8 +63,8 @@ export default function InvitePage() {
               <p role="alert" className="rounded-[14px] border-[0.8px] border-[#ff6b5e]/60 px-4 py-3 text-[15px] text-[#ff8a7f]">{error.message}</p>
             ) : null}
             <div className="flex flex-wrap gap-3">
-              <button type="button" className="btn-cream disabled:opacity-50" disabled={busy} onClick={accept}>
-                {busy ? "Joining..." : "Accept invitation"}
+              <button type="button" className="btn-cream disabled:opacity-50" disabled={busy || unavailable} onClick={accept}>
+                {busy ? "Joining..." : unavailable ? "Invitation unavailable" : "Accept invitation"}
               </button>
               {error?.code === "INVITATION_EMAIL_MISMATCH" ? (
                 <button

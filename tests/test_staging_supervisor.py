@@ -90,6 +90,7 @@ def test_emulated_gnani_environment_does_not_forward_configured_credentials() ->
             "GNANI_BASE_URL": "https://api.vachana.ai",
         },
         "https://pramana-staging.account.workers.dev",
+        inherited={},
         fake_gnani=True,
     )
 

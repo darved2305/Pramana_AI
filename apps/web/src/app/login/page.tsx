@@ -239,7 +239,7 @@ function LoginInner() {
               </div>
             ) : null}
 
-            <button type="submit" disabled={busy !== null} className="btn-line lg mt-2 w-full bg-cream !text-ink hover:bg-cream/90 disabled:opacity-60">
+            <button type="submit" disabled={busy !== null} className="btn-line lg mt-2 w-full !bg-cream !text-ink hover:!bg-cream/90 disabled:opacity-60">
               {busy === "password" ? <Spin /> : null}
               Log in
             </button>

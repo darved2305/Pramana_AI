@@ -158,11 +158,11 @@ export default function SitePage() {
       </Link>
       <PageHeader
         eyebrow={<Badge tone={live ? "accent" : "info"}>{live ? "Your site" : "Practice site"}</Badge>}
-        title={desc?.title || s.name}
+        title={!live ? "Practice site (simulated)" : desc?.title || s.name}
         subtitle={
           live
             ? "Describe what is here and what depends on what. Pramana works out what can go wrong, who can check it and how to tell causes apart."
-            : "A simulated hostel block. Use it to see an investigation end to end before modelling your own site."
+            : "A simulated site. Use it to see an investigation end to end before modelling your own site."
         }
         actions={
           <>
@@ -195,8 +195,8 @@ export default function SitePage() {
           <CardHeader title="This site cannot be edited" subtitle="It is the same for every workspace, so practice runs can be compared. Build your own site from a template instead." />
         </Card>
       ) : current && desc ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
-          <Card className="flex flex-col gap-4 p-5">
+        <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_400px]">
+          <Card className="flex min-w-0 flex-col gap-4 p-5">
             <CardHeader
               title={`Draft, version ${current.draft.version}`}
               subtitle={`${current.draft.counts.places} places · ${current.draft.counts.equipment} pieces of equipment · ${current.draft.counts.checks} checks people can make · ${current.draft.counts.decisions} possible decisions`}
@@ -233,7 +233,7 @@ export default function SitePage() {
             ) : null}
           </Card>
 
-          <Card className="flex h-fit flex-col gap-4 p-5 xl:sticky xl:top-4">
+          <Card className="flex h-fit flex-col gap-4 p-5 2xl:sticky 2xl:top-4">
             <CardHeader
               title="Health check"
               subtitle="Before publishing, Pramana simulates every fault with your people answering, some of them wrongly, and checks it can still find the cause."
@@ -295,7 +295,7 @@ export default function SitePage() {
                     className="flex h-full w-full flex-col gap-2 rounded-[12px] p-4 text-left shadow-[inset_0_0_0_0.8px_var(--app-line)] transition-colors hover:bg-white/[.04] disabled:opacity-50"
                   >
                     <span className="text-[14px] font-medium text-fg">Start from scratch</span>
-                    <span className="text-[13px] leading-snug text-muted">An empty site with one place and two roles.</span>
+                    <span className="text-[13px] leading-snug text-muted">One place, two roles and its mains power. Rename and add to it.</span>
                   </button>
                 </li>
               </ul>

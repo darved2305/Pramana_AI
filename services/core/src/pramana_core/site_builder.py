@@ -46,12 +46,24 @@ def _org() -> Any:
     return org
 
 
+_EMPTY_LIST: dict[tuple[int | str, ...], str] = {
+    ("roles",): "Add at least one role.",
+    ("places",): "Add at least one place.",
+    ("equipment",): "Add at least one piece of equipment.",
+    ("service_points",): "Add at least one place where problems are noticed.",
+}
+
+
 def description_errors(exc: ValidationError) -> list[str]:
     """Readable problems, one per line, from the builder's or the model's validators."""
     out: list[str] = []
     for err in exc.errors():
         msg = str(err.get("msg", ""))
-        if "invalid site description:" in msg or "invalid domain pack:" in msg:
+        loc = tuple(err.get("loc", ()))
+        empty = _EMPTY_LIST.get(loc) if err.get("type") == "too_short" else None
+        if empty:
+            out.append(empty)
+        elif "invalid site description:" in msg or "invalid domain pack:" in msg:
             out.extend(line.strip(" -") for line in msg.splitlines()[1:] if line.strip())
         else:
             where = ".".join(str(p) for p in err.get("loc", ()))

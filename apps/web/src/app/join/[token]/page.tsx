@@ -437,7 +437,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
             <button type="button" onClick={declineCall} className="btn-line lg w-full">
               Not now
             </button>
-            <button type="button" onClick={acceptCall} className="btn-line lg w-full bg-cream !text-ink">
+            <button type="button" onClick={acceptCall} className="btn-line lg w-full !bg-cream !text-ink">
               Accept
             </button>
           </div>
@@ -460,7 +460,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
             <button type="button" onClick={() => giveConsent("later")} className="btn-line w-full">
               Later
             </button>
-            <button type="button" onClick={() => giveConsent("yes")} className="btn-line w-full bg-cream !text-ink">
+            <button type="button" onClick={() => giveConsent("yes")} className="btn-line w-full !bg-cream !text-ink">
               Yes
             </button>
           </div>
@@ -485,7 +485,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
               <p className="text-[15px]">First, please go to the place in the question.</p>
               <button
                 type="button"
-                className="btn-line lg mt-4 w-full bg-cream !text-ink"
+                className="btn-line lg mt-4 w-full !bg-cream !text-ink"
                 onClick={async () => {
                   setMsg(null);
                   try {
@@ -628,7 +628,7 @@ function Repair({
       {!cap ? (
         <button
           type="button"
-          className="btn-line lg mt-6 w-full bg-cream !text-ink"
+          className="btn-line lg mt-6 w-full !bg-cream !text-ink"
           disabled={busy || preview}
           onClick={async () => {
             setBusy(true);
@@ -651,7 +651,7 @@ function Repair({
           {cap.location_id && !there ? (
             <button
               type="button"
-              className="btn-line lg mt-4 w-full bg-cream !text-ink"
+              className="btn-line lg mt-4 w-full !bg-cream !text-ink"
               disabled={busy}
               onClick={async () => {
                 setBusy(true);

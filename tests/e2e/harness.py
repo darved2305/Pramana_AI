@@ -44,9 +44,18 @@ CORE_PORT = int(os.environ.get("PRAMANA_E2E_CORE_PORT", "8030"))
 SIM_PORT = int(os.environ.get("PRAMANA_E2E_SIM_PORT", "8130"))
 
 
+def require_e2e_database_url(url: str | None) -> str:
+    if not url:
+        raise ValueError(
+            "PRAMANA_E2E_DATABASE_URL is not set. Point it at this checkout's "
+            "isolated E2E database."
+        )
+    return url
+
+
 def e2e_database_url() -> str:
     """The e2e database URL. Refused when unset or when its database is not allowlisted."""
-    return setting_database_url("PRAMANA_E2E_DATABASE_URL")
+    return require_e2e_database_url(setting_database_url("PRAMANA_E2E_DATABASE_URL"))
 
 
 @contextmanager

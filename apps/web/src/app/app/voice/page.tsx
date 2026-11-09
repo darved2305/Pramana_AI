@@ -42,7 +42,7 @@ export default function VoicePage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title="Voice" subtitle="The speech service the core is using and today's spend, refreshed every 5 seconds." />
+      <PageHeader title="Voice" subtitle="The speech service Pramana is using and today's spend, refreshed every 5 seconds." />
       {error && !status ? (
         <Card>
           <ErrorState error={error} />
@@ -64,7 +64,7 @@ function ProviderCard({ status }: { status: VoiceStatus }) {
   const live = status.provider === "gnani";
   return (
     <Card className="p-5" aria-label="Provider">
-      <CardHeader title="Provider" subtitle="Which speech service the core actually calls." />
+      <CardHeader title="Provider" subtitle="Which speech service Pramana actually calls." />
         <dl className="mt-3 divide-y divide-line">
           <KeyValue
             k="Service"
