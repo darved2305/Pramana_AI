@@ -125,6 +125,12 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("consent_links")
     op.drop_index("consents_one_active", table_name="consents")
+    # The previous schema has no refusal state and permits only one unwithdrawn
+    # record per purpose. Preserve refusals as inactive history on rollback.
+    op.execute(
+        "update consents set withdrawn_at = granted_at "
+        "where decision = 'refused' and withdrawn_at is null"
+    )
     op.create_index(
         "consents_one_active",
         "consents",
