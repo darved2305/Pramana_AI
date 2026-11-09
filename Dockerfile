@@ -31,6 +31,7 @@ COPY packs /app/packs
 COPY services/core/alembic.ini /app/services/core/alembic.ini
 COPY services/core/alembic /app/services/core/alembic
 COPY docker/entrypoint.sh /usr/local/bin/pramana-entrypoint
+RUN chmod 0755 /usr/local/bin/pramana-entrypoint && test -x /usr/local/bin/pramana-entrypoint
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=utf-8 \

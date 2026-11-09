@@ -18,6 +18,20 @@ SPEC.loader.exec_module(deploy)
 assert isinstance(deploy, ModuleType)
 
 
+def test_runtime_image_makes_the_entrypoint_executable() -> None:
+    dockerfile = deploy.ROOT / "Dockerfile"
+    lines = dockerfile.read_text(encoding="utf-8").splitlines()
+    copy_entrypoint = lines.index("COPY docker/entrypoint.sh /usr/local/bin/pramana-entrypoint")
+    chmod_line = (
+        "RUN chmod 0755 /usr/local/bin/pramana-entrypoint && "
+        "test -x /usr/local/bin/pramana-entrypoint"
+    )
+    chmod_entrypoint = lines.index(chmod_line)
+    create_runtime_user = lines.index("USER pramana")
+
+    assert copy_entrypoint < chmod_entrypoint < create_runtime_user
+
+
 def test_dry_run_uses_synthetic_values_and_never_reads_env_or_network(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
