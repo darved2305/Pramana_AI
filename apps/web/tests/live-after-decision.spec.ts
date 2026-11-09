@@ -21,7 +21,7 @@ test("the console keeps following an investigation after it is decided", async (
   );
   await page.goto("/app/investigations/inv_after1");
   await expect(page.getByText("Decided", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expect(page.getByText("Live updates", { exact: true })).toBeVisible();
   // Someone else approves and the repair is verified: the page must show it without a reload.
   current = { ...current, status: "verified" };
   seq = 11;
@@ -30,5 +30,5 @@ test("the console keeps following an investigation after it is decided", async (
   current = { ...current, status: "closed" };
   seq = 12;
   await expect(page.getByText("Closed", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("Not polling: investigation closed")).toBeVisible();
+  await expect(page.getByText("Updates stopped: investigation closed", { exact: true })).toBeVisible();
 });

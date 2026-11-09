@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import threading
 import uuid
 from collections.abc import Iterator
@@ -29,6 +30,8 @@ from pramana_core.errors import ApiError
 from pramana_core.idempotency import IdempotencyRoute, idempotent, reap_expired
 from pramana_core.main import create_app
 from pramana_core.org_access import require_user
+from pramana_domain.spec_storage import load_spec
+from pramana_engine import compile_pack
 
 pytestmark = pytest.mark.db
 KEY = "workspace-create-001"
@@ -140,16 +143,17 @@ def test_or_09_create_org_once_after_lost_response(
     assert client.get(f"/v1/orgs/{org['slug']}").json() == org
 
 
-def test_stored_sandbox_is_identical_to_frozen_template(
+def test_stored_sandbox_is_identical_to_latest_frozen_template(
     account_core: TestClient, migrated_db: str
 ) -> None:
     data = create(account_core).json()
+    assert data["sandbox_site"]["kind"] == "other"
     model_id = ids.decode("model", data["sandbox_site"]["current_model_id"])
     rows = sql(
         migrated_db,
         "select m.spec, m.spec_sha256, t.spec as template, "
         "t.spec_sha256 as template_hash from site_models m cross join model_templates t "
-        "where m.id = :id and t.purpose = 'sandbox'",
+        "where m.id = :id and t.purpose = 'sandbox' order by t.version desc limit 1",
         {"id": model_id},
     )
     assert rows[0]["spec"] == rows[0]["template"]
@@ -159,6 +163,74 @@ def test_stored_sandbox_is_identical_to_frozen_template(
         ).encode()
     ).digest()
     assert digest == rows[0]["spec_sha256"] == rows[0]["template_hash"]
+
+    templates = sql(
+        migrated_db,
+        "select version, spec, spec_sha256 from model_templates "
+        "where purpose = 'sandbox' order by version",
+    )
+    assert [row["version"] for row in templates] == [1, 2]
+    frozen_v1_digest = hashlib.sha256(
+        json.dumps(
+            templates[0]["spec"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).digest()
+    assert bytes(templates[0]["spec_sha256"]).hex() == (
+        "9435216bfb330b2da94db1166a9e4147613536e224897cbc5b8f1b2485a75837"
+    )
+    assert frozen_v1_digest == templates[0]["spec_sha256"]
+    assert templates[0]["spec"]["title"] == "Hostel Block C (simulated)"
+
+    spec = templates[1]["spec"]
+    compile_pack(load_spec(spec))
+    copy = [spec["title"]]
+    copy.extend(role["label"] for role in spec["roles"])
+    copy.extend(location["label"]["en"] for location in spec["locations"])
+    copy.extend(component["label"] for component in spec["components"])
+    copy.extend(
+        failure["label"]
+        for component in spec["components"]
+        for failure in component["failure_modes"]
+    )
+    copy.extend(probe["label"] for probe in spec["probes"])
+    copy.extend(text for probe in spec["probes"] for text in probe["templates"].values())
+    copy.extend(decision["label"] for decision in spec["decision_classes"])
+    assert all(
+        "{place}" not in template
+        for probe in spec["probes"]
+        for template in probe["templates"].values()
+    )
+    shown = " ".join(copy).casefold()
+    for site_specific_term in (
+        "hostel",
+        "guard desk",
+        "student",
+        "nava-wifi",
+        "wifi",
+        "wi-fi",
+        "वाई-फ़ाई",
+        "वाय-फाय",
+        "ip test page",
+        "bookmark",
+        "ont",
+        "pon",
+        "idf-",
+        "db-c2",
+        "isp",
+        "dhcp",
+        "dns",
+        "cctv",
+        "nvr",
+        "poe",
+        "hvac",
+        "access point",
+        "rack",
+        "main-1",
+        "c2-5",
+        "c2-7",
+        "gateway",
+    ):
+        assert re.search(rf"\b{re.escape(site_specific_term)}\b", shown) is None
 
 
 @pytest.mark.parametrize(

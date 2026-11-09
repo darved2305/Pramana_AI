@@ -207,7 +207,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink text-cream">
-      <header className="flex items-center justify-between px-6 py-6 sm:px-[50px]">
+      <header className="flex items-center justify-between gap-4 px-6 py-6 sm:px-[50px]">
         <Wordmark />
         {workspace ? (
           <button type="button" className="btn-line" disabled={busy} onClick={async () => {
@@ -263,7 +263,7 @@ export default function OnboardingPage() {
             <Primary busy={busy} onClick={() => go("org")}>Create a workspace</Primary>
           </Step>
         ) : step === "sandbox" ? (
-          <Step title="See one investigation from start to finish" lead="A simulated hostel has a hidden fault. You report the problem, Pramana asks simulated colleagues what they see, and at the end the hidden fault is revealed so you can check its reasoning. Nothing real is touched.">
+          <Step title="See one investigation from start to finish" lead="A simulated site has a hidden fault. You report the problem, Pramana asks simulated colleagues what they see, and at the end the hidden fault is revealed so you can check its reasoning. Nothing real is touched.">
             <div className="flex flex-wrap gap-3">
               <Link href={`/app/${workspace.slug}/investigations/new?practice=1`} className="btn-cream">Start a practice investigation</Link>
               <Secondary busy={busy} onClick={() => go("site")}>Skip, I will try it later</Secondary>
@@ -272,7 +272,7 @@ export default function OnboardingPage() {
         ) : step === "site" ? (
           <SiteStep slug={workspace.slug} problem={state.answers.problem as Problem | null | undefined} busy={busy} onNext={() => go("people")} />
         ) : step === "people" ? (
-          <Step title="Who can help when something breaks?" lead="Add the guards, technicians and everyday users who could look at something. Pramana only asks people what their role and access allow, and judges your model with them.">
+          <Step title="Who can help when something breaks?" lead="Add facilities staff, technicians and the people who are there each day. Pramana only asks people to check things their role allows. Their answers help it check your site description.">
             <div className="flex flex-wrap gap-3">
               <Link href={`/app/${workspace.slug}/people`} className="btn-cream">Add people</Link>
               <Secondary busy={busy} onClick={() => go("test_call")}>Continue</Secondary>
@@ -378,12 +378,11 @@ function CreateWorkspace({ answers, existing, onCreated }: { answers: Onboarding
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const key = useRef(actionKey("workspace")); // one key per attempt, so a retry never makes two
-  const kind = KIND.find((k) => k.id === answers.organization_kind)?.label.toLowerCase();
   return (
     <section className="flex flex-col gap-6">
       <h1 className="display-slab text-[clamp(38px,4.4vw,60px)]">Name your workspace</h1>
       <p className="max-w-[62ch] text-[16px] text-cream/70">
-        A workspace holds your sites, people and investigations. You get a practice site and an empty site of your own{kind ? ` for your ${kind}` : ""}.
+        A workspace keeps your sites, people and problem reports together. You get a guided example and a blank site to describe.
         {existing ? ` You already belong to ${existing} workspace${existing === 1 ? "" : "s"}; this adds another.` : ""}
       </p>
       <form className="flex max-w-[460px] flex-col gap-4" onSubmit={async (e) => {
@@ -414,8 +413,8 @@ function SiteStep({ slug, problem, busy, onNext }: { slug: string; problem: Prob
   const suggested = PROBLEM.find((p) => p.id === problem)?.template ?? null;
   return (
     <Step title="Describe your own site" lead={suggested
-      ? "Based on your answers, start from the closest template, then change it to match what is really there. Pramana checks the model before you publish it."
-      : "Pick the closest template, or start from scratch: list your places, the people's roles, the equipment and what depends on what. Pramana checks the model before you publish it."}>
+      ? "Based on your answers, start from the closest template, then change it to match what is really there. Pramana checks your site description before you publish it."
+      : "Pick the closest template, or start from scratch: list your places, the people who work there, the equipment and what each item needs to work. Pramana checks your site description before you publish it."}>
       <div className="flex flex-wrap gap-3">
         <Link href={`/app/${slug}/sites${suggested ? `?template=${suggested}` : ""}`} className="btn-cream">Describe my site</Link>
         <Secondary busy={busy} onClick={onNext}>Continue</Secondary>

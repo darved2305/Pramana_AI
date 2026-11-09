@@ -107,8 +107,26 @@ export function blankDescription(title: string): SiteDescription {
       { id: "technician", skill: "technician", label: "Technician" },
     ],
     places: [{ id: "MAIN_HALL", name: "the main hall", floor: 0 }],
-    equipment: [],
-    service_points: [],
+    // The smallest site the core accepts: something that can fail and a place where people
+    // notice it. The owner renames or replaces both.
+    equipment: [
+      { id: "MAINS", type: "utility_supply", name: "mains power", at: "MAIN_HALL" },
+      { id: "MAIN_BREAKER", type: "breaker", name: "the main breaker", at: "MAIN_HALL", needs: ["MAINS"] },
+    ],
+    service_points: [
+      {
+        id: "lights_on",
+        label: "The lights are on",
+        question: {
+          en: "In {place}, are the lights on?",
+          hi: "{place} में, क्या लाइटें जल रही हैं?",
+          "hi-en": "{place} mein, kya lights jal rahi hain?",
+          mr: "{place} मध्ये दिवे चालू आहेत का?",
+        },
+        outcomes: ["on", "off"],
+        served_by: { MAIN_HALL: "MAIN_BREAKER" },
+      },
+    ],
   };
 }
 

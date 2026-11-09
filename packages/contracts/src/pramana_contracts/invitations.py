@@ -37,6 +37,7 @@ class InvitationView(StrictModel):
     email: str
     roles: list[InvitedRole]
     status: Literal["pending", "accepted", "revoked", "expired"]
+    email_delivery: Literal["sent", "queued", "failed", "unknown"]
     created_at: datetime
     expires_at: datetime
     invited_by: str | None
@@ -46,8 +47,8 @@ class InvitationCreated(StrictModel):
     invitation: InvitationView
     accept_path: str
     """``/invite/<token>``. Shown once: only a hash of the secret is stored."""
-    email_delivery: Literal["sent", "failed", "not_configured"]
-    """Whether the link was emailed. Otherwise the person inviting must share it themselves."""
+    email_delivery: Literal["sent", "queued", "failed"]
+    """Current delivery state. A queued invitation may be sent after this response."""
 
 
 class AcceptInvitation(StrictModel):

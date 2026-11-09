@@ -103,7 +103,7 @@ function CommandCenter({
   const [rechecking, setRechecking] = useState(false);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const contradictions = useMemo(() => findContradictions(s.observations), [s.observations]);
-  // Only an operator may reveal (the core enforces it); approvers do not see the button.
+  // Workspace operators, owners and admins can reveal; approvers do not see the button.
   const me = useCurrentUser();
   const canOverrideQuietHours = !!workspace &&
     (workspace.roles.has("owner") || workspace.roles.has("admin")) &&
@@ -127,10 +127,10 @@ function CommandCenter({
               <PreviewBadge />
             ) : feed.live ? (
               <Badge tone="ok">
-                <span className="h-1.5 w-1.5 rounded-full bg-current pulse-dot" /> Live
+                <span className="h-1.5 w-1.5 rounded-full bg-current pulse-dot" /> Live updates
               </Badge>
             ) : (
-              <Badge>Not polling: investigation closed</Badge>
+              <Badge>Updates stopped: investigation closed</Badge>
             )}
             <span className="text-[13px] text-muted">Opened {relative(s.created_at)}</span>
           </div>
@@ -263,7 +263,7 @@ function CommandCenter({
           </div>
           {selected && pack ? <PlaceDetail id={selected} s={s} pack={pack} onClose={() => setSelected(null)} /> : null}
         </Card>
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <HypothesisPanel state={s} />
           <DecisionBar state={s} />
           <ForecastPanel state={s} />

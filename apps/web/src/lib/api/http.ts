@@ -124,12 +124,17 @@ async function raw(service: Service, path: string, opts: RequestOptions): Promis
 }
 
 /** Human wording for the error codes the API guide documents. */
+/** The core writes short messages in lower case; people read them as sentences. */
+function sentenceCase(message: string): string {
+  return message.charAt(0).toUpperCase() + message.slice(1);
+}
+
 export function describeError(e: unknown): string {
   if (!(e instanceof ApiError)) return e instanceof Error ? e.message : "Something went wrong.";
   switch (e.code) {
     case "NETWORK_UNREACHABLE":
     case "UPSTREAM_DOWN":
-      return "The Pramana core is not reachable. Start it with `uv run python scripts/dev.py` and try again.";
+      return "Pramana cannot be reached right now. Check your internet connection and try again.";
     case "AUTH_REQUIRED":
       return "Please sign in to continue.";
     case "AUTH_INVALID_CREDENTIALS":
@@ -164,6 +169,6 @@ export function describeError(e: unknown): string {
     case "SANDBOX_READ_ONLY":
       return "The practice site is fixed. Build your own site instead.";
     default:
-      return e.message || `Request failed (${e.code}).`;
+      return e.message ? sentenceCase(e.message) : `Request failed (${e.code}).`;
   }
 }

@@ -4,7 +4,7 @@
 import uuid
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Query, Request, Response
 
 from pramana_contracts import (
     CreateDomain,
@@ -128,11 +128,13 @@ async def approve_join_request(
     body: JoinRequestDecision,
     request: Request,
     response: Response,
+    background_tasks: BackgroundTasks,
 ) -> JoinRequestView:
     access = request.state.organization
     result = await _service(request).decide_request(
         access.organization.id, _request_id(request_id), access.principal, body
     )
+    background_tasks.add_task(request.app.state.email_relay.drain)
     response.headers["Cache-Control"] = "private, no-store"
     return result
 
@@ -140,12 +142,17 @@ async def approve_join_request(
 @org_router.post("/join-requests/{request_id}/decline")
 @idempotent("org", roles=MANAGERS, verified=True)
 async def decline_join_request(
-    org: str, request_id: str, request: Request, response: Response
+    org: str,
+    request_id: str,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
 ) -> JoinRequestView:
     access = request.state.organization
     result = await _service(request).decide_request(
         access.organization.id, _request_id(request_id), access.principal, None
     )
+    background_tasks.add_task(request.app.state.email_relay.drain)
     response.headers["Cache-Control"] = "private, no-store"
     return result
 
@@ -153,7 +160,10 @@ async def decline_join_request(
 @user_router.post("/join-requests", status_code=201)
 @idempotent("user", verified=True)
 async def request_to_join(
-    body: RequestJoin, request: Request, response: Response
+    body: RequestJoin,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
 ) -> JoinRequestCreated:
     principal = await require_user(request, verified=True)
     try:
@@ -161,6 +171,7 @@ async def request_to_join(
     except ValueError as exc:
         raise not_found("workspace") from exc
     result = await _service(request).request_join(principal, org_id)
+    background_tasks.add_task(request.app.state.email_relay.drain)
     response.headers["Cache-Control"] = "private, no-store"
     return result
 

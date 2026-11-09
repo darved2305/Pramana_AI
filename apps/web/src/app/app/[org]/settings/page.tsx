@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/app/Avatar";
 import { Badge, Button, Card, CardHeader, ErrorState, Field, Input, KeyValue, Notice, PageHeader, Skeleton } from "@/components/ui";
 import { IconCopy } from "@/components/ui/icons";
@@ -10,7 +10,7 @@ import { ApiError, describeError } from "@/lib/api/http";
 import type {
   CreateDomain,
   CreateInvitation,
-  InvitationCreated,
+  InvitationView,
   JoinRequestDecision,
   JoinRequestView,
   OrganizationDomain,
@@ -37,11 +37,17 @@ export default function WorkspaceSettingsPage() {
   const canManage = ws.roles.has("owner") || ws.roles.has("admin");
   const members = useCursorList(`members|${ws.org.id}`, (cursor, s) => ws.api.members({ limit: 25, cursor }, s));
   const invitations = useCursorList(canManage ? `invitations|${ws.org.id}` : null, (cursor, s) => ws.api.invitations({ limit: 25, cursor }, s));
+  const reloadInvitations = invitations.reload;
   const [email, setEmail] = useState("");
   const [roles, setRoles] = useState<InvitedRole[]>(["operator"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [link, setLink] = useState<{ email: string; url: string; delivery: InvitationCreated["email_delivery"] } | null>(null);
+  const [link, setLink] = useState<{
+    id: string;
+    email: string;
+    url: string;
+    delivery: InvitationView["email_delivery"];
+  } | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [exportAcknowledged, setExportAcknowledged] = useState(false);
@@ -56,13 +62,14 @@ export default function WorkspaceSettingsPage() {
     try {
       const created = await ws.api.invite({ email: email.trim(), roles }, { key: actionKey("invite") });
       setLink({
+        id: created.invitation.id,
         email: created.invitation.email,
         url: `${window.location.origin}${created.accept_path}`,
         delivery: created.email_delivery,
       });
       setCopied(false);
       setEmail("");
-      invitations.reload();
+      reloadInvitations();
     } catch (x) {
       setError(describeError(x));
     } finally {
@@ -87,6 +94,36 @@ export default function WorkspaceSettingsPage() {
       setDeleting(false);
     }
   }
+
+  useEffect(() => {
+    if (!link || link.delivery !== "queued") return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
+    async function refreshDelivery() {
+      try {
+        const page = await ws.api.invitations({ limit: 100 }, controller.signal);
+        const current = page.items.find((row) => row.id === link?.id);
+        if (!active) return;
+        if (current && current.email_delivery !== "queued") {
+          setLink((value) => value?.id === current.id
+            ? { ...value, delivery: current.email_delivery }
+            : value);
+          reloadInvitations();
+          return;
+        }
+      } catch {
+        if (!active) return;
+      }
+      if (active) timer = setTimeout(refreshDelivery, 1000);
+    }
+    timer = setTimeout(refreshDelivery, 700);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [reloadInvitations, link, ws.api]);
 
   return (
     <div className="flex flex-col gap-6 pt-4">
@@ -217,9 +254,9 @@ export default function WorkspaceSettingsPage() {
               {link.delivery === "sent" ? (
                 <p>We emailed this link to {link.email}. You can also copy it now: for safety it is not shown again.</p>
               ) : link.delivery === "failed" ? (
-                <p>We could not confirm the email was sent, so please send this link yourself. Copy it now: for safety it is not shown again.</p>
+                <p>We could not send the email, so please send this link yourself. Copy it now: for safety it is not shown again.</p>
               ) : (
-                <p>Copy it now and send it to them: for safety it is not shown again. Creating a new one replaces it.</p>
+                <p>The email is queued. Copy the link now if you want to send it yourself: for safety it is not shown again.</p>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <code className="max-w-full break-all rounded-[8px] bg-white/[.05] px-2 py-1 font-mono text-[12px]">{link.url}</code>
@@ -240,9 +277,12 @@ export default function WorkspaceSettingsPage() {
             <ul className="flex flex-col divide-y divide-white/[.06]" aria-label="Invitations">
               {invitations.data.items.map((i) => (
                 <li key={i.id} className="flex flex-wrap items-center gap-3 py-2.5 text-[14px]">
-                  <span className="min-w-0 flex-1 truncate text-fg">{i.email}</span>
+                  <span className="min-w-0 basis-full truncate text-fg sm:flex-1">{i.email}</span>
                   <span className="text-[12px] text-muted">{i.roles.join(", ")} · {relative(i.created_at)}</span>
                   <Badge tone={i.status === "pending" ? "warn" : i.status === "accepted" ? "ok" : "muted"}>{i.status}</Badge>
+                  <Badge tone={i.email_delivery === "sent" ? "ok" : i.email_delivery === "queued" ? "warn" : i.email_delivery === "unknown" ? "muted" : "bad"}>
+                    {i.email_delivery === "unknown" ? "Email status unavailable" : `Email ${i.email_delivery}`}
+                  </Badge>
                   {i.status === "pending" ? (
                     <Button
                       size="sm"
@@ -250,6 +290,7 @@ export default function WorkspaceSettingsPage() {
                       onClick={async () => {
                         try {
                           await ws.api.revokeInvitation(i.id, { key: actionKey("revoke") });
+                          setLink((current) => current?.id === i.id ? null : current);
                           invitations.reload();
                         } catch (x) {
                           setError(describeError(x));
@@ -632,7 +673,7 @@ function MemberRow({
             {m.display_name} {m.you ? <Badge>You</Badge> : null}
           </span>
           <span className="block text-[12px] text-muted">
-            {m.email ?? "Address visible to owners and admins"} · joined {relative(m.joined_at)}
+            <span className="break-all">{m.email ?? "Address visible to owners and admins"}</span> · joined {relative(m.joined_at)}
           </span>
         </span>
         {!editing ? (

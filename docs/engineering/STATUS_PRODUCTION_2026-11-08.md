@@ -8,15 +8,16 @@ not selected for a new question. Withdrawing consent cancels a pending question 
 An owner or admin can log an emergency quiet-hours override for one investigation, with a reason.
 
 The people directory and person page show consent status. A single-use link lets a person grant
-or refuse web contact in English, Hindi or Marathi; a configured Gmail transport can send it,
-and the operator can copy it. Contact email is encrypted. Quiet hours are editable on the person
+or refuse web contact in English, Hindi or Marathi; a configured Gmail transport sends it through
+the transactional outbox, and the operator can copy it and poll delivery status. Contact email is encrypted. Quiet hours are editable on the person
 page and default to 22:00-08:00 in Asia/Kolkata. Practice and sandbox use simulated participants
 and bypass human consent and quiet hours. Starting a real live investigation is still disabled.
 
 Focused API checks passed under both the database owner and `pramana_app`, including replay,
 withdrawal, override audit, link expiry and reuse, and tenant isolation. The mail test uses a
 fake transport and the live planner test uses the in-process simulator. Hindi and Marathi wording
-still needs native review. Deployment of migration 0017 must repeat the schema revoke for
+still needs native review. Deployment of each new migration in this candidate must repeat the
+schema revoke for
 `anon` and `authenticated`.
 
 The consent-request idempotency response is encrypted at rest so a retry can return the same
@@ -26,6 +27,21 @@ refusals become inactive consent history in the older schema.
 Worktree: `gnani ai hackathon-production`, branch `production`. The draft
 [PR #3](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/pull/3) remains unmerged.
 No demo database, main worktree file or unrelated process was changed. Terraform remains unapplied.
+
+## Update, 2026-11-09: email relay and sealing backfill
+
+Task F is implemented locally on `nov9/outbox-backfill`. Migration 0022 adds the transactional
+email outbox and attempt history. Invitation and consent request emails are relayed after the
+response and through a bounded Cloud Run Job entry point. The UI reports sent, queued or failed.
+SMTP remains at-least-once
+because it has no idempotency key. The resumable `scripts/backfill_personal_data.py` seals older
+plaintext and removes personal values from legacy events while preserving replay and log seals.
+
+Local verification passed: the full Python suite, 48 UI browser tests, 30 real-stack browser tests,
+focused outbox and backfill tests, Python static checks, web typecheck/lint/copy/worklet checks and
+OpenAPI drift check. Real-stack identity used the local mock OIDC service. No real email, real
+account, paid provider or cloud resource was used. Nothing was deployed or pushed. See commits
+`9444e47`, `175f352`, `0005f31`, `2103503`, `aabac3b` and `8e16de1`.
 
 | Item | State | Evidence |
 |---|---|---|
@@ -132,8 +148,10 @@ model, team invitations, model health and settings pages. Still open:
   tests; retire them (and `DEFAULT_PACK`) once the real-stack fixtures use workspaces.
 - Live investigations with real people (calls, messages, work orders) are R3; a live site can
   only be practised on, and the core says so.
-- Email delivery of invitations is not built; the owner shares the one-time link themselves.
-  Pending invitations show on the welcome step only, not inside a workspace.
+- Invitation email delivery and the pre-0016 personal data backfill are implemented locally in
+  task F. Production still needs the approved sending identity and provider, the scheduled Cloud Run
+  job, and the resumable backfill with the production PII key. Pending invitations appear in
+  workspace settings and on the welcome step.
 - Real-stack browser runs have voice off (no Gnani key); workspace voice is covered by API tests
   with the Gnani protocol emulation.
 - Hindi and Marathi wording everywhere new needs native review.
@@ -168,7 +186,29 @@ are in this report. `GCP_PROJECT_ID` is also in `.env`. No GCP APIs or resources
 created. The selected budget architecture and primary-source review are recorded in
 `CLOUD_BUDGET_REVIEW_2026-11-08.md`; the original HA defaults must not be applied.
 
-Email can use the local outbox in Slice 5 until a provider and sending identity are configured.
+## Chrome first-time-user review, 2026-11-09
+
+The initial real-stack run in installed Chrome passed all 30 existing tests. The site builder's
+CSV importer had no file-size check and read the entire upload into browser memory. It now rejects
+files larger than 5 MB before reading them and announces the readable error to assistive
+technology. The real-stack workspace journey covers an oversized file and confirms the current
+draft stays unchanged. The focused workspace suite passed 2 tests after the fix.
+
+The same Chrome pass used a 120-character Hindi workspace name on a 390 px phone and found that
+the home page grew wider than the screen. The workspace badge now truncates inside the available
+width and keeps the full name in its title. The review journey checks the document width at 390 px.
+
+The hospital onboarding journey described its practice site as a hostel. The onboarding, Sites
+list and practice-site detail now use general practice-site wording. A new immutable sandbox model
+uses neutral practice labels and questions, and the Chrome journey runs through the reveal. Workspace
+owners and operators can now reveal the practice result using their workspace permissions.
+After applying migration 0021 on Supabase, rerun the revoke of anon and authenticated access to
+the Pramana schema.
+
+Invitation email uses a transactional PostgreSQL outbox, with a bounded request relay and a Cloud
+Run Job entry point. Live delivery still requires a configured provider and sending identity; no
+production job has been created. The personal data backfill must run as described in PRODUCTION.md
+§13.5 with the production PII key before the new core revision receives traffic.
 Voice, LLM and telephony credentials are requested only when those integrations need them.
 
 ## Failures corrected locally
