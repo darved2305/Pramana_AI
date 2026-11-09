@@ -83,6 +83,7 @@ test("a new workspace describes its own site, checks it and publishes it", async
   await expect(page.getByText("Ravi", { exact: true })).toBeVisible();
   await expect(page.getByText("Plumber")).toBeVisible();
   await expect(page.getByText(/Can make \d+ checks? at this site\./)).toBeVisible();
+  await expect(page.getByText(/No track record yet: it builds up from investigations whose cause was revealed or confirmed\./)).toBeVisible();
 
   // Home now reflects the published site, the added person and the open draft.
   await page.goto(base);

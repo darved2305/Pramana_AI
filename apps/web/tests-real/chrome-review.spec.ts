@@ -180,6 +180,8 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await page.getByRole("link", { name: "Start a practice investigation" }).click();
   await expect(page).toHaveURL(/\/app\/.+\/investigations\/new\?practice=1$/);
   await expect(page.getByRole("checkbox", { name: /Include .*\(simulated\)/ }).first()).toBeVisible();
+  await expect(page.getByText("Site colleague (simulated)", { exact: true })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText(/\b(student|guard|electrician|it_tech|housekeeping)\b/i);
   await expect(page.getByRole("combobox", { name: "Hidden fault" })).toBeVisible();
   await expect(page.locator("main")).not.toContainText(/hostel/i);
   await capture(page, "practice-investigation-new");
@@ -275,9 +277,12 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
 
   await page.getByRole("button", { name: "Skip, I will try it later" }).click();
   await expect(page).toHaveURL(/\/onboarding\/site$/);
+  await expect(page.locator("main")).toContainText("Pramana checks your site description before you publish it.");
   await capture(page, "onboarding-site");
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page).toHaveURL(/\/onboarding\/people$/);
+  await expect(page.locator("main")).toContainText("Add facilities staff, technicians and the people who are there each day.");
+  await expect(page.locator("main")).not.toContainText(/guards|judges your model/i);
   await capture(page, "onboarding-people");
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page).toHaveURL(/\/onboarding\/test_call$/);
@@ -286,6 +291,8 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await expect(page).toHaveURL(/\/app\/.+$/);
   await expect(page.locator('[aria-label="Loading your home"]')).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Your sites" })).toBeVisible();
+  await expect(page.getByText("2 of 5 steps done. Next: describe your own site and publish it.")).toBeVisible();
+  await expect(page.getByText(/2 sites in this workspace\./)).toBeVisible();
   await expect(page.getByText("Still narrowing down the cause")).toHaveCount(0);
   await capture(page, "workspace-home");
 
@@ -302,6 +309,10 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await expect(page.getByText("A simulated site. Use it to see an investigation end to end before modelling your own site.")).toBeVisible();
   await expect(page.locator("main")).not.toContainText(/hostel/i);
   await capture(page, "workspace-practice-site");
+
+  await page.goto("/review-page-that-does-not-exist");
+  await expect(page.getByRole("heading", { name: "Nothing was observed here" })).toBeVisible();
+  await capture(page, "page-not-found");
 
   expect(signals.filter((x) => x.kind === "pageerror")).toEqual([]);
 });
@@ -493,25 +504,35 @@ test("real Chrome review: invitations can be withdrawn or joined from welcome", 
   await capture(page, "signed-out");
 });
 
-test("real Chrome review: an expired invitation cannot be accepted", async ({ page }) => {
+test("real Chrome review: terminal invitations cannot be accepted", async ({ page }) => {
   const stamp = Date.now();
   const who = `review-expired-${stamp}`;
   await page.goto("/api/core/v1/auth/google/start?next=/app/account");
   await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
   await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
   await page.getByRole("button", { name: "Continue with mock account" }).click();
+  const errors = [
+    { token: "expired", code: "INVITATION_EXPIRED", status: 410, message: "this invitation has expired" },
+    { token: "missing", code: "INVITATION_NOT_FOUND", status: 404, message: "this invitation could not be found" },
+    { token: "revoked", code: "INVITATION_REVOKED", status: 410, message: "this invitation was withdrawn" },
+    { token: "used", code: "INVITATION_USED", status: 410, message: "this invitation has already been used" },
+  ];
+  let activeError = errors[0];
   await page.route("**/api/core/v1/invitations/accept", (route) =>
     route.fulfill({
-      status: 410,
+      status: activeError.status,
       contentType: "application/problem+json",
-      json: { error: { code: "INVITATION_EXPIRED", message: "this invitation has expired" } },
+      json: { error: { code: activeError.code, message: activeError.message } },
     }),
   );
-  await page.goto("/invite/org_expired-review-token");
-  await page.getByRole("button", { name: "Accept invitation" }).click();
-  await expect(page.locator("main").getByRole("alert")).toHaveText("this invitation has expired");
-  await expect(page.getByRole("button", { name: "Invitation unavailable" })).toBeDisabled();
-  await capture(page, "invitation-expired");
+  for (const error of errors) {
+    activeError = error;
+    await page.goto(`/invite/org_${error.token}-review-token`);
+    await page.getByRole("button", { name: "Accept invitation" }).click();
+    await expect(page.locator("main").getByRole("alert")).toHaveText(error.message);
+    await expect(page.getByRole("button", { name: "Invitation unavailable" })).toBeDisabled();
+    await capture(page, `invitation-${error.token}`);
+  }
 });
 
 test("real Chrome review: a returning owner finds their workspace and an expired session is refused", async ({ page, context }) => {
@@ -547,4 +568,26 @@ test("real Chrome review: a returning owner finds their workspace and an expired
   await page.goto(base);
   await expect(page).toHaveURL(/\/login\?next=/);
   await capture(page, "returning-session-expired");
+});
+
+test("real Chrome review: offline messages do not expose internal setup details", async ({ page }) => {
+  test.setTimeout(90_000);
+  const who = `review-offline-${Date.now()}`;
+  await page.route("**/api/core/health", (route) => route.abort());
+  await page.goto("/api/core/v1/auth/google/start?next=/app/account");
+  await page.getByRole("textbox", { name: "Subject", exact: true }).fill(who);
+  await page.getByRole("textbox", { name: "Email", exact: true }).fill(`${who}@gmail.com`);
+  await page.getByRole("button", { name: "Continue with mock account" }).click();
+  const made = await page.request.post("/api/core/v1/orgs", {
+    headers: { "X-Pramana-CSRF": "1", "Idempotency-Key": `${who}-workspace` },
+    data: { name: "Offline review", kind: "office" },
+  });
+  expect(made.status()).toBe(201);
+  const ws = await made.json();
+  await page.route(`**/api/core/v1/orgs/${ws.organization.slug}/home`, (route) => route.abort());
+  await page.goto(`/app/${ws.organization.slug}`);
+  await expect(page.getByRole("complementary").getByText("Offline", { exact: true })).toBeVisible();
+  await expect(page.getByText("Pramana cannot be reached").first()).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/uv run|scripts\/dev\.py|127\.0\.0\.1:\d+/i);
+  await capture(page, "offline-help");
 });

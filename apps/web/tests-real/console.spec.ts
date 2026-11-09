@@ -117,11 +117,27 @@ test.describe("console data comes from the core", () => {
     await page.getByRole("tab", { name: /In progress/ }).click();
     await expect(page.getByRole("link", { name: /Corridor lights off/ })).toBeVisible();
   });
+
+  test("overview describes investigation totals without backend terms", async ({ page, request }) => {
+    await seedDirectory(request);
+    await api(request, "POST", "/v1/investigations", {
+      pack_id: "campus_block_c",
+      participants: PEOPLE,
+      report: { text: "Corridor lights are off", reporter_id: "p_riya" },
+      scenario: { seed: 7, fault: "random" },
+    });
+    await signIn(page, "operator", "/app");
+    const main = page.getByRole("main");
+    await expect(main.getByText(/\d+ so far/)).toBeVisible();
+    await expect(main).not.toContainText(/\bin the core\b/i);
+  });
 });
 
 test("the voice page reads the real core's provider and spend", async ({ page }) => {
   await signIn(page, "operator", "/app/voice");
+  await expect(page.getByText("The speech service Pramana is using and today's spend, refreshed every 5 seconds.")).toBeVisible();
   const provider = page.getByRole("region", { name: "Provider" });
+  await expect(provider.getByText("Which speech service Pramana actually calls.")).toBeVisible();
   // The test core has no Gnani key: it must say voice is off, not claim live Gnani.
   await expect(provider).toContainText("Voice off (no key)");
   await expect(provider).toContainText("api.vachana.ai");

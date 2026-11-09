@@ -26,6 +26,8 @@ test("a new person signs in with Google, sets up a workspace and resumes where t
   await expect(page.getByRole("button", { name: "Water supply" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page).toHaveURL(/\/onboarding\/org$/);
+  await expect(page.locator("main")).toContainText("You get a guided example and a blank site to describe.");
+  await expect(page.locator("main")).not.toContainText(/hospital or clinic|your office/i);
 
   await page.getByLabel("Workspace name").fill("Lakeside Offices");
   await page.getByRole("button", { name: "Create workspace" }).click();
