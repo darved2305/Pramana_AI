@@ -31,7 +31,12 @@ from test_closing_loop import approve, decided, reset_in_simulator, verify
 from test_recovery import assert_identical
 
 from pramana_contracts.tokens import mint, mint_capability, private_key_from_b64, public_key_b64
-from pramana_core.db_roles import ensure_roles, role_passwords, scram_verifier
+from pramana_core.db_roles import (
+    ensure_roles,
+    role_passwords,
+    role_statement_template,
+    scram_verifier,
+)
 from pramana_core.grant_audit import audit_connection, audit_database, revoke_statements
 from pramana_core.main import create_app as create_core_app
 from pramana_domain import load_pack
@@ -352,6 +357,11 @@ def test_runtime_roles_can_be_created_on_postgres(migrated_db: str) -> None:
         )
 
     asyncio.run(check())
+
+
+def test_runtime_role_statements_use_safe_managed_postgres_defaults() -> None:
+    assert role_statement_template(exists=False) == "create role %I login password %L"
+    assert role_statement_template(exists=True) == "alter role %I login password %L"
 
 
 def test_postgres_stores_the_verifier_as_is_so_no_password_reaches_the_server(
