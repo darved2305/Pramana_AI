@@ -48,6 +48,28 @@ def test_deployment_requires_the_named_rotation_acknowledgements() -> None:
         deploy.validate_environment(context)
 
 
+def test_existing_alert_budget_with_wrong_amount_fails_closed() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+
+    class ExistingBudgetCloud:
+        dry_run = False
+
+        def run(self, args: list[str], **_kwargs: object):
+            assert args[:3] == ["billing", "budgets", "list"]
+            return deploy.subprocess.CompletedProcess(
+                args,
+                0,
+                '[{"displayName":"Pramana monthly project alert INR 1000",'
+                '"budgetFilter":{"projects":["projects/luminous-slice-514102-f4"],'
+                '"calendarPeriod":"MONTH"},"amount":{"specifiedAmount":'
+                '{"currencyCode":"INR","units":"100"}},"thresholdRules":[]}]',
+                "",
+            )
+
+    with pytest.raises(deploy.DeployError, match="different scope or amount"):
+        deploy.ensure_budget(ExistingBudgetCloud(), context)
+
+
 def test_private_service_accounts_receive_only_their_database_secret() -> None:
     context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
 
