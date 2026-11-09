@@ -14,6 +14,25 @@ const nextConfig: NextConfig = {
   // A label only: the core address the build was made for. The proxy reads PRAMANA_CORE_URL at runtime.
   env: { NEXT_PUBLIC_CORE_ADDRESS: new URL(CORE_URL).host },
   poweredByHeader: false,
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+          {
+            key: "Content-Security-Policy",
+            value:
+              "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https:; worker-src 'self' blob:; media-src 'self' blob:",
+          },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Permissions-Policy", value: "camera=(), geolocation=(), microphone=(self)" },
+        ],
+      },
+    ];
+  },
   // A self-contained server for the container image (apps/web/Dockerfile).
   output: "standalone",
   // Keep verification builds separate from a running local sign-in check.
