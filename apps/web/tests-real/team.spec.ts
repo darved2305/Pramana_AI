@@ -104,12 +104,15 @@ test("an owner invites a teammate, who joins with the invited address only", asy
     ["failed", "We could not send the email, so please send this link yourself"],
   ] as const) {
     let keepQueuedList = delivery === "queued";
-    await page.route("**/invitations", async (route) => {
+    await page.route("**/invitations**", async (route) => {
       if (route.request().method() !== "POST") {
         if (delivery !== "queued" || !keepQueuedList) return route.continue();
         const response = await route.fetch();
-        const rows = await response.json() as Array<Record<string, unknown>>;
-        await route.fulfill({ response, json: rows.map((row) => ({ ...row, email_delivery: "queued" })) });
+        const page = await response.json() as { items: Array<Record<string, unknown>> };
+        await route.fulfill({
+          response,
+          json: { ...page, items: page.items.map((row) => ({ ...row, email_delivery: "queued" })) },
+        });
         return;
       }
       const response = await route.fetch();
@@ -128,14 +131,17 @@ test("an owner invites a teammate, who joins with the invited address only", asy
       keepQueuedList = false;
       await expect(deliveryNotice.getByText("We could not send the email, so please send this link yourself")).toBeVisible();
     }
-    await page.unroute("**/invitations");
+    await page.unroute("**/invitations**");
   }
 
-  await page.route("**/invitations", async (route) => {
+  await page.route("**/invitations**", async (route) => {
     if (route.request().method() !== "GET") return route.continue();
     const response = await route.fetch();
-    const rows = await response.json() as Array<Record<string, unknown>>;
-    await route.fulfill({ response, json: rows.map((row) => ({ ...row, email_delivery: "unknown" })) });
+    const page = await response.json() as { items: Array<Record<string, unknown>> };
+    await route.fulfill({
+      response,
+      json: { ...page, items: page.items.map((row) => ({ ...row, email_delivery: "unknown" })) },
+    });
   });
   await page.reload();
   await expect(page.getByText("Email status unavailable").first()).toBeVisible();
@@ -153,5 +159,5 @@ test("an owner invites a teammate, who joins with the invited address only", asy
     invitationEmailBox.y + invitationEmailBox.height - 1,
   );
   expect(await invitationEmail.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await page.unroute("**/invitations");
+  await page.unroute("**/invitations**");
 });

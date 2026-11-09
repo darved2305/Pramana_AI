@@ -22,10 +22,10 @@ from typing import Any
 import httpx
 import pytest
 from core_testkit import body
-from e2e.harness import Services
-from e2e.replay import all_events, canonical, last_logged_belief, replayed_belief
 from participant_bot import answer_pending, run_to_conclusion
 
+from e2e.harness import Services
+from e2e.replay import all_events, canonical, last_logged_belief, replayed_belief
 from pramana_contracts.tokens import mint_capability, private_key_from_b64
 
 pytestmark = pytest.mark.e2e

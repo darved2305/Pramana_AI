@@ -118,7 +118,7 @@ test.describe("console data comes from the core", () => {
     await expect(page.getByRole("link", { name: /Corridor lights off/ })).toBeVisible();
   });
 
-  test("overview describes investigation totals without backend terms", async ({ page, request }) => {
+  test("overview describes investigation access without backend terms", async ({ page, request }) => {
     await seedDirectory(request);
     await api(request, "POST", "/v1/investigations", {
       pack_id: "campus_block_c",
@@ -128,7 +128,7 @@ test.describe("console data comes from the core", () => {
     });
     await signIn(page, "operator", "/app");
     const main = page.getByRole("main");
-    await expect(main.getByText(/\d+ so far/)).toBeVisible();
+    await expect(main.getByText("Search and filter past work")).toBeVisible();
     await expect(main).not.toContainText(/\bin the core\b/i);
   });
 });
