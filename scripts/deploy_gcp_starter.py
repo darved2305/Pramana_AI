@@ -513,6 +513,7 @@ def ensure_artifact_registry(gcloud: Gcloud, ctx: Context) -> None:
         gcloud.run(
             [
                 "artifacts",
+                "repositories",
                 "set-cleanup-policies",
                 REPOSITORY,
                 f"--location={REGION}",

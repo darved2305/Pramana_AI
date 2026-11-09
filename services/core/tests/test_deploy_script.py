@@ -125,6 +125,38 @@ def test_pooler_host_must_belong_to_the_configured_database_region() -> None:
         deploy.validate_environment(context)
 
 
+def test_artifact_registry_cleanup_uses_repository_command_group() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+
+    class Recorder:
+        dry_run = True
+
+        def __init__(self) -> None:
+            self.commands: list[list[str]] = []
+
+        def run(
+            self, args: list[str], **_kwargs: object
+        ) -> deploy.subprocess.CompletedProcess[str]:
+            self.commands.append(args)
+            return deploy.subprocess.CompletedProcess(args, 0, "{}", "")
+
+    recorder = Recorder()
+    deploy.ensure_artifact_registry(recorder, context)
+
+    cleanup = next(
+        command
+        for command in recorder.commands
+        if command[:3]
+        == [
+            "artifacts",
+            "repositories",
+            "set-cleanup-policies",
+        ]
+    )
+    assert cleanup[3] == deploy.REPOSITORY
+    assert "--no-dry-run" in cleanup
+
+
 def test_budget_is_recorded_by_name_and_never_created_or_read(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
