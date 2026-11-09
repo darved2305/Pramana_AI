@@ -110,7 +110,8 @@ class GoogleOidc:
                 self.cfg.mode == "production"
                 and self.cfg.local_production_test
                 and parsed.scheme == "http"
-                and parsed.hostname in {"localhost", "127.0.0.1", "host.docker.internal"}
+                and parsed.hostname
+                in {"localhost", "127.0.0.1", "host.docker.internal", "mock-oidc"}
             )
         ):
             raise OidcError("invalid provider configuration")
