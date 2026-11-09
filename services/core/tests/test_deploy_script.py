@@ -219,6 +219,75 @@ def test_logging_bucket_location_is_read_from_its_resource_name() -> None:
         deploy.validate_logging_bucket(parsed, context)
 
 
+def test_cloud_run_log_filters_drop_auth_and_consent_capability_urls() -> None:
+    for path_pattern in ("auth/google/(start|callback)", "consent-links/", "/consent/"):
+        assert path_pattern in deploy.SENSITIVE_REQUEST_URL_FILTER
+        assert path_pattern in deploy.SENSITIVE_REQUEST_LOGS_FILTER
+
+    assert f"NOT ({deploy.SENSITIVE_REQUEST_URL_FILTER})" in deploy.LOG_FILTER
+    assert 'resource.labels.service_name="pramana-web"' in deploy.SENSITIVE_REQUEST_LOGS_FILTER
+    assert 'resource.labels.service_name="pramana-core"' in deploy.SENSITIVE_REQUEST_LOGS_FILTER
+
+
+def test_logging_sink_and_default_sink_exclude_sensitive_request_urls() -> None:
+    context = deploy.Context(Namespace(rotate_secret=[]), dry_run=True)
+    destination = f"logging.googleapis.com/projects/{context.project}/locations/{deploy.REGION}/buckets/pramana-run"
+    old_filter = 'resource.type="cloud_run_revision"'
+
+    class Recorder:
+        dry_run = True
+
+        def __init__(self) -> None:
+            self.commands: list[list[str]] = []
+
+        def run(
+            self, args: list[str], **_kwargs: object
+        ) -> deploy.subprocess.CompletedProcess[str]:
+            self.commands.append(args)
+            if args[:3] == ["logging", "buckets", "describe"]:
+                payload = {
+                    "name": f"projects/{context.project}/locations/{deploy.REGION}/buckets/pramana-run",
+                    "retentionDays": 180,
+                }
+                return deploy.subprocess.CompletedProcess(args, 0, deploy.json.dumps(payload), "")
+            if args[:3] == ["logging", "sinks", "describe"] and args[3] == "pramana-run":
+                payload = {"destination": destination, "filter": old_filter}
+                return deploy.subprocess.CompletedProcess(args, 0, deploy.json.dumps(payload), "")
+            if args[:3] == ["logging", "sinks", "describe"] and args[3] == "_Default":
+                payload = {
+                    "exclusions": [
+                        {"name": "pramana-run", "filter": old_filter},
+                        {
+                            "name": "pramana-sensitive-requests",
+                            "filter": old_filter,
+                            "disabled": True,
+                        },
+                    ]
+                }
+                return deploy.subprocess.CompletedProcess(args, 0, deploy.json.dumps(payload), "")
+            return deploy.subprocess.CompletedProcess(args, 0, "{}", "")
+
+    recorder = Recorder()
+    deploy.ensure_logging(recorder, context)
+    commands = [" ".join(command) for command in recorder.commands]
+
+    assert any(
+        "logging sinks update pramana-run" in command
+        and f"--log-filter={deploy.LOG_FILTER}" in command
+        for command in commands
+    )
+    assert any(
+        "--update-exclusion=name=pramana-run" in command
+        and f"filter={deploy.LOG_FILTER},disabled=" in command
+        for command in commands
+    )
+    assert any(
+        "--update-exclusion=name=pramana-sensitive-requests" in command
+        and f"filter={deploy.SENSITIVE_REQUEST_LOGS_FILTER},disabled=" in command
+        for command in commands
+    )
+
+
 def test_budget_is_recorded_by_name_and_never_created_or_read(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

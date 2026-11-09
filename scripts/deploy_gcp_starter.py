@@ -38,12 +38,26 @@ BUILD_ACCOUNT = "build"
 SERVICE_ACCOUNTS = ("web", "core", "sim", "migrate", BUILD_ACCOUNT)
 DEPLOY_ACCOUNT = "nikhilpise2006@gmail.com"
 ALERT_BUDGET_NAME = "pramana-inr-1000"
-LOG_FILTER = (
-    '((resource.type="cloud_run_revision" AND resource.labels.location="asia-south1" AND '
+RUN_SERVICE_LOGS_FILTER = (
+    'resource.type="cloud_run_revision" AND resource.labels.location="asia-south1" AND '
     '(resource.labels.service_name="pramana-web" OR resource.labels.service_name="pramana-core" '
-    'OR resource.labels.service_name="pramana-sim")) OR '
-    '(resource.type="cloud_run_job" AND resource.labels.location="asia-south1" '
-    'AND resource.labels.job_name="pramana-migrate"))'
+    'OR resource.labels.service_name="pramana-sim")'
+)
+MIGRATION_LOGS_FILTER = (
+    'resource.type="cloud_run_job" AND resource.labels.location="asia-south1" '
+    'AND resource.labels.job_name="pramana-migrate"'
+)
+SENSITIVE_REQUEST_URL_FILTER = (
+    'httpRequest.requestUrl =~ "auth/google/(start|callback)" OR '
+    'httpRequest.requestUrl =~ "consent-links/" OR '
+    'httpRequest.requestUrl =~ "/consent/"'
+)
+# Cloud Run request logs include the complete URL, including OAuth codes and consent capabilities.
+# Keep those entries out of both the regional sink and the default project log bucket.
+SENSITIVE_REQUEST_LOGS_FILTER = f"({RUN_SERVICE_LOGS_FILTER}) AND ({SENSITIVE_REQUEST_URL_FILTER})"
+LOG_FILTER = (
+    f"(({RUN_SERVICE_LOGS_FILTER}) AND NOT ({SENSITIVE_REQUEST_URL_FILTER})) OR "
+    f"({MIGRATION_LOGS_FILTER})"
 )
 API_SERVICES = (
     "artifactregistry.googleapis.com",
@@ -657,7 +671,38 @@ def ensure_logging(gcloud: Gcloud, ctx: Context) -> None:
                 "sinks",
                 "update",
                 "_Default",
-                f"--update-exclusion=name=pramana-run,filter={LOG_FILTER}",
+                f"--update-exclusion=name=pramana-run,filter={LOG_FILTER},disabled=",
+                f"--project={ctx.project}",
+                "--quiet",
+            ]
+        )
+    sensitive = next(
+        (entry for entry in exclusions if entry.get("name") == "pramana-sensitive-requests"),
+        None,
+    )
+    if sensitive is None:
+        gcloud.run(
+            [
+                "logging",
+                "sinks",
+                "update",
+                "_Default",
+                f"--add-exclusion=name=pramana-sensitive-requests,filter={SENSITIVE_REQUEST_LOGS_FILTER}",
+                f"--project={ctx.project}",
+                "--quiet",
+            ]
+        )
+    elif (
+        sensitive.get("filter") != SENSITIVE_REQUEST_LOGS_FILTER
+        or sensitive.get("disabled") is True
+    ):
+        gcloud.run(
+            [
+                "logging",
+                "sinks",
+                "update",
+                "_Default",
+                f"--update-exclusion=name=pramana-sensitive-requests,filter={SENSITIVE_REQUEST_LOGS_FILTER},disabled=",
                 f"--project={ctx.project}",
                 "--quiet",
             ]

@@ -294,3 +294,10 @@ did not exist. The command did not reach the browser tests. The database transac
 final schema state were not verified. I did not query or clean that database afterwards. The owner
 should inspect pramana_web_e2e before any further use. All servers from that failed attempt have
 stopped.
+
+## Logging privacy follow-up, 2026-11-10
+
+The audit found that Cloud Run managed request logs include the full request URL even though the
+application suppresses OAuth and consent-route request logging. The GCP log sink filters now drop
+Google OAuth start and callback URLs, consent-link URLs and `/consent/` capability URLs from both
+the regional Pramana bucket and the default project sink. Regression tests cover both sink filters.
