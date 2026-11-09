@@ -1393,9 +1393,29 @@ export interface paths {
         put?: never;
         /**
          * Request Consent
-         * @description Create a single-use web consent link and email it when Gmail is ready.
+         * @description Create a consent link and commit its email intent before delivery starts.
          */
         post: operations["request_consent_v1_orgs__org__sites__site_id__people__person_id__consent_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consent-requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Consent Request Delivery
+         * @description Read the durable status for a consent email requested by this site team.
+         */
+        get: operations["consent_request_delivery_v1_orgs__org__sites__site_id__people__person_id__consent_requests__request_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1909,7 +1929,7 @@ export interface components {
              * Email Delivery
              * @enum {string}
              */
-            email_delivery: "sent" | "failed" | "not_configured" | "no_email";
+            email_delivery: "queued" | "failed" | "no_email";
             /**
              * Expires At
              * Format: date-time
@@ -1917,6 +1937,16 @@ export interface components {
             expires_at: string;
             /** Link Path */
             link_path: string;
+            /** Request Id */
+            request_id: string;
+        };
+        /** ConsentRequestDelivery */
+        ConsentRequestDelivery: {
+            /**
+             * Email Delivery
+             * @enum {string}
+             */
+            email_delivery: "sent" | "queued" | "failed" | "no_email";
         };
         /** ConsentResponseView */
         ConsentResponseView: {
@@ -6631,6 +6661,40 @@ export interface operations {
                 content?: never;
             };
             /** @description Changed request for the same key or invalid input */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    consent_request_delivery_v1_orgs__org__sites__site_id__people__person_id__consent_requests__request_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org: string;
+                site_id: string;
+                person_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentRequestDelivery"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

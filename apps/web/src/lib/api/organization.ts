@@ -16,6 +16,7 @@ import type {
   SiteModelDraft,
   SiteModelSummary,
   ConsentRecord,
+  ConsentRequestDelivery,
   ConsentRequestCreated,
   InvestigationForecast,
   MapDriftCheck,
@@ -106,6 +107,12 @@ export function organizationApi(org: string) {
       mutate<void>(`${site(siteId)}/people/${enc(personId)}/consents/${enc(purpose)}/withdraw`, undefined, action),
     requestConsent: (siteId: string, personId: string, action: OrganizationAction) =>
       mutate<ConsentRequestCreated>(`${site(siteId)}/people/${enc(personId)}/consent-requests`, undefined, action),
+    consentRequestDelivery: (siteId: string, personId: string, requestId: string, signal?: AbortSignal) =>
+      request<ConsentRequestDelivery>(
+        "core",
+        `${site(siteId)}/people/${enc(personId)}/consent-requests/${enc(requestId)}`,
+        { signal },
+      ),
     site: (id: string, signal?: AbortSignal) => request<SiteSummary>("core", site(id), { signal }),
     models: (id: string, signal?: AbortSignal) =>
       request<SiteModelSummary[]>("core", `${site(id)}/models`, { signal }),

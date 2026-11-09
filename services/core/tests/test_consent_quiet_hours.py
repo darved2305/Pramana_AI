@@ -126,6 +126,7 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
     assert changed.status_code == 200, changed.text
     mailer = FakeMailer()
     client.app.state.mailer = mailer
+    client.app.state.email_relay.mailer = mailer
     client.app.state.settings = client.app.state.settings.model_copy(
         update={
             "gmail_address": "sender@example.test",
@@ -140,10 +141,26 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
     again = post(client, request_path, key=key)
     assert again.json() == created.json()
     assert again.headers["idempotent-replayed"] == "true"
-    assert created.json()["email_delivery"] == "sent"
+    assert created.json()["email_delivery"] == "queued"
     assert len(mailer.sent) == 1
     assert mailer.sent[0][0] == "synthetic@example.test"
     assert "https://pramana.example" + created.json()["link_path"] in mailer.sent[0][2]
+    status_path = request_path + "/" + created.json()["request_id"]
+    assert client.get(status_path).json() == {"email_delivery": "sent"}
+    wrong_person = root + "/p_other/consent-requests/" + created.json()["request_id"]
+    assert client.get(wrong_person).status_code == 404
+    outbox_rows = sql(
+        migrated_db,
+        "select state, recipient, subject, body from email_outbox where consent_link_id=:id",
+        {"id": ids.decode("consent", created.json()["request_id"])},
+    )
+    assert len(outbox_rows) == 1
+    assert outbox_rows[0] == {
+        "state": "sent",
+        "recipient": None,
+        "subject": None,
+        "body": None,
+    }
 
     code = created.json()["link_path"].removeprefix("/consent/")
     _, secret = code.split(".", 1)
@@ -178,7 +195,7 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
     expired_secret = expired.split(".", 1)[1]
     sql(
         migrated_db,
-        "update consent_links set created_at=now()-interval '2 days', "
+        "update consent_links set created_at=now()-interval '10 days', "
         "expires_at=now()-interval '1 day' where token_hash=:hash",
         {"hash": hashlib.sha256(expired_secret.encode()).digest()},
     )
@@ -186,6 +203,161 @@ def test_consent_link_is_single_use_expiring_and_tenant_bound(
     assert (
         client.post("/v1/consent-links/" + expired, json={"decision": "granted"}).status_code == 410
     )
+    sql(
+        migrated_db,
+        "update memberships set roles=ARRAY['viewer'] where org_id="
+        "(select id from organizations where slug=:slug)",
+        {"slug": workspace["organization"]["slug"]},
+    )
+    assert client.get(status_path).status_code == 403
+
+
+def test_replacing_consent_link_cancels_queued_email(
+    account_core: TestClient,
+    migrated_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace)
+    assert (
+        patch_person(client, root, {"contact_email": "synthetic@example.test"}).status_code == 200
+    )
+    mailer = FakeMailer()
+    client.app.state.mailer = mailer
+    client.app.state.email_relay.mailer = mailer
+    client.app.state.settings = client.app.state.settings.model_copy(
+        update={
+            "gmail_address": "sender@example.test",
+            "gmail_app_password": SecretStr("fake"),
+            "public_web_url": "https://pramana.example",
+        }
+    )
+    relay = client.app.state.email_relay
+    drain = relay.drain
+
+    async def defer_drain() -> dict[str, int | bool]:
+        return {"locked": False, "sent": 0, "retried": 0, "dead": 0}
+
+    monkeypatch.setattr(relay, "drain", defer_drain)
+    request_path = root + "/p_ravi/consent-requests"
+    first = post(client, request_path).json()
+    second = post(client, request_path).json()
+    monkeypatch.setattr(relay, "drain", drain)
+    third = post(client, request_path).json()
+
+    rows = sql(
+        migrated_db,
+        "select consent_link_id, state, recipient, subject, body from email_outbox "
+        "where kind='consent_request' order by created_at",
+    )
+    by_id = {ids.encode("consent", row["consent_link_id"]): row for row in rows}
+    for stale in (first, second):
+        row = by_id[stale["request_id"]]
+        assert row["state"] == "dead"
+        assert row["recipient"] is row["subject"] is row["body"] is None
+    assert by_id[third["request_id"]]["state"] == "sent"
+    assert len(mailer.sent) == 1
+    assert "https://pramana.example" + third["link_path"] in mailer.sent[0][2]
+
+
+def test_expired_consent_email_is_purged_before_relay_sends(
+    account_core: TestClient,
+    migrated_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace)
+    assert patch_person(client, root, {"contact_email": "ravi@example.test"}).status_code == 200
+    meena = client.patch(
+        root + "/p_sunil",
+        json={"contact_email": "meena@example.test"},
+        headers={**CSRF, "Idempotency-Key": uuid.uuid4().hex, "If-Match": '"1"'},
+    )
+    assert meena.status_code == 200, meena.text
+    mailer = FakeMailer()
+    client.app.state.mailer = mailer
+    client.app.state.email_relay.mailer = mailer
+    client.app.state.settings = client.app.state.settings.model_copy(
+        update={
+            "gmail_address": "sender@example.test",
+            "gmail_app_password": SecretStr("fake"),
+            "public_web_url": "https://pramana.example",
+        }
+    )
+    relay = client.app.state.email_relay
+    drain = relay.drain
+
+    async def defer_drain() -> dict[str, int | bool]:
+        return {"locked": False, "sent": 0, "retried": 0, "dead": 0}
+
+    monkeypatch.setattr(relay, "drain", defer_drain)
+    request_path = root + "/p_ravi/consent-requests"
+    expired = post(client, request_path).json()
+    sql(
+        migrated_db,
+        "update consent_links set created_at=now()-interval '10 days', "
+        "expires_at=now()-interval '1 day' where id=:id",
+        {"id": ids.decode("consent", expired["request_id"])},
+    )
+    monkeypatch.setattr(relay, "drain", drain)
+    valid = post(client, root + "/p_sunil/consent-requests").json()
+
+    rows = sql(
+        migrated_db,
+        "select consent_link_id, state, recipient, subject, body from email_outbox "
+        "where kind='consent_request' order by created_at",
+    )
+    by_id = {ids.encode("consent", row["consent_link_id"]): row for row in rows}
+    stale = by_id[expired["request_id"]]
+    assert stale["state"] == "dead"
+    assert stale["recipient"] is stale["subject"] is stale["body"] is None
+    assert by_id[valid["request_id"]]["state"] == "sent"
+    assert client.get(request_path + "/" + expired["request_id"]).json() == {
+        "email_delivery": "failed"
+    }
+    assert len(mailer.sent) == 1
+    assert mailer.sent[0][0] == "meena@example.test"
+    assert "https://pramana.example" + valid["link_path"] in mailer.sent[0][2]
+
+
+def test_unconfigured_consent_email_is_failed_without_storing_contact_data(
+    account_core: TestClient, migrated_db: str
+) -> None:
+    client = account_core
+    workspace, _ = published_water_site(client)
+    root = people_root(workspace)
+    assert patch_person(client, root, {"contact_email": "private@example.test"}).status_code == 200
+    client.app.state.mailer = None
+    client.app.state.email_relay.mailer = None
+    client.app.state.settings = client.app.state.settings.model_copy(
+        update={
+            "gmail_address": None,
+            "gmail_app_password": SecretStr(""),
+            "public_web_url": None,
+        }
+    )
+
+    request_path = root + "/p_ravi/consent-requests"
+    created = post(client, request_path).json()
+    assert created["email_delivery"] == "failed"
+    assert client.get(request_path + "/" + created["request_id"]).json() == {
+        "email_delivery": "failed"
+    }
+    row = sql(
+        migrated_db,
+        "select state, recipient, subject, body, last_error from email_outbox "
+        "where consent_link_id=:id",
+        {"id": ids.decode("consent", created["request_id"])},
+    )[0]
+    assert row == {
+        "state": "dead",
+        "recipient": None,
+        "subject": None,
+        "body": None,
+        "last_error": "EmailNotConfigured",
+    }
 
 
 def test_no_consent_then_withdrawal_cancels_question_and_replays(
@@ -334,7 +506,7 @@ def test_failed_repair_waits_when_consent_is_missing() -> None:
             self.events.append(event)
 
     session = Session()
-    row = SimpleNamespace(id="inv_test", status="verifying", outcome=None)
+    row = SimpleNamespace(id="inv_test", site_id=None, status="verifying", outcome=None)
     service = object.__new__(InvestigationService)
     waiting = QuestioningAvailability(
         evaluated_at=datetime(2026, 11, 9, 12, tzinfo=UTC),

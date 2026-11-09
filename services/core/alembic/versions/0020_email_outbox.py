@@ -35,24 +35,40 @@ def upgrade() -> None:
             sa.ForeignKey("invitations.id", ondelete="CASCADE"),
             nullable=True,
         ),
+        sa.Column(
+            "consent_link_id",
+            pg.UUID(as_uuid=True),
+            sa.ForeignKey("consent_links.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
         sa.Column("kind", sa.String(48), server_default="invitation", nullable=False),
         sa.Column("state", sa.String(16), nullable=False),
         sa.Column("recipient", sa.String(254), nullable=True),
         sa.Column("subject", sa.String(998), nullable=True),
         sa.Column("body", sa.Text(), nullable=True),
         sa.Column("attempts", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("available_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "available_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("locked_until", sa.DateTime(timezone=True), nullable=True),
         sa.Column("sent_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("dead_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_error", sa.String(80), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.UniqueConstraint("org_id", "id", name="email_outbox_org_id"),
         sa.UniqueConstraint("invitation_id", name="email_outbox_invitation"),
-        sa.CheckConstraint("state in ('queued', 'sending', 'sent', 'dead')", name="email_outbox_state"),
+        sa.UniqueConstraint("consent_link_id", name="email_outbox_consent_link"),
         sa.CheckConstraint(
-            "kind <> 'invitation' or invitation_id is not null",
-            name="email_outbox_invitation_source",
+            "state in ('queued', 'sending', 'sent', 'dead')", name="email_outbox_state"
+        ),
+        sa.CheckConstraint(
+            "(kind = 'invitation' and invitation_id is not null and consent_link_id is null) or "
+            "(kind = 'consent_request' and consent_link_id is not null and invitation_id is null) or "
+            "(kind not in ('invitation', 'consent_request') and invitation_id is null "
+            "and consent_link_id is null)",
+            name="email_outbox_source",
         ),
         sa.CheckConstraint("attempts between 0 and 5", name="email_outbox_attempts"),
         sa.CheckConstraint(
@@ -79,7 +95,9 @@ def upgrade() -> None:
         sa.Column("org_id", pg.UUID(as_uuid=True), nullable=False),
         sa.Column("outbox_id", pg.UUID(as_uuid=True), nullable=False),
         sa.Column("attempt", sa.Integer(), nullable=False),
-        sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "started_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("result", sa.String(16), nullable=False),
         sa.Column("error_type", sa.String(80), nullable=True),

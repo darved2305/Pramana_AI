@@ -52,9 +52,14 @@ class EmailOutboxRow(Base):
         UniqueConstraint("org_id", "id", name="email_outbox_org_id"),
         UniqueConstraint("invitation_id", name="email_outbox_invitation"),
         CheckConstraint(
-            "kind <> 'invitation' or invitation_id is not null",
-            name="email_outbox_invitation_source",
+            "(kind = 'invitation' and invitation_id is not null and consent_link_id is null) or "
+            "(kind = 'consent_request' and consent_link_id is not null "
+            "and invitation_id is null) or "
+            "(kind not in ('invitation', 'consent_request') and invitation_id is null "
+            "and consent_link_id is null)",
+            name="email_outbox_source",
         ),
+        UniqueConstraint("consent_link_id", name="email_outbox_consent_link"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
@@ -62,6 +67,9 @@ class EmailOutboxRow(Base):
     kind: Mapped[str] = mapped_column(String(48), default="invitation", server_default="invitation")
     invitation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("invitations.id", ondelete="CASCADE"), nullable=True
+    )
+    consent_link_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("consent_links.id", ondelete="CASCADE"), nullable=True
     )
     state: Mapped[str] = mapped_column(String(16))
     recipient: Mapped[str | None] = mapped_column(String(254), nullable=True)
@@ -266,6 +274,24 @@ class EmailRelay:
                         or invitation.expires_at <= now
                     ):
                         self._dead_letter(row, now, "InvitationNoLongerValid")
+                        return "dead", None
+
+                if row.consent_link_id is not None:
+                    # The public token is single-use and may have been revoked or consumed after
+                    # it was queued. Read its tenant-scoped state before sending the bearer link.
+                    with acting_for(row.org_id, actor="email-outbox-relay"):
+                        await apply_context(session)
+                        consent_link = await session.scalar(
+                            text(
+                                "select id from consent_links "
+                                "where org_id = :org_id and id = :id "
+                                "and consumed_at is null and revoked_at is null "
+                                "and expires_at > :now"
+                            ),
+                            {"org_id": row.org_id, "id": row.consent_link_id, "now": now},
+                        )
+                    if consent_link is None:
+                        self._dead_letter(row, now, "ConsentLinkNoLongerValid")
                         return "dead", None
 
                 if row.attempts >= MAX_ATTEMPTS or self.mailer is None:

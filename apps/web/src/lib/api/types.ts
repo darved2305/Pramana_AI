@@ -58,6 +58,7 @@ export type HomeSite = S["HomeSite"];
 export type HomeInvestigation = S["HomeInvestigation"];
 export type SitePerson = S["SitePerson"];
 export type ConsentRecord = S["ConsentRecord"];
+export type ConsentRequestDelivery = S["ConsentRequestDelivery"];
 export type ConsentRequestCreated = S["ConsentRequestCreated"];
 export type ConsentLinkView = S["ConsentLinkView"];
 export type ConsentResponseView = S["ConsentResponseView"];

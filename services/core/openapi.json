@@ -721,9 +721,8 @@
     "properties": {
      "email_delivery": {
       "enum": [
-       "sent",
+       "queued",
        "failed",
-       "not_configured",
        "no_email"
       ],
       "title": "Email Delivery",
@@ -737,14 +736,39 @@
      "link_path": {
       "title": "Link Path",
       "type": "string"
+     },
+     "request_id": {
+      "title": "Request Id",
+      "type": "string"
      }
     },
     "required": [
+     "request_id",
      "link_path",
      "expires_at",
      "email_delivery"
     ],
     "title": "ConsentRequestCreated",
+    "type": "object"
+   },
+   "ConsentRequestDelivery": {
+    "additionalProperties": false,
+    "properties": {
+     "email_delivery": {
+      "enum": [
+       "sent",
+       "queued",
+       "failed",
+       "no_email"
+      ],
+      "title": "Email Delivery",
+      "type": "string"
+     }
+    },
+    "required": [
+     "email_delivery"
+    ],
+    "title": "ConsentRequestDelivery",
     "type": "object"
    },
    "ConsentResponseView": {
@@ -9828,7 +9852,7 @@
   },
   "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consent-requests": {
    "post": {
-    "description": "Create a single-use web consent link and email it when Gmail is ready.",
+    "description": "Create a consent link and commit its email intent before delivery starts.",
     "operationId": "request_consent_v1_orgs__org__sites__site_id__people__person_id__consent_requests_post",
     "parameters": [
      {
@@ -9900,6 +9924,77 @@
      }
     },
     "summary": "Request Consent",
+    "tags": [
+     "people"
+    ]
+   }
+  },
+  "/v1/orgs/{org}/sites/{site_id}/people/{person_id}/consent-requests/{request_id}": {
+   "get": {
+    "description": "Read the durable status for a consent email requested by this site team.",
+    "operationId": "consent_request_delivery_v1_orgs__org__sites__site_id__people__person_id__consent_requests__request_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "org",
+      "required": true,
+      "schema": {
+       "title": "Org",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "site_id",
+      "required": true,
+      "schema": {
+       "title": "Site Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "person_id",
+      "required": true,
+      "schema": {
+       "pattern": "^[A-Za-z0-9_.:-]{1,64}$",
+       "title": "Person Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "request_id",
+      "required": true,
+      "schema": {
+       "title": "Request Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsentRequestDelivery"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Consent Request Delivery",
     "tags": [
      "people"
     ]

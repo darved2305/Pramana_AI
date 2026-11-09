@@ -51,8 +51,10 @@ from pramana_domain.spec_storage import load_spec
 from . import ids
 from .account_rows import IdempotencyRow
 from .auth.service import Principal
+from .consent import consent_request_email
 from .db import AuditLogRow, Base, Database, SiteModelRow, SiteRow, acting_for, current_org
 from .errors import ApiError, not_found
+from .outbox import EmailOutboxRow, delivery_status
 from .vault import SEALED, PersonKeyRow, PersonRef, PersonVault
 
 _ERASED_RESPONSE = json.dumps(
@@ -63,6 +65,25 @@ CONSENT_NOTICE_VERSION = "contact-web-v1"
 INVALID_CONSENT_LINK = (
     "this consent link has expired or was already used; ask the site team for a new one"
 )
+
+
+async def _cancel_queued_consent_email(
+    session: AsyncSession, consent_link_id: uuid.UUID, now: datetime
+) -> None:
+    """Clear a queued bearer link when its consent request can no longer be used."""
+    outbox = await session.scalar(
+        select(EmailOutboxRow)
+        .where(EmailOutboxRow.consent_link_id == consent_link_id)
+        .with_for_update()
+    )
+    if outbox is not None and outbox.state == "queued":
+        outbox.state = "dead"
+        outbox.dead_at = now
+        outbox.locked_until = None
+        outbox.recipient = None
+        outbox.subject = None
+        outbox.body = None
+        outbox.last_error = "ConsentLinkNoLongerValid"
 
 
 class SitePersonRow(Base):
@@ -417,9 +438,14 @@ class SitePeople:
             )
 
     async def request_consent_link(
-        self, site_id: uuid.UUID, person_id: str, principal: Principal
-    ) -> tuple[str, datetime, str | None, str, str]:
-        """Create a seven-day, single-use web consent link and return its secret once."""
+        self,
+        site_id: uuid.UUID,
+        person_id: str,
+        principal: Principal,
+        *,
+        link_base: str | None,
+    ) -> tuple[str, datetime, str, str]:
+        """Create a seven-day consent link and persist any email intent with it."""
         secret = secrets.token_urlsafe(32)
         now = datetime.now(UTC)
         async with self.db.transaction() as session:
@@ -442,6 +468,7 @@ class SitePeople:
             )
             for old in open_links:
                 old.revoked_at = now
+                await _cancel_queued_consent_email(session, old.id, now)
             row = ConsentLinkRow(
                 id=ids.uuid7(),
                 org_id=site.org_id,
@@ -475,7 +502,60 @@ class SitePeople:
             )
             await session.flush()
             code = f"{ids.encode('org', site.org_id)}.{secret}"
-            return code, row.expires_at, email, language, str(row.id)
+            delivery = "no_email"
+            if email:
+                envelope = (
+                    consent_request_email(
+                        email=email,
+                        link_base=link_base,
+                        link_path=f"/consent/{code}",
+                        language=language,
+                    )
+                    if link_base
+                    else None
+                )
+                session.add(
+                    EmailOutboxRow(
+                        id=ids.uuid7(),
+                        org_id=site.org_id,
+                        kind="consent_request",
+                        consent_link_id=row.id,
+                        state="queued" if envelope else "dead",
+                        recipient=envelope.recipient if envelope else None,
+                        subject=envelope.subject if envelope else None,
+                        body=envelope.body if envelope else None,
+                        attempts=0,
+                        available_at=now,
+                        dead_at=None if envelope else now,
+                        last_error=None if envelope else "EmailNotConfigured",
+                    )
+                )
+                delivery = "queued" if envelope else "failed"
+            return code, row.expires_at, delivery, ids.encode("consent", row.id)
+
+    async def consent_request_delivery(
+        self, site_id: uuid.UUID, person_id: str, request_id: uuid.UUID
+    ) -> str:
+        """Return delivery state only for a consent link belonging to this site and person."""
+        async with self.db.read() as session:
+            site = await self._site(session, site_id)
+            link = await session.scalar(
+                select(ConsentLinkRow.id).where(
+                    ConsentLinkRow.org_id == site.org_id,
+                    ConsentLinkRow.site_id == site.id,
+                    ConsentLinkRow.person_id == person_id,
+                    ConsentLinkRow.id == request_id,
+                )
+            )
+            if link is None:
+                raise not_found("consent request")
+            state = await session.scalar(
+                select(EmailOutboxRow.state).where(
+                    EmailOutboxRow.org_id == site.org_id,
+                    EmailOutboxRow.consent_link_id == request_id,
+                )
+            )
+        return "no_email" if state is None else delivery_status(state)
 
     @staticmethod
     def _consent_link_parts(code: str) -> tuple[uuid.UUID, str]:
@@ -535,6 +615,7 @@ class SitePeople:
                     raise ApiError(410, "CONSENT_LINK_INVALID", INVALID_CONSENT_LINK)
                 row.consumed_at = now
                 row.decision = body.decision
+                await _cancel_queued_consent_email(session, row.id, now)
                 active = await self._active(
                     session,
                     SiteRow(id=row.site_id, org_id=row.org_id),

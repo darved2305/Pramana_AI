@@ -4,12 +4,13 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Path, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Header, Path, Request, Response
 
 from pramana_contracts import (
     ConsentPurpose,
     ConsentRecord,
     ConsentRequestCreated,
+    ConsentRequestDelivery,
     ParticipantSpec,
     PersonTrackRecord,
     RecordConsent,
@@ -18,9 +19,8 @@ from pramana_contracts import (
 )
 
 from .. import ids
-from ..consent import email_consent_request
 from ..db import Database
-from ..errors import not_found
+from ..errors import ApiError, not_found
 from ..idempotency import idempotent
 from ..people import SitePeople, consent_view, person_etag, person_view
 from ..tenant_routes import OrganizationRoute
@@ -174,23 +174,48 @@ async def withdraw_consent(
 @router.post("/{person_id}/consent-requests", status_code=201)
 @idempotent("org", roles=EDITORS)
 async def request_consent(
-    org: str, site_id: str, person_id: PersonId, request: Request, response: Response
+    org: str,
+    site_id: str,
+    person_id: PersonId,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
 ) -> ConsentRequestCreated:
-    """Create a single-use web consent link and email it when Gmail is ready."""
+    """Create a consent link and commit its email intent before delivery starts."""
     response.headers["Cache-Control"] = "private, no-store"
     people = _people(request, response)
-    code, expires_at, email, language, request_id = await people.request_consent_link(
-        _site(site_id), person_id, request.state.principal
+    mailer = request.app.state.mailer
+    link_base = request.app.state.settings.invitation_link_base if mailer is not None else None
+    code, expires_at, delivery, request_id = await people.request_consent_link(
+        _site(site_id), person_id, request.state.principal, link_base=link_base
     )
-    link_path = f"/consent/{code}"
-    delivery = await email_consent_request(
-        request.app.state.mailer,
-        request.app.state.settings.invitation_link_base,
-        email,
-        link_path,
-        language,
-        request_id,
-    )
+    if delivery == "queued":
+        background_tasks.add_task(request.app.state.email_relay.drain)
     return ConsentRequestCreated(
-        link_path=link_path, expires_at=expires_at, email_delivery=delivery
+        request_id=request_id,
+        link_path=f"/consent/{code}",
+        expires_at=expires_at,
+        email_delivery=delivery,
     )
+
+
+@router.get("/{person_id}/consent-requests/{request_id}")
+async def consent_request_delivery(
+    org: str,
+    site_id: str,
+    person_id: PersonId,
+    request_id: str,
+    request: Request,
+    response: Response,
+) -> ConsentRequestDelivery:
+    """Read the durable status for a consent email requested by this site team."""
+    if not set(EDITORS) & set(request.state.organization.roles):
+        raise ApiError(403, "ROLE_FORBIDDEN", "your workspace role does not allow this action")
+    try:
+        decoded = ids.decode("consent", request_id)
+    except ValueError as exc:
+        raise not_found("consent request") from exc
+    delivery = await _people(request, response).consent_request_delivery(
+        _site(site_id), person_id, decoded
+    )
+    return ConsentRequestDelivery(email_delivery=delivery)
