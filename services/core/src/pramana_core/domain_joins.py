@@ -291,9 +291,17 @@ class DomainJoins:
                         OrganizationDomainRow.domain == domain,
                     )
                     .with_for_update()
+                    .execution_options(populate_existing=True)
                 )
                 if row is None:
                     raise not_found("domain claim")
+                if row.verification != method or row.verification_token != token:
+                    raise ApiError(
+                        409,
+                        "DOMAIN_CHALLENGE_CHANGED",
+                        "The domain verification changed. Check the current settings and "
+                        "try again.",
+                    )
                 if row.verified_at is None:
                     row.verified_at = datetime.now(UTC)
                     row.verification_token = None

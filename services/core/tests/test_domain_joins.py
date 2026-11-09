@@ -160,6 +160,45 @@ def _as_owner(client: TestClient) -> None:
     _use_session(client, client.owner_token)  # type: ignore[attr-defined]
 
 
+def test_dns_verification_rejects_changed_challenge(domain_core: TestClient) -> None:
+    client = domain_core
+    org_id = client.org_id  # type: ignore[attr-defined]
+    created = client.post(
+        f"/v1/orgs/{org_id}/domains",
+        json={"domain": "race-college.edu", "verification": "dns_txt"},
+        headers=_headers("domain-race-add-0001"),
+    )
+    assert created.status_code == 201, created.text
+    old_value = created.json()["verification_value"]
+
+    class ReplacedChallenge:
+        async def lookup_txt(self, name: str) -> set[str]:
+            engine = create_async_engine(client.db_url)  # type: ignore[attr-defined]
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text(
+                            "update org_domains set verification_token = :token "
+                            "where domain = 'race-college.edu'"
+                        ),
+                        {"token": secrets.token_urlsafe(32)},
+                    )
+            finally:
+                await engine.dispose()
+            return {old_value}
+
+    client.app.state.domain_joins.resolver = ReplacedChallenge()
+    result = client.post(
+        f"/v1/orgs/{org_id}/domains/race-college.edu/verify",
+        headers=_headers("domain-race-verify-0001"),
+    )
+    assert result.status_code == 409, result.text
+    domains = client.get(f"/v1/orgs/{org_id}/domains").json()
+    assert (
+        next(row for row in domains if row["domain"] == "race-college.edu")["verified_at"] is None
+    )
+
+
 def test_verified_domain_suggestions_and_request_approval_notifications(
     domain_core: TestClient,
 ) -> None:
