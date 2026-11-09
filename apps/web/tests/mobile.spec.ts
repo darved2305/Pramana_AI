@@ -50,3 +50,10 @@ test("a consent link can be refused in Hindi on a phone", async ({ page }) => {
   await page.getByRole("button", { name: "नहीं, मैं सहमत नहीं हूँ" }).click();
   await expect(page.getByText(/आपका फैसला दर्ज हो गया है/)).toBeVisible();
 });
+
+test("a consent page reports a connection failure without calling the link expired", async ({ page }) => {
+  await page.route("**/api/core/v1/consent-links/**", (route) => route.abort());
+  await page.goto("/consent/org_example.secret");
+  await expect(page.getByText("Pramana could not be reached. Check your connection and try again.")).toBeVisible();
+  await expect(page.getByText(/This link has expired/)).toHaveCount(0);
+});
