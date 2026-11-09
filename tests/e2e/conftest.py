@@ -10,6 +10,7 @@ from collections.abc import Iterator
 
 import httpx
 import pytest
+
 from e2e.harness import (
     CORE_PORT,
     SIM_PORT,
@@ -21,7 +22,6 @@ from e2e.harness import (
     port_free,
     temporary_work_directory,
 )
-
 from pramana_contracts.tokens import generate_private_key_b64, private_key_from_b64, public_key_b64
 
 

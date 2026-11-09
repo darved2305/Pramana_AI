@@ -616,6 +616,8 @@ def test_workspace_home_lists_pending_join_requests_for_owners(domain_core: Test
     home = client.get(f"/v1/orgs/{org_id}/home")
     assert home.status_code == 200, home.text
     assert [row["id"] for row in home.json()["join_requests"]] == [created["id"]]
+
+
 def _outbox_rows(client: TestClient) -> list[tuple[str, str, str | None]]:
     async def run() -> list[tuple[str, str, str | None]]:
         engine = create_async_engine(client.db_url)  # type: ignore[attr-defined]

@@ -52,8 +52,8 @@ from pramana_domain.spec_storage import load_spec
 from . import ids
 from .account_rows import IdempotencyRow
 from .auth.service import Principal
-from .cursors import CursorCodec, like_escape
 from .consent import consent_request_email
+from .cursors import CursorCodec, like_escape
 from .db import AuditLogRow, Base, Database, SiteModelRow, SiteRow, acting_for, current_org
 from .errors import ApiError, not_found
 from .outbox import EmailOutboxRow, cancel_outbox_email, delivery_status, seal_envelope

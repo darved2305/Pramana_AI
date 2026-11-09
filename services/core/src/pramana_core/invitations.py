@@ -14,6 +14,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import ColumnElement, func, select, tuple_
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from pramana_contracts import CreateInvitation, InvitationAccepted, InvitationView
 
