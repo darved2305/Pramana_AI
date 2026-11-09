@@ -255,7 +255,7 @@ export function ErrorState({ error, onRetry, className }: { error: unknown; onRe
       <div className="mb-4 grid h-12 w-12 place-items-center rounded-[12px] bg-bad/12 text-bad">
         <IconAlert />
       </div>
-      <p className="text-[15px] font-medium text-fg">{unreachable ? "Core not reachable" : "Could not load this"}</p>
+      <p className="text-[15px] font-medium text-fg">{unreachable ? "Pramana cannot be reached" : "Could not load this"}</p>
       <p className="mt-1.5 max-w-[52ch] text-[14px] leading-relaxed text-muted">{describeError(error)}</p>
       {error instanceof ApiError && error.requestId ? (
         <p className="mt-2 font-mono text-[11px] text-muted">request {error.requestId}</p>
