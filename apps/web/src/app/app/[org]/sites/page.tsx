@@ -40,14 +40,16 @@ export default function SitesPage() {
                   <IconBuilding />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <span className="text-[16px] font-medium text-fg">{s.name}</span>
+                  <span className="text-[16px] font-medium text-fg">
+                    {s.mode === "sandbox" ? "Practice site (simulated)" : s.name}
+                  </span>
                   <span className="flex flex-wrap gap-1.5">
                     <Badge tone={s.mode === "sandbox" ? "info" : "accent"}>{s.mode === "sandbox" ? "Practice" : "Your site"}</Badge>
                     {s.current_model_id ? <Badge tone="ok">Published</Badge> : <Badge>Not described yet</Badge>}
                   </span>
                   <span className="text-[13px] text-muted">
                     {s.mode === "sandbox"
-                      ? "A simulated hostel block for practice runs."
+                      ? "A simulated site for guided practice runs."
                       : s.current_model_id
                         ? "Open to change its model or practise on it."
                         : "Describe it from a template to start investigating here."}

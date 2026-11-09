@@ -138,7 +138,9 @@ function NewInvestigation() {
           {(a) => (
             <Select {...a} value={site?.id} onChange={(e) => { setSiteId(e.target.value); setChosen(null); setFault("random"); setAffected(""); }}>
               {published.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}{s.mode === "sandbox" ? " (practice)" : ""}</option>
+                <option key={s.id} value={s.id}>
+                  {s.mode === "sandbox" ? "Practice site (simulated)" : s.name}
+                </option>
               ))}
             </Select>
           )}

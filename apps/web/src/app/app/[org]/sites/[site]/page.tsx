@@ -158,11 +158,11 @@ export default function SitePage() {
       </Link>
       <PageHeader
         eyebrow={<Badge tone={live ? "accent" : "info"}>{live ? "Your site" : "Practice site"}</Badge>}
-        title={desc?.title || s.name}
+        title={!live ? "Practice site (simulated)" : desc?.title || s.name}
         subtitle={
           live
             ? "Describe what is here and what depends on what. Pramana works out what can go wrong, who can check it and how to tell causes apart."
-            : "A simulated hostel block. Use it to see an investigation end to end before modelling your own site."
+            : "A simulated site. Use it to see an investigation end to end before modelling your own site."
         }
         actions={
           <>

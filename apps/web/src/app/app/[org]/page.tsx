@@ -204,7 +204,7 @@ function SiteGrid({ sites, base }: { sites: HomeSite[]; base: string }) {
         <li key={s.id}>
           <Link href={`${base}/sites/${s.id}`} className="group flex h-full flex-col gap-2 rounded-[12px] p-4 shadow-[inset_0_0_0_0.8px_var(--app-line)] transition-colors hover:bg-white/[.04]">
             <span className="flex items-center gap-2 text-[14px] font-medium text-fg">
-              <IconBuilding aria-hidden /> {s.name}
+              <IconBuilding aria-hidden /> {s.mode === "sandbox" ? "Practice site (simulated)" : s.name}
               <IconChevronRight className="ml-auto opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
             </span>
             <span className="flex flex-wrap gap-1.5">

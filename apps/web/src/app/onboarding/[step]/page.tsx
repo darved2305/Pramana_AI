@@ -195,7 +195,7 @@ export default function OnboardingPage() {
             <Primary busy={busy} onClick={() => go("org")}>Create a workspace</Primary>
           </Step>
         ) : step === "sandbox" ? (
-          <Step title="See one investigation from start to finish" lead="A simulated hostel has a hidden fault. You report the problem, Pramana asks simulated colleagues what they see, and at the end the hidden fault is revealed so you can check its reasoning. Nothing real is touched.">
+          <Step title="See one investigation from start to finish" lead="A simulated site has a hidden fault. You report the problem, Pramana asks simulated colleagues what they see, and at the end the hidden fault is revealed so you can check its reasoning. Nothing real is touched.">
             <div className="flex flex-wrap gap-3">
               <Link href={`/app/${workspace.slug}/investigations/new?practice=1`} className="btn-cream">Start a practice investigation</Link>
               <Secondary busy={busy} onClick={() => go("site")}>Skip, I will try it later</Secondary>

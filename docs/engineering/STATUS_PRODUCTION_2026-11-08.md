@@ -111,6 +111,17 @@ files larger than 5 MB before reading them and announces the readable error to a
 technology. The real-stack workspace journey covers an oversized file and confirms the current
 draft stays unchanged. The focused workspace suite passed 2 tests after the fix.
 
+The same Chrome pass used a 120-character Hindi workspace name on a 390 px phone and found that
+the home page grew wider than the screen. The workspace badge now truncates inside the available
+width and keeps the full name in its title. The review journey checks the document width at 390 px.
+
+The hospital onboarding journey described its practice site as a hostel. The onboarding, Sites
+list and practice-site detail now use general practice-site wording. A new immutable sandbox model
+uses neutral practice labels and questions, and the Chrome journey runs through the reveal. Workspace
+owners and operators can now reveal the practice result using their workspace permissions.
+After applying the new migration on Supabase, rerun the revoke of anon and authenticated access
+to the Pramana schema.
+
 Email can use the local outbox in Slice 5 until a provider and sending identity are configured.
 Voice, LLM and telephony credentials are requested only when those integrations need them.
 

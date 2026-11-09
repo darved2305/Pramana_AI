@@ -461,7 +461,7 @@ class AccountService:
                         sandbox = SiteRow(
                             id=ids.uuid7(),
                             org_id=org_id,
-                            name="Sample hostel (simulated)",
+                            name="Practice site (simulated)",
                             kind=template.kind,
                             mode="sandbox",
                         )
