@@ -28,6 +28,7 @@ from sqlalchemy import (
     inspect,
     select,
     text,
+    tuple_,
     update,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -51,6 +52,7 @@ from pramana_domain.spec_storage import load_spec
 from . import ids
 from .account_rows import IdempotencyRow
 from .auth.service import Principal
+from .cursors import CursorCodec, like_escape
 from .db import AuditLogRow, Base, Database, SiteModelRow, SiteRow, acting_for, current_org
 from .errors import ApiError, not_found
 from .vault import SEALED, PersonKeyRow, PersonRef, PersonVault
@@ -274,6 +276,62 @@ class SitePeople:
             await self._reveal(session, rows)
             return rows
 
+    async def require_site(self, site_id: uuid.UUID) -> None:
+        async with self.db.read() as session:
+            await self._site(session, site_id)
+
+    async def listing_page(
+        self,
+        site_id: uuid.UUID,
+        *,
+        limit: int,
+        cursor: str | None,
+        q: str | None,
+        codec: CursorCodec,
+    ) -> tuple[list[SitePersonRow], str | None]:
+        org_id = self._org()
+        needle = q.strip() if q else ""
+        filters = {"q": needle}
+        scope = f"people:{site_id}"
+        sort = codec.decode(cursor, scope=scope, org_id=str(org_id), filters=filters)
+        query = select(SitePersonRow).where(
+            SitePersonRow.org_id == org_id, SitePersonRow.site_id == site_id
+        )
+        if needle:
+            query = query.where(SitePersonRow.id.ilike(f"%{like_escape(needle)}%", escape="\\"))
+        if sort is not None:
+            try:
+                after_created = datetime.fromisoformat(str(sort[0]))
+            except ValueError as exc:
+                raise ApiError(400, "CURSOR_INVALID", "Restart from the first page.") from exc
+            query = query.where(
+                tuple_(SitePersonRow.created_at, SitePersonRow.id)
+                < tuple_(after_created, str(sort[1]))
+            )
+        async with self.db.read() as session:
+            await self._site(session, site_id)
+            rows = list(
+                await session.scalars(
+                    query.order_by(SitePersonRow.created_at.desc(), SitePersonRow.id.desc()).limit(
+                        limit + 1
+                    )
+                )
+            )
+            has_more = len(rows) > limit
+            rows = rows[:limit]
+            await self._reveal(session, rows)
+        next_cursor = (
+            codec.encode(
+                scope=scope,
+                org_id=str(org_id),
+                filters=filters,
+                sort=[rows[-1].created_at.isoformat(), rows[-1].id],
+            )
+            if has_more and rows
+            else None
+        )
+        return rows, next_cursor
+
     async def specs(self, site_id: uuid.UUID) -> list[ParticipantSpec]:
         return [_full_spec(r) for r in await self.listing(site_id)]
 
@@ -415,6 +473,59 @@ class SitePeople:
                     .order_by(ConsentRow.granted_at.desc())
                 )
             )
+
+    async def consent_page(
+        self,
+        site_id: uuid.UUID,
+        person_id: str,
+        *,
+        limit: int,
+        cursor: str | None,
+        purpose: str | None,
+        codec: CursorCodec,
+    ) -> tuple[list[ConsentRow], str | None]:
+        org_id = self._org()
+        filters: dict[str, object] = {"person_id": person_id, "purpose": purpose}
+        scope = f"consents:{site_id}"
+        sort = codec.decode(cursor, scope=scope, org_id=str(org_id), filters=filters)
+        query = select(ConsentRow).where(
+            ConsentRow.org_id == org_id,
+            ConsentRow.site_id == site_id,
+            ConsentRow.person_id == person_id,
+        )
+        if purpose is not None:
+            query = query.where(ConsentRow.purpose == purpose)
+        if sort is not None:
+            try:
+                after_created = datetime.fromisoformat(str(sort[0]))
+                after_id = uuid.UUID(str(sort[1]))
+            except ValueError as exc:
+                raise ApiError(400, "CURSOR_INVALID", "Restart from the first page.") from exc
+            query = query.where(
+                tuple_(ConsentRow.granted_at, ConsentRow.id) < tuple_(after_created, after_id)
+            )
+        async with self.db.read() as session:
+            await self._site(session, site_id)
+            rows = list(
+                await session.scalars(
+                    query.order_by(ConsentRow.granted_at.desc(), ConsentRow.id.desc()).limit(
+                        limit + 1
+                    )
+                )
+            )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = (
+            codec.encode(
+                scope=scope,
+                org_id=str(org_id),
+                filters=filters,
+                sort=[rows[-1].granted_at.isoformat(), str(rows[-1].id)],
+            )
+            if has_more and rows
+            else None
+        )
+        return rows, next_cursor
 
     async def request_consent_link(
         self, site_id: uuid.UUID, person_id: str, principal: Principal

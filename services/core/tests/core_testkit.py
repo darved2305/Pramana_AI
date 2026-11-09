@@ -33,7 +33,8 @@ def core_settings(db_url: str, **overrides: object) -> Settings:
         "GOOGLE_OAUTH_CLIENT_SECRET": "",
     }
     values.update(overrides)
-    return Settings(**values)  # type: ignore[arg-type]
+    # Ignore the checkout's .env: a test's settings are only what the test states.
+    return Settings(_env_file=None, **values)  # type: ignore[arg-type]
 
 
 async def truncate_all(db_url: str) -> None:

@@ -53,11 +53,17 @@ async def list_investigations(
     status: Annotated[list[InvestigationStatus] | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
 ) -> InvestigationPage:
-    """Newest first. ``status`` may repeat; ``q`` searches the report text and the id."""
+    """Newest first with a stable keyset; sealed reports match by ID only."""
     queries: ConsoleQueries = request.app.state.console
-    return await queries.list_investigations(statuses=status or [], q=q, limit=limit, offset=offset)
+    return await queries.list_investigations(
+        statuses=status or [],
+        q=q,
+        limit=limit,
+        cursor=cursor,
+        codec=request.app.state.cursor_codec,
+    )
 
 
 @router.post("", status_code=201, dependencies=[Operator])

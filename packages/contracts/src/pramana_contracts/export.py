@@ -24,6 +24,7 @@ from . import (
     CreateOrganization,
     CreateSiteInvestigation,
     CurrentAccount,
+    DeleteOrganization,
     DirectoryParticipant,
     EvaluationReport,
     EvaluationReportSummary,
@@ -39,6 +40,7 @@ from . import (
     OnboardingPatch,
     OnboardingState,
     OrganizationCreated,
+    OrganizationDeletion,
     OrganizationDomain,
     PackSummary,
     ParticipantPatch,
@@ -61,6 +63,7 @@ from . import (
 
 EXPORTED: tuple[type[BaseModel], ...] = (
     CreateOrganization,
+    DeleteOrganization,
     CreateDomain,
     CreateSiteInvestigation,
     SaveDraft,
@@ -71,6 +74,7 @@ EXPORTED: tuple[type[BaseModel], ...] = (
     OnboardingPatch,
     OnboardingState,
     OrganizationCreated,
+    OrganizationDeletion,
     OrganizationDomain,
     UpdateDomainPolicy,
     RequestJoin,

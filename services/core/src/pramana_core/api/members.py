@@ -8,15 +8,17 @@ ends at once because every request re-checks the membership.
 """
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path, Request, Response
-from sqlalchemy import func, select
+from fastapi import APIRouter, Path, Query, Request, Response
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pramana_contracts import OrganizationRole, UpdateMemberRoles, WorkspaceMember
+from pramana_contracts import CursorPage, OrganizationRole, UpdateMemberRoles, WorkspaceMember
 
 from .. import ids
+from ..cursors import CursorCodec
 from ..db import AuditLogRow, Database, MembershipRow, UserRow
 from ..errors import ApiError, not_found
 from ..idempotency import idempotent
@@ -44,22 +46,56 @@ def _view(m: MembershipRow, name: str, email: str, admin: bool, me: str) -> Work
 
 
 @router.get("/members")
-async def members(org: str, request: Request, response: Response) -> list[WorkspaceMember]:
+async def members(
+    org: str,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
+) -> CursorPage[WorkspaceMember]:
     access = request.state.organization
     principal = request.state.principal
     admin = bool(set(MANAGERS) & set(access.roles))
     db: Database = request.app.state.db
+    codec: CursorCodec = request.app.state.cursor_codec
+    org_id = access.organization.id
+    filter_key: dict[str, Any] = {}
+    sort = codec.decode(cursor, scope="members", org_id=str(org_id), filters=filter_key)
+    query = (
+        select(MembershipRow, UserRow.display_name, UserRow.email)
+        .join(UserRow, UserRow.id == MembershipRow.user_id)
+        .where(MembershipRow.org_id == org_id)
+    )
+    if sort is not None:
+        query = query.where(
+            tuple_(MembershipRow.created_at, MembershipRow.user_id)
+            < tuple_(datetime.fromisoformat(str(sort[0])), str(sort[1]))
+        )
     async with db.read() as session:
         rows = (
             await session.execute(
-                select(MembershipRow, UserRow.display_name, UserRow.email)
-                .join(UserRow, UserRow.id == MembershipRow.user_id)
-                .where(MembershipRow.org_id == access.organization.id)
-                .order_by(MembershipRow.created_at, MembershipRow.user_id)
+                query.order_by(MembershipRow.created_at.desc(), MembershipRow.user_id.desc()).limit(
+                    limit + 1
+                )
             )
         ).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
     response.headers["Cache-Control"] = "private, no-store"
-    return [_view(m, name, email, admin, principal.id) for m, name, email in rows]
+    return CursorPage[WorkspaceMember](
+        items=[_view(m, name, email, admin, principal.id) for m, name, email in rows],
+        limit=limit,
+        next_cursor=(
+            codec.encode(
+                scope="members",
+                org_id=str(org_id),
+                filters=filter_key,
+                sort=[rows[-1][0].created_at.isoformat(), rows[-1][0].user_id],
+            )
+            if has_more and rows
+            else None
+        ),
+    )
 
 
 async def _owners(session: AsyncSession, org_id: uuid.UUID) -> int:

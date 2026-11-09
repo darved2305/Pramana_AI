@@ -9,11 +9,13 @@ import { core } from "@/lib/api/core";
 import { ApiError } from "@/lib/api/http";
 import type { ListQuery } from "@/lib/api/core";
 import type {
+  CursorPage,
   DirectoryParticipant,
   EvaluationReport,
   EvaluationReportSummary,
   EventEnvelope,
   InvestigationPage,
+  InvestigationSummary,
   InvestigationState,
   PackSummary,
   SitePack,
@@ -28,6 +30,102 @@ export type Load<T> =
   | { status: "error"; data?: undefined; error: unknown };
 
 export type Source = "live" | "preview";
+
+type CursorState<T> = {
+  key: string;
+  pages: number;
+  load: Load<CursorPage<T>>;
+  loadingMore: boolean;
+  moreError?: unknown;
+};
+
+export type CursorList<T> = Load<CursorPage<T>> & {
+  /** Fetch the next bounded page. Only ever called by an explicit action, never in a loop. */
+  loadMore: () => void;
+  loadingMore: boolean;
+  moreError?: unknown;
+  /** How many pages are on screen. */
+  pages: number;
+  /** Fetch the first page again. Data on screen stays until the new page arrives. */
+  reload: () => void;
+};
+
+/** Cursor-backed collection. It only requests another bounded page after the person asks. */
+export function useCursorList<T>(
+  key: string | null,
+  fetchPage: (cursor: string | undefined, signal: AbortSignal) => Promise<CursorPage<T>>,
+): CursorList<T> {
+  const [result, setResult] = useState<CursorState<T> | null>(null);
+  const [tick, setTick] = useState(0);
+  const fetchRef = useRef(fetchPage);
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    fetchRef.current = fetchPage;
+  });
+  useEffect(() => {
+    if (key === null) return;
+    requestRef.current?.abort();
+    const ctrl = new AbortController();
+    requestRef.current = ctrl;
+    fetchRef
+      .current(undefined, ctrl.signal)
+      .then((data) => {
+        if (!ctrl.signal.aborted) setResult({ key, pages: 1, load: { status: "ready", data }, loadingMore: false });
+      })
+      .catch((error) => {
+        if (!ctrl.signal.aborted && (error as Error).name !== "AbortError") {
+          setResult({ key, pages: 0, load: { status: "error", error }, loadingMore: false });
+        }
+      });
+    return () => ctrl.abort();
+  }, [key, tick]);
+  const current = key !== null && result?.key === key ? result : null;
+  const loadMore = useCallback(() => {
+    if (!current || current.load.status !== "ready" || current.loadingMore) return;
+    const cursor = current.load.data.next_cursor;
+    if (!cursor) return;
+    const ctrl = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = ctrl;
+    setResult({ ...current, loadingMore: true, moreError: undefined });
+    fetchRef
+      .current(cursor, ctrl.signal)
+      .then((next) => {
+        if (ctrl.signal.aborted) return;
+        setResult((now) => {
+          if (!now || now.key !== current.key || now.load.status !== "ready") return now;
+          return {
+            ...now,
+            pages: now.pages + 1,
+            load: {
+              status: "ready",
+              data: {
+                items: [...now.load.data.items, ...next.items],
+                limit: now.load.data.limit,
+                next_cursor: next.next_cursor,
+              },
+            },
+            loadingMore: false,
+          };
+        });
+      })
+      .catch((error) => {
+        if (!ctrl.signal.aborted && (error as Error).name !== "AbortError") {
+          setResult((now) => (now?.key === current.key ? { ...now, loadingMore: false, moreError: error } : now));
+        }
+      });
+  }, [current]);
+  const reload = useCallback(() => setTick((value) => value + 1), []);
+  const load: Load<CursorPage<T>> = current?.load ?? { status: "loading" };
+  return {
+    ...load,
+    loadMore,
+    loadingMore: current?.loadingMore ?? false,
+    moreError: current?.moreError,
+    pages: current?.pages ?? 0,
+    reload,
+  };
+}
 
 async function loadFixtures() {
   return import("@/lib/preview/fixtures");
@@ -415,19 +513,18 @@ export function useLoad<T>(key: string | null, fn: (signal: AbortSignal) => Prom
 
 /* ---------- console lists ---------- */
 
-export function useInvestigationList(q: ListQuery): Load<InvestigationPage> & { reload: () => void; source: Source } {
+export function useInvestigationList(q: ListQuery): CursorList<InvestigationSummary> & { source: Source } {
   const scope = useInvestigationScope();
   const preview = usePreviewMode();
   const hydrated = useHydrated();
   const key = hydrated ? JSON.stringify({ q, preview, root: scope.apiRoot }) : null;
-  const load = useLoad<InvestigationPage>(key, async (signal) => {
-    if (!preview) return scope.listInvestigations(q, signal);
+  const load = useCursorList<InvestigationSummary>(key, async (cursor, signal): Promise<InvestigationPage> => {
+    if (!preview) return scope.listInvestigations({ ...q, cursor }, signal);
     const f = await loadFixtures();
     const s = f.previewInvestigation;
     return {
-      total: 1,
       limit: q.limit ?? 25,
-      offset: 0,
+      next_cursor: null,
       items: [
         {
           id: s.id,

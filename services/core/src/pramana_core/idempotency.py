@@ -228,7 +228,15 @@ class IdempotencyRoute(APIRoute):
             else:
                 principal = await require_user(request, verified=policy.verified)
                 if policy.scope == "org":
-                    access = await require_organization(request, principal, policy.roles)
+                    access = getattr(request.state, "organization", None)
+                    if access is None or current_org.get() != access.organization.id:
+                        access = await require_organization(request, principal, policy.roles)
+                    elif policy.roles and not set(policy.roles).intersection(access.roles):
+                        raise ApiError(
+                            403,
+                            "ROLE_FORBIDDEN",
+                            "your workspace role does not allow this action",
+                        )
                     request.state.organization = access
                     org_id = access.organization.id
                 actor = f"user:{principal.id}"

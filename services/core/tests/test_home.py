@@ -167,7 +167,7 @@ def test_members_show_emails_only_to_owners_and_admins(account_core: TestClient)
     workspace = create(client).json()
     members = client.get(f"/v1/orgs/{workspace['organization']['slug']}/members")
     assert members.status_code == 200, members.text
-    [me] = members.json()
+    [me] = members.json()["items"]
     assert me["you"] is True
     assert "owner" in me["roles"]
     assert me["email"]  # an owner sees addresses

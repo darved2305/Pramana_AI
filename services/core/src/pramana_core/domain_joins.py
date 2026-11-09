@@ -11,7 +11,7 @@ from typing import Protocol
 
 import dns.exception
 import dns.resolver
-from sqlalchemy import case, select, text
+from sqlalchemy import and_, case, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,7 @@ from pramana_contracts import (
 from . import ids
 from .account_rows import JoinRequestRow, OrganizationDomainRow
 from .auth.service import Principal
+from .cursors import CursorCodec
 from .db import AuditLogRow, Database, MembershipRow, OrganizationRow, UserRow, acting_for
 from .errors import ApiError, not_found
 from .mail import Mailer
@@ -401,27 +402,73 @@ class DomainJoins:
             session.add(self._audit(org_id, principal.id, "domain.removed", domain, {}))
 
     async def list_join_requests(
-        self, org_id: uuid.UUID, principal: Principal, *, limit: int = 100
-    ) -> list[JoinRequestView]:
+        self,
+        org_id: uuid.UUID,
+        principal: Principal,
+        *,
+        limit: int,
+        cursor: str | None,
+        codec: CursorCodec,
+    ) -> tuple[list[JoinRequestView], str | None]:
         if not set(MANAGERS).intersection(principal.roles):
             raise ApiError(
                 403, "ROLE_FORBIDDEN", "only workspace owners and admins can review join requests"
             )
+        priority = case((JoinRequestRow.status == "pending", 0), else_=1)
+        filters: dict[str, object] = {}
+        scope = "join-requests"
+        sort = codec.decode(cursor, scope=scope, org_id=str(org_id), filters=filters, sort_fields=3)
+        query = (
+            select(JoinRequestRow, OrganizationRow, UserRow)
+            .join(OrganizationRow, OrganizationRow.id == JoinRequestRow.org_id)
+            .join(UserRow, UserRow.id == JoinRequestRow.requester_id)
+            .where(JoinRequestRow.org_id == org_id)
+        )
+        if sort is not None:
+            try:
+                after_priority = int(sort[0])
+                after_requested_at = datetime.fromisoformat(str(sort[1]))
+                after_id = uuid.UUID(str(sort[2]))
+            except (TypeError, ValueError) as exc:
+                raise ApiError(400, "CURSOR_INVALID", "Restart from the first page.") from exc
+            if after_priority not in (0, 1):
+                raise ApiError(400, "CURSOR_INVALID", "Restart from the first page.")
+            query = query.where(
+                or_(
+                    priority > after_priority,
+                    and_(
+                        priority == after_priority,
+                        tuple_(JoinRequestRow.requested_at, JoinRequestRow.id)
+                        < tuple_(after_requested_at, after_id),
+                    ),
+                )
+            )
         async with self.db.read() as session:
             rows = (
                 await session.execute(
-                    select(JoinRequestRow, OrganizationRow, UserRow)
-                    .join(OrganizationRow, OrganizationRow.id == JoinRequestRow.org_id)
-                    .join(UserRow, UserRow.id == JoinRequestRow.requester_id)
-                    .where(JoinRequestRow.org_id == org_id)
-                    .order_by(
-                        case((JoinRequestRow.status == "pending", 0), else_=1),
-                        JoinRequestRow.requested_at.desc(),
-                    )
-                    .limit(limit)
+                    query.order_by(
+                        priority.asc(), JoinRequestRow.requested_at.desc(), JoinRequestRow.id.desc()
+                    ).limit(limit + 1)
                 )
             ).all()
-        return [join_request_view(row, org, user) for row, org, user in rows]
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        views = [join_request_view(row, org, user) for row, org, user in rows]
+        next_cursor = (
+            codec.encode(
+                scope=scope,
+                org_id=str(org_id),
+                filters=filters,
+                sort=[
+                    0 if rows[-1][0].status == "pending" else 1,
+                    rows[-1][0].requested_at.isoformat(),
+                    str(rows[-1][0].id),
+                ],
+            )
+            if has_more and rows
+            else None
+        )
+        return views, next_cursor
 
     async def request_join(self, principal: Principal, org_id: uuid.UUID) -> JoinRequestCreated:
         self._require_matching_google_email(principal)

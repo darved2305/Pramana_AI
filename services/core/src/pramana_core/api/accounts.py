@@ -15,6 +15,7 @@ from pramana_contracts.accounts import (
 )
 
 from ..accounts import AccountService, organization_view
+from ..errors import ApiError
 from ..idempotency import IdempotencyRoute, idempotent
 from ..org_access import require_organization, require_user
 
@@ -89,6 +90,18 @@ async def create_organization(
 @router.get("/orgs/{org}")
 async def organization(org: str, request: Request, response: Response) -> OrganizationSummary:
     principal = await require_user(request)
-    access = await require_organization(request, principal)
+    access = await require_organization(request, principal, include_deleted=True)
+    if access.organization.deleted_at is not None:
+        raise ApiError(
+            410,
+            "WORKSPACE_DELETED",
+            "This workspace was deleted. Restore it within 30 days or download its export.",
+            details={
+                "deleted_at": access.organization.deleted_at.isoformat(),
+                "purge_after": access.organization.purge_after.isoformat()
+                if access.organization.purge_after
+                else None,
+            },
+        )
     response.headers["Cache-Control"] = "no-store"
     return organization_view(access.organization, access.roles)

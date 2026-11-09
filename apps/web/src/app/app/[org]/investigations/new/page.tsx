@@ -6,7 +6,7 @@ import { Badge, Button, Card, CardHeader, ErrorState, Field, Input, Notice, Page
 import { actionKey } from "@/lib/api/account";
 import { describeError } from "@/lib/api/http";
 import type { ParticipantSpec, SiteSummary } from "@/lib/api/types";
-import { useLoad } from "@/lib/data/hooks";
+import { useCursorList, useLoad } from "@/lib/data/hooks";
 import { useWorkspace } from "@/lib/org/context";
 
 type Spec = {
@@ -48,8 +48,8 @@ function NewInvestigation() {
   const ws = useWorkspace();
   const router = useRouter();
   const params = useSearchParams();
-  const sites = useLoad(`sites|${ws.org.id}`, (s) => ws.api.sites(s));
-  const published = useMemo(() => (sites.status === "ready" ? sites.data.filter((s) => s.current_model_id) : []), [sites]);
+  const sites = useCursorList(`sites|${ws.org.id}`, (cursor, s) => ws.api.sites({ limit: 50, cursor }, s));
+  const published = useMemo(() => (sites.data?.items ?? []).filter((s) => s.current_model_id), [sites.data]);
   const wanted = params.get("site");
   const [siteId, setSiteId] = useState<string | null>(null);
   const site: SiteSummary | undefined =
@@ -60,9 +60,9 @@ function NewInvestigation() {
     published[0];
 
   const model = useLoad(site ? `model|${site.current_model_id}` : null, (s) => ws.api.model(site!.id, site!.current_model_id as string, s));
-  const people = useLoad(site ? `people|${site.id}` : null, (s) => ws.api.people(site!.id, s));
+  const people = useCursorList(site ? `people|${site.id}` : null, (cursor, s) => ws.api.people(site!.id, { limit: 25, cursor }, s));
   const spec = model.status === "ready" ? (model.data.spec as unknown as Spec) : null;
-  const listed = useMemo(() => (people.status === "ready" ? people.data.map((p) => p.person) : []), [people]);
+  const listed = useMemo(() => (people.status === "ready" ? people.data.items.map((p) => p.person) : []), [people]);
   const cast = useMemo(() => (spec ? (listed.length ? listed : practiceCast(spec)) : []), [spec, listed]);
 
   const [report, setReport] = useState("");
@@ -143,6 +143,9 @@ function NewInvestigation() {
             </Select>
           )}
         </Field>
+        {sites.status === "ready" && sites.data.next_cursor ? (
+          <div><Button size="sm" onClick={sites.loadMore} disabled={sites.loadingMore}>{sites.loadingMore ? "Loading sites..." : "Load more sites"}</Button></div>
+        ) : null}
         <Field label="What is wrong, in the reporter's words">
           {(a) => <Textarea {...a} rows={3} value={report} onChange={(e) => setReport(e.target.value)} placeholder="Describe what people are noticing, in their own words" />}
         </Field>
@@ -192,6 +195,10 @@ function NewInvestigation() {
             );
           })}
         </ul>
+        {people.status === "ready" && people.data.next_cursor ? (
+          <div><Button size="sm" onClick={people.loadMore} disabled={people.loadingMore}>{people.loadingMore ? "Loading people..." : "Load more people"}</Button></div>
+        ) : null}
+        {people.moreError ? <p role="alert" className="text-[13px] text-bad">Could not load more people. <button className="underline" onClick={people.loadMore}>Try again</button></p> : null}
       </Card>
 
       <Card className="flex flex-col gap-4 p-5">
