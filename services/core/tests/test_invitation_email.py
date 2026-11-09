@@ -66,7 +66,7 @@ def test_the_link_is_emailed_when_gmail_is_set_up(
     assert "Pramana" in subject
     assert f"https://pramana.example{body['accept_path']}" in text
     listed = client.get(f"/v1/orgs/{org}/invitations").json()
-    assert listed[0]["email_delivery"] == "sent"
+    assert listed["items"][0]["email_delivery"] == "sent"
     sent_row = sql(
         migrated_db,
         "select state, payload_enc from email_outbox where invitation_id = :id",
@@ -270,7 +270,9 @@ def test_without_gmail_email_is_failed_and_the_owner_can_share_the_link(
     assert r.status_code == 201
     assert r.json()["email_delivery"] == "failed"
     assert r.json()["accept_path"].startswith("/invite/org_")
-    assert client.get(f"/v1/orgs/{org}/invitations").json()[0]["email_delivery"] == "failed"
+    assert (
+        client.get(f"/v1/orgs/{org}/invitations").json()["items"][0]["email_delivery"] == "failed"
+    )
 
 
 def test_legacy_invitation_reports_unknown_delivery_instead_of_a_false_failure(
@@ -293,7 +295,7 @@ def test_legacy_invitation_reports_unknown_delivery_instead_of_a_false_failure(
     invitations = client.get(f"/v1/orgs/{org}/invitations")
 
     assert invitations.status_code == 200, invitations.text
-    assert invitations.json()[0]["email_delivery"] == "unknown"
+    assert invitations.json()["items"][0]["email_delivery"] == "unknown"
 
 
 def test_smtp_failure_is_retried_and_does_not_store_error_text(
@@ -318,8 +320,8 @@ def test_smtp_failure_is_retried_and_does_not_store_error_text(
     body = r.json()
     assert body["email_delivery"] == "queued"
     listed = client.get(f"/v1/orgs/{org}/invitations").json()
-    assert listed[0]["status"] == "pending"
-    assert listed[0]["email_delivery"] == "queued"
+    assert listed["items"][0]["status"] == "pending"
+    assert listed["items"][0]["email_delivery"] == "queued"
     assert mailer.sent == []
     sql(migrated_db, "update email_outbox set available_at = now() where state = 'queued'")
     attempts = sql(
@@ -339,7 +341,7 @@ def test_smtp_failure_is_retried_and_does_not_store_error_text(
     assert post(client, f"/v1/orgs/{org}/invitations", other).status_code == 201
     assert len(mailer.sent) == 2
     listed = client.get(f"/v1/orgs/{org}/invitations").json()
-    assert {item["email_delivery"] for item in listed} == {"sent"}
+    assert {item["email_delivery"] for item in listed["items"]} == {"sent"}
 
 
 def test_committed_email_survives_a_crash_before_the_relay_runs(
@@ -360,7 +362,7 @@ def test_committed_email_survives_a_crash_before_the_relay_runs(
     assert r.json()["email_delivery"] == "queued"
     assert mailer.sent == []
     queued = client.get(f"/v1/orgs/{org}/invitations").json()
-    assert queued[0]["email_delivery"] == "queued"
+    assert queued["items"][0]["email_delivery"] == "queued"
 
     monkeypatch.undo()
     other = {"email": "wake.relay@example.com", "roles": ["viewer"]}
@@ -463,7 +465,7 @@ def test_dead_letter_is_visible_and_message_body_is_purged(
     second = {"email": "dead.letter@example.com", "roles": ["viewer"]}
     assert post(client, f"/v1/orgs/{org}/invitations", second).status_code == 201
     listed = client.get(f"/v1/orgs/{org}/invitations").json()
-    by_email = {item["email"]: item["email_delivery"] for item in listed}
+    by_email = {item["email"]: item["email_delivery"] for item in listed["items"]}
     assert by_email[INVITE["email"]] == "failed"
     assert by_email[second["email"]] == "queued"
     dead = sql(

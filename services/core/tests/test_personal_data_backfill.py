@@ -134,7 +134,7 @@ def test_pre_0016_plaintext_is_sealed_and_exact_replay_survives(
     assert restored["report"]["text"] == OLD_REPORT
     assert restored["participants"][0]["display_name"].startswith(OLD_NAME)
     assert any(item["transcript"] == OLD_TRANSCRIPT for item in restored["observations"])
-    directory = client.get(f"/v1/orgs/{org}/sites/{site}/people").json()
+    directory = client.get(f"/v1/orgs/{org}/sites/{site}/people").json()["items"]
     assert (
         next(p for p in directory if p["person"]["id"] == "p_asha")["person"]["display_name"]
         == site_name
