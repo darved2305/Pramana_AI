@@ -34,7 +34,7 @@ test.describe("landing", () => {
       await page.goto(path);
       await page.waitForLoadState("networkidle");
       const text = await page.evaluate(() => document.body.innerText + [...document.querySelectorAll("[aria-label],[placeholder],[title]")].map((e) => e.getAttribute("aria-label") + " " + e.getAttribute("placeholder") + " " + e.getAttribute("title")).join(" "));
-      expect(text.includes("—"), `em dash on ${path}`).toBe(false);
+      expect(text.includes(String.fromCharCode(0x2014)), `em dash on ${path}`).toBe(false);
     }
   });
 
