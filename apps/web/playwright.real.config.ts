@@ -93,6 +93,9 @@ export default defineConfig({
         GOOGLE_OAUTH_CLIENT_ID: "pramana-e2e",
         GOOGLE_OAUTH_CLIENT_SECRET: "local-only",
         OIDC_REDIRECT_URL: `http://localhost:${WEB_PORT}/api/core/v1/auth/google/callback`,
+        // Tests always keep email in the local outbox, even if the parent shell has Gmail set.
+        GMAIL_ADDRESS: "",
+        GMAIL_APP_PASSWORD: "",
       },
     },
     {

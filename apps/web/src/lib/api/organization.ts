@@ -28,6 +28,11 @@ import type {
   CreateInvitation,
   InvitationCreated,
   InvitationView,
+  CreateDomain,
+  JoinRequestDecision,
+  JoinRequestView,
+  OrganizationDomain,
+  UpdateDomainPolicy,
   SubmitAnswer,
 } from "./types";
 
@@ -64,6 +69,32 @@ export function organizationApi(org: string) {
     home: (signal?: AbortSignal) => request<WorkspaceHome>("core", `${root}/home`, { signal }),
     members: (signal?: AbortSignal) => request<WorkspaceMember[]>("core", `${root}/members`, { signal }),
     invitations: (signal?: AbortSignal) => request<InvitationView[]>("core", `${root}/invitations`, { signal }),
+    domains: (signal?: AbortSignal) => request<OrganizationDomain[]>("core", `${root}/domains`, { signal }),
+    addDomain: (body: CreateDomain, action: OrganizationAction) =>
+      mutate<OrganizationDomain>(`${root}/domains`, body, action),
+    verifyDomain: (domain: string, action: OrganizationAction) =>
+      mutate<OrganizationDomain>(`${root}/domains/${enc(domain)}/verify`, undefined, action),
+    updateDomainPolicy: (domain: string, body: UpdateDomainPolicy, action: OrganizationAction) =>
+      request<OrganizationDomain>("core", `${root}/domains/${enc(domain)}`, {
+        method: "PATCH",
+        json: body,
+        token: action.token,
+        signal: action.signal,
+        headers: { "Idempotency-Key": action.key },
+      }),
+    removeDomain: (domain: string, action: OrganizationAction) =>
+      request<void>("core", `${root}/domains/${enc(domain)}`, {
+        method: "DELETE",
+        token: action.token,
+        signal: action.signal,
+        headers: { "Idempotency-Key": action.key },
+      }),
+    joinRequests: (signal?: AbortSignal) =>
+      request<JoinRequestView[]>("core", `${root}/join-requests`, { signal }),
+    approveJoinRequest: (id: string, body: JoinRequestDecision, action: OrganizationAction) =>
+      mutate<JoinRequestView>(`${root}/join-requests/${enc(id)}/approve`, body, action),
+    declineJoinRequest: (id: string, action: OrganizationAction) =>
+      mutate<JoinRequestView>(`${root}/join-requests/${enc(id)}/decline`, undefined, action),
     updateMember: (memberId: string, roles: WorkspaceMember["roles"], action: OrganizationAction) =>
       request<WorkspaceMember>("core", `${root}/members/${enc(memberId)}`, {
         method: "PATCH",
