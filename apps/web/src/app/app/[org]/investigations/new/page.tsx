@@ -170,6 +170,11 @@ function NewInvestigation() {
         <ul className="grid gap-2 sm:grid-cols-2">
           {cast.map((p) => {
             const on = included.has(p.id);
+            const roleLabels = p.roles.map((roleId) =>
+              spec?.roles?.find((role) => role.id === roleId)?.label ??
+              BUILTIN.find((role) => role.id === roleId)?.label ??
+              roleId,
+            );
             return (
               <li key={p.id} className="flex items-center gap-3 rounded-[12px] p-3 shadow-[inset_0_0_0_0.8px_var(--app-line)]">
                 <input
@@ -185,7 +190,7 @@ function NewInvestigation() {
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] text-fg">{p.display_name}</span>
-                  <span className="block truncate text-[12px] text-muted">{p.roles.join(", ")} · {spec?.locations.find((l) => l.id === p.location_id)?.label.en ?? p.location_id}</span>
+                  <span className="block truncate text-[12px] text-muted">{roleLabels.join(", ")} · {spec?.locations.find((l) => l.id === p.location_id)?.label.en ?? p.location_id}</span>
                 </span>
                 <label className="flex items-center gap-1.5 text-[12px] text-fg-2">
                   <input type="radio" name="reporter" disabled={!on} checked={reporterId === p.id} onChange={() => setReporter(p.id)} /> Reported it
