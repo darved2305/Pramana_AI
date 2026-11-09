@@ -102,6 +102,9 @@ jobs:
       - run: uv sync --frozen
       - run: npm ci
       - name: Playwright (real core, simulator and PostgreSQL)
+        env:
+          E2E_DATABASE: pramana_web_e2e
+          PRAMANA_DB_NAMES: pramana_web_e2e
         run: npm run test:e2e:real
       - name: Browser failure evidence
         if: failure()

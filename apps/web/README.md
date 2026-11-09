@@ -60,7 +60,9 @@ npm run test:e2e:real  # Playwright against a real core, simulator and test data
 ## Tests against a real backend
 
 `npm run test:e2e:real` migrates a fresh test database, starts the simulator, the core and this
-app, then drives the console and the participant pages end to end (`tests-real/`).
+app, then drives the console and the participant pages end to end (`tests-real/`). Set both
+`E2E_DATABASE` and `PRAMANA_DB_NAMES`; the selected `_e2e` database must appear in that explicit
+allowlist. The runner stops before connecting if either value is missing or inconsistent.
 
 ## Fonts
 

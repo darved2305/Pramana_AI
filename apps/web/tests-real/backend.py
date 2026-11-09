@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import uvicorn
@@ -21,15 +23,27 @@ ROOT = Path(__file__).resolve().parents[3]
 CORE_DIR = ROOT / "services" / "core"
 
 
+def _database_name(environment: Mapping[str, str] | None = None) -> str:
+    env = os.environ if environment is None else environment
+    name = env.get("E2E_DATABASE", "").strip()
+    if not name:
+        raise SystemExit("refusing to reset a database: set E2E_DATABASE explicitly")
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", name) or not name.endswith("_e2e"):
+        raise SystemExit("refusing to reset a database: E2E_DATABASE must be a dedicated _e2e name")
+    allowed = {entry.strip() for entry in env.get("PRAMANA_DB_NAMES", "").split(",") if entry.strip()}
+    if not allowed or name not in allowed:
+        raise SystemExit("refusing to reset a database: E2E_DATABASE must be listed in PRAMANA_DB_NAMES")
+    return name
+
+
 def _db_url() -> str:
-    name = os.environ["E2E_DATABASE"]
-    if not name.startswith("pramana_") or name in ("pramana", "pramana_test"):
-        raise SystemExit(f"refusing to reset database {name!r}: use a dedicated e2e database")
+    name = _database_name()
     port = os.environ.get("PRAMANA_DB_PORT", "5433")
     return f"postgresql+asyncpg://pramana@localhost:{port}/{name}"
 
 
 def _ensure_database() -> None:
+    name = _database_name()
     sys.path.insert(0, str(ROOT / "scripts"))
     import dev_db  # type: ignore[import-not-found]
 
@@ -41,7 +55,7 @@ def _ensure_database() -> None:
         str(dev_db.PORT),
         "-U",
         dev_db.USER,
-        os.environ["E2E_DATABASE"],
+        name,
         check=False,  # already exists
     )
 
