@@ -50,21 +50,22 @@ def _db_url() -> str:
     return f"postgresql+asyncpg://pramana@localhost:{port}/{name}"
 
 
-def _ensure_database() -> None:
-    name = _database_name()
-    import dev_db  # type: ignore[import-not-found]
+async def _recreate_database(url: str) -> None:
+    """Drop and create the listed test database. A downgrade cannot reset it: migration 0004
+    narrows ``investigations.status`` back to 16 characters, which fails on rows left by a run."""
+    from sqlalchemy.ext.asyncio import create_async_engine
 
-    dev_db.run(
-        dev_db.pg_bin("createdb"),
-        "-h",
-        "localhost",
-        "-p",
-        str(dev_db.PORT),
-        "-U",
-        dev_db.USER,
-        name,
-        check=False,  # already exists
-    )
+    name = require_listed_url(url, dotenv_path=None).rsplit("/", 1)[-1]
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", name) or not name.endswith("_e2e"):
+        raise SystemExit("refusing to reset a database: E2E_DATABASE must be a dedicated _e2e name")
+    admin = url.rsplit("/", 1)[0] + "/postgres"
+    engine = create_async_engine(admin, isolation_level="AUTOCOMMIT")
+    try:
+        async with engine.connect() as conn:
+            await conn.exec_driver_sql(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+            await conn.exec_driver_sql(f'CREATE DATABASE "{name}"')
+    finally:
+        await engine.dispose()
 
 
 def _migrate(url: str) -> None:
@@ -74,7 +75,6 @@ def _migrate(url: str) -> None:
     cfg = Config(str(CORE_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(CORE_DIR / "alembic"))
     cfg.attributes["url"] = require_listed_url(url, dotenv_path=None)
-    command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
 
 
@@ -111,7 +111,7 @@ def main() -> None:
     if which != "core":
         raise SystemExit("usage: backend.py sim|core")
     url = _db_url()
-    _ensure_database()
+    asyncio.run(_recreate_database(url))
     _migrate(url)
     asyncio.run(_users(url))
     os.environ["DATABASE_URL"] = url

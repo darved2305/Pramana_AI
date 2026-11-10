@@ -1,0 +1,791 @@
+{
+  "schema_version": 1,
+  "scenario": "S1",
+  "source": "real local core, simulator and database; local mock OIDC; local Gnani protocol emulator",
+  "simulated_building": true,
+  "gnani_protocol_emulator": true,
+  "synthetic_audio": true,
+  "disclosure": "Simulated building. Gnani protocol emulator - synthetic audio",
+  "resolution": {
+    "desktop": {
+      "width": 1920,
+      "height": 1080
+    },
+    "phone": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "started_at": "2026-11-10T12:50:03.083Z",
+  "duration_ms": 176100,
+  "investigation_id": "inv_01M72R5SRNFF8T9MHA3S34ES1J",
+  "question_count": 10,
+  "answer_count": 11,
+  "answers": [
+    {
+      "participant": "Facilities technician (simulated)",
+      "question": "On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?",
+      "observed": "connected"
+    },
+    {
+      "participant": "Network technician (simulated)",
+      "question": "Please go to equipment room 1. When you get there: Look at the internet router. Is the light marked INTERNET green, red, or off?",
+      "observed": "green"
+    },
+    {
+      "participant": "Site staff (simulated)",
+      "question": "On your phone, does a normal website open? Please say yes or no.",
+      "observed": "yes"
+    },
+    {
+      "participant": "Facilities technician (simulated)",
+      "question": "On your phone, does a normal website open? Please say yes or no.",
+      "observed": "yes"
+    },
+    {
+      "participant": "Network technician (simulated)",
+      "question": "Look at the internet connection box. Is its status light green, red, or off?",
+      "observed": "green"
+    },
+    {
+      "participant": "Site staff (simulated)",
+      "question": "Please go to equipment room 2. When you get there: Look at the box with several network cables. Are its small lights green, orange, or off?",
+      "observed": "off"
+    },
+    {
+      "participant": "Facilities technician (simulated)",
+      "question": "Please go to the second-floor corridor. When you get there: Please look at the corridor nearby. Are its lights on or off?",
+      "observed": "on"
+    },
+    {
+      "participant": "Network technician (simulated)",
+      "question": "Please go to the second-floor corridor. When you get there: Look at the small device on the ceiling. Is its light on or off?",
+      "observed": "off"
+    },
+    {
+      "participant": "Site staff (simulated)",
+      "question": "Look at the small screen used to view security cameras. Is it on or off?",
+      "observed": "off"
+    },
+    {
+      "participant": "Facilities technician (simulated)",
+      "question": "Please go to equipment room 2. When you get there: Look at the small screen used to view security cameras. Is it on or off?",
+      "observed": "off"
+    },
+    {
+      "participant": "Network technician (simulated)",
+      "question": "On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?",
+      "observed": "connected"
+    }
+  ],
+  "decision_class": null,
+  "verification_status": "closed",
+  "revealed_fault": {
+    "component_id": "CB_C2_7",
+    "mode": "tripped"
+  },
+  "commitment_verified": true,
+  "correct": true,
+  "replay_identical": true,
+  "replay_events": 56,
+  "emulator_tts_sse_requests": 0,
+  "emulator_tts_rest_requests": 0,
+  "emulator_tts_requests": 0,
+  "question_audio_cache_hit": true,
+  "events": [
+    {
+      "seq": 1,
+      "type": "InvestigationCreated",
+      "ts": "2026-11-10T12:50:52.502593Z",
+      "payload": {}
+    },
+    {
+      "seq": 2,
+      "type": "ReportReceived",
+      "ts": "2026-11-10T12:50:52.502593Z",
+      "payload": {}
+    },
+    {
+      "seq": 4,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:50:52.502593Z",
+      "payload": {
+        "participant_id": "p_practice_student",
+        "probe_id": "internet_works",
+        "outcome": "no",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 7,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:50:52.502593Z",
+      "payload": {
+        "text": "On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?",
+        "language": "en",
+        "participant_id": "p_practice_electrician",
+        "probe_id": "wifi_status"
+      }
+    },
+    {
+      "seq": 8,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:50:52.502593Z",
+      "payload": {
+        "text": "Please go to equipment room 1. When you get there: Look at the internet router. Is the light marked INTERNET green, red, or off?",
+        "language": "en",
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "wan_led"
+      }
+    },
+    {
+      "seq": 9,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:50:52.502593Z",
+      "payload": {
+        "text": "On your phone, does a normal website open? Please say yes or no.",
+        "language": "en",
+        "participant_id": "p_practice_guard",
+        "probe_id": "internet_works"
+      }
+    },
+    {
+      "seq": 10,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:51:10.116906Z",
+      "payload": {
+        "participant_id": "p_practice_electrician",
+        "probe_id": "wifi_status",
+        "outcome": "connected",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 12,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:51:10.116906Z",
+      "payload": {
+        "text": "On your phone, does a normal website open? Please say yes or no.",
+        "language": "en",
+        "participant_id": "p_practice_electrician",
+        "probe_id": "internet_works"
+      }
+    },
+    {
+      "seq": 13,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:51:17.623423Z",
+      "payload": {
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "wan_led",
+        "outcome": "green",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 15,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:51:17.623423Z",
+      "payload": {
+        "text": "Look at the internet connection box. Is its status light green, red, or off?",
+        "language": "en",
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "fibre_light"
+      }
+    },
+    {
+      "seq": 16,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:51:24.687386Z",
+      "payload": {
+        "participant_id": "p_practice_guard",
+        "probe_id": "internet_works",
+        "outcome": "yes",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 20,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:51:24.687386Z",
+      "payload": {
+        "text": "Please go to equipment room 2. When you get there: Look at the box with several network cables. Are its small lights green, orange, or off?",
+        "language": "en",
+        "participant_id": "p_practice_guard",
+        "probe_id": "switch_leds"
+      }
+    },
+    {
+      "seq": 21,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:51:30.891258Z",
+      "payload": {
+        "participant_id": "p_practice_electrician",
+        "probe_id": "internet_works",
+        "outcome": "yes",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 25,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:51:30.891258Z",
+      "payload": {
+        "text": "Please go to the second-floor corridor. When you get there: Please look at the corridor nearby. Are its lights on or off?",
+        "language": "en",
+        "participant_id": "p_practice_electrician",
+        "probe_id": "corridor_lights"
+      }
+    },
+    {
+      "seq": 26,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:51:37.473502Z",
+      "payload": {
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "fibre_light",
+        "outcome": "green",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 28,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:51:37.473502Z",
+      "payload": {
+        "text": "Please go to the second-floor corridor. When you get there: Look at the small device on the ceiling. Is its light on or off?",
+        "language": "en",
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "ap_light"
+      }
+    },
+    {
+      "seq": 29,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:51:45.145049Z",
+      "payload": {
+        "participant_id": "p_practice_guard",
+        "probe_id": "switch_leds",
+        "outcome": "off",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 31,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:51:45.145049Z",
+      "payload": {
+        "text": "Look at the small screen used to view security cameras. Is it on or off?",
+        "language": "en",
+        "participant_id": "p_practice_guard",
+        "probe_id": "nvr_screen"
+      }
+    },
+    {
+      "seq": 32,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:51:52.552879Z",
+      "payload": {
+        "participant_id": "p_practice_electrician",
+        "probe_id": "corridor_lights",
+        "outcome": "on",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 34,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:51:52.552879Z",
+      "payload": {
+        "text": "Please go to equipment room 2. When you get there: Look at the small screen used to view security cameras. Is it on or off?",
+        "language": "en",
+        "participant_id": "p_practice_electrician",
+        "probe_id": "nvr_screen"
+      }
+    },
+    {
+      "seq": 35,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:52:00.296829Z",
+      "payload": {
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "ap_light",
+        "outcome": "off",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 37,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:52:00.296829Z",
+      "payload": {
+        "text": "Please look at the corridor nearby. Are its lights on or off?",
+        "language": "en",
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "corridor_lights"
+      }
+    },
+    {
+      "seq": 38,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:52:06.411960Z",
+      "payload": {
+        "participant_id": "p_practice_guard",
+        "probe_id": "nvr_screen",
+        "outcome": "off",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 40,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:52:13.552962Z",
+      "payload": {
+        "participant_id": "p_practice_electrician",
+        "probe_id": "nvr_screen",
+        "outcome": "off",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 44,
+      "type": "DecisionReached",
+      "ts": "2026-11-10T12:52:13.552962Z",
+      "payload": {
+        "decision_class": "DISPATCH_ELECTRICIAN_DB_C2",
+        "decision_probability": 0.9593400866422784
+      }
+    },
+    {
+      "seq": 45,
+      "type": "ApprovalRequested",
+      "ts": "2026-11-10T12:52:24.027494Z",
+      "payload": {
+        "action": "reset_breaker",
+        "target": "CB_C2_7",
+        "participant_id": "p_practice_electrician"
+      }
+    },
+    {
+      "seq": 46,
+      "type": "ApprovalDecided",
+      "ts": "2026-11-10T12:52:28.339214Z",
+      "payload": {
+        "decision": "approve",
+        "approver_id": "usr_01M72R5H5KF4HAYWGPHTWFA3AM"
+      }
+    },
+    {
+      "seq": 47,
+      "type": "CapabilityIssued",
+      "ts": "2026-11-10T12:52:32.705946Z",
+      "payload": {}
+    },
+    {
+      "seq": 48,
+      "type": "InterventionReported",
+      "ts": "2026-11-10T12:52:37.532760Z",
+      "payload": {
+        "participant_id": "p_practice_electrician",
+        "approval_id": "apr_42825df5795d"
+      }
+    },
+    {
+      "seq": 51,
+      "type": "QuestionAsked",
+      "ts": "2026-11-10T12:52:37.532760Z",
+      "payload": {
+        "text": "On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?",
+        "language": "en",
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "wifi_status"
+      }
+    },
+    {
+      "seq": 52,
+      "type": "ObservationRecorded",
+      "ts": "2026-11-10T12:52:41.645468Z",
+      "payload": {
+        "participant_id": "p_practice_it_tech",
+        "probe_id": "wifi_status",
+        "outcome": "connected",
+        "used_as_evidence": true
+      }
+    },
+    {
+      "seq": 55,
+      "type": "VerificationResult",
+      "ts": "2026-11-10T12:52:41.645468Z",
+      "payload": {
+        "kind": "verified",
+        "rule": "verification_confirmed",
+        "fixed_probability": 0.9952121312138422
+      }
+    },
+    {
+      "seq": 56,
+      "type": "GroundTruthRevealed",
+      "ts": "2026-11-10T12:52:52.111562Z",
+      "payload": {
+        "commitment_verified": true,
+        "fault_spec": [
+          {
+            "mode": "tripped",
+            "component_id": "CB_C2_7"
+          }
+        ],
+        "correct": true
+      }
+    }
+  ],
+  "milestones": [
+    {
+      "name": "first_time_operator",
+      "event_type": "LocalMockSignIn",
+      "elapsed_ms": 8622,
+      "caption": "A new operator signs in through the local mock."
+    },
+    {
+      "name": "workspace_ready",
+      "event_type": "WorkspaceCreated",
+      "elapsed_ms": 32408,
+      "caption": "The operator's simulated practice site is ready."
+    },
+    {
+      "name": "approver_session_ready",
+      "event_type": "InvitationAccepted",
+      "elapsed_ms": 43030,
+      "caption": "A separate account joins with the approver role."
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 59135,
+      "caption": "Question 1: On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?",
+      "event_match": {
+        "text": "On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?",
+        "action.participant_id": "p_practice_electrician",
+        "action.probe_id": "wifi_status"
+      },
+      "event_seq": 7
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 68719,
+      "caption": "Facilities technician (simulated) answered from the simulated site card: connected.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_electrician",
+        "evidence.probe_id": "wifi_status",
+        "evidence.outcome": "connected"
+      },
+      "event_seq": 10
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 69572,
+      "caption": "Question 2: Please go to equipment room 1. When you get there: Look at the internet router. Is the light marked INTERNET green, red, or off?",
+      "event_match": {
+        "text": "Please go to equipment room 1. When you get there: Look at the internet router. Is the light marked INTERNET green, red, or off?",
+        "action.participant_id": "p_practice_it_tech",
+        "action.probe_id": "wan_led"
+      },
+      "event_seq": 8
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 76330,
+      "caption": "Network technician (simulated) answered from the simulated site card: green.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_it_tech",
+        "evidence.probe_id": "wan_led",
+        "evidence.outcome": "green"
+      },
+      "event_seq": 13
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 77274,
+      "caption": "Question 3: On your phone, does a normal website open? Please say yes or no.",
+      "event_match": {
+        "text": "On your phone, does a normal website open? Please say yes or no.",
+        "action.participant_id": "p_practice_guard",
+        "action.probe_id": "internet_works"
+      },
+      "event_seq": 9
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 83031,
+      "caption": "Site staff (simulated) answered from the simulated site card: yes.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_guard",
+        "evidence.probe_id": "internet_works",
+        "evidence.outcome": "yes"
+      },
+      "event_seq": 16
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 83894,
+      "caption": "Question 4: On your phone, does a normal website open? Please say yes or no.",
+      "event_match": {
+        "text": "On your phone, does a normal website open? Please say yes or no.",
+        "action.participant_id": "p_practice_electrician",
+        "action.probe_id": "internet_works"
+      },
+      "event_seq": 12
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 89573,
+      "caption": "Facilities technician (simulated) answered from the simulated site card: yes.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_electrician",
+        "evidence.probe_id": "internet_works",
+        "evidence.outcome": "yes"
+      },
+      "event_seq": 21
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 90424,
+      "caption": "Question 5: Look at the internet connection box. Is its status light green, red, or off?",
+      "event_match": {
+        "text": "Look at the internet connection box. Is its status light green, red, or off?",
+        "action.participant_id": "p_practice_it_tech",
+        "action.probe_id": "fibre_light"
+      },
+      "event_seq": 15
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 96095,
+      "caption": "Network technician (simulated) answered from the simulated site card: green.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_it_tech",
+        "evidence.probe_id": "fibre_light",
+        "evidence.outcome": "green"
+      },
+      "event_seq": 26
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 97027,
+      "caption": "Question 6: Please go to equipment room 2. When you get there: Look at the box with several network cables. Are its small lights green, orange, or off?",
+      "event_match": {
+        "text": "Please go to equipment room 2. When you get there: Look at the box with several network cables. Are its small lights green, orange, or off?",
+        "action.participant_id": "p_practice_guard",
+        "action.probe_id": "switch_leds"
+      },
+      "event_seq": 20
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 103939,
+      "caption": "Site staff (simulated) answered from the simulated site card: off.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_guard",
+        "evidence.probe_id": "switch_leds",
+        "evidence.outcome": "off"
+      },
+      "event_seq": 29
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 104970,
+      "caption": "Question 7: Please go to the second-floor corridor. When you get there: Please look at the corridor nearby. Are its lights on or off?",
+      "event_match": {
+        "text": "Please go to the second-floor corridor. When you get there: Please look at the corridor nearby. Are its lights on or off?",
+        "action.participant_id": "p_practice_electrician",
+        "action.probe_id": "corridor_lights"
+      },
+      "event_seq": 25
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 111157,
+      "caption": "Facilities technician (simulated) answered from the simulated site card: on.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_electrician",
+        "evidence.probe_id": "corridor_lights",
+        "evidence.outcome": "on"
+      },
+      "event_seq": 32
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 112163,
+      "caption": "Question 8: Please go to the second-floor corridor. When you get there: Look at the small device on the ceiling. Is its light on or off?",
+      "event_match": {
+        "text": "Please go to the second-floor corridor. When you get there: Look at the small device on the ceiling. Is its light on or off?",
+        "action.participant_id": "p_practice_it_tech",
+        "action.probe_id": "ap_light"
+      },
+      "event_seq": 28
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 118567,
+      "caption": "Network technician (simulated) answered from the simulated site card: off.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_it_tech",
+        "evidence.probe_id": "ap_light",
+        "evidence.outcome": "off"
+      },
+      "event_seq": 35
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 119436,
+      "caption": "Question 9: Look at the small screen used to view security cameras. Is it on or off?",
+      "event_match": {
+        "text": "Look at the small screen used to view security cameras. Is it on or off?",
+        "action.participant_id": "p_practice_guard",
+        "action.probe_id": "nvr_screen"
+      },
+      "event_seq": 31
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 124545,
+      "caption": "Site staff (simulated) answered from the simulated site card: off.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_guard",
+        "evidence.probe_id": "nvr_screen",
+        "evidence.outcome": "off"
+      },
+      "event_seq": 38
+    },
+    {
+      "name": "question_choice",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 125471,
+      "caption": "Question 10: Please go to equipment room 2. When you get there: Look at the small screen used to view security cameras. Is it on or off?",
+      "event_match": {
+        "text": "Please go to equipment room 2. When you get there: Look at the small screen used to view security cameras. Is it on or off?",
+        "action.participant_id": "p_practice_electrician",
+        "action.probe_id": "nvr_screen"
+      },
+      "event_seq": 34
+    },
+    {
+      "name": "participant_answer",
+      "event_type": "ObservationRecorded",
+      "elapsed_ms": 131619,
+      "caption": "Facilities technician (simulated) answered from the simulated site card: off.",
+      "event_match": {
+        "evidence.participant_id": "p_practice_electrician",
+        "evidence.probe_id": "nvr_screen",
+        "evidence.outcome": "off"
+      },
+      "event_seq": 40
+    },
+    {
+      "name": "decision",
+      "event_type": "DecisionReached",
+      "elapsed_ms": 132541,
+      "caption": "The investigation reached DISPATCH_ELECTRICIAN_DB_C2.",
+      "event_match": {
+        "decision_class": "DISPATCH_ELECTRICIAN_DB_C2"
+      },
+      "event_seq": 44
+    },
+    {
+      "name": "approval_requested",
+      "event_type": "ApprovalRequested",
+      "elapsed_ms": 141482,
+      "caption": "Approval requested for Reset a tripped breaker on CB_C2_7.",
+      "event_match": {
+        "action": "reset_breaker",
+        "target": "CB_C2_7",
+        "participant_id": "p_practice_electrician"
+      },
+      "event_seq": 45
+    },
+    {
+      "name": "approval_decided",
+      "event_type": "ApprovalDecided",
+      "elapsed_ms": 145806,
+      "caption": "The separate approver approved the repair.",
+      "event_match": {
+        "decision": "approve"
+      },
+      "event_seq": 46
+    },
+    {
+      "name": "repair_reported",
+      "event_type": "InterventionReported",
+      "elapsed_ms": 154968,
+      "caption": "The approved participant reported the simulated repair.",
+      "event_match": {
+        "participant_id": "p_practice_electrician"
+      },
+      "event_seq": 48
+    },
+    {
+      "name": "verification_question",
+      "event_type": "QuestionAsked",
+      "elapsed_ms": 156298,
+      "caption": "Verification question: On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?",
+      "event_match": {
+        "text": "On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?",
+        "action.participant_id": "p_practice_it_tech",
+        "action.probe_id": "wifi_status"
+      },
+      "event_seq": 51
+    },
+    {
+      "name": "verification_complete",
+      "event_type": "VerificationResult",
+      "elapsed_ms": 159768,
+      "caption": "The investigation status is verified.",
+      "event_match": {
+        "kind": "verified"
+      },
+      "event_seq": 55
+    },
+    {
+      "name": "reveal",
+      "event_type": "GroundTruthRevealed",
+      "elapsed_ms": 169993,
+      "caption": "Reveal: CB_C2_7 tripped; commitment verified: true.",
+      "event_match": {
+        "reveal.commitment_verified": true,
+        "correct": true
+      },
+      "event_seq": 56
+    },
+    {
+      "name": "replay",
+      "event_type": "ReplayChecked",
+      "elapsed_ms": 173993,
+      "caption": "Replay identical across 56 events."
+    }
+  ],
+  "video_cuts": {
+    "full_duration_seconds": 150.0,
+    "time_compression": {
+      "desktop": 1.1701333333333335,
+      "phone": 1.1762666666666666
+    },
+    "short_duration_seconds": 60.0,
+    "labelled": true
+  }
+}

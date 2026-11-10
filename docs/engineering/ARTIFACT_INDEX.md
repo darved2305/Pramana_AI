@@ -178,6 +178,13 @@ Read NOTES.md first for synthetic voices, automation approval and the honest S7 
 Both checked S7 variants have only a student and guard. The remaining useful panel question
 needs an electrician. Neither is evidence of a verified repair or a confident switch diagnosis.
 
+### B7 reproducible local video rehearsal
+
+`scripts/record_demo.py` records the local S1 workflow with a separate approver and has a fast
+no-video mode in `apps/web/tests-demo/recorder-smoke.mjs`. Generated event timeline, English
+captions and shot list are in `docs/demo-video/`. The paced source recordings and labelled 150- and
+60-second video cuts are saved under `.cache/nov10/out/B7/` and are not committed.
+
 ## 8. Load, staging and verification evidence
 
 | Folder | Contents / boundary |
