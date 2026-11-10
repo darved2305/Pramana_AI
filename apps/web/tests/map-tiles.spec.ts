@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.goto("/preview/app");
+  await expect(page).toHaveURL(/\/app$/);
+  await expect(page.getByText("Development preview.")).toBeVisible();
+});
+
 // Map tiles show restricted places, occupancy and observations by icon, initial and colour.
 // Their accessible text must say the same thing, so a screen reader user gets every fact.
 test.describe("preview console map tiles", () => {
