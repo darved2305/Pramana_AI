@@ -102,9 +102,9 @@ From generated reports only; nothing below is typed by hand.
 - **Parallel calls** (ADR 0011): asking up to three people at once cuts the simulated time to a
   conclusion by about a third with no significant change in success, at the cost of about two
   more questions per investigation.
-- **Stopping-rule calibration** (`eval/reports/calibration-2026-11-05/`): abstaining more is not
-  possible without losing accuracy; valuing people's time at half would raise success by 2.7
-  points (significant) for 0.37 more questions. Not adopted yet.
+- **Stopping-rule calibration** (`eval/reports/calibration-2026-11-05/`): in the explored
+  variants, valuing people's time at half increased the historical success metric by 2.7
+  points for 0.37 more questions. This is exploratory and was not adopted.
 - **Extraction.** Before attribution tuning, main's rules-only extractor scored 47/80 on the first
   fresh set and 26/40 on a second fresh set. The first had 7 invented, 20 missed and 1 wrong
   outcome; the second had 2 invented, 7 missed and 2 wrong outcomes. These are main's blind
