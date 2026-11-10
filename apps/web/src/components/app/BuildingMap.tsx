@@ -110,6 +110,16 @@ function Tile({
   const isSel = selected === loc.id;
   const name = loc.label.replace(/^the /, "");
   const Comp = onSelect ? "button" : "div";
+  // Restricted, occupancy, observations and the reported area are otherwise shown only by icon,
+  // initial and colour, so screen readers get the same facts as text.
+  const summary = [
+    loc.restricted ? "restricted" : "",
+    people.length ? `${people.length} ${people.length === 1 ? "person" : "people"}` : "",
+    obs.length ? `${obs.length} ${obs.length === 1 ? "observation" : "observations"}` : "",
+    affected ? "reported affected" : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <Comp
@@ -132,6 +142,7 @@ function Tile({
         {loc.restricted ? <IconLock className="h-3.5 w-3.5 text-warn" /> : null}
         <span className={clsx("font-medium text-fg", compact ? "text-[12px]" : "text-[13px]", "capitalize")}>{name}</span>
       </span>
+      {summary ? <span className="sr-only">{summary}</span> : null}
       {!wide && !compact ? <span className="mt-0.5 text-[11px] uppercase tracking-[0.06em] text-muted">{loc.kind}</span> : null}
       <span className={clsx("flex flex-wrap items-center gap-1", wide ? "ml-auto" : "mt-auto pt-2")}>
         {obs.slice(-6).map((o) => (
