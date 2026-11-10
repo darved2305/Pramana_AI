@@ -17,6 +17,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pramana_core.db import EventRow, InvestigationRow
+from pramana_core.llm import LlmTimeoutError
 from pramana_core.main import create_app
 
 pytestmark = pytest.mark.db
@@ -213,6 +214,55 @@ def test_answer_validation(core: TestClient) -> None:
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "QUESTION_NOT_PENDING"
     assert core.get("/v1/investigations/inv_missing").status_code == 404
+
+
+def test_llm_gateway_timeout_falls_back_without_partial_answer_writes(
+    core: TestClient,
+) -> None:
+    inv = create(core, fault="CB_C2_7.tripped")
+    question = inv["pending_question"]
+    extractor = core.app.state.investigations.extractor  # type: ignore[attr-defined]
+    original_llm = extractor.llm
+
+    class TimedOutGateway:
+        def complete_json(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise LlmTimeoutError("test gateway timeout")
+
+    before_events = core.get(f"/v1/investigations/{inv['id']}/events").json()
+    before_count = len(before_events)
+    try:
+        extractor.llm = TimedOutGateway()
+        response = core.post(
+            f"/v1/investigations/{inv['id']}/answers",
+            json={
+                "question_id": question["id"],
+                "participant_id": question["action"]["participant_id"],
+                "text": "display pe koi picture nahi hai",
+            },
+        )
+    finally:
+        extractor.llm = original_llm
+
+    assert response.status_code == 200, response.text
+    assert response.json()["extraction"]["method"] == "rules"
+    assert response.json()["extraction"]["outcome"] == "unknown"
+    after_events = core.get(f"/v1/investigations/{inv['id']}/events").json()
+    assert len(after_events) > before_count
+    delta = after_events[before_count:]
+    assert sum(event["type"] == "ObservationRecorded" for event in delta) == 1
+    state = core.get(f"/v1/investigations/{inv['id']}").json()
+    assert state["status"] == "investigating"
+    assert state["pending_question"] is not None
+    next_question = state["pending_question"]
+    recovered = core.post(
+        f"/v1/investigations/{inv['id']}/answers",
+        json={
+            "question_id": next_question["id"],
+            "participant_id": next_question["action"]["participant_id"],
+            "text": "haan",
+        },
+    )
+    assert recovered.status_code == 200, recovered.text
 
 
 @pytest.mark.parametrize(
