@@ -75,7 +75,14 @@ function ProviderCard({ status }: { status: VoiceStatus }) {
             }
           />
           <KeyValue k="Host" v={<span className="font-mono text-[12px]">{status.provider_host ?? "unknown"}</span>} />
-          <KeyValue k="Key" v={<Badge tone={status.configured ? "ok" : "warn"}>{status.configured ? "Configured on the server" : "Not configured"}</Badge>} />
+          <KeyValue
+            k="Key"
+            v={
+              <Badge tone={status.protocol_emulator ? "warn" : status.configured ? "ok" : "warn"}>
+                {status.protocol_emulator ? "Local emulator key" : status.configured ? "Configured on the server" : "Not configured"}
+              </Badge>
+            }
+          />
           <KeyValue k="Models" v={<span className="text-[13px]">{[status.stt_model, ...(status.tts_models ?? [])].filter(Boolean).join(", ")}</span>} />
         </dl>
         {status.configured && !live ? (
