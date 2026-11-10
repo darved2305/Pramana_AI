@@ -98,6 +98,12 @@ export function duration(seconds: number) {
   return `${(seconds / 60).toFixed(1)} min`;
 }
 
+/** Keep the short, decision-relevant sentence from the planner's recorded explanation. */
+export function reasonSummary(reason: string) {
+  const sentences = reason.trim().split(/(?<=[.!?])\s+/).filter(Boolean);
+  return (sentences.at(-1) ?? reason).replace(/\s+/g, " ");
+}
+
 export function clock(iso: string) {
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });

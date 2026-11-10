@@ -82,7 +82,7 @@ function Places({ value, set }: { value: SiteDescription; set: Setter }) {
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <p className="text-[13px] text-muted">Every place someone could be asked to look. Restricted places list the roles that may enter.</p>
-      <div className="relative w-full min-w-0 max-w-full overflow-x-auto">
+      <div tabIndex={0} role="region" aria-label="Places table" className="relative w-full min-w-0 max-w-full overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
         <table className="w-full min-w-[720px] text-[14px]">
           <thead>
             <tr>
@@ -198,7 +198,7 @@ function Equipment({ value, set, library }: { value: SiteDescription; set: Sette
         <code className="font-mono">A | B</code> when either one can do the job, such as a backup pump.
       </p>
       <CsvImport value={value} set={set} library={library} />
-      <div className="relative w-full min-w-0 max-w-full overflow-x-auto">
+      <div tabIndex={0} role="region" aria-label="Equipment table" className="relative w-full min-w-0 max-w-full overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
         <table className="w-full min-w-[860px] text-[14px]">
           <thead>
             <tr>
@@ -317,11 +317,13 @@ function CsvImport({ value, set, library }: { value: SiteDescription; set: Sette
         </a>
       </div>
       {result ? (
-        <ul role={result.ok ? "status" : "alert"} aria-label="Import result" className={result.ok ? "text-fg" : "text-[var(--app-bad,#f87171)]"}>
-          {result.lines.map((l) => (
-            <li key={l}>{l}</li>
-          ))}
-        </ul>
+        <div role={result.ok ? "status" : "alert"} aria-label="Import result">
+          <ul className={result.ok ? "text-fg" : "text-[var(--app-bad,#f87171)]"}>
+            {result.lines.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </div>
   );

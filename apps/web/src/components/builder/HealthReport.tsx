@@ -42,7 +42,7 @@ export function HealthReport({ health }: { health: ModelHealth }) {
       ) : null}
 
       {simulated.length ? (
-        <div className="overflow-x-auto">
+        <div tabIndex={0} role="region" aria-label="Simulated outcomes table" className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
           <table className="w-full min-w-[620px] text-[13px]">
             <caption className="mb-2 text-left text-[12px] text-muted">
               Simulated investigations per fault, with people who sometimes answer wrongly. Holding back is right when the people available cannot tell faults apart.

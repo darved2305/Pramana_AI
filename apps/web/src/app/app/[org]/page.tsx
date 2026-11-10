@@ -173,7 +173,6 @@ function Checklist({ steps, base, onDismiss }: { steps: NonNullable<HomeModule["
                 "flex h-full items-start gap-2.5 rounded-[12px] p-3 text-[13px] transition-colors shadow-[inset_0_0_0_0.8px_var(--app-line)]",
                 s.done ? "text-muted" : "text-fg hover:bg-white/[.04]",
               )}
-              aria-label={`${s.label}${s.done ? " (done)" : ""}`}
             >
               <span className={clsx("grid h-6 w-6 shrink-0 place-items-center rounded-full text-[12px]", s.done ? "bg-ok/15 text-ok" : "bg-accent-soft text-accent")}>
                 {s.done ? <IconCheck /> : i + 1}

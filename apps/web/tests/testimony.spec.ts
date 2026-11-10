@@ -76,4 +76,13 @@ test.describe("preview console", () => {
     await expect(card).toContainText("36%");
     await expect(card).toContainText("43%");
   });
+
+  test("the change card reads event evidence envelopes", async ({ page }) => {
+    await page.goto("/app/investigations/preview-0001");
+    const card = page.getByRole("region", { name: "What changed" });
+    await expect(card).toContainText("Asha:");
+    await expect(card).toContainText("off");
+    await expect(card).toContainText("36%");
+    await expect(card).toContainText("43%");
+  });
 });
