@@ -256,7 +256,7 @@ export function EvidenceLedger({ state, pack }: { state: InvestigationState; pac
       {rows.length === 0 ? (
         <EmptyState className="py-10" title={state.observations.length ? "Nothing matches" : "No evidence yet"} body={state.observations.length ? "Try another filter." : "Observations appear here as people answer."} />
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <div tabIndex={0} role="region" aria-label="Observations table" className="mt-3 overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
           <table className="w-full min-w-[760px] text-left text-[13px]">
             <caption className="sr-only">Observations, newest first</caption>
             <thead className="text-[11px] uppercase tracking-[0.06em] text-muted">

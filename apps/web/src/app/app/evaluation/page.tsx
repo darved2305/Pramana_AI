@@ -205,7 +205,7 @@ export default function EvaluationPage() {
             <div className="p-4 pb-0">
               <CardHeader title="All metrics by policy" subtitle="Best value in each row is highlighted. n/a means the statistic was undefined for that run." />
             </div>
-            <div className="mt-3 overflow-x-auto">
+            <div tabIndex={0} role="region" aria-label="Metrics by policy" className="mt-3 overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
               <table className="w-full min-w-[640px] text-left text-[14px]">
                 <thead className="border-y border-line text-[12px] uppercase tracking-[0.06em] text-muted">
                   <tr>
