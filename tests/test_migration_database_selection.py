@@ -6,6 +6,7 @@ import asyncio
 from contextlib import suppress
 from pathlib import Path
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
@@ -21,24 +22,28 @@ def test_migrations_change_only_the_explicit_database() -> None:
     selected_url = setting_database_url("TEST_DATABASE_URL")
     sentinel_url = setting_database_url("DATABASE_URL")
     assert urlsplit(selected_url).path != urlsplit(sentinel_url).path
+    sentinel_table = f"b3_db_sentinel_{uuid4().hex}"
 
     async def sentinel(action: str) -> str | None:
         engine = create_async_engine(sentinel_url)
         try:
             async with engine.begin() as connection:
                 if action == "install":
-                    await connection.exec_driver_sql("drop table if exists public.b3_db_sentinel")
                     await connection.exec_driver_sql(
-                        "create table public.b3_db_sentinel (value text not null)"
+                        f"create table public.{sentinel_table} (value text not null)"
                     )
                     await connection.exec_driver_sql(
-                        "insert into public.b3_db_sentinel values ('untouched')"
+                        f"insert into public.{sentinel_table} values ('untouched')"
                     )
                     return None
                 if action == "remove":
-                    await connection.exec_driver_sql("drop table if exists public.b3_db_sentinel")
+                    await connection.exec_driver_sql(
+                        f"drop table if exists public.{sentinel_table}"
+                    )
                     return None
-                result = await connection.execute(text("select value from public.b3_db_sentinel"))
+                result = await connection.execute(
+                    text(f"select value from public.{sentinel_table}")
+                )
                 return str(result.scalar_one())
         finally:
             await engine.dispose()
