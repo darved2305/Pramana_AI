@@ -421,7 +421,8 @@ def test_beta_rule_extreme_shapes(mean: float, concentration: float) -> None:
     a = (2 * mean - 1) * concentration
     b = concentration - a
     expected = 1.0
-    assert np.all(np.isfinite(r)) and np.all(w > 0)
+    assert np.all(np.isfinite(r))
+    assert np.all(w > 0)
     assert w.sum() == pytest.approx(1.0, abs=1e-14)
     for degree in range(2 * nodes):
         if degree:
