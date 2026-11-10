@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from db_guard import setting_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -66,7 +67,8 @@ def test_migrations_change_only_the_explicit_database() -> None:
         asyncio.run(sentinel("install"))
         command.downgrade(config, "base")
         command.upgrade(config, "head")
-        assert asyncio.run(selected_version()) == "0022"
+        head = ScriptDirectory.from_config(config).get_current_head()
+        assert asyncio.run(selected_version()) == head
         assert asyncio.run(sentinel("read")) == "untouched"
     finally:
         with suppress(Exception):
