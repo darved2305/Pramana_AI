@@ -168,6 +168,11 @@ generalization to other buildings.
   - McNemar's test for accuracy differences.
   - Wilcoxon signed-rank for probes and time.
   - Holm correction across the 5 primary comparisons (E vs A, B, C, D; K = 1 vs 3).
+  - The runner applies that five-comparison family separately to success, probes and effort.
+    Missing comparisons retain a family slot with p=1 for adjustment and are reported as
+    unavailable. McNemar uses the exact two-sided binomial test; signed-rank tests drop zero
+    differences, use average ranks for ties, and use exact sign enumeration through 25 nonzero
+    pairs and a continuity-corrected normal approximation above that threshold.
 - **Sample sizes:**
   - Logic mode: N ≥ 500 random plus 50 per curated scenario.
   - Baseline B: N = 150–300, depending on budget (§7).
