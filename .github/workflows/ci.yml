@@ -61,7 +61,7 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - name: Types, lint and copy rules
-        run: npm run typecheck && npm run lint && npm run check:copy && npm run check:worklet && npm run check:e2e-safety
+        run: npm run typecheck && npm run lint && npm run check:copy && npm run check:worklet && npm run check:registry && npm run check:e2e-safety
       - name: API types match the core OpenAPI spec
         run: npm run gen:api && git diff --exit-code -- src/lib/api/schema.gen.ts
       - name: Build

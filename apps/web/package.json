@@ -11,6 +11,7 @@
     "check:copy": "node scripts/check-no-em-dash.mjs",
     "check:e2e-safety": "node --test scripts/e2e-database-safety.test.mjs",
     "check:worklet": "node scripts/check-pcm-worklet.mjs",
+    "check:registry": "node scripts/check-lockfile-registry.mjs",
     "gen:api": "openapi-typescript ../../services/core/openapi.json -o src/lib/api/schema.gen.ts --default-non-nullable false",
     "test:e2e": "playwright test",
     "test:e2e:real": "playwright test -c playwright.real.config.ts"
