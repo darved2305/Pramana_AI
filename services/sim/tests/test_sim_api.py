@@ -663,3 +663,27 @@ def test_simulator_json_routes_reject_malformed_and_extreme_payloads(client: Tes
             assert {"code", "message", "request_id"} <= set(body["error"])
             assert "Traceback" not in response.text
             assert 'File "' not in response.text
+
+
+def test_creation_response_shape_does_not_depend_on_hidden_fault(client: TestClient) -> None:
+    results = []
+    for hidden_fault in (
+        CB7,
+        {"faults": [{"component_id": "DNS", "mode": "down"}]},
+    ):
+        response = client.post(
+            "/sim/v1/scenarios",
+            headers=OPERATOR,
+            json={
+                "pack_id": "campus_block_c",
+                "seed": 1,
+                "participants": PEOPLE,
+                "fault": hidden_fault,
+            },
+        )
+        assert response.status_code == 201
+        result = response.json()
+        assert set(result) == {"scenario_id", "commitment"}
+        assert not any(fault["component_id"] in response.text for fault in hidden_fault["faults"])
+        results.append(result)
+    assert all(set(result) == set(results[0]) for result in results)
