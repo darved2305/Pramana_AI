@@ -110,21 +110,25 @@ hurts a judging criterion, P3 is a nit.
 - **Acceptance.** E/60098 returns `NOT_VERIFIED` or asks a symptom probe before `VERIFIED`, a unit
   test with a residual second fault, and a new development-range measurement.
 
-### F3. Repair candidate order can skip an actionable fault (P3, latent evaluator defect)
+### F3. Repair candidate order can skip an actionable fault (P2, evaluator metric integrity)
 
 - **Evidence.** `eval/src/pramana_eval/runner.py` in `_complete_pair_repair_loop` sorts the
-  candidate faults and takes the first one (`fault = next(...)`). If that fault has no action, the
-  loop returns incomplete (`runner.py:261-262`) even when another candidate has one.
-- **Effect.** No effect on `pair_full_resolution`: an unrepairable fault still remaining makes full
-  resolution impossible. It can under-count `pair_repairs` and verification probes.
-- **Dev check.** `candidate-order-check.txt` (from `tools/candidate_order_check.py`): E has 2
-  eligible episodes (MULTIPLE_FAULTS decision, no repair), D has 0, and neither is affected. Later
-  choices after a failed repair are not covered by this check. Those need a trace.
-- **Fix (not made here).** Choose only among candidates with an available action, then add a test
-  with both orders. The evaluator code is frozen by the held-out protocol
-  (`eval/protocols/2026-11-10-heldout.md`, "Do not change engine, policy, scenario, metric, analysis,
-  or generator code"). A change now could alter the frozen run's `pair_repairs` and probe counts
-  when rerun from HEAD, so it should ship with a new protocol version, not as a silent change.
+  candidate faults and previously tried the first one before checking whether it had an available
+  action. For a `MULTIPLE_FAULTS` conclusion, unrepairable `AP_1A.dead` sorts before repairable
+  `CB_C2_7.tripped`, so the evaluator returned without attempting the breaker repair.
+- **Effect.** This can under-count repair attempts and verification probes when a policy concludes
+  `MULTIPLE_FAULTS`. It cannot make a pair with an unrepairable remaining fault fully resolved.
+  The baseline development check found no affected first choices in its 600 E/D episodes; it did
+  not cover later choices after a failed repair.
+- **Why it matters.** Repair and verification counts are reported pair-evaluation outcomes.
+  Skipping an available repair makes those secondary measures less accurate, though it moved the
+  full-resolution rate by 0 percentage points in the measured development range.
+- **Fix.** Commit `dbcc64c` now selects the first sorted remaining fault with a modeled action and
+  fewer than two attempts. This evaluator change is post-freeze; the frozen protocol and report
+  remain unchanged and were not rerun.
+- **Acceptance.** `eval/tests/test_benchmark.py::test_multiple_faults_repair_selection_skips_unrepairable_fault`
+  passes. The same 300-seed-per-policy development command was rerun at `dbcc64c`; the 600 parsed
+  episode rows and pair aggregates match the pre-fix run.
 
 ## Trace evidence
 
@@ -147,13 +151,13 @@ Stopping points, answering the brief's questions for these episodes:
 
 ## Decision
 
-No runtime or test code changed. The three findings above are either design or calibration limits
-(F1, F2) or a latent defect whose fix would change frozen evaluation code (F3). Changing engine or
-evaluator behaviour to chase the pair metric would overstate the product, so the work stops at
-diagnosis, with the product changes proposed above.
+No engine behavior changed: F1 is pack coverage and F2 is a calibration limit caused by the low
+pair prior relative to the development generator. The evaluator-only F3 defect was fixed after the
+freeze in `dbcc64c`, with a regression test and a development rerun. Neither the held-out report nor
+its protocol was changed or rerun. Do not treat the F3 correction as a new held-out result.
 
 ## Reproduce
 
-Commands are in [NOTES.md](NOTES.md). The four files that carry the numbers are `pair-coverage.txt`,
-`candidate-order-check.txt`, `pair-traces-raw.txt` and `repair-episodes-raw.txt`. The episode CSVs
-are in `before/` and `after/`.
+Commands are in [NOTES.md](NOTES.md). The evidence files are `pair-coverage.txt`,
+`candidate-order-check.txt`, `pair-traces-raw.txt`, `repair-episodes-raw.txt`, and the episode CSVs
+in `before/`, `after/`, and `after-fix/`.

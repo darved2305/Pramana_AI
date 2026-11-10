@@ -16,7 +16,12 @@ from pramana_domain import DomainPack, load_pack
 from pramana_engine import CompiledModel, EngineConfig, compile_pack
 from pramana_eval.llm_policy import LlmPolicy, render_site
 from pramana_eval.policies import Checklist, Conclusion, Ours, RandomFeasible, greedy_entropy
-from pramana_eval.runner import paired_difference, run_episode, summarize
+from pramana_eval.runner import (
+    _next_repair_candidate,
+    paired_difference,
+    run_episode,
+    summarize,
+)
 from pramana_eval.scenarios import Answers, generate
 
 
@@ -449,6 +454,15 @@ def test_pair_episode_does_not_claim_resolution_after_repair_failures(
     )
     assert result.pair_full_resolution is False
     assert result.pair_repairs == 3
+
+
+def test_multiple_faults_repair_selection_skips_unrepairable_fault(pack: DomainPack) -> None:
+    faults = sorted([("AP_1A", "dead"), ("CB_C2_7", "tripped")])
+    assert faults[0] == ("AP_1A", "dead")
+
+    selected = _next_repair_candidate(pack, faults, {})
+
+    assert selected == (("CB_C2_7", "tripped"), "reset_breaker")
 
 
 def test_paired_statistics_and_holm_against_small_exact_cases() -> None:

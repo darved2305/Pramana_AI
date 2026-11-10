@@ -24,21 +24,23 @@ full resolution (see report F1).
 
 ## Runs
 
-- `before/` was produced at commit `63c4254`, and `after/` at commit `9b0686c`. The only tracked
-  change between them is the paragraph in `docs/EVALUATION.md`, so no evaluation or engine code
-  changed in this task. The two runs are a reproducibility check, not a before-and-after measure of
-  a fix.
-- Command, for both folders with the matching `--out`:
+- The original `before/` and `after/` runs were produced at commits `63c4254` and `9b0686c`; their
+  only tracked difference was documentation. They are the reproducibility check from the initial
+  diagnosis, not a measure of a fix.
+- After the post-freeze repair-candidate fix in `dbcc64c`, the same development range was run again
+  into `after-fix/` with this command:
 
   ```powershell
-  uv run python -m pramana_eval --policies E,D --n 300 --seed-start 60000 --out eval/reports/dev-2026-11-10-pairs/before
+  uv run python -m pramana_eval --policies E,D --n 300 --seed-start 60000 --out eval/reports/dev-2026-11-10-pairs/after-fix
   ```
 
 - Logic mode only (policies E and D): no LLM, Gnani or other provider call. No database and no
   browser were used.
-- `before/episodes.csv` and `after/episodes.csv` are byte-identical (SHA-256
-  `51d23e5114059f82dc0db0ae8b4dbd9e498d10c04bc0a00b76e122a098240478`). The `summary.json` files
-  differ only in `git_sha`.
+- `before/episodes.csv`, `after/episodes.csv`, and `after-fix/episodes.csv` have identical parsed
+  rows. After normalizing line endings to LF, all three have SHA-256
+  `76bd1adeaf912ec7a810d08d872992b63a645922c20d9d2a3ddc6b999f568616`. The summaries are equal
+  except for `git_sha`; the scenario manifests and reliability diagrams are also equal after line
+  ending normalization. The rerun completed 300 episodes per policy with no failures.
 - The manifest has 202 single, 42 pair, 17 no-fault and 39 access-limited scenarios.
 
 ## Tools and raw evidence
@@ -48,7 +50,7 @@ All tools are in `tools/` and print to stdout. Run them from the repository root
 | File | Produced by | What it shows |
 |---|---|---|
 | `pair-coverage.txt` | `tools/pair_coverage.py` | Pair prior mass 1.0147%, 3 of 15 single faults repairable, upper bound 2.86% |
-| `candidate-order-check.txt` | `tools/candidate_order_check.py` | Latent evaluator candidate-order issue: 0 affected episodes |
+| `candidate-order-check.txt` | `tools/candidate_order_check.py` | Baseline check before the fix: 0 affected first choices in E and D; it does not cover later choices after a failed repair |
 | `pair-traces.md` | hand-written from `pair-traces-raw.txt` and `repair-episodes-raw.txt` | Episode excerpts and the seven-episode table |
 | `pair-traces-raw.txt` | `tools/trace_pair_episodes.py` (default seeds) | Event log for E/60009, 60058, 60098, 60236 |
 | `repair-episodes-raw.txt` | `tools/trace_pair_episodes.py 60058 60098 60236 60244 60250 60285 60290` | Event log for all seven E pair episodes with a repair |
@@ -68,3 +70,6 @@ Each count below comes from the CSVs or from a committed tool:
 - D pair episodes with a useful constituent decision: 32 of 42. Repair attempts: 5. Verification
   probes: 7. Episodes hitting the step limit: 0.
 - Full pair resolution: E 0 of 42, D 0 of 42.
+- The corrected evaluator produced the same 600 parsed episode rows and pair aggregates on this
+  range. The regression test exercises an ordered pair where the first fault has no modeled repair
+  and the second has `reset_breaker`.

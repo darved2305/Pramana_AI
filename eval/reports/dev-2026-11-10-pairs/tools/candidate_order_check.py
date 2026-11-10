@@ -1,11 +1,12 @@
-"""Find development pair episodes where the evaluator's repair candidate order could skip a repair.
+"""Check baseline development episodes for the pre-fix evaluator candidate-order defect.
 
-``_complete_pair_repair_loop`` takes the first sorted remaining fault. If that fault has no repair
-action, it returns incomplete even when another remaining fault has one. This script checks the
-first candidate choice of every pair episode with a `MULTIPLE_FAULTS` decision and no repair
-attempt in ``before/episodes.csv``, for E and D. In those rows the first choice is the only one
-made, so the CSV row fully determines it. Later choices, after a failed repair, are not covered
-here; they need a trace.
+Before commit ``dbcc64c``, ``_complete_pair_repair_loop`` took the first sorted remaining fault. If
+that fault had no repair action, it returned incomplete even when another remaining fault had one.
+This script checks the first candidate choice of every pair episode with a ``MULTIPLE_FAULTS``
+decision and no repair attempt in ``before/episodes.csv``, for E and D. In those rows the first
+choice is the only one made, so the CSV row fully determines it. Later choices after a failed
+repair are not covered here; they need a trace. This is a baseline audit tool, not a check of the
+corrected evaluator.
 
 Run from the repository root:
 
