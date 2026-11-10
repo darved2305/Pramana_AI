@@ -221,6 +221,11 @@ export function foldEvents(events: EventEnvelope[], upto: number) {
 export const EVENT_LABEL: Record<string, string> = {
   InvestigationCreated: "Investigation opened",
   ReportReceived: "Report received",
+  IntakeParsed: "Report understood",
+  IntakeUnmapped: "Report needs a person to read it",
+  DisagreementExplained: "Disagreement explained",
+  QuietHoursOverridden: "Quiet hours overridden",
+  EngineError: "Engine error recorded",
   ObservationRecorded: "Observation recorded",
   BeliefUpdated: "Belief updated",
   PlanComputed: "Plan computed",
