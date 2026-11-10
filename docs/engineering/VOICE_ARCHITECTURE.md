@@ -85,6 +85,8 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   per-question media implementation, including S7 label readings; participants were synthetic
   bots (`eval/reports/demo-freeze-2026-11-07/NOTES.md`). Presence turns carry their question kind,
   no probe answer choices and no probe vocabulary hints.
+- Malformed JSON and non-object control frames received from the upstream stream or by the
+  browser client are ignored, so a later valid control frame can still be processed.
 - **Browser capture** (`apps/web/public/worklets/pcm16-capture.js`): an AudioWorklet that
   low-pass filters (63-tap windowed sinc) and resamples 48/44.1 kHz input to 16 kHz mono PCM16
   in 1,024-byte frames; `node apps/web/scripts/check-pcm-worklet.mjs` checks frame size, rate,

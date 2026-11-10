@@ -39,3 +39,20 @@ for (const failure of ["module", "node"]) {
     session.endTurn();
   });
 }
+
+test("malformed socket control frames do not prevent a later ready frame", async () => {
+  const context = {
+    exports: {},
+    window: { location: { protocol: "http:", host: "localhost" } },
+    WebSocket: class {},
+    setTimeout,
+  };
+  const source = fs.readFileSync("src/lib/audio/media.ts", "utf8");
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, context);
+  const session = new context.exports.QuestionMediaSession("inv", "q", "token");
+  const connected = session.connect();
+  const socket = session.ws;
+  for (const data of ["{", "null", "[]"]) socket.onmessage({ data });
+  socket.onmessage({ data: '{"type":"ready","question_id":"q"}' });
+  assert.equal((await connected).question_id, "q");
+});

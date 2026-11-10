@@ -143,7 +143,14 @@ export class QuestionMediaSession {
           this.onAudio(ev.data as ArrayBuffer);
           return;
         }
-        const msg = JSON.parse(ev.data) as { type: string } & Record<string, unknown>;
+        let msg: { type: string } & Record<string, unknown>;
+        try {
+          const parsed: unknown = JSON.parse(ev.data);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+          msg = parsed as typeof msg;
+        } catch {
+          return;
+        }
         if ((callPid ? msg.type === "ringing" : msg.type === "ready") && !settled) {
           settled = true;
           resolve(msg as unknown as MediaReady);

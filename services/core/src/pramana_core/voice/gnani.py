@@ -152,6 +152,8 @@ class GnaniSttStream:
                     payload = json.loads(msg)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(payload, dict):
+                    continue
                 yield SttStreamEvent(str(payload.get("type", "")), payload, time.perf_counter())
         except websockets.ConnectionClosed as exc:
             code = exc.rcvd.code if exc.rcvd else None

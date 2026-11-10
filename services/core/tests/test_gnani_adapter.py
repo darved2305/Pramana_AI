@@ -45,6 +45,20 @@ def client(handler: Any, key: str | None = "k") -> GnaniClient:
     return GnaniClient(key, "https://api.vachana.ai", 5, transport=httpx.MockTransport(handler))
 
 
+async def test_stream_ignores_malformed_and_non_object_frames() -> None:
+    class Socket:
+        close_code = 1000
+        close_reason = ""
+
+        async def __aiter__(self) -> Any:
+            for frame in ("{", "null", "[]", '{"type":"transcript","text":"yes"}'):
+                yield frame
+
+    stream = GnaniSttStream(Socket(), {}, False)  # type: ignore[arg-type]
+    events = [event async for event in stream.events()]
+    assert [event.type for event in events] == ["transcript", "closed"]
+
+
 def test_wav_duration() -> None:
     assert wav_duration_s(wav(1.5)) == pytest.approx(1.5)
     assert wav_duration_s(b"not a wav") is None
