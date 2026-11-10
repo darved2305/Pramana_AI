@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     eval_reports_dir: str = Field(default="eval/reports", alias="EVAL_REPORTS_DIR")
 
     @field_validator(
+        "pii_master_key",
         "gnani_api_key",
         "gemini_api_key",
         "groq_api_key",
