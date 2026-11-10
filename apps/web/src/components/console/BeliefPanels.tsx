@@ -5,7 +5,7 @@ import { useState } from "react";
 import { clsx } from "clsx";
 import { Badge, Card, CardHeader, EmptyState, ProbBar, Tag } from "@/components/ui";
 import { IconSpark } from "@/components/ui/icons";
-import type { InvestigationState, SitePack } from "@/lib/api/types";
+import type { BeliefSnapshot, EventEnvelope, InvestigationState, Observation, SitePack } from "@/lib/api/types";
 import { bits, duration, locationLabel, outcomeWord, participantName, pct, probeLabel } from "@/lib/data/derive";
 
 /* ---------- Hypotheses ---------- */
@@ -145,6 +145,49 @@ export function DecisionBar({ state }: { state: InvestigationState }) {
 }
 
 /* ---------- Reasoning: why this question ---------- */
+
+/** Compare adjacent recorded beliefs only when an observation lies between them. */
+export function BeliefChange({ events, state, pack }: { events: EventEnvelope[]; state: InvestigationState; pack?: SitePack }) {
+  const ordered = [...new Map(events.map((event) => [event.seq, event])).values()].sort((a, b) => a.seq - b.seq);
+  let change: { before: BeliefSnapshot; after: BeliefSnapshot; answers: Observation[] } | null = null;
+  let prior: { index: number; belief: BeliefSnapshot } | null = null;
+  ordered.forEach((event, index) => {
+    if (event.type !== "BeliefUpdated" || !Array.isArray(event.payload.hypotheses)) return;
+    const belief = event.payload as unknown as BeliefSnapshot;
+    if (prior) {
+      const answers = ordered.slice(prior.index + 1, index)
+        .filter((item) => item.type === "ObservationRecorded")
+        .map((item) => item.payload as unknown as Observation);
+      if (answers.length) change = { before: prior.belief, after: belief, answers };
+    }
+    prior = { index, belief };
+  });
+  if (!change) return null;
+  const { before, after, answers } = change as { before: BeliefSnapshot; after: BeliefSnapshot; answers: Observation[] };
+  return (
+    <Card className="p-4" aria-labelledby="change-title">
+      <CardHeader id="change-title" title="What changed" subtitle="The latest answers with a recorded belief before and after" />
+      <p className="mt-3 text-[13px] text-fg-2">
+        {answers.map((answer) => `${participantName(state, answer.participant_id)}: ${probeLabel(pack, answer.probe_id)} - ${outcomeWord(answer.outcome)}`).join("; ")}
+      </p>
+      <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        {([ ["Before", before], ["After", after] ] as const).map(([label, belief]) => (
+          <div key={label}>
+            <h3 className="text-[13px] font-medium text-fg">{label}</h3>
+            <ul className="mt-2 space-y-2">
+              {[...belief.hypotheses].sort((a, b) => b.probability - a.probability).slice(0, 3).map((cause) => (
+                <li key={cause.id} className="text-[13px] text-fg-2">
+                  <div className="flex justify-between gap-2"><span>{cause.label}</span><span>{pct(cause.probability)}</span></div>
+                  <ProbBar value={cause.probability} className="mt-1" label={`${label}: ${cause.label}`} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 export function ReasoningPanel({ state, pack }: { state: InvestigationState; pack?: SitePack }) {
   const plan = state.plan;
