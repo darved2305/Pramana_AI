@@ -66,7 +66,8 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   measures end-of-speech → transcript latency).
 - A usage governor (`voice/governor.py`): rate windows below the account's 60/min, at most 16
   of the 20 concurrent sessions, one REST call in flight, and a daily rupee budget checked
-  before every call and persisted in PostgreSQL.
+  before every call, with PostgreSQL reservations, rate windows and capacity shared across core
+  instances. Expired reservations are charged conservatively; see GNANI_INTEGRATION.md.
 - Voice turns inside an investigation: `GET /v1/investigations/{id}/questions/{qid}/audio`
   (cached, so a replay costs nothing) and `POST /v1/investigations/{id}/answers/voice`
   (question-conditioned STT, then the same extraction and engine path as typed answers). This

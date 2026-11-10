@@ -69,6 +69,11 @@ async def truncate_all(db_url: str) -> None:
         has_limits = await conn.exec_driver_sql("select to_regclass('rate_limits') is not null")
         if has_limits.scalar():
             await conn.exec_driver_sql("truncate rate_limits")
+        has_voice_reservations = await conn.exec_driver_sql(
+            "select to_regclass('voice_reservations') is not null"
+        )
+        if has_voice_reservations.scalar():
+            await conn.exec_driver_sql("truncate voice_reservations, voice_rate_events")
         has_templates = await conn.exec_driver_sql(
             "select to_regclass('model_templates') is not null"
         )

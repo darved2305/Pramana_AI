@@ -129,9 +129,16 @@ Per the EULA, accuracy and latency results stay out of this repository; they are
 | Daily spend, checked before every call (worst case for streams) | `VOICE_DAILY_BUDGET_INR` | 150 | 5,000 credits total |
 | Max realtime session length | `VOICE_MAX_STREAM_S` | 300 s | 15 min |
 
-Spend is recorded per call in PostgreSQL (`voice_usage`), so restarts do not reset it.
-`GET /v1/voice/usage` shows today's spend and the live limiter state. The limits apply per core
-process.
+PostgreSQL serializes rate windows, active reservations and settlement across core instances.
+Each REST reservation covers up to four attempts, and a stream reservation covers its configured
+maximum audio. Uncertain failures retain the worst-case charge; an abandoned reservation expires
+after one hour and is charged conservatively. This can overestimate spend. A call is bounded to
+less than the lease duration, and stream audio bytes are capped to the reserved duration. The
+`GET /v1/voice/usage` response shows settled spend, shared pending reservations and limiter state.
+The in-memory governor is used by isolated tests, not for cross-instance enforcement.
+
+Migration 0023 re-applies the private-schema revokes for Supabase API roles; deployments must
+also re-run the revoke of `anon` and `authenticated` on the Pramana schema after migrations.
 
 ## Remaining live checks
 

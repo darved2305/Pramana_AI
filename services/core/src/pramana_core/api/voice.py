@@ -75,7 +75,7 @@ async def voice_usage(request: Request) -> dict[str, object]:
     return {
         "spent_today_inr": round(await ledger.spent_today(), 4),
         "by_service": by_service,
-        **g.governor.status(),
+        **await g.governor.shared_status(),
     }
 
 
