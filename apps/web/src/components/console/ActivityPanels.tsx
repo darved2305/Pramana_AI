@@ -284,7 +284,7 @@ export function EvidenceLedger({ state, pack }: { state: InvestigationState; pac
 function LedgerRow({ o, state, pack }: { o: Observation; state: InvestigationState; pack?: SitePack }) {
   const tone = outcomeTone(o.outcome);
   return (
-    <tr className={clsx("align-top", o.state !== "committed" && "opacity-55")}>
+    <tr className={clsx("align-top", o.state !== "committed" && "bg-white/[.02]")}>
       <td className="py-3 pr-3 font-mono text-[12px] text-muted">{clock(o.committed_at)}</td>
       <td className="py-3 pr-3">
         <span className="block text-fg">{participantName(state, o.participant_id)}</span>

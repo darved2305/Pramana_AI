@@ -146,7 +146,7 @@ export default function ParticipantsPage() {
                   <dt className="text-muted">Asked in</dt>
                   <dd className="text-right">
                     {langLabel(p.languages.template_language)}
-                    {p.languages.codemix ? " (mixed)" : ""}
+                    {p.languages.codemix && p.languages.template_language !== "hi-en" ? " (mixed)" : ""}
                   </dd>
                 </div>
               </dl>

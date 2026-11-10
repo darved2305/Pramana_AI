@@ -139,7 +139,7 @@ export default function OverviewPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         <QuickCard
           href="/app/investigations"
           icon={<IconHistory />}
@@ -192,7 +192,7 @@ function QuickCard({ href, icon, title, body }: { href: string; icon: React.Reac
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[12px] bg-white/[.05] text-fg-2">{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block text-[16px] font-medium text-fg">{title}</span>
-        <span className="block truncate text-[14px] text-muted">{body}</span>
+        <span className="block text-[14px] text-muted">{body}</span>
       </span>
       <IconChevronRight className="text-muted transition-transform duration-300 group-hover:translate-x-0.5" />
     </Link>

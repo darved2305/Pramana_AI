@@ -29,18 +29,18 @@
   --app-line-strong: rgba(255, 255, 255, 0.16);
   --app-text: #fbfbfb;
   --app-text-2: rgba(255, 255, 255, 0.72);
-  --app-muted: #878787;
+  --app-muted: #9a9a9d;
 
   /* Application accent (measured on the reference app: rgb(255, 79, 21)) */
   --accent: #ff4f15;
-  --accent-ink: #ffffff;
+  --accent-ink: #161616;
   --accent-soft: rgba(255, 79, 21, 0.1);
   --accent-line: rgba(255, 79, 21, 0.35);
 
   /* Status */
   --ok: #5fd38d;
   --warn: #f5b335;
-  --bad: #ff5a4e;
+  --bad: #ff7a70;
   --info: #33a8f5;
 
   /* Motion (measured: buttons and links transition 0.5s ease-out) */

@@ -514,7 +514,7 @@ export function Tabs<T extends string>({
             )}
           >
             {it.label}
-            {it.count != null ? <span className="text-[12px] opacity-70">{it.count}</span> : null}
+            {it.count != null ? <span className="text-[12px]">{it.count}</span> : null}
           </button>
         );
       })}

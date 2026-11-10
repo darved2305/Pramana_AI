@@ -55,9 +55,10 @@ export function BuildingMap({
         const rooms = locs.filter((l) => l.kind !== "corridor" && !SERVICE.has(l.kind));
         const service = locs.filter((l) => SERVICE.has(l.kind));
         return (
-          <section key={f} aria-label={`Floor ${f}`} className="relative grid grid-cols-[34px_1fr] gap-3">
+          <div key={f} className="relative grid grid-cols-[34px_1fr] gap-3">
             <div className="flex flex-col items-center pt-1">
-              <span className="display-pixel text-[20px] leading-none text-fg-2">{f}</span>
+              <h3 className="sr-only">Floor {f}</h3>
+              <span aria-hidden="true" className="display-pixel text-[20px] leading-none text-fg-2">{f}</span>
               <span className="mt-2 w-px flex-1 bg-gradient-to-b from-line-strong to-transparent" aria-hidden />
             </div>
             <div className="rounded-[14px] border-[0.8px] border-line bg-white/[.015] p-2.5">
@@ -79,7 +80,7 @@ export function BuildingMap({
                 </div>
               ) : null}
             </div>
-          </section>
+          </div>
         );
       })}
       <Legend />
@@ -113,7 +114,6 @@ function Tile({
   return (
     <Comp
       {...(onSelect ? { type: "button" as const, onClick: () => onSelect(loc.id), "aria-pressed": isSel } : {})}
-      aria-label={`${name}${loc.restricted ? ", restricted" : ""}${people.length ? `, ${people.length} ${people.length === 1 ? "person" : "people"}` : ""}${obs.length ? `, ${obs.length} observations` : ""}${affected ? ", reported affected" : ""}`}
       className={clsx(
         "group relative flex w-full flex-col items-start rounded-[10px] border-[0.8px] text-left transition-[border-color,background-color,box-shadow] duration-300",
         wide ? "min-h-[46px] flex-row items-center gap-3 px-3 py-2" : compact ? "min-h-[64px] p-2.5" : "min-h-[84px] p-3",
