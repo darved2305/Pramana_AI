@@ -534,6 +534,8 @@ def write_latency_report(
 ) -> None:
     samples = latency_samples(log_path)
     total_turn_ms = sum(samples["turn_total"])
+    synthetic_capture_ms = sum(samples["capture_duration"])
+    non_capture_turn_ms = max(0.0, total_turn_ms - synthetic_capture_ms)
     provider_placeholder_ms = (
         int(emulator["transcripts"]) * gnani_emulator.STT_PLACEHOLDER_DELAY_S * 1000
         + int(emulator["tts_sse"])
@@ -541,7 +543,14 @@ def write_latency_report(
         * gnani_emulator.TTS_CHUNK_PLACEHOLDER_DELAY_S
         * 1000
     )
-    provider_share = provider_placeholder_ms / total_turn_ms if total_turn_ms else 0.0
+    capture_share_total = synthetic_capture_ms / total_turn_ms if total_turn_ms else None
+    provider_share_total = provider_placeholder_ms / total_turn_ms if total_turn_ms else None
+    provider_share_non_capture = (
+        min(1.0, provider_placeholder_ms / non_capture_turn_ms) if non_capture_turn_ms else None
+    )
+    local_share_non_capture = (
+        1.0 - provider_share_non_capture if provider_share_non_capture is not None else None
+    )
     labels = {
         "capture_duration": "Client capture duration (synthetic fixture clips)",
         "capture_to_proxy_commit": "Capture-end frame to proxy commit",
@@ -580,7 +589,6 @@ def write_latency_report(
             )
         else:
             lines.append(f"| {label} | 0 | n/a | n/a |")
-    code_share = max(0.0, 1.0 - provider_share)
     lines.extend(
         [
             "",
@@ -591,15 +599,43 @@ def write_latency_report(
             "streams. The emulator injects 50 ms per STT transcript and 50 ms before each of "
             "three TTS chunks.",
             f"- Summed measured server turn time: {total_turn_ms:.0f} ms.",
-            f"- Provider placeholder share: {provider_share * 100:.1f}%.",
-            f"- Pramana, network plumbing and test harness share by subtraction: "
-            f"{code_share * 100:.1f}%.",
+            f"- Synthetic answer audio transmission: {synthetic_capture_ms:.0f} ms, "
+            + (
+                f"{capture_share_total * 100:.1f}% of measured turn time. "
+                if capture_share_total is not None
+                else "n/a of measured turn time because no turn samples were recorded. "
+            )
+            + (
+                "This is the test bot sending fixture audio at real-time cadence, "
+                "not Pramana code or Gnani."
+            ),
+            "- Provider placeholders: "
+            + (
+                f"{provider_share_total * 100:.1f}% of total measured turn time, and "
+                if provider_share_total is not None
+                else "n/a of total measured turn time because no turn samples were recorded, and "
+            )
+            + (
+                f"{provider_share_non_capture * 100:.1f}% after excluding synthetic answer audio."
+                if provider_share_non_capture is not None
+                else "n/a after excluding synthetic answer audio because no time remains."
+            ),
+            "- Remaining non-capture time: "
+            + (
+                f"{local_share_non_capture * 100:.1f}% after excluding provider placeholders. "
+                "It includes Pramana code, local transport and host scheduling, so it is not a "
+                "pure application-code measurement."
+                if local_share_non_capture is not None
+                else "n/a because the sample contains no non-capture turn time."
+            ),
             "",
-            "The shares compare summed per-turn durations, not wall-clock investigation time. "
-            "Fixed emulator sleeps define the placeholder portion; HTTP/WebSocket scheduling and "
-            "local host timing remain in the measured turn total. REST second-decode responses "
-            "have no artificial delay. A live Gnani rehearsal and consented human speech are "
-            "still needed to measure end-to-end voice quality or latency.",
+            "These shares compare summed per-turn durations, not wall-clock investigation time. "
+            "The synthetic audio duration is recorded from capture_end and removed before the "
+            "provider-versus-local split. Fixed emulator sleeps define the provider placeholder "
+            "portion; HTTP/WebSocket scheduling and local host timing remain in local time. REST "
+            "second-decode responses have no artificial delay. A live Gnani rehearsal and "
+            "consented human speech are still needed to measure end-to-end voice quality or "
+            "latency.",
             "",
             "Re-run scripts/load_test.py with --investigations N and --latency-report to refresh.",
         ]

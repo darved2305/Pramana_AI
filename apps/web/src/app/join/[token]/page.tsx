@@ -73,7 +73,9 @@ function Invalid() {
   );
 }
 
-type Phase = "idle" | "recording" | "sending" | "checking";
+/** "checking": re-reading the question after a drop. "unverified": that check failed, so whether
+ * the last answer arrived is unknown; answering stays blocked until a retry succeeds. */
+type Phase = "idle" | "recording" | "sending" | "checking" | "unverified";
 /** The call over one socket (services/core/.../voice/call.py): ring, consent, then questions. */
 type CallPhase = "none" | "connecting" | "consent" | "active" | "ended";
 
@@ -203,7 +205,8 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       setMsg("The voice connection closed. If a question is still open, you can answer by voice, tapping, or typing.");
       setPhase("idle");
     } catch {
-      setMsg("We could not check whether your answer was received. Reconnect before trying again.");
+      setPhase("unverified");
+      setMsg("We could not check whether your answer was received. Check the connection, then try again.");
     }
   };
 
@@ -593,7 +596,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
               <button
                 type="button"
                 onClick={toggleVoice}
-                disabled={phase === "sending" || phase === "checking"}
+                disabled={phase === "sending" || phase === "checking" || phase === "unverified"}
                 aria-pressed={phase === "recording"}
                 className={clsx(
                   "mt-4 flex h-[64px] w-full items-center justify-center gap-3 rounded-full text-[16px] font-semibold transition-colors duration-300 disabled:opacity-50",
@@ -616,7 +619,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
                 <input
                   id="ans"
                   value={text}
-                  disabled={phase === "checking"}
+                  disabled={phase === "checking" || phase === "unverified"}
                   onChange={(e) => setText(e.target.value)}
                   placeholder={q.kind === "challenge" ? "Type what the label says" : "Or type your answer"}
                   className="h-[52px] min-w-0 flex-1 border-[0.8px] border-cream/40 bg-transparent px-4 text-[16px] outline-none transition-[border-radius] duration-500 placeholder:text-cream/40 focus:rounded-[26px] focus:border-cream"
@@ -653,7 +656,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           {msg}
         </p>
       ) : null}
-      {phase === "checking" ? (
+      {phase === "unverified" ? (
         <button type="button" onClick={recoverConnection} className="btn-line mt-3">
           Check connection
         </button>

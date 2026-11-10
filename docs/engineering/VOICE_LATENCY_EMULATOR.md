@@ -8,22 +8,23 @@ The run completed 1 full investigation. The bot capture-end duration comes from 
 
 | Hop | Samples | p50 ms | p95 ms |
 |---|---:|---:|---:|
-| Client capture duration (synthetic fixture clips) | 8 | 1901.6 | 1902.1 |
-| Capture-end frame to proxy commit | 8 | 0.5 | 1.7 |
-| Proxy upstream WebSocket connect | 9 | 27.0 | 55.0 |
-| Commit to transcript at proxy | 8 | 60.8 | 69.8 |
-| Extraction and engine update | 8 | 129.6 | 512.8 |
-| Answer extraction to next question TTS first byte | 5 | 191.8 | 669.6 |
-| TTS first byte to browser playback start | 9 | 136.2 | 167.7 |
-| Total server turn time | 8 | 3482.4 | 4343.3 |
+| Client capture duration (synthetic fixture clips) | 10 | 1901.6 | 1902.1 |
+| Capture-end frame to proxy commit | 10 | 0.4 | 2.3 |
+| Proxy upstream WebSocket connect | 10 | 25.0 | 67.0 |
+| Commit to transcript at proxy | 10 | 62.3 | 69.9 |
+| Extraction and engine update | 9 | 120.9 | 171.7 |
+| Answer extraction to next question TTS first byte | 6 | 212.5 | 638.3 |
+| TTS first byte to browser playback start | 10 | 135.4 | 167.4 |
+| Total server turn time | 9 | 3872.6 | 4016.6 |
 
 ## Time ownership estimate
 
-- Fixed provider placeholder delays: 1600 ms summed across 8 realtime STT transcripts and 8 TTS streams. The emulator injects 50 ms per STT transcript and 50 ms before each of three TTS chunks.
-- Summed measured server turn time: 29747 ms.
-- Provider placeholder share: 5.4%.
-- Pramana, network plumbing and test harness share by subtraction: 94.6%.
+- Fixed provider placeholder delays: 1850 ms summed across 10 realtime STT transcripts and 9 TTS streams. The emulator injects 50 ms per STT transcript and 50 ms before each of three TTS chunks.
+- Summed measured server turn time: 33160 ms.
+- Synthetic answer audio transmission: 19017 ms, 57.3% of measured turn time. This is the test bot sending fixture audio at real-time cadence, not Pramana code or Gnani.
+- Provider placeholders: 5.6% of total measured turn time, and 13.1% after excluding synthetic answer audio.
+- Remaining non-capture time: 86.9% after excluding provider placeholders. It includes Pramana code, local transport and host scheduling, so it is not a pure application-code measurement.
 
-The shares compare summed per-turn durations, not wall-clock investigation time. Fixed emulator sleeps define the placeholder portion; HTTP/WebSocket scheduling and local host timing remain in the measured turn total. REST second-decode responses have no artificial delay. A live Gnani rehearsal and consented human speech are still needed to measure end-to-end voice quality or latency.
+These shares compare summed per-turn durations, not wall-clock investigation time. The synthetic audio duration is recorded from capture_end and removed before the provider-versus-local split. Fixed emulator sleeps define the provider placeholder portion; HTTP/WebSocket scheduling and local host timing remain in local time. REST second-decode responses have no artificial delay. A live Gnani rehearsal and consented human speech are still needed to measure end-to-end voice quality or latency.
 
 Re-run scripts/load_test.py with --investigations N and --latency-report to refresh.

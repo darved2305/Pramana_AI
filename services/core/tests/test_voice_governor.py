@@ -270,22 +270,30 @@ async def test_shared_governors_reserve_budget_before_provider(migrated_db: str)
     governors = [VoiceGovernor(limits, DbLedger(db)) for db in (db1, db2)]
     entered = 0
     ready = asyncio.Event()
+    release = asyncio.Event()
 
-    async def request(governor: VoiceGovernor) -> bool:
+    async def request(governor: VoiceGovernor, *, hold: bool = False) -> str:
         nonlocal entered
         try:
             async with governor.rest_call("tts", 1, 0.025):
                 entered += 1
-                ready.set()
-                await asyncio.sleep(0.1)
-            return True
+                if hold:
+                    ready.set()
+                    await release.wait()
+            return "provider"
         except ApiError as exc:
-            return exc.code != "VOICE_BUDGET_EXCEEDED"
+            return exc.code
 
-    first = asyncio.create_task(request(governors[0]))
+    first = asyncio.create_task(request(governors[0], hold=True))
     await ready.wait()
     second = asyncio.create_task(request(governors[1]))
-    assert sorted(await asyncio.gather(first, second)) == [False, True]
+    try:
+        second_result = await second
+    finally:
+        release.set()
+    first_result = await first
+    assert second_result == "VOICE_BUDGET_EXCEEDED"
+    assert first_result == "provider"
     assert entered == 1
     await db1.dispose()
     await db2.dispose()
