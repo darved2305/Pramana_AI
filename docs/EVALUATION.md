@@ -146,6 +146,15 @@ logic-mode model, not a live repair or a human completion claim. Pair identifiab
 unknown in the random generator, so pair abstentions are reported separately and never counted as
 justified.
 
+The post-freeze [pair-resolution diagnosis](../eval/reports/dev-2026-11-10-pairs/report.md) records
+the current coverage limits: the generator deliberately oversamples pairs relative to the engine
+prior, and this pack models only breaker resets as repairs. In six of seven development pair
+episodes where a breaker was reset, the engine verified the repair while a second fault remained,
+so the engine's VERIFIED status overstates pair resolution; full resolution is measured separately
+against the simulated faults. Treat these pair results as development stress
+evidence for the current workflow, not a population estimate or replacement for the frozen held-out
+result.
+
 ---
 
 ## 5. Ablations (on top of E)
