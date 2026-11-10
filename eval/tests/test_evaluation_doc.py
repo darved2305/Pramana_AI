@@ -18,10 +18,13 @@ def test_the_committed_results_match_the_release_candidate_summary() -> None:
 def test_every_policy_number_comes_from_the_summary() -> None:
     summary = json.loads((RC1 / "summary.json").read_text(encoding="utf-8"))
     block = evaluation_doc.render(summary, "x")
+    assert "Source: `x/summary.json`" in block
     for p in summary["policies"].values():
         assert f"{p['success_rate'] * 100:.1f}%" in block
     assert summary["git_sha"] in block
-    assert "not** significantly better than greedy entropy" in block
+    assert "this analysis is exploratory" in block
+    assert "do not establish adjusted statistical significance" in block
+    assert "full incident resolution" in block
 
 
 def test_splicing_replaces_only_the_generated_block() -> None:
