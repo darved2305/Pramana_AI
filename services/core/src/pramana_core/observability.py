@@ -102,9 +102,12 @@ class RequestContextMiddleware:
         except asyncio.CancelledError:
             # Client disconnects and server shutdown cancel normal request tasks.
             raise
-        except Exception:
-            log.exception(
+        except Exception as exc:
+            # Exception text and tracebacks can contain request data, transcripts, or
+            # dependency-provided values. Keep the useful failure shape without logging them.
+            log.error(
                 "request_failed",
+                error_type=type(exc).__name__,
                 method=scope.get("method", ""),
                 path=_logged_path(scope.get("path", "")),
             )
