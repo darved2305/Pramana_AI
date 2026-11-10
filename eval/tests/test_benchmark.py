@@ -398,6 +398,7 @@ def test_pair_outcomes_are_not_claimed_as_full_resolution() -> None:
             1.0,
             1,
             False,
+            honest_success=correct or (decision is None and identifiable is False),
         )
 
     useful = episode("DISPATCH_ONE", True, None)
@@ -408,6 +409,8 @@ def test_pair_outcomes_are_not_claimed_as_full_resolution() -> None:
     assert result["pair_full_resolution_rate"] is None
     assert result["justified_abstentions"] == 1
     assert result["abstentions_with_unknown_identifiability"] == 1
+    assert result["success_rate"] == 1.0
+    assert result["honest_success_rate"] == pytest.approx(2 / 3)
 
 
 def test_paired_statistics_and_holm_against_small_exact_cases() -> None:
@@ -445,7 +448,20 @@ def test_primary_family_retains_missing_comparisons() -> None:
 
     def episode(policy: str, seed: int, success: bool) -> Episode:
         return Episode(
-            policy, seed, "single", True, True, "x", 0.9, success, success, 1, 1, 1, False
+            policy,
+            seed,
+            "single",
+            True,
+            True,
+            "x",
+            0.9,
+            success,
+            success,
+            1,
+            1,
+            1,
+            False,
+            honest_success=success,
         )
 
     result = primary_tests(
@@ -456,3 +472,40 @@ def test_primary_family_retains_missing_comparisons() -> None:
     )
     assert result["success"]["A_checklist"] == {"n": 5, "p": 0.0625, "p_holm": 0.3125}
     assert result["success"]["B_llm"]["p"] is None
+
+
+def test_fixed_budget_trajectories_and_artifacts_are_deterministic(
+    pack: DomainPack, model: CompiledModel, tmp_path: Path
+) -> None:
+    from dataclasses import asdict
+
+    from pramana_eval.budget import (
+        budget_curves,
+        calibration,
+        run_trajectory,
+        stratum_outcomes,
+        write_budget_artifacts,
+    )
+
+    scenarios = [generate(pack, model, seed) for seed in range(5)]
+    policies = [Ours(), greedy_entropy(), Checklist(), RandomFeasible()]
+    trajectories = {
+        policy.name: [run_trajectory(pack, model, scenario, policy, 3) for scenario in scenarios]
+        for policy in policies
+    }
+    curves = budget_curves(trajectories, 3)
+    assert {point["budget"] for point in curves["questions"]} == {1, 2, 3}
+    assert all(point["n"] == 5 for point in curves["questions"])
+    assert all(point["n"] == 5 for point in curves["effort_s"])
+    assert trajectories["E_ours"][0] == run_trajectory(pack, model, scenarios[0], Ours(), 3)
+
+    episodes = [asdict(run_episode(pack, model, scenario, Ours())) for scenario in scenarios]
+    bins = calibration(episodes)
+    assert sum(row["count"] for row in bins) == sum(e["decided"] for e in episodes)
+    strata = stratum_outcomes(episodes)
+    assert set(strata) == {"single", "pair", "no_fault", "access_limited"}
+    assert sum(row["n"] for row in strata.values()) == len(episodes)
+    write_budget_artifacts(tmp_path, curves)
+    before = (tmp_path / "questions-success.svg").read_bytes()
+    write_budget_artifacts(tmp_path, curves)
+    assert (tmp_path / "questions-success.svg").read_bytes() == before

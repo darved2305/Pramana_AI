@@ -415,19 +415,23 @@ def test_s1_reaches_the_electrician_dispatch_in_at_most_six_questions(
 @pytest.mark.parametrize("mean", [0.5005, 0.75, 0.9995])
 @pytest.mark.parametrize("concentration", [0.05, 0.999, 1 - 1e-9, 1.0, 1 + 1e-9, 1.001, 1e4])
 def test_beta_rule_extreme_shapes(mean: float, concentration: float) -> None:
+    from math import exp, lgamma
+
     nodes = 8
     r, w = (np.asarray(v) for v in beta_reliability_rule(mean, concentration, nodes))
     x = (r - 0.5) / 0.5
     a = (2 * mean - 1) * concentration
     b = concentration - a
-    expected = 1.0
     assert np.all(np.isfinite(r))
     assert np.all(w > 0)
     assert w.sum() == pytest.approx(1.0, abs=1e-14)
     for degree in range(2 * nodes):
-        if degree:
-            expected *= (a + degree - 1) / (a + b + degree - 1)
-        assert w @ x**degree == pytest.approx(expected, abs=2e-12)
+        expected = (
+            1.0
+            if degree == 0
+            else exp(lgamma(a + degree) + lgamma(a + b) - lgamma(a) - lgamma(a + b + degree))
+        )
+        assert w @ x**degree == pytest.approx(expected, rel=2e-9, abs=2e-11)
 
 
 def test_concentration_one_investigation(campus: DomainPack, campus_model: CompiledModel) -> None:
@@ -483,3 +487,16 @@ print(json.dumps([e.posterior().tolist(), e.plan().model_dump(mode="json")], sor
         env = dict(os.environ, PYTHONHASHSEED=seed)
         outputs.append(subprocess.check_output([sys.executable, "-c", script], env=env))
     assert outputs[0] == outputs[1]
+
+
+@pytest.mark.parametrize(
+    "concentration", [5e-324, 1e-300, 1e-100, 1e100, 1e300, 1.7976931348623157e308]
+)
+def test_beta_reliability_rule_remains_finite_across_positive_float_range(
+    concentration: float,
+) -> None:
+    nodes, weights = beta_reliability_rule(0.75, concentration, 8)
+    assert all(np.isfinite(nodes))
+    weight_array = np.asarray(weights)
+    assert np.all(np.isfinite(weight_array) & (weight_array > 0))
+    assert sum(weights) == pytest.approx(1.0, abs=1e-14)

@@ -42,8 +42,7 @@ def _ci(d: dict[str, float], scale: float = 1.0, digits: int = 3) -> str:
     def f(v: float) -> str:
         return f"{v * scale:+.{digits}f}"
 
-    sig = d["ci95_low"] > 0 or d["ci95_high"] < 0
-    return f"{f(d['mean'])} [{f(d['ci95_low'])}, {f(d['ci95_high'])}]" + (" *" if sig else "")
+    return f"{f(d['mean'])} [{f(d['ci95_low'])}, {f(d['ci95_high'])}]"
 
 
 def render(summary: dict[str, Any], source: str) -> str:
@@ -57,22 +56,26 @@ def render(summary: dict[str, Any], source: str) -> str:
         f"{seeds[0]}-{seeds[1]} ({max(n.values())} scenarios: {mix}), logic mode (structured "
         "answers from simulated participants; no Gnani or LLM calls).",
         "",
-        "| Policy | n (failed) | Success | Decision accuracy | Probes (median) | "
+        (
+            "| Policy | n (failed) | Historical success | Honest success | Decision accuracy | "
+            "Probes (median) | "
+        ),
         "Effort s (mean) | False confidence | Abstain recall / precision |",
-        "|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for key, p in summary["policies"].items():
         lines.append(
             f"| {LABEL.get(key, key)} | {int(p['n'])} ({int(p['failed_runs'])}) | "
-            f"{_pct(p['success_rate'])} | {_pct(p['decision_accuracy'])} | "
+            f"{_pct(p['success_rate'])} | {_pct(p.get('honest_success_rate'))} | "
+            f"{_pct(p['decision_accuracy'])} | "
             f"{_num(p['probes_median'])} | {_num(p['effort_s_mean'], 0)} | "
             f"{_pct(p['false_confidence_rate'])} | "
             f"{_pct(p['abstention_recall'])} / {_pct(p['abstention_precision'])} |"
         )
     lines += [
         "",
-        "Paired differences E minus X, mean with bootstrap 95% CI (`*`: the interval excludes "
-        "zero). Success in percentage points.",
+        "Paired differences E minus X, mean with bootstrap 95% CI. Success in percentage points; "
+        "the intervals are descriptive and do not replace the adjusted paired tests below.",
         "",
         "| Versus | Success (points) | Probes | Effort s |",
         "|---|---|---|---|",
@@ -86,26 +89,79 @@ def render(summary: dict[str, Any], source: str) -> str:
         "",
         "**Deviations from the pre-registered plan above, stated rather than hidden:**",
         "",
-        f"- N is {max(n.values())} scenarios (seeds {seeds[0]}-{seeds[1]}), not the planned "
-        "500 (10000-10499) plus curated cases.",
-        "- The LLM policy B is not in this table: the free-tier comparison has fewer than 50 "
-        "completed episodes and is not reported. No frontier model was run.",
-        "- ECE, time-to-decision medians, robustness curves and the reliability diagram were "
-        "not generated. Effort seconds is the mean participant effort per scenario.",
-        "- E with parallel calls (K=3) is reported separately in ADR 0011, not in this run.",
-        "- Stopping-rule calibration is in `eval/reports/calibration-2026-11-05/`; the default "
-        "(`lambda_min_per_s = 1/60`) was kept.",
-        "- These seeds were examined before the stated freeze; this analysis is exploratory. "
-        "The success metric credits either constituent action or abstention on a pair, and "
-        "does not measure resolution of both faults.",
-        "- The registered McNemar, Wilcoxon and Holm analyses were not run. Intervals marked "
-        "above are unadjusted bootstrap intervals, not familywise significance tests.",
-        "",
-        "These exploratory comparisons do not establish adjusted statistical significance or "
-        "full incident resolution.",
-        "",
-        END,
     ]
+    if "protocol" in summary:
+        protocol = summary["protocol"]
+        lines += [
+            "- The run followed the frozen protocol `" + protocol["path"] + "`, which pins code "
+            f"`{protocol['frozen_code_commit']}` and seeds {seeds[0]}-{seeds[1]}.",
+            "- Statistical p-values below use the registered paired tests and Holm correction. "
+            "Bootstrap intervals remain descriptive.",
+        ]
+    else:
+        lines += [
+            "- These RC1 seeds were examined before the stated freeze; this analysis is "
+            "exploratory. The historical success metric credits pair abstention and does not "
+            "measure resolution of both faults.",
+            "- The registered McNemar, Wilcoxon and Holm analyses were not run for this artifact. "
+            "No adjusted significance claim follows from its bootstrap intervals.",
+            "- The historical artifact does not contain an honest-success rate or the newer "
+            "calibration and stratum denominators; these are shown as unavailable.",
+        ]
+    lines += [
+        "",
+        "Pair outcomes, calibration and stratum counts are reported separately below.",
+        "",
+        "| Policy | Pair n | First useful action | Full pair resolution | "
+        "Justified abstentions | Unknown-identifiability abstentions |",
+        "|---|---:|---:|---|---:|---:|",
+    ]
+    for key, p in summary["policies"].items():
+        lines.append(
+            f"| {LABEL.get(key, key)} | {p.get('pair_outcome_denominator', 'n/a')} | "
+            f"{_pct(p.get('pair_first_useful_action_rate'))} | not measured | "
+            f"{p.get('justified_abstentions', 'n/a')} | "
+            f"{p.get('abstentions_with_unknown_identifiability', 'n/a')} |"
+        )
+    if "primary_tests" in summary:
+        lines += [
+            "",
+            "Registered paired tests (Holm adjusted within the five-comparison family). "
+            "Success means correct decision or abstention only when identifiable is false; "
+            "pair abstention does not count.",
+            "",
+            "| Outcome | Comparison | Paired n | p | Holm p |",
+            "|---|---|---:|---:|---:|",
+        ]
+        for field, comparisons in summary["primary_tests"].items():
+            if field == "success_definition":
+                continue
+            for key, result in comparisons.items():
+                p_raw = "n/a" if result["p"] is None else f"{result['p']:.6g}"
+                p_holm = "n/a" if result["p_holm"] is None else f"{result['p_holm']:.6g}"
+                lines.append(
+                    f"| {field} | E vs {LABEL.get(key, key)} | {result['n']} | {p_raw} | {p_holm} |"
+                )
+        sig = [
+            LABEL.get(key, key)
+            for key, result in summary["primary_tests"]["success"].items()
+            if key != "success_definition"
+            and result["p_holm"] is not None
+            and result["p_holm"] < 0.05
+        ]
+        lines += [
+            "",
+            "Adjusted success comparisons below 0.05: " + (", ".join(sig) if sig else "none"),
+        ]
+    if "budget_curves" in summary:
+        lines += [
+            "",
+            "Fixed-question and matched-effort curves, including scenario bootstrap intervals, "
+            "are in `budget-curves.json` and the paired SVG files. The reliability diagram with "
+            "bin counts is `reliability-diagram.svg`; `scenario-manifest.json` gives generated "
+            "stratum and behavior counts.",
+        ]
+    lines += ["", END]
     return "\n".join(lines)
 
 

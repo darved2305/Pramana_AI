@@ -258,35 +258,41 @@ Calibration: plots/reliability_diagram.png
 
 Source: `eval/reports/benchmark-2026-11-07-rc1/summary.json`, commit `8b24d0d`, seeds 10000-10299 (300 scenarios: single 206, pair 39, no_fault 15, access_limited 40), logic mode (structured answers from simulated participants; no Gnani or LLM calls).
 
-| Policy | n (failed) | Success | Decision accuracy | Probes (median) | Effort s (mean) | False confidence | Abstain recall / precision |
-|---|---|---|---|---|---|---|---|
-| E (ours, K=1) | 300 (0) | 84.7% | 92.9% | 5.0 | 189 | 1.7% | 67.9% / 59.5% |
-| A checklist | 300 (0) | 64.0% | 97.1% | 11.0 | 494 | 0.3% | 78.6% / 36.2% |
-| C random | 300 (0) | 56.3% | 96.2% | 11.0 | 580 | 0.0% | 78.6% / 35.2% |
-| D greedy entropy | 300 (0) | 83.3% | 92.3% | 4.0 | 231 | 1.7% | 69.6% / 57.7% |
-| E without decision focus | 300 (0) | 85.0% | 93.0% | 5.0 | 188 | 2.0% | 67.9% / 60.3% |
-| E without effort cost | 300 (0) | 84.3% | 92.8% | 4.0 | 236 | 1.7% | 69.6% / 59.7% |
+| Policy | n (failed) | Historical success | Honest success | Decision accuracy | Probes (median) | 
+Effort s (mean) | False confidence | Abstain recall / precision |
+|---|---|---|---|---|---|---|---|---|
+| E (ours, K=1) | 300 (0) | 84.7% | n/a | 92.9% | 5.0 | 189 | 1.7% | 67.9% / 59.5% |
+| A checklist | 300 (0) | 64.0% | n/a | 97.1% | 11.0 | 494 | 0.3% | 78.6% / 36.2% |
+| C random | 300 (0) | 56.3% | n/a | 96.2% | 11.0 | 580 | 0.0% | 78.6% / 35.2% |
+| D greedy entropy | 300 (0) | 83.3% | n/a | 92.3% | 4.0 | 231 | 1.7% | 69.6% / 57.7% |
+| E without decision focus | 300 (0) | 85.0% | n/a | 93.0% | 5.0 | 188 | 2.0% | 67.9% / 60.3% |
+| E without effort cost | 300 (0) | 84.3% | n/a | 92.8% | 4.0 | 236 | 1.7% | 69.6% / 59.7% |
 
-Paired differences E minus X, mean with bootstrap 95% CI (`*`: the interval excludes zero). Success in percentage points.
+Paired differences E minus X, mean with bootstrap 95% CI. Success in percentage points; the intervals are descriptive and do not replace the adjusted paired tests below.
 
 | Versus | Success (points) | Probes | Effort s |
 |---|---|---|---|
-| A checklist | +20.7 [+15.7, +26.0] * | -6.15 [-6.59, -5.72] * | -305 [-327, -282] * |
-| C random | +28.3 [+22.3, +34.3] * | -5.13 [-5.65, -4.62] * | -391 [-422, -361] * |
-| D greedy entropy | +1.3 [-2.7, +5.3] | +0.77 [+0.52, +1.03] * | -42 [-54, -30] * |
+| A checklist | +20.7 [+15.7, +26.0] | -6.15 [-6.59, -5.72] | -305 [-327, -282] |
+| C random | +28.3 [+22.3, +34.3] | -5.13 [-5.65, -4.62] | -391 [-422, -361] |
+| D greedy entropy | +1.3 [-2.7, +5.3] | +0.77 [+0.52, +1.03] | -42 [-54, -30] |
 | E without decision focus | -0.3 [-1.7, +1.0] | +0.01 [-0.05, +0.08] | +1 [-1, +3] |
-| E without effort cost | +0.3 [-3.3, +4.0] | +0.77 [+0.51, +1.03] * | -47 [-59, -34] * |
+| E without effort cost | +0.3 [-3.3, +4.0] | +0.77 [+0.51, +1.03] | -47 [-59, -34] |
 
 **Deviations from the pre-registered plan above, stated rather than hidden:**
 
-- N is 300 scenarios (seeds 10000-10299), not the planned 500 (10000-10499) plus curated cases.
-- The LLM policy B is not in this table: the free-tier comparison has fewer than 50 completed episodes and is not reported. No frontier model was run.
-- ECE, time-to-decision medians, robustness curves and the reliability diagram were not generated. Effort seconds is the mean participant effort per scenario.
-- E with parallel calls (K=3) is reported separately in ADR 0011, not in this run.
-- Stopping-rule calibration is in `eval/reports/calibration-2026-11-05/`; the default (`lambda_min_per_s = 1/60`) was kept.
-- These seeds were examined before the stated freeze; this analysis is exploratory. The success metric credits either constituent action or abstention on a pair, and does not measure resolution of both faults.
-- The registered McNemar, Wilcoxon and Holm analyses were not run. Intervals marked above are unadjusted bootstrap intervals, not familywise significance tests.
+- These RC1 seeds were examined before the stated freeze; this analysis is exploratory. The historical success metric credits pair abstention and does not measure resolution of both faults.
+- The registered McNemar, Wilcoxon and Holm analyses were not run for this artifact. No adjusted significance claim follows from its bootstrap intervals.
+- The historical artifact does not contain an honest-success rate or the newer calibration and stratum denominators; these are shown as unavailable.
 
-These exploratory comparisons do not establish adjusted statistical significance or full incident resolution.
+Pair outcomes, calibration and stratum counts are reported separately below.
+
+| Policy | Pair n | First useful action | Full pair resolution | Justified abstentions | Unknown-identifiability abstentions |
+|---|---:|---:|---|---:|---:|
+| E (ours, K=1) | n/a | n/a | not measured | n/a | n/a |
+| A checklist | n/a | n/a | not measured | n/a | n/a |
+| C random | n/a | n/a | not measured | n/a | n/a |
+| D greedy entropy | n/a | n/a | not measured | n/a | n/a |
+| E without decision focus | n/a | n/a | not measured | n/a | n/a |
+| E without effort cost | n/a | n/a | not measured | n/a | n/a |
 
 <!-- results:end -->

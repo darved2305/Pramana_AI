@@ -12,6 +12,7 @@ from pramana_contracts import PlanKind, ProbeAction
 from pramana_domain import DomainPack
 from pramana_engine import MULTIPLE_FAULTS, CompiledModel, Engine, Evidence, schedule
 
+from .budget import calibration, stratum_outcomes
 from .policies import Conclusion, History, ParallelOurs, Policy
 from .scenarios import Answers, Scenario
 
@@ -42,6 +43,8 @@ class Episode:
     withdrawn: int = 0
     """Questions withdrawn in flight because another answer made them pointless."""
     presence_challenges: int = 0
+    honest_success: bool = False
+    """Correct decision or abstention only when identifiability is false."""
 
 
 def run_episode(
@@ -105,6 +108,7 @@ def run_episode(
         failed=conclusion.failed,
         wall_s=effort,
         presence_challenges=presence_challenges,
+        honest_success=correct or (not decided and scenario.identifiable is False),
     )
 
 
@@ -191,6 +195,7 @@ def run_parallel_episode(
         wall_s=now,
         withdrawn=withdrawn,
         presence_challenges=presence_challenges,
+        honest_success=correct or (not decided and scenario.identifiable is False),
     )
 
 
@@ -221,6 +226,7 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
         "n": n,
         "failed_runs": len(all_episodes) - n,
         "success_rate": _rate(sum(e.success for e in episodes), n),
+        "honest_success_rate": _rate(sum(e.honest_success for e in episodes), n),
         "decision_accuracy": _rate(sum(e.correct for e in decided), len(decided)),
         "decided": len(decided),
         "accuracy_on_identifiable": _rate(
@@ -259,6 +265,8 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
         "presence_challenges_mean": (
             statistics.fmean(e.presence_challenges for e in episodes) if n else None
         ),
+        "calibration": calibration([asdict(e) for e in episodes]),
+        "strata": stratum_outcomes([asdict(e) for e in episodes]),
     }
 
 

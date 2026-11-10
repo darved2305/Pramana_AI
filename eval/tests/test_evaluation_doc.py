@@ -23,8 +23,8 @@ def test_every_policy_number_comes_from_the_summary() -> None:
         assert f"{p['success_rate'] * 100:.1f}%" in block
     assert summary["git_sha"] in block
     assert "this analysis is exploratory" in block
-    assert "do not establish adjusted statistical significance" in block
-    assert "full incident resolution" in block
+    assert "No adjusted significance claim follows from its bootstrap intervals" in block
+    assert "does not measure resolution of both faults" in block
 
 
 def test_splicing_replaces_only_the_generated_block() -> None:
