@@ -157,7 +157,7 @@ export function BeliefChange({ events, state, pack }: { events: EventEnvelope[];
     if (prior) {
       const answers = ordered.slice(prior.index + 1, index)
         .filter((item) => item.type === "ObservationRecorded")
-        .map((item) => item.payload as unknown as Observation);
+        .map((item) => (item.payload.evidence ?? item.payload) as unknown as Observation);
       if (answers.length) change = { before: prior.belief, after: belief, answers };
     }
     prior = { index, belief };
