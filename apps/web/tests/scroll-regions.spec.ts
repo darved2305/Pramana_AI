@@ -9,6 +9,8 @@ for (const item of [
   test(`${item.label} can be focused and scrolled by keyboard`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/preview/app");
+    // The entry route enables preview in a client effect before redirecting.
+    await expect(page).toHaveURL(/\/app$/);
     await page.goto(item.path);
     const region = page.getByRole("region", { name: item.label });
     await expect(region).toBeVisible();

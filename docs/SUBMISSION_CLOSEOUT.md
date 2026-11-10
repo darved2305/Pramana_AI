@@ -105,6 +105,14 @@ passed in an isolated environment installed from `uv.lock`. Local Markdown links
 and could not collect the deployment checks because `joserfc` was missing; installing the current
 locked environment resolved that collection failure. No runtime code changed in this closeout.
 
+The first full [PR CI run](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/actions/runs/42862686733)
+passed Python, real-stack browser, image, infrastructure and secret checks. Its web suite had
+135 passing tests and one failure: the keyboard-scroll test could not find `Metrics by policy`.
+That test navigated away from the preview entry without waiting for its client-side setup and
+redirect. It now waits for the `/app` redirect before opening the target screen. The existing
+visibility, focus, outline and axe assertions remain. TypeScript, lint, and all three affected
+tests repeated three times passed locally (9/9) against a production build with bundled Chromium.
+
 ## After submission
 
 Keep these items open until their actions and checks actually finish:
