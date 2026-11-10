@@ -84,14 +84,16 @@ export function latestBeliefChange(events: EventEnvelope[], observations: Observ
       const answers = ordered.slice(prior.index + 1, index).flatMap((item) => {
         if (item.type !== "ObservationRecorded") return [];
         const observationId = item.payload.observation_id;
-        if (typeof observationId !== "string") return [];
-        const observation = observationsById.get(observationId);
-        return observation
-          ? [{
-              participant_id: observation.participant_id,
-              probe_id: observation.probe_id,
-              outcome: observation.outcome,
-            }]
+        const observation = typeof observationId === "string" ? observationsById.get(observationId) : undefined;
+        if (observation) {
+          return [{ participant_id: observation.participant_id, probe_id: observation.probe_id, outcome: observation.outcome }];
+        }
+        // Fall back to the event's own public fields: the core nests them under `evidence`; older
+        // preview logs used the flat Observation shape. Anything incomplete is skipped, not shown.
+        const evidence = item.payload.evidence;
+        const fields = (evidence && typeof evidence === "object" ? evidence : item.payload) as Partial<Observation>;
+        return typeof fields.participant_id === "string" && typeof fields.probe_id === "string" && typeof fields.outcome === "string"
+          ? [{ participant_id: fields.participant_id, probe_id: fields.probe_id, outcome: fields.outcome }]
           : [];
       });
       if (answers.length) change = { before: prior.belief, after: belief, answers };
