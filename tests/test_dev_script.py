@@ -283,6 +283,7 @@ def test_demo_uses_local_mock_identity_and_no_live_voice() -> None:
     assert opts.web
     assert env["OIDC_ISSUER"] == "http://localhost:8410"
     assert env["GNANI_API_KEY"] == ""
+    assert env["SIM_STATE_FILE"] == ""
     assert [child.name for child in dev.children(opts, env)] == ["oidc", "sim", "core", "web"]
 
 
