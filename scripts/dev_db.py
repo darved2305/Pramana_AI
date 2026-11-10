@@ -19,11 +19,7 @@ from pathlib import Path
 
 PORT = int(os.environ.get("PRAMANA_DB_PORT", "5433"))
 USER = "pramana"
-DATABASES = tuple(
-    d.strip()
-    for d in os.environ.get("PRAMANA_DB_NAMES", "pramana,pramana_test").split(",")
-    if d.strip()
-)
+DATABASES = tuple(d.strip() for d in os.environ.get("PRAMANA_DB_NAMES", "").split(",") if d.strip())
 """Override with PRAMANA_DB_NAMES, e.g. the production worktree's
 ``pramana_prod,pramana_prod_test,pramana_prod_e2e``."""
 APP_ROLE = "pramana_app"

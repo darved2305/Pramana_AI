@@ -38,6 +38,8 @@ from functools import partial
 from pathlib import Path
 from typing import IO
 
+from dotenv import dotenv_values
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -274,7 +276,10 @@ class Child:
 
 
 def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, str]:
-    env = dict(os.environ if base is None else base)
+    env = {k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None}
+    env.update(os.environ if base is None else base)
+    if not env.get("DATABASE_URL", "").strip():
+        raise ValueError("DATABASE_URL must explicitly select a database")
     env.update(
         CORE_PORT=str(opts.core_port),
         SIM_PORT=str(opts.sim_port),
@@ -309,20 +314,25 @@ def children(opts: Options, env: dict[str, str]) -> list[Child]:
     return out
 
 
-def prepare(opts: Options) -> None:
+def prepare(opts: Options) -> dict[str, str]:
     if not (ROOT / ".env").exists():
         say("[dev] no .env found: generating one with fresh keys (scripts/dev_env.py)")
         subprocess.run([sys.executable, str(ROOT / "scripts" / "dev_env.py")], check=True)
+    env = service_env(opts)
     if opts.skip_db:
-        return
+        return env
     say("[dev] starting PostgreSQL")
-    subprocess.run([sys.executable, str(ROOT / "scripts" / "dev_db.py"), "start"], check=True)
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "dev_db.py"), "start"], check=True, env=env
+    )
     say("[dev] applying migrations")
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         cwd=ROOT / "services" / "core",
         check=True,
+        env=env,
     )
+    return env
 
 
 def _interrupt(_signum: int, _frame: object) -> None:
@@ -337,8 +347,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             signal.signal(getattr(signal, name), _interrupt)
     procs: list[Child] = []
     try:
-        prepare(opts)
-        env = service_env(opts)
+        env = prepare(opts)
         procs = children(opts, env)
         checks = {
             "sim": f"http://127.0.0.1:{opts.sim_port}/health",

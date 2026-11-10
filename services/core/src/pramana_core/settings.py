@@ -20,9 +20,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_json: bool = Field(default=True, alias="LOG_JSON")
 
-    database_url: str = Field(
-        default="postgresql+asyncpg://pramana@localhost:5433/pramana", alias="DATABASE_URL"
-    )
+    database_url: str = Field(min_length=1, alias="DATABASE_URL")
     db_pool_size: int = Field(default=5, ge=1, le=50, alias="DB_POOL_SIZE")
     db_max_overflow: int = Field(default=5, ge=0, le=50, alias="DB_MAX_OVERFLOW")
     db_pool_timeout_s: float = Field(default=5.0, gt=0, alias="DB_POOL_TIMEOUT_S")

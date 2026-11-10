@@ -261,3 +261,17 @@ def test_output_the_console_cannot_encode_never_freezes_a_child() -> None:
     written = out.buffer.getvalue()  # type: ignore[attr-defined]
     assert written.count(b"Next.js ready") == 4000
     assert b"? Next.js" in written  # the unencodable character was replaced, not fatal
+
+
+def test_service_env_loads_selected_database_from_checkout(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://local/selected\n", encoding="utf-8"
+    )
+    assert dev.service_env(dev.Options(), {})["DATABASE_URL"].endswith("/selected")
+
+
+def test_service_env_requires_database(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match="DATABASE_URL"):
+        dev.service_env(dev.Options(), {})

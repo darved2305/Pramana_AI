@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
+from dotenv import dotenv_values
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -16,11 +18,16 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-DEFAULT_URL = "postgresql+asyncpg://pramana@localhost:5433/pramana"
-
 
 def _url() -> str:
-    return config.attributes.get("url") or os.environ.get("DATABASE_URL", DEFAULT_URL)
+    url = (
+        config.attributes.get("url")
+        or os.environ.get("DATABASE_URL")
+        or dotenv_values(Path(__file__).resolve().parents[3] / ".env").get("DATABASE_URL")
+    )
+    if not url or not url.strip():
+        raise RuntimeError("DATABASE_URL must explicitly select a database for migrations")
+    return str(url)
 
 
 def _run(connection: Connection) -> None:
