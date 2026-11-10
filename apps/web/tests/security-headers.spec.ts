@@ -23,5 +23,7 @@ test("serves security headers on pages and missing routes", async ({ request }) 
     expect(headers["content-security-policy"], `${path} CSP`).toContain("default-src 'self'");
     expect(headers["content-security-policy"], `${path} CSP`).toContain("frame-ancestors 'none'");
     expect(headers["content-security-policy"], `${path} CSP`).toContain("object-src 'none'");
+    // Only the development server may evaluate strings; the shipped policy never does.
+    expect(headers["content-security-policy"], `${path} CSP`).not.toContain("unsafe-eval");
   }
 });

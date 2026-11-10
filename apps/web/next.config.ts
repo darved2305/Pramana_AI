@@ -9,6 +9,10 @@ import type { NextConfig } from "next";
  */
 const CORE_URL = process.env.PRAMANA_CORE_URL ?? "http://127.0.0.1:8000";
 
+// React's development build evaluates strings with eval() to rebuild call stacks. The development
+// server needs that allowance; the production policy never grants it.
+const developmentScripts = process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'";
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   // A label only: the core address the build was made for. The proxy reads PRAMANA_CORE_URL at runtime.
@@ -28,7 +32,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https:; worker-src 'self' blob:; media-src 'self' blob:",
+              `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; script-src 'self' 'unsafe-inline'${developmentScripts}; style-src 'self' 'unsafe-inline'; connect-src 'self' https:; worker-src 'self' blob:; media-src 'self' blob:`,
           },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },

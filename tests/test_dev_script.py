@@ -7,6 +7,7 @@ import importlib.util
 import io
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -159,7 +160,9 @@ def test_main_returns_success_when_interrupted_during_setup(
     monkeypatch.setattr(dev.signal, "signal", lambda *_: None)
     monkeypatch.setattr(dev, "prepare", interrupted)
 
-    assert dev.main([]) == 0
+    # Free ports of its own: the default ports may be held by another checkout's stack.
+    argv = ["--core-port", str(_free_port()), "--sim-port", str(_free_port())]
+    assert dev.main(argv) == 0
 
 
 def test_web_child_only_with_flag() -> None:
@@ -340,3 +343,40 @@ def test_demo_rejects_a_database_url_without_a_name(monkeypatch, tmp_path: Path)
     )
     with pytest.raises(ValueError, match="database name"):
         dev.service_env(dev.parse_args(["--demo"]), {})
+
+
+def _listening_port() -> tuple[socket.socket, int]:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    return listener, listener.getsockname()[1]
+
+
+def test_a_port_held_by_another_process_is_reported_before_any_start() -> None:
+    listener, port = _listening_port()
+    with listener:
+        opts = dev.parse_args(["--core-port", str(port), "--sim-port", str(_free_port())])
+        assert dev.busy_ports(opts) == [("core", port)]
+
+
+def test_demo_refuses_to_start_on_a_busy_port_before_touching_the_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Another checkout's demo (or any server) on the default port would answer the health check
+    # and this script would report that foreign stack as its own. Refuse before any database work.
+    def fail_if_prepared(_opts: object) -> dict[str, str]:
+        raise AssertionError("prepare must not run when a port is busy")
+
+    monkeypatch.setattr(dev, "prepare", fail_if_prepared)
+    listener, port = _listening_port()
+    out = io.StringIO()
+    with listener, contextlib.redirect_stdout(out):
+        assert dev.main(["--demo", "--core-port", str(port), "--sim-port", str(_free_port())]) == 1
+    assert f"port {port} for core is already in use" in out.getvalue()
+    assert "--core-port" in out.getvalue()
+
+
+def _free_port() -> int:
+    probe, port = _listening_port()
+    probe.close()
+    return port

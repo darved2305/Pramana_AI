@@ -18,7 +18,8 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from pramana_core import ids
-from pramana_core.db import Database, SiteRow, acting_for
+from pramana_core.db import Database, SiteRow, acting_as_job, acting_for
+from pramana_core.runtime.recovery import RECOVERY_JOB
 
 APP_ROLE = "pramana_app"
 
@@ -242,6 +243,67 @@ def test_write_without_context_fails(db_urls: tuple[str, str]) -> None:
         with pytest.raises(DBAPIError, match="row-level security"):
             async with db.transaction() as session:
                 session.add(SiteRow(id=ids.uuid7(), org_id=a, name="x", kind="hostel"))
+        await db.dispose()
+
+    _run(check)
+
+
+def test_startup_recovery_sees_only_open_candidates_and_cannot_write(
+    db_urls: tuple[str, str],
+) -> None:
+    async def check() -> None:
+        orgs = [ids.uuid7(), ids.uuid7()]
+        inv_ids = ["inv_recovery_open_a", "inv_recovery_open_b", "inv_recovery_closed"]
+        owner = create_async_engine(db_urls[0])
+        async with owner.begin() as conn:
+            for org_id in orgs:
+                await conn.execute(
+                    text(
+                        "insert into organizations (id, slug, name, kind) "
+                        "values (:id, :slug, :slug, 'campus')"
+                    ),
+                    {"id": org_id, "slug": f"recovery-rls-{org_id.hex[-8:]}"},
+                )
+            rows = [
+                (inv_ids[0], orgs[0], "questioning"),
+                (inv_ids[1], orgs[1], "awaiting_approval"),
+                (inv_ids[2], orgs[0], "closed"),
+            ]
+            for inv_id, org_id, status in rows:
+                await conn.execute(
+                    text(
+                        "insert into investigations "
+                        "(id, org_id, pack_id, status, scenario_id, commitment, request, version) "
+                        "values (:id, :org, 'campus_block_c', :status, 'synthetic-scenario', "
+                        "'synthetic-commitment', '{}'::jsonb, 0)"
+                    ),
+                    {"id": inv_id, "org": org_id, "status": status},
+                )
+        await owner.dispose()
+
+        db = Database(create_async_engine(db_urls[1]))
+        async with db.read() as session:
+            assert await session.scalar(text("select count(*) from investigations")) == 0
+        with acting_as_job(RECOVERY_JOB):
+            async with db.read() as session:
+                visible = await session.execute(
+                    text("select id from investigations where id = any(:ids) order by id"),
+                    {"ids": inv_ids},
+                )
+                assert set(visible.scalars()) == set(inv_ids[:2])
+            async with db.transaction() as session:
+                result = await session.execute(
+                    text("update investigations set status = 'closed' where id = :id"),
+                    {"id": inv_ids[0]},
+                )
+                assert result.rowcount == 0
+        with acting_for(orgs[0]):
+            async with db.read() as session:
+                status = await session.scalar(
+                    text("select status from investigations where id = :id"),
+                    {"id": inv_ids[0]},
+                )
+                assert status == "questioning"
         await db.dispose()
 
     _run(check)
