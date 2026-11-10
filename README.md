@@ -24,14 +24,28 @@ Nov 9 label. The [Nov 8 operational handoff](docs/engineering/HANDOFF.md) is his
 the [product spec](docs/PRODUCT.md), [evaluation and caveats](docs/EVALUATION.md), or
 [artifact index](docs/engineering/ARTIFACT_INDEX.md).
 
-## Five-minute judge path
+## Judge path
 
 1. **Watch:** no selected public recording is documented in this repository. External posting status
    is unknown. The [demo runbook](docs/DEMO.md) has the shot list and the
    [Nov 10 local rehearsal timeline](eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt).
-2. **Run:** after the prerequisites in [Run it](#run-it), start the local app with one command:
+2. **Run:** follow the prerequisites in [Run it](#run-it), then start the local app with
    `uv run python scripts/dev.py --demo`.
-3. **Read:** open the [current doc status](docs/engineering/STATUS_2026-11-10.md),
+3. **Sign in:** use the local mock sign-in form with `local@gmail.com`. On first sign-in, choose
+   **Get started**, create a workspace, and skip the optional site setup to reach the simulated
+   practice site. No real Google account is used.
+4. **Ask:** start a practice investigation. Open **Participant links**, choose **Create link** for
+   each simulated participant, and submit their card answers from those links. Return to the
+   operator view to continue until it presents a decision.
+5. **Approve:** in **Settings**, create an invitation with the **Approver** role only. Open that
+   invitation in a separate browser context, choose a different synthetic email in the local mock
+   sign-in form, and accept it. Request the repair from the operator session and approve it from the
+   approver session.
+6. **Verify and reveal:** use the named simulated technician's participant link to collect permission
+   and report the repair complete. Answer the verification questions from the participant links.
+   After the operator view reports verification, choose **Reveal**, then **Replay**, and confirm
+   **Replay identical**.
+7. **Read:** open the [current doc status](docs/engineering/STATUS_2026-11-10.md),
    [generated evaluation evidence](docs/EVALUATION.md), and
    [artifact index](docs/engineering/ARTIFACT_INDEX.md).
 
@@ -152,6 +166,10 @@ All evaluation numbers below come from committed reports and are checked against
 
 **Benchmark** (`eval/reports/benchmark-2026-11-10-heldout/summary.json`; run commit `56382dc`, frozen code `cfca50bf31959f828c77936580632c9a9bf3f7ad`, seeds 40000-40299). This logic-mode run completed 300 scenarios per policy with no failed episodes. The generated mix was 197 single, 40 pair, 16 no-fault and 47 access-limited cases (`scenario-manifest.json`). Historical success retains RC1's pair credit; honest success excludes pair abstentions because pair identifiability is unknown. E's historical success was 83.3%, and its honest success was 80.3%. After Holm correction, honest success was higher for E than the checklist (p=1.72924e-15, adjusted p=6.91696e-15) and random selection (p=2.26252e-19, adjusted p=1.13126e-18). The registered comparisons did not show an honest-success difference between E and greedy entropy (adjusted p=1) or E with three-way parallel scheduling (adjusted p=1); we do not claim E beats greedy entropy. The LLM baseline was unavailable because no provider credential was configured and paid providers were not allowed. The requested 20000-20299 seeds had prior use, so the committed protocol uses the searched disjoint 40000-40299 range; it also records the 300-scenario shortfall against the broader 500-scenario target.
 
+The Nov 10 held-out report is the primary benchmark. The Nov 7 RC1 report
+(`eval/reports/benchmark-2026-11-07-rc1/`) is exploratory because its seeds were examined during
+calibration.
+
 | Policy | Historical success | Honest success | Completed | Failed |
 |---|---:|---:|---:|---:|
 | E_ours | 83.3% | 80.3% | 300 | 0 |
@@ -205,8 +223,10 @@ Fixed question and effort curves, the calibration diagram, raw budget episodes, 
   53/80 with 0 invented, 19 missed and 0 wrong on the first, and 27/40 with 0 invented, 10 missed
   and 0 wrong on the second. All post-tuning results are in
   `eval/reports/extraction-after-attribution-2026-11-06/`.
-- **LLM policy comparison**: in progress on the free tier (32 of 100 LLM episodes so far); too
-  few to report yet.
+- **LLM policy comparison**: an earlier free-tier batch completed 32 episodes and had 68 failed
+  runs excluded. It finished below the 50-episode reporting threshold, and its run artifacts were
+  not committed, so no LLM comparison is reported. No provider credential is configured in this
+  checkout.
 
 Under the Gnani EULA, measured speech-recognition accuracy and latency are kept private.
 
@@ -222,10 +242,19 @@ cd apps/web && npm ci && cd ../..
 uv run python scripts/dev.py --demo
 ```
 
-Open http://localhost:3002 and use the mock sign-in for `local@gmail.com`. Create a practice
-investigation and answer using the simulated participant cards. The demo uses a synthetic
-identity and no paid voice provider. Press Ctrl+C to stop the services; the database server stays
-up. The first run can take longer while the console compiles.
+Open http://localhost:3002 and choose the mock sign-in. The local form defaults to
+`local@gmail.com`; it is a simulated identity and does not use a Google account. Create a practice
+investigation. Open **Participant links**, choose **Create link**, and answer from each simulated
+participant card. Return to the operator view to continue the investigation and reach its decision.
+
+To show the repair approval, create an approver-only invitation from **Settings**. Open the link in
+a separate browser context, sign in through the local mock form with a different synthetic email,
+and accept the invitation. Request the repair from the operator session, approve it from the
+approver session, then return to the operator session for verification. After verification, choose
+**Reveal** and open **Replay** to confirm **Replay identical**. Keep the two synthetic identities
+separate; the requester cannot approve their own repair. The demo uses no paid voice provider.
+Press Ctrl+C to stop the services; the database server stays up. The first run can take longer while
+the console compiles.
 
 Voice requests stay on the local protocol emulator. It recognizes encoded test clips rather than
 ordinary speech, so use the text practice cards for the guided investigation.

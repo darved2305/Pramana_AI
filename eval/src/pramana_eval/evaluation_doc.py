@@ -71,7 +71,11 @@ def _protocol_deviations(protocol: dict[str, Any]) -> list[str]:
             current = None
     if current is not None:
         deviations.append(current)
-    return deviations
+    # The frozen protocol names an internal work lane. Keep the published evaluation neutral.
+    return [
+        item.replace("matching the B1 lane's requested", "matching the requested")
+        for item in deviations
+    ]
 
 
 def render(summary: dict[str, Any], source: str) -> str:

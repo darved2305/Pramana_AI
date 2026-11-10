@@ -1,4 +1,4 @@
-# PLAN.md — Pramana engineering execution plan (Nov 4 → Nov 10, 2026)
+# PLAN.md - Pramana engineering execution plan (Nov 4 → Nov 10, 2026)
 
 > This is the authoritative engineering plan; PRODUCT.md is the product spec. Labels used throughout: **[V]** verified against vendor docs on 2026-11-04 · **[P]** our proposed or custom design · **[T]** target. Gnani endpoints are kept separate from our custom APIs (§11).
 >
@@ -63,7 +63,7 @@ flowchart LR
 | Engine | **numpy (+ scipy for Beta weights)**, pure package | Exact enumeration over ≤ 1k hypotheses runs in ms [I] | PyMC/Pyro (slow, overkill); Bayesian-network libraries (we need custom noise and decision logic) |
 | Voice transport | **Custom WebSocket media gateway** (AudioWorklet ↔ FastAPI ↔ Gnani realtime WS) | Per-question STT headers (keyterms / previous_text) [V]; single-process control of parallel calls; deterministic bot testing with WAV files; browsers can't set Gnani WS headers anyway [V] | **LiveKit Agents + `livekit-plugins-gnani`** is *plan B*: WebRTC robustness, but cross-room coordination needs IPC and the Gnani pages disagree on versions. **Pipecat + `pipecat-gnani`**: good, but adds framework coupling with no clear gain here |
 | STT | **Gnani Prisma v3.0 realtime** (+ REST for a second decode) | Code-mixing, language candidates, context hints [V] | Prisma v2.5 (no auto-detect or code-mix styles) |
-| TTS | **Gnani Timbre v3.0** (one persona across 10 languages) or v2.5 per-language voices; decided by the Day-1 listening test | v3.0 voices speak all languages and support `<pauses>` [V]; v2.5 has the Hinglish `hi-en` voice Poorvi [V] | — |
+| TTS | **Gnani Timbre v3.0** (one persona across 10 languages) or v2.5 per-language voices; decided by the initial listening test | v3.0 voices speak all languages and support `<pauses>` [V]; v2.5 has the Hinglish `hi-en` voice Poorvi [V] | - |
 | LLM (language roles) | Provider interface. **Hosted default `claude-opus-5-5`** at `effort: "low"` for in-call roles and `"medium"` for intake/explainer; **Evon v3.3 self-hosted (vLLM)** as the sovereign path behind a flag | Structured outputs guarantee valid JSON; Evon covers 11 Indic languages [V] | Using the LLM as the planner (not calibrated; this is the baseline we test against) |
 | DB | **Postgres 16** (events JSONB + projections) | Event sourcing, replay, SQL for evaluation | SQLite (fine locally, but concurrent writers during demos are risky); Mongo |
 | Pub/sub | **In-process** asyncio broadcast | Single process | Redis (add only if we scale to more than one core process); Kafka (no) |
@@ -73,7 +73,7 @@ flowchart LR
 | Frontend | **Next.js 15 (App Router), React 19, TypeScript, Tailwind v4**, a little shadcn/ui, **Motion** for causal transitions, custom **SVG** for the building | Fast to build; animations show evidence → belief causation | Charting libraries for the map (we need custom geometry) |
 | State (web) | **Zustand** store fed by the event stream | Event-sourced UI | Redux (boilerplate) |
 | Infra | **Docker Compose on one VM in the Mumbai region** (core + sim + Postgres + Caddy TLS); web on the same VM or Vercel | WebSockets need a long-lived server; India region for latency to Gnani [I] | Serverless for core (long-lived audio sockets) |
-| Tooling | **uv** (Python), **pnpm** (web), **ruff**, **pytest + hypothesis**, **import-linter**, **Playwright**, GitHub Actions | Fast, reproducible | — |
+| Tooling | **uv** (Python), **pnpm** (web), **ruff**, **pytest + hypothesis**, **import-linter**, **Playwright**, GitHub Actions | Fast, reproducible | - |
 
 ---
 
@@ -237,7 +237,7 @@ The simulator keeps truth **in its own process memory** with snapshot files. It 
 ### 8.1 `packages/engine` public API [P]
 
 ```python
-# packages/engine/api.py — pure, deterministic, no I/O
+# packages/engine/api.py - pure, deterministic, no I/O
 @dataclass(frozen=True)
 class Action:
     participant_id: str
@@ -278,7 +278,7 @@ class Engine:
 |---|---|---|---|---|
 | Intake | `claude-opus-5-5`, effort medium → Evon | report transcript + pack vocabulary | `IntakeResult` | ≤ 2 s (not in the turn loop) |
 | Realizer (paraphrase only) | `claude-opus-5-5`, effort low → Evon → **templates only** | template + slots + language | `{text}` + linter | Precomputed (speculative) |
-| Extractor | `claude-opus-5-5`, effort low → `claude-haiku-5-5` or Evon if the Day-1 p95 exceeds 1.0 s (team decision) | question, enum, transcript | `Extraction` (below) | ≤ 500 ms [T] |
+| Extractor | `claude-opus-5-5`, effort low → `claude-haiku-5-5` or Evon if the initial p95 exceeds 1.0 s (team decision) | question, enum, transcript | `Extraction` (below) | ≤ 500 ms [T] |
 | Explainer | `claude-opus-5-5`, effort low | decision trace JSON | `{text, mentioned_ids[]}` | Off the critical path |
 | Baseline B policy (eval only) | `claude-opus-5-5`, effort medium | topology text + history + action menu | `{action_id \| "conclude", decision_class, confidence}` | n/a |
 
@@ -349,7 +349,7 @@ The agent never calls free-form tools. Its only actions are typed commands, each
 | `Preempt(call_id, new_action \| None)` | Engine (rescore) | Call Runtime | in-flight and not yet answered |
 | `RequestApproval(action_id, target)` | Planner / Verifier | Safety Gate → console | action in pack; role exists |
 | `InstructAuthorizedAction(call_id, capability)` | Safety Gate (after approval) | Call Runtime | valid token; role matches |
-| `Close(call_id, outcome_message)` | Actor | Call Runtime | — |
+| `Close(call_id, outcome_message)` | Actor | Call Runtime | - |
 | `MachineProbe(probe_id)` (optional) | Planner | Core → simulated machine endpoint | probe marked `machine: true` |
 
 **Sensors are participants.** A telemetry source is just a participant with modality `machine`, a reliability prior of Beta(99, 1), and zero call cost. This is how Pramana *complements* instrumentation.
@@ -516,9 +516,9 @@ stateDiagram-v2
 - **Per-question STT sessions.** When an `Ask` is issued, the gateway opens a Prisma v3.0 WebSocket with that question's headers (language candidates, format, keyterms, previous_text, topic, VAD) *while* TTS plays the question. That hides handshake latency. Mic frames are forwarded during `ASKING` (barge-in detection through `speech_start`) and `LISTENING`. The socket closes after extraction. This keeps every session well under the 15-minute cap [V].
 - **Barge-in.** Prisma `speech_start` (or a local energy-VAD fallback) during `ASKING` sends `stop_playback`, cancels the remaining TTS and moves to `LISTENING`.
 - **Utterance buffer.** The gateway keeps the last ≤ 30 s of PCM per call. The Arbiter can request a second REST decode of the latest utterance [V].
-- **Concurrency governor.** Semaphores for STT realtime, STT REST and TTS, sized from the Day-1 spike. On 429, back off at 0.5 s, 1 s, then 2 s (the docs say not to rely on `Retry-After` [V]).
-- **Fallback A — REST mode.** Local Silero VAD segments speech; each segment goes to `POST /stt/v3` (≤ 30 s), queued through the REST semaphore.
-- **Fallback B — multiplexer.** One realtime session (language candidates covering everyone, e.g., `hi-IN,mr-IN,en-IN`) receives VAD-segmented utterances from several calls serially, each followed by `{"type":"commit"}`. Transcripts are mapped back in order via `segment_index`. Per-question context is lost, so this is used only if the concurrency cap is 1.
+- **Concurrency governor.** Semaphores for STT realtime, STT REST and TTS, sized from the initial spike. On 429, back off at 0.5 s, 1 s, then 2 s (the docs say not to rely on `Retry-After` [V]).
+- **Fallback A - REST mode.** Local Silero VAD segments speech; each segment goes to `POST /stt/v3` (≤ 30 s), queued through the REST semaphore.
+- **Fallback B - multiplexer.** One realtime session (language candidates covering everyone, e.g., `hi-IN,mr-IN,en-IN`) receives VAD-segmented utterances from several calls serially, each followed by `{"type":"commit"}`. Transcripts are mapped back in order via `segment_index`. Per-question context is lost, so this is used only if the concurrency cap is 1.
 - **TTS.** Synthesize per utterance over the WS or SSE endpoint. Stream chunks to the browser as soon as they arrive. Cache fixed phrases (consent lines, thanks) as files keyed by `(text, voice, lang)`.
 - **Speculative pre-synthesis (P1b).** While the participant is answering, the engine plans the next action for the 1–2 most likely outcomes. The gateway pre-synthesizes those utterances, and any that end up unused are discarded. The credit cost is measured.
 
@@ -652,7 +652,7 @@ sequenceDiagram
 | Media WS | Darshan (gateway) ↔ Darshan (web) | `packages/contracts/media.md` | WAV bot client | Darshan |
 | Sim API | Darshan (shell) wraps Nikhil (physics) | `services/sim/openapi.json` | In-process sim for unit tests | Darshan (shell) / Nikhil (semantics) |
 | Approvals / capabilities | Darshan → sim + console | `packages/contracts/capability.py` | Test signer | Darshan |
-| Eval ↔ engine/sim | Nikhil | `eval/interfaces.py` | — | Nikhil |
+| Eval ↔ engine/sim | Nikhil | `eval/interfaces.py` | - | Nikhil |
 
 **Rules**
 - Interface-first: contracts are merged on Nov 4 before implementation (J01).
@@ -686,7 +686,7 @@ sequenceDiagram
   - `tts_ttfb_ms`;
   - `total_ms`.
 - **Decision traces** are stored as `PlanComputed` events (top 10 candidates with gains, costs and feasibility reasons).
-- **Credit meter:** STT audio seconds sent, TTS characters (tags count as billable [V]), REST calls; converted using the Day-1 calibration factor; `BudgetWarning` at 60% and 80% of the daily cap.
+- **Credit meter:** STT audio seconds sent, TTS characters (tags count as billable [V]), REST calls; converted using the initial calibration factor; `BudgetWarning` at 60% and 80% of the daily cap.
 - **Error taxonomy:** `GNANI_429`, `GNANI_402`, `GNANI_WS_CLOSED_1001`, `LLM_TIMEOUT`, `SCHEMA_FAIL`, `ENGINE_ERROR`, `CLIENT_STALL`.
 
 ## 20. Evaluation infrastructure (Nikhil; runner infrastructure: Darshan)
@@ -734,7 +734,7 @@ sequenceDiagram
 ## 23. API credit and usage management
 
 - **Unknowns [V]:** 5,000 programme credits, sent to the primary registrant; no published conversion to minutes or characters; rate and concurrency limits shown in the account at app.gnani.ai; 402 when credit runs out.
-- **Day-1 calibration (D03):** measure the dashboard delta for:
+- **Initial calibration (D03):** measure the dashboard delta for:
   - (a) 60 s of streamed speech;
   - (b) 60 s of streamed silence;
   - (c) 10 REST decodes of 3 s each;
@@ -756,17 +756,17 @@ sequenceDiagram
 - **Nikhil:** domain pack and physics; simulator semantics and scenarios; belief engine; planner, verification, arbiter and presence challenges; LLM roles (prompts, schemas, test sets); dialogue policy and question realizer; evaluation harness, baselines, ablations and calibration; audio-level evaluation design.
 - **Joint:** contracts (J01); integrations M1–M3; recording; documentation; submission; daily cross-review.
 
-## 25. Workload balancing — contribution matrix
+## 25. Workload balancing - contribution matrix
 
 Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; Nov 5–9: 12 h/day; Nov 10: 6 h).
 
 | Feature | Primary | Support | Effort (P/S h) | Difficulty | Depends on | Acceptance | Date | Testing |
 |---|---|---|---|---|---|---|---|---|
-| Contracts & interface freeze | Both | — | 1.5 / 1.5 | Med | — | Schemas merged; TS compiles | Nov 4 | CI drift |
+| Contracts & interface freeze | Both | - | 1.5 / 1.5 | Med | - | Schemas merged; TS compiles | Nov 4 | CI drift |
 | Gnani spike & credit calibration | Darshan | Nikhil (language tests) | 3 / 1 | Med | API key | Numbers in `docs/spike-gnani.md` | Nov 4 | Manual + script |
 | Domain pack + physics | Nikhil | Darshan (geometry review) | 10 / 0.5 | Med-High | J01 | Golden tests pass | Nov 4–5 | Nikhil |
 | Belief engine | Nikhil | Darshan (review) | 8 / 0.5 | **High** | Physics | Brute-force equivalence | Nov 4–6 | Nikhil |
-| Planner + verification + arbiter | Nikhil | — | 10 / 0 | **High** | Engine | Toy optimal tests; S1 ≤ 6 probes | Nov 5–7 | Nikhil |
+| Planner + verification + arbiter | Nikhil | - | 10 / 0 | **High** | Engine | Toy optimal tests; S1 ≤ 6 probes | Nov 5–7 | Nikhil |
 | Simulator semantics & scenarios | Nikhil | Darshan (shell) | 5 / 2 | Med | Physics | Deterministic; sealed commitment | Nov 5 | Both |
 | LLM roles + test sets | Nikhil | Darshan (clients) | 12 / 2 | Med-High | Pack | Thresholds in PRODUCT §16 | Nov 5–6 | Nikhil |
 | Dialogue policy + realizer + linter | Nikhil | Darshan (runtime) | 5 / 1 | Med | Pack | Linter tests | Nov 5–6 | Nikhil |
@@ -774,11 +774,11 @@ Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; No
 | Call runtime + preemption | Darshan | Nikhil (policy) | 10 / 1 | **High** | Gateway | State tests; preemption ≤ 1 s | Nov 5–7 | Darshan |
 | Actor, event store, fan-out, recovery | Darshan | Nikhil (engine replay) | 6 / 0.5 | Med-High | Contracts | Replay equivalence | Nov 5 | Darshan |
 | Console (map, belief, calls, ledger, why, replay) | Darshan | Nikhil (preview API) | 13 / 1 | Med-High | Events, pack geometry | Live S1 render | Nov 6–8 | Darshan |
-| Participant app | Darshan | — | 4 / 0 | Med | Gateway, sim shell | Android + desktop | Nov 5–6 | Darshan |
-| AuthZ + capabilities + security tests | Darshan | — | 5 / 0 | Med | Sim shell | Matrix 100% | Nov 6 | Darshan |
+| Participant app | Darshan | - | 4 / 0 | Med | Gateway, sim shell | Android + desktop | Nov 5–6 | Darshan |
+| AuthZ + capabilities + security tests | Darshan | - | 5 / 0 | Med | Sim shell | Matrix 100% | Nov 6 | Darshan |
 | Eval harness + baselines + ablations + calibration | Nikhil | Darshan (runner, results page) | 13 / 4 | **High** | Engine, sim | Reproducible report | Nov 6–8 | Nikhil |
-| Deploy + observability + load test | Darshan | — | 8 / 0 | Med | All | Load report | Nov 6–8 | Darshan |
-| Recording + editing + posts + submission | Both | — | 7 / 7 | Med | M3 | Checklist | Nov 8–10 | Both |
+| Deploy + observability + load test | Darshan | - | 8 / 0 | Med | All | Load report | Nov 6–8 | Darshan |
+| Recording + editing + posts + submission | Both | - | 7 / 7 | Med | M3 | Checklist | Nov 8–10 | Both |
 | **Totals (approx.)** | **Darshan ≈ 78 h** | **Nikhil ≈ 80 h** | | | | | | |
 
 **Interview stories (each person owns a complete, defensible piece):**
@@ -793,7 +793,7 @@ Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; No
 > **Today is Wednesday Nov 4.** Nov 8 is a Sunday; Nov 10 (Tuesday) at 23:59 is the hard deadline [V].
 > **Integration checkpoints every day at 14:00 (15 min sync) and 21:00 (integration session).**
 
-### Wed Nov 4 — "Contracts + reality check" (~9 h each)
+### Wed Nov 4 - "Contracts + reality check" (~9 h each)
 
 | Time | Darshan | Nikhil |
 |---|---|---|
@@ -817,7 +817,7 @@ Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; No
   - API key or credits not yet active → use mocks tonight, chase on Discord or email, and do the spike first thing Nov 5.
 - **End of day:** both can run `make dev`; the spike report is committed.
 
-### Thu Nov 5 — "Text loop end-to-end" (M1)
+### Thu Nov 5 - "Text loop end-to-end" (M1)
 
 | Block | Darshan | Nikhil |
 |---|---|---|
@@ -833,14 +833,14 @@ Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; No
 - **Decisions:** go/no-go for P1 parallel calls (from the spike); Evon GPU feasibility (quote or availability).
 - **Contingency:** if the engine lags, Darshan integrates against the recorded event fixture and Nikhil delivers single-fault mode only.
 
-### Fri Nov 6 — "Voice loop end-to-end" (M2)
+### Fri Nov 6 - "Voice loop end-to-end" (M2)
 
 | Block | Darshan | Nikhil |
 |---|---|---|
 | 09:00–13:00 | D04 barge-in, VAD tuning, 15-minute rotation; D07 call runtime with voice | N05 verification planner + EVOI stopping; N10 realizer templates (en/hi/mr + Hinglish register) + linter + speakable-text normalizer |
 | 13:00–17:00 | D10 approvals + capabilities; D12 staging deploy | N16 eval harness v0 (logic mode) + N17 baselines A and B; **first 200-run benchmark** |
 | 17:00–21:00 | D11 console v1 (map + belief bars + calls panel) | N14 question-conditioned STT headers; N06 presence challenges; N09 extractor to 150 utterances + score report |
-| 12:00 gate | — | **Evon go/no-go** (N20 with D23): GPU up and JSON-schema extraction ≥ 95% on the test set at p95 ≤ 1.2 s, otherwise hosted |
+| 12:00 gate | - | **Evon go/no-go** (N20 with D23): GPU up and JSON-schema extraction ≥ 95% on the test set at p95 ≤ 1.2 s, otherwise hosted |
 | 21:00–23:30 | **J03 M2 integration (voice)** | ← same |
 
 - **M2 acceptance:**
@@ -852,7 +852,7 @@ Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; No
   - if voice is unstable → LiveKit plan B (half a day; D04 interfaces kept);
   - if Gnani concurrency is 1 → multiplexer (D18) becomes P0.
 
-### Sat Nov 7 — "Differentiators + demo freeze" (M3)
+### Sat Nov 7 - "Differentiators + demo freeze" (M3)
 
 | Block | Darshan | Nikhil |
 |---|---|---|
@@ -867,7 +867,7 @@ Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; No
   - **scope freeze at 23:59**: only P1a finishing (until Nov 8 12:00) and bug fixes after this.
 - **Build-in-public (optional, 20 minutes):** a short progress post with *no* metrics claims (to build genuine interest).
 
-### Sun Nov 8 — "Record, edit, publish X"
+### Sun Nov 8 - "Record, edit, publish X"
 
 | Block | Darshan | Nikhil |
 |---|---|---|
@@ -878,7 +878,7 @@ Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; No
 
 - **Acceptance:** video ≤ 60 s; burned-in captions; "Simulated building · real voices · real-time AI" disclosure; every claim matches the report.
 
-### Mon Nov 9 — "LinkedIn + hardening + docs"
+### Mon Nov 9 - "LinkedIn + hardening + docs"
 
 | Block | Darshan | Nikhil |
 |---|---|---|
@@ -888,7 +888,7 @@ Estimates assume AI-assisted coding. Capacity is about 75 h each (Nov 4: 9 h; No
 | **18:00** | **Code freeze** (tag `v1.0`); only critical fixes after this | ← |
 | 18:00–22:00 | Mock interview of Nikhil (30 min); respond to comments | Mock interview of Darshan (30 min); respond to comments |
 
-### Tue Nov 10 — "Submit early" (deadline 23:59 IST)
+### Tue Nov 10 - "Submit early" (deadline 23:59 IST)
 
 - **09:00–12:00:** run the final checklist (§32). The primary registrant fills the submission form: demo video, written explanation, Gnani models and APIs used, nominated post links (one per platform).
 - **≤ 14:00: SUBMIT** (≈ 10 h buffer).
@@ -1044,58 +1044,58 @@ Critical path: **J01 → physics → engine → planner → M1 → voice gateway
 
 ---
 
-## Appendix A — Work item catalogue
+## Appendix A - Work item catalogue
 
 Columns: ID · Task · Owner · Pri · Est · Deps · Files · APIs · Output → DoD/tests · Integration.
 
 | ID | Task | Owner | Pri | Est | Deps | Files/modules | APIs | Output → DoD / tests | Integration |
 |---|---|---|---|---|---|---|---|---|---|
-| J01 | Interface freeze v0 | Both | P0 | 1.5h each | — | packages/contracts, packages/engine/api.py, packages/domain/schema.py | — | Merged schemas → TS compiles | Blocks all |
-| D01 | Repo, dev env, CI skeleton | D | P0 | 2h | — | /, infra/, .github/ | — | `make dev` works → fresh clone ≤ 10 min | — |
-| D02 | Contracts codegen + drift check | D | P0 | 2h | J01 | packages/contracts, apps/web/lib/contracts | — | TS types → CI fails on drift | Console uses types |
+| J01 | Interface freeze v0 | Both | P0 | 1.5h each | - | packages/contracts, packages/engine/api.py, packages/domain/schema.py | - | Merged schemas → TS compiles | Blocks all |
+| D01 | Repo, dev env, CI skeleton | D | P0 | 2h | - | /, infra/, .github/ | - | `make dev` works → fresh clone ≤ 10 min | - |
+| D02 | Contracts codegen + drift check | D | P0 | 2h | J01 | packages/contracts, apps/web/lib/contracts | - | TS types → CI fails on drift | Console uses types |
 | D03 | Gnani spike + credit calibration | D | P0 | 3h | key | spikes/gnani, docs/spike-gnani.md | STT WS/REST, TTS WS/SSE | Report with numbers → decisions recorded | Sets D04/D18 |
 | D04 | Voice gateway v1 | D | P0 | 8h | D03 | pramana_core/voice/*, apps/web/app/p/audio | STT WS, TTS WS/SSE | Speak→transcript→reply → 10 clean turns; barge-in ≤ 300 ms | D07 |
 | D05 | Actor + event store + projections | D | P0 | 3h | J01 | runtime/actor.py, store.py | Postgres | Serial processing → replay test | Engine |
-| D06 | Event fan-out + resume | D | P0 | 3h | D05 | api/ws_events.py, web store | — | No gaps/dupes on reconnect | Console |
-| D07 | Call runtime executor | D | P0 | 6h | D04, N10 | calls/runtime.py | — | State machine → transition + timer tests | Actor |
+| D06 | Event fan-out + resume | D | P0 | 3h | D05 | api/ws_events.py, web store | - | No gaps/dupes on reconnect | Console |
+| D07 | Call runtime executor | D | P0 | 6h | D04, N10 | calls/runtime.py | - | State machine → transition + timer tests | Actor |
 | D08 | Participant app | D | P0 | 4h | D04, D09 | apps/web/app/p/* | Media WS, Sim API | Join→consent→call→view → Android + desktop | Sim |
-| D09 | Sim service shell | D | P0 | 2h | N03 | services/sim/app.py | — | REST + auth → unsigned action 403 | Participant app |
-| D10 | Approvals + capabilities | D | P0 | 3h | D05, D09 | policy/capabilities.py, ApprovalDrawer | — | Tokens → expiry/replay/aud tests | Sim, console |
-| D11 | Console v1 | D | P0 | 8h | D06, N01 | apps/web/app/console/* | Events WS | Live S1 render → 60 fps; all elements event-backed | — |
-| D12 | Staging deploy | D | P0 | 3h | D01 | infra/* | — | HTTPS + WSS → restart-safe | — |
-| D13 | Recording rig | D | P0 | 2h | D11 | docs/DEMO.md | — | OBS scenes → 1080p test | — |
-| D14 | Eval runner + results page | D | P0 | 2h | N16 | eval/runner.py, app/eval | — | 500 runs < 10 min → reproducible | Nikhil reports |
-| D15 | LLM client plumbing | D | P0 | 2h | — | llm/clients.py | Claude API, vLLM | Role switch via env → spend logged | N08–N12 |
-| D16 | Why-this-question + replay + seal UI | D | P1a | 5h | D11, N05 | console components | Preview API | Numbers match engine → replay covers all events | — |
-| D17 | Parallel calls + preemption | D | P1a | 4h | D07, N05 | calls/runtime.py | — | Preempt ≤ 1 s → 3 calls × 10 min stable | Engine rescore |
-| D18 | STT fallbacks + governor | D | P1b (P0 if R1) | 4h | D03 | voice/multiplexer.py | STT REST/WS | Same bot test passes in all modes | — |
-| D19 | Speculative TTS + phrase cache | D | P1b | 2h | N15 | voice/tts_cache.py | TTS | ≥ 70% hits | — |
-| D20 | Observability + credit meter page | D | P1b | 2h | D04 | logging, /dev/metrics | — | Per-turn waterfall | — |
-| D21 | Robustness + load test | D | P1b | 3h | M2 | tests/load | — | Load report | — |
-| D22 | Onboarding / setup UI | D | P1b | 3h | D11 | console | — | QR invites; mic self-test | — |
+| D09 | Sim service shell | D | P0 | 2h | N03 | services/sim/app.py | - | REST + auth → unsigned action 403 | Participant app |
+| D10 | Approvals + capabilities | D | P0 | 3h | D05, D09 | policy/capabilities.py, ApprovalDrawer | - | Tokens → expiry/replay/aud tests | Sim, console |
+| D11 | Console v1 | D | P0 | 8h | D06, N01 | apps/web/app/console/* | Events WS | Live S1 render → 60 fps; all elements event-backed | - |
+| D12 | Staging deploy | D | P0 | 3h | D01 | infra/* | - | HTTPS + WSS → restart-safe | - |
+| D13 | Recording rig | D | P0 | 2h | D11 | docs/DEMO.md | - | OBS scenes → 1080p test | - |
+| D14 | Eval runner + results page | D | P0 | 2h | N16 | eval/runner.py, app/eval | - | 500 runs < 10 min → reproducible | Nikhil reports |
+| D15 | LLM client plumbing | D | P0 | 2h | - | llm/clients.py | Claude API, vLLM | Role switch via env → spend logged | N08–N12 |
+| D16 | Why-this-question + replay + seal UI | D | P1a | 5h | D11, N05 | console components | Preview API | Numbers match engine → replay covers all events | - |
+| D17 | Parallel calls + preemption | D | P1a | 4h | D07, N05 | calls/runtime.py | - | Preempt ≤ 1 s → 3 calls × 10 min stable | Engine rescore |
+| D18 | STT fallbacks + governor | D | P1b (P0 if R1) | 4h | D03 | voice/multiplexer.py | STT REST/WS | Same bot test passes in all modes | - |
+| D19 | Speculative TTS + phrase cache | D | P1b | 2h | N15 | voice/tts_cache.py | TTS | ≥ 70% hits | - |
+| D20 | Observability + credit meter page | D | P1b | 2h | D04 | logging, /dev/metrics | - | Per-turn waterfall | - |
+| D21 | Robustness + load test | D | P1b | 3h | M2 | tests/load | - | Load report | - |
+| D22 | Onboarding / setup UI | D | P1b | 3h | D11 | console | - | QR invites; mic self-test | - |
 | D23 | Evon hosting (vLLM) | D | P1b | 3h | GPU | infra/evon | vLLM | Endpoint up → latency measured | N20 |
-| N01 | Pack schema + campus pack | N | P0 | 5h | J01 | packages/domain/schema.py, packs/*.yaml | — | Validated pack incl. geometry | Console, engine, sim |
-| N02 | Physics semantics | N | P0 | 5h | N01 | packages/domain/physics.py | — | Golden tables per fault | Engine, sim |
-| N03 | Simulator core | N | P0 | 5h | N02 | services/sim/pramana_sim/* | — | Deterministic; sealed commitment | D09 |
-| N04 | Belief engine | N | P0 | 8h | N02 | packages/engine/belief.py | — | Brute-force equivalence; property tests | D05 |
-| N05 | Planner, stop/abstain, verification, preview (+batch, rescore P1a) | N | P0 | 7h | N04 | packages/engine/planner.py, verify.py | — | Toy optimal tests; S1 ≤ 6 probes | D05, D16, D17 |
-| N06 | Presence challenges + reconciliation explanations | N | P1a | 3h | N05 | engine/challenges.py | — | Adversarial scenario tests | Console banner |
-| N07 | Diagnostic intervention (port swap) | N | P1b | 3h | N05 | engine/interventions.py | — | Observational-equivalence test | Approvals |
-| N08 | Role configs + prompt registry | N | P0 | 1h | D15 | llm/roles/*, prompts/* | — | Versioned prompts | — |
+| N01 | Pack schema + campus pack | N | P0 | 5h | J01 | packages/domain/schema.py, packs/*.yaml | - | Validated pack incl. geometry | Console, engine, sim |
+| N02 | Physics semantics | N | P0 | 5h | N01 | packages/domain/physics.py | - | Golden tables per fault | Engine, sim |
+| N03 | Simulator core | N | P0 | 5h | N02 | services/sim/pramana_sim/* | - | Deterministic; sealed commitment | D09 |
+| N04 | Belief engine | N | P0 | 8h | N02 | packages/engine/belief.py | - | Brute-force equivalence; property tests | D05 |
+| N05 | Planner, stop/abstain, verification, preview (+batch, rescore P1a) | N | P0 | 7h | N04 | packages/engine/planner.py, verify.py | - | Toy optimal tests; S1 ≤ 6 probes | D05, D16, D17 |
+| N06 | Presence challenges + reconciliation explanations | N | P1a | 3h | N05 | engine/challenges.py | - | Adversarial scenario tests | Console banner |
+| N07 | Diagnostic intervention (port swap) | N | P1b | 3h | N05 | engine/interventions.py | - | Observational-equivalence test | Approvals |
+| N08 | Role configs + prompt registry | N | P0 | 1h | D15 | llm/roles/*, prompts/* | - | Versioned prompts | - |
 | N09 | Extractor + 150-utterance test set | N | P0 | 5h | N01 | llm/roles/extractor.py, eval/data/utterances | Claude/Evon | Accuracy thresholds met | D07 |
-| N10 | Dialogue policy + realizer + linter + speakable text | N | P0 | 5h | N01 | calls/dialogue_policy.py, llm/roles/realizer.py | — | Linter tests; native-speaker review | D07 |
-| N11 | Intake + 60 reports | N | P0 | 2h | N01 | llm/roles/intake.py | — | ≥ 95% mapping | Actor |
-| N12 | Explainer (grounded) | N | P1b | 2h | N05 | llm/roles/explainer.py | — | 0 ungrounded mentions | Console |
+| N10 | Dialogue policy + realizer + linter + speakable text | N | P0 | 5h | N01 | calls/dialogue_policy.py, llm/roles/realizer.py | - | Linter tests; native-speaker review | D07 |
+| N11 | Intake + 60 reports | N | P0 | 2h | N01 | llm/roles/intake.py | - | ≥ 95% mapping | Actor |
+| N12 | Explainer (grounded) | N | P1b | 2h | N05 | llm/roles/explainer.py | - | 0 ungrounded mentions | Console |
 | N13 | Confirmation arbiter | N | P1a | 3h | N05, D04 | engine/arbiter.py | STT REST | Catches injected substitutions | D07 |
 | N14 | Question-conditioned STT headers + internal ablation | N | P1a | 2h | N10, D04 | voice/context.py (shared) | STT WS | Headers per question; ablation script | D04 |
-| N15 | Speculative next action | N | P1b | 2h | N05 | engine/speculate.py | — | Predicts next action per outcome | D19 |
-| N16 | Eval harness (generator, sim participants, metrics) | N | P0 | 5h | N03, N05 | eval/* | — | Reproducible runs | D14 |
-| N17 | Baselines A, B (P0); C, D (P1a) | N | P0/P1a | 3h + 2h | N16 | eval/policies/* | Claude (B) | Same-menu comparisons | — |
-| N18 | Ablations + calibration (+ sweeps) | N | P1a | 3h | N17 | eval/analysis/* | — | Plots + report | Public numbers |
-| N19 | Audio-level evaluation (internal) | N | P1b | 3h | D04 | eval/audio/* | STT | Private report | — |
-| N20 | Evon quality/latency decision | N | P1b | 1h | D23 | eval/llm_bench.py | vLLM | Go/no-go note | — |
-| N21 | Map drift | N | P2 | 4h | N05 | engine/topology_variants.py | — | Drift scenario resolves | — |
-| N22 | Investigation forecast | N | P2 | 3h | N05 | engine/forecast.py | — | Rollout stats in console | — |
-| N23 | Village water pack (Marathi) | N | P2 | 5h | N01 | packs/gram_water.yaml | — | Same engine, new pack | — |
+| N15 | Speculative next action | N | P1b | 2h | N05 | engine/speculate.py | - | Predicts next action per outcome | D19 |
+| N16 | Eval harness (generator, sim participants, metrics) | N | P0 | 5h | N03, N05 | eval/* | - | Reproducible runs | D14 |
+| N17 | Baselines A, B (P0); C, D (P1a) | N | P0/P1a | 3h + 2h | N16 | eval/policies/* | Claude (B) | Same-menu comparisons | - |
+| N18 | Ablations + calibration (+ sweeps) | N | P1a | 3h | N17 | eval/analysis/* | - | Plots + report | Public numbers |
+| N19 | Audio-level evaluation (internal) | N | P1b | 3h | D04 | eval/audio/* | STT | Private report | - |
+| N20 | Evon quality/latency decision | N | P1b | 1h | D23 | eval/llm_bench.py | vLLM | Go/no-go note | - |
+| N21 | Map drift | N | P2 | 4h | N05 | engine/topology_variants.py | - | Drift scenario resolves | - |
+| N22 | Investigation forecast | N | P2 | 3h | N05 | engine/forecast.py | - | Rollout stats in console | - |
+| N23 | Village water pack (Marathi) | N | P2 | 5h | N01 | packs/gram_water.yaml | - | Same engine, new pack | - |
 
 **Cut order** if behind (cut from the top first): N18 robustness sweeps → D22 → D20 → N12 → D16 replay scrubber (keep "why") → N14 ablation (keep headers) → N06 reconciliation text (keep detection) → D17 preemption (keep parallel) → parallel calls entirely.

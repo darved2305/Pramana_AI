@@ -192,6 +192,30 @@ def test_readme_benchmark_numbers_match_the_generated_report() -> None:
             assert row in normalized
 
 
+def test_judge_docs_use_heldout_as_primary_and_label_rc1_exploratory() -> None:
+    paths = (ROOT / "README.md", ROOT / "docs" / "SUBMISSION.md", ROOT / "docs" / "EVALUATION.md")
+    for path in paths:
+        text = " ".join(path.read_text(encoding="utf-8").split()).lower()
+        assert "eval/reports/benchmark-2026-11-10-heldout/" in text, path
+        assert re.search(r"held.?out.{0,100}primary|primary.{0,100}held.?out", text), path
+        assert "eval/reports/benchmark-2026-11-07-rc1/" in text, path
+        assert re.search(r"rc1.{0,180}exploratory|exploratory.{0,180}rc1", text), path
+
+
+def test_readme_llm_batch_matches_the_artifact_index() -> None:
+    readme = " ".join((ROOT / "README.md").read_text(encoding="utf-8").split()).lower()
+    index = (ROOT / "docs" / "engineering" / "ARTIFACT_INDEX.md").read_text(encoding="utf-8")
+    line = next(line for line in index.splitlines() if "eval/reports/llm-comparison/" in line)
+    match = re.search(r"(\d+) completed\s*/\s*(\d+) excluded", line)
+    assert match
+    assert f"{match.group(1)} episodes" in readme
+    assert f"{match.group(2)} failed" in readme
+    assert "in progress on the free tier" not in readme
+    assert "below the 50-episode reporting threshold" in readme
+    assert "not committed" in readme
+    assert "no provider credential is configured in this checkout" in readme
+
+
 def test_submission_benchmark_claims_match_the_heldout_artifact() -> None:
     submission = " ".join((ROOT / "docs/SUBMISSION.md").read_text(encoding="utf-8").split())
     summary = json.loads(
