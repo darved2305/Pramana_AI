@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
@@ -11,8 +12,11 @@ import pytest
 from core_testkit import body, core_settings
 from fastapi.testclient import TestClient
 from participant_bot import answer_pending, run_to_conclusion
+from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from pramana_core.db import EventRow, InvestigationRow
 from pramana_core.main import create_app
 
 pytestmark = pytest.mark.db
@@ -358,3 +362,89 @@ def test_returned_plan_is_the_one_that_chose_the_pending_question(core: TestClie
     events = core.get(f"/v1/investigations/{inv['id']}/events").json()
     last_plan = [e for e in events if e["type"] == "PlanComputed"][-1]["payload"]
     assert inv["plan"] == last_plan
+
+
+def test_database_failure_after_simulator_create_compensates_and_recovers(
+    core: TestClient,
+) -> None:
+    sim_app = core.sim_app  # type: ignore[attr-defined]
+    store = sim_app.state.store
+    original_ids = set(store._items)
+    db = core.app.state.db  # type: ignore[union-attr]
+
+    @asynccontextmanager
+    async def unavailable_transaction():
+        raise OperationalError("insert investigation", {}, RuntimeError("connection lost"))
+        yield  # pragma: no cover
+
+    original_transaction = db.transaction
+    db.transaction = unavailable_transaction
+    try:
+        failed = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+    finally:
+        db.transaction = original_transaction
+
+    assert failed.status_code == 503, failed.text
+    assert failed.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+    created_ids = set(store._items) - original_ids
+    assert len(created_ids) == 1
+    scenario = store._items[created_ids.pop()]
+    assert scenario.status.value == "closed"
+
+    engine = create_async_engine(core.app.state.settings.database_url)
+    try:
+
+        async def row_counts() -> tuple[int, int]:
+            async with engine.connect() as connection:
+                investigations = await connection.exec_driver_sql(
+                    "select count(*) from investigations"
+                )
+                events = await connection.exec_driver_sql("select count(*) from events")
+                return investigations.scalar_one(), events.scalar_one()
+
+        assert asyncio.run(row_counts()) == (0, 0)
+    finally:
+        asyncio.run(engine.dispose())
+
+    recovered = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+    assert recovered.status_code == 201, recovered.text
+
+
+def test_simulator_outage_returns_retryable_error_without_partial_rows_and_recovers(
+    core: TestClient,
+) -> None:
+    sim = core.app.state.sim  # type: ignore[union-attr]
+    original_http = sim._http
+
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("simulator down", request=request)
+
+    sim._http = httpx.AsyncClient(
+        base_url="http://sim.test",
+        headers={"X-Operator-Key": "test-operator-key"},
+        transport=httpx.MockTransport(unavailable),
+    )
+
+    async def counts() -> tuple[int, int]:
+        async with core.app.state.db.read() as session:  # type: ignore[union-attr]
+            investigations = await session.scalar(
+                select(func.count()).select_from(InvestigationRow)
+            )
+            events = await session.scalar(select(func.count()).select_from(EventRow))
+        return int(investigations or 0), int(events or 0)
+
+    try:
+        before = core.portal.call(counts)  # type: ignore[attr-defined]
+        response = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+        assert response.status_code == 503, response.text
+        assert response.json()["error"]["code"] == "SIM_UNAVAILABLE"
+        assert core.portal.call(counts) == before  # type: ignore[attr-defined]
+    finally:
+        core.portal.call(sim._http.aclose)  # type: ignore[attr-defined]
+        sim._http = original_http
+
+    recovered = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+    assert recovered.status_code == 201, recovered.text
+    after = core.portal.call(counts)  # type: ignore[attr-defined]
+    assert after[0] == before[0] + 1
+    assert after[1] > before[1]
