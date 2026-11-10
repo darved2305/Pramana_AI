@@ -20,12 +20,28 @@ REQUEST_ID_HEADER = "X-Request-ID"
 log = structlog.get_logger("pramana")
 
 
+class _CancelledPoolTerminationFilter(logging.Filter):
+    """Hide expected async pool termination tracebacks when a request is cancelled."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (
+            record.name == "sqlalchemy.pool.impl.AsyncAdaptedQueuePool"
+            and record.getMessage().startswith("Exception terminating connection")
+            and record.exc_info is not None
+            and isinstance(record.exc_info[1], asyncio.CancelledError)
+        )
+
+
 def _logged_path(path: str) -> str:
     """Consent secrets travel in one-time link paths and must never enter request logs."""
     return re.sub(r"^(/v1/consent-links/)[^/]+", r"\1[redacted]", path)
 
 
 def configure_logging(level: str = "INFO", json: bool = True) -> None:
+    pool_logger = logging.getLogger("sqlalchemy.pool.impl.AsyncAdaptedQueuePool")
+    if not any(isinstance(item, _CancelledPoolTerminationFilter) for item in pool_logger.filters):
+        pool_logger.addFilter(_CancelledPoolTerminationFilter())
+
     processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,

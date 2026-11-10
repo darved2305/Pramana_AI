@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
 
@@ -23,6 +24,52 @@ def http_scope() -> dict[str, object]:
         "server": ("127.0.0.1", 80),
         "state": {},
     }
+
+
+def test_logging_filters_only_expected_pool_cancellation() -> None:
+    logger = logging.getLogger("sqlalchemy.pool.impl.AsyncAdaptedQueuePool")
+    original_filters = list(logger.filters)
+    cancellation = asyncio.CancelledError()
+    cancelled_record = logging.LogRecord(
+        name=logger.name,
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="Exception terminating connection <connection>",
+        args=(),
+        exc_info=(asyncio.CancelledError, cancellation, None),
+    )
+    database_error = logging.LogRecord(
+        name=logger.name,
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="Exception terminating connection <connection>",
+        args=(),
+        exc_info=(RuntimeError, RuntimeError("database failure"), None),
+    )
+    unrelated_error = logging.LogRecord(
+        name=logger.name,
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="Connection invalidated",
+        args=(),
+        exc_info=(asyncio.CancelledError, cancellation, None),
+    )
+
+    try:
+        observability.configure_logging()
+        pool_filter = next(
+            item
+            for item in logger.filters
+            if isinstance(item, observability._CancelledPoolTerminationFilter)
+        )
+        assert not pool_filter.filter(cancelled_record)
+        assert pool_filter.filter(database_error)
+        assert pool_filter.filter(unrelated_error)
+    finally:
+        logger.filters[:] = original_filters
 
 
 @pytest.mark.asyncio
