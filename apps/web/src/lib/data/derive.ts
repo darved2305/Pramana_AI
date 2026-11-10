@@ -3,6 +3,7 @@
  * output is a regrouping of values the core returned.
  */
 import type {
+  BeliefSnapshot,
   EventEnvelope,
   InvestigationState,
   InvestigationStatus,
@@ -56,8 +57,48 @@ export function locationLabel(pack: SitePack | undefined, id: string | null | un
   return pack?.locations.find((l) => l.id === id)?.label ?? id;
 }
 
-export function probeLabel(pack: SitePack | undefined, id: string) {
+export function probeLabel(pack: SitePack | undefined, id: string | null | undefined) {
+  if (!id) return "Unknown check";
   return pack?.probes.find((p) => p.id === id)?.label ?? id.replace(/_/g, " ");
+}
+
+export type BeliefChangeAnswer = Pick<Observation, "participant_id" | "probe_id" | "outcome">;
+
+export interface RecordedBeliefChange {
+  before: BeliefSnapshot;
+  after: BeliefSnapshot;
+  answers: BeliefChangeAnswer[];
+}
+
+/** Resolve recorded event ids against the canonical observations in the investigation state. */
+export function latestBeliefChange(events: EventEnvelope[], observations: Observation[]): RecordedBeliefChange | null {
+  const ordered = [...new Map(events.map((event) => [event.seq, event])).values()].sort((a, b) => a.seq - b.seq);
+  const observationsById = new Map(observations.map((observation) => [observation.id, observation]));
+  let change: RecordedBeliefChange | null = null;
+  let prior: { index: number; belief: BeliefSnapshot } | null = null;
+
+  ordered.forEach((event, index) => {
+    if (event.type !== "BeliefUpdated" || !Array.isArray(event.payload.hypotheses)) return;
+    const belief = event.payload as unknown as BeliefSnapshot;
+    if (prior) {
+      const answers = ordered.slice(prior.index + 1, index).flatMap((item) => {
+        if (item.type !== "ObservationRecorded") return [];
+        const observationId = item.payload.observation_id;
+        if (typeof observationId !== "string") return [];
+        const observation = observationsById.get(observationId);
+        return observation
+          ? [{
+              participant_id: observation.participant_id,
+              probe_id: observation.probe_id,
+              outcome: observation.outcome,
+            }]
+          : [];
+      });
+      if (answers.length) change = { before: prior.belief, after: belief, answers };
+    }
+    prior = { index, belief };
+  });
+  return change;
 }
 
 export function participantName(state: InvestigationState | undefined, id: string | null | undefined) {

@@ -5,8 +5,8 @@ import { useState } from "react";
 import { clsx } from "clsx";
 import { Badge, Card, CardHeader, EmptyState, ProbBar, Tag } from "@/components/ui";
 import { IconSpark } from "@/components/ui/icons";
-import type { BeliefSnapshot, EventEnvelope, InvestigationState, Observation, SitePack } from "@/lib/api/types";
-import { bits, duration, locationLabel, outcomeWord, participantName, pct, probeLabel } from "@/lib/data/derive";
+import type { EventEnvelope, InvestigationState, SitePack } from "@/lib/api/types";
+import { bits, duration, latestBeliefChange, locationLabel, outcomeWord, participantName, pct, probeLabel } from "@/lib/data/derive";
 
 /* ---------- Hypotheses ---------- */
 
@@ -148,31 +148,9 @@ export function DecisionBar({ state }: { state: InvestigationState }) {
 
 /** Compare adjacent recorded beliefs only when an observation lies between them. */
 export function BeliefChange({ events, state, pack }: { events: EventEnvelope[]; state: InvestigationState; pack?: SitePack }) {
-  const ordered = [...new Map(events.map((event) => [event.seq, event])).values()].sort((a, b) => a.seq - b.seq);
-  type Answer = Pick<Observation, "participant_id" | "probe_id" | "outcome">;
-  let change: { before: BeliefSnapshot; after: BeliefSnapshot; answers: Answer[] } | null = null;
-  let prior: { index: number; belief: BeliefSnapshot } | null = null;
-  ordered.forEach((event, index) => {
-    if (event.type !== "BeliefUpdated" || !Array.isArray(event.payload.hypotheses)) return;
-    const belief = event.payload as unknown as BeliefSnapshot;
-    if (prior) {
-      const answers = ordered.slice(prior.index + 1, index)
-        .filter((item) => item.type === "ObservationRecorded")
-        .map((item) => {
-          // The event log stores observation fields under `evidence`; old preview logs used
-          // the flattened Observation shape. Accept both while rendering only public fields.
-          const evidence = item.payload.evidence;
-          return evidence && typeof evidence === "object" ? evidence as Partial<Observation> : item.payload as Partial<Observation>;
-        })
-        .filter((answer): answer is Pick<Observation, "participant_id" | "probe_id" | "outcome"> =>
-          typeof answer.participant_id === "string" && typeof answer.probe_id === "string" && typeof answer.outcome === "string",
-        );
-      if (answers.length) change = { before: prior.belief, after: belief, answers };
-    }
-    prior = { index, belief };
-  });
+  const change = latestBeliefChange(events, state.observations);
   if (!change) return null;
-  const { before, after, answers } = change as { before: BeliefSnapshot; after: BeliefSnapshot; answers: Answer[] };
+  const { before, after, answers } = change;
   return (
     <Card className="p-4" aria-labelledby="change-title">
       <CardHeader id="change-title" title="What changed" subtitle="The latest answers with a recorded belief before and after" />
