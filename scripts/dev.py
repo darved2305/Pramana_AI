@@ -310,6 +310,8 @@ def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, 
     )
     if opts.demo:
         database = urlsplit(env["DATABASE_URL"])
+        if not database.path.strip("/"):
+            raise ValueError("DATABASE_URL must include an explicit database name")
         if database.hostname not in {"localhost", "127.0.0.1", "::1"}:
             raise ValueError("demo requires a local database")
         env.update(

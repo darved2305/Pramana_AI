@@ -299,3 +299,10 @@ def test_demo_rejects_a_remote_database() -> None:
         dev.service_env(
             dev.parse_args(["--demo"]), {"DATABASE_URL": "postgresql+asyncpg://remote.example/db"}
         )
+
+
+def test_demo_rejects_a_database_url_without_a_name() -> None:
+    with pytest.raises(ValueError, match="database name"):
+        dev.service_env(
+            dev.parse_args(["--demo"]), {"DATABASE_URL": "postgresql+asyncpg://localhost"}
+        )

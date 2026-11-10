@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pramana_core.migrations import migration_database_url
+from pramana_core.migrations import migration_database_url, require_database_name
 
 
 def test_migration_url_uses_the_explicit_alembic_selection(tmp_path: Path) -> None:
@@ -29,3 +29,8 @@ def test_migration_url_refuses_implicit_default(tmp_path: Path) -> None:
     blank.write_text("DATABASE_URL=\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="DATABASE_URL must explicitly select"):
         migration_database_url(None, None, blank)
+
+
+def test_database_url_must_name_a_database() -> None:
+    with pytest.raises(RuntimeError, match="explicit database name"):
+        require_database_name("postgresql+asyncpg://localhost")

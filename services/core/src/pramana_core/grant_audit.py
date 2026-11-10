@@ -10,6 +10,8 @@ from collections.abc import Iterable, Sequence
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
+from .migrations import require_database_name
+
 API_ROLES = ("anon", "authenticated", "service_role")
 """Supabase's Data API roles (``service_role`` bypasses RLS). They must reach nothing of
 Pramana's. Plain PostgreSQL has none of them; the audit then checks only what exists."""
@@ -282,6 +284,10 @@ def main() -> None:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         parser.error("DATABASE_URL is required")
+    try:
+        require_database_name(database_url)
+    except RuntimeError as exc:
+        parser.error(str(exc))
     try:
         raise SystemExit(asyncio.run(_main(database_url, apply_revokes=args.apply_revokes)))
     except GrantAuditError as exc:
