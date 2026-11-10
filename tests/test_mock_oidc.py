@@ -30,7 +30,7 @@ def test_mock_browser_authorization_and_pkce_exchange() -> None:
         }
         page = client.get("/authorize", params=query)
         assert page.status_code == 200
-        assert "simulated identity provider" in page.text
+        assert "Local demo sign-in. No Google account is used." in page.text
         response = client.get(
             "/authorize",
             params={**query, "approve": "1", "email_verified": "true"},
