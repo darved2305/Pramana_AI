@@ -29,7 +29,7 @@ def gauss_jacobi(n: int, alpha: float, beta: float) -> tuple[FloatArray, FloatAr
     """Nodes on ``[-1, 1]`` and normalised weights for the weight ``(1-t)^alpha (1+t)^beta``."""
     if n < 1:
         raise ValueError("need at least one node")
-    if alpha <= -1 or beta <= -1:
+    if not np.isfinite(alpha) or not np.isfinite(beta) or alpha <= -1 or beta <= -1:
         raise ValueError("alpha and beta must exceed -1")
     k = np.arange(n, dtype=np.float64)
     ab = alpha + beta
@@ -105,7 +105,7 @@ def beta_reliability_rule(
     """
     if not 0.5 < mean < 1.0:
         raise ValueError("mean reliability must be in (0.5, 1)")
-    if concentration <= 0:
+    if not np.isfinite(concentration) or concentration <= 0:
         raise ValueError("concentration must be positive")
     # x ~ Beta(a, b) on [0, 1] <-> t = 2x - 1 with Jacobi shapes b-1 and a-1.
     t, w = _gauss_beta_jacobi(n, mean, concentration)

@@ -42,7 +42,17 @@ def test_gauss_jacobi_rejects_bad_parameters() -> None:
     with pytest.raises(ValueError):
         gauss_jacobi(3, -1.0, 1.0)
     with pytest.raises(ValueError):
+        gauss_jacobi(3, float("nan"), 1.0)
+    with pytest.raises(ValueError):
         beta_reliability_rule(0.5, 20.0, 4)
+    with pytest.raises(ValueError):
+        beta_reliability_rule(0.75, float("nan"), 4)
+    with pytest.raises(ValueError):
+        beta_reliability_rule(0.75, float("inf"), 4)
+    with pytest.raises(ValueError):
+        EngineConfig(reliability_concentration=float("nan"))
+    with pytest.raises(ValueError):
+        EngineConfig(reliability_concentration=float("inf"))
     with pytest.raises(ValueError):
         EngineConfig(quadrature_nodes=0)
 
