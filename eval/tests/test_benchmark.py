@@ -378,3 +378,81 @@ def test_a_long_retry_after_is_not_slept_through(tmp_path: Path) -> None:
         c.complete_json([{"role": "user", "content": "1"}], {})
     assert time.monotonic() - started < 5
     assert calls == 1
+
+
+def test_pair_outcomes_are_not_claimed_as_full_resolution() -> None:
+    from pramana_eval.runner import Episode
+
+    def episode(decision: str | None, correct: bool, identifiable: bool | None) -> Episode:
+        return Episode(
+            "E",
+            1,
+            "pair",
+            identifiable,
+            decision is not None,
+            decision,
+            0.9,
+            correct,
+            correct or decision is None,
+            1,
+            1.0,
+            1,
+            False,
+        )
+
+    useful = episode("DISPATCH_ONE", True, None)
+    abstained = episode(None, False, None)
+    justified = episode(None, False, False)
+    result = summarize([useful, abstained, justified])
+    assert result["pair_first_useful_action_rate"] == pytest.approx(1 / 3)
+    assert result["pair_full_resolution_rate"] is None
+    assert result["justified_abstentions"] == 1
+    assert result["abstentions_with_unknown_identifiability"] == 1
+
+
+def test_paired_statistics_and_holm_against_small_exact_cases() -> None:
+    from pramana_eval.statistics import holm, mcnemar_exact, wilcoxon_signed_rank
+
+    assert mcnemar_exact([1, 1, 1, 0], [0, 0, 0, 1]) == pytest.approx(0.625)
+    # Three positive differences: only 2 of 8 sign assignments are as extreme.
+    assert wilcoxon_signed_rank([1, 2, 3], [0, 0, 0]) == pytest.approx(0.25)
+    # Tied absolute differences and zeros are handled by average ranks and dropping zeros.
+    assert wilcoxon_signed_rank([1, -1, 0], [0, 0, 0]) == pytest.approx(1.0)
+    assert holm([0.01, 0.04, 0.03]) == pytest.approx([0.03, 0.06, 0.06])
+
+
+def test_signed_rank_matches_independent_sign_enumeration() -> None:
+    from itertools import product
+
+    from pramana_eval.statistics import wilcoxon_signed_rank
+
+    # Absolute differences have ranks 1, 2.5, 2.5, 4. Enumerate all signs.
+    ranks = (1, 2.5, 2.5, 4)
+    differences = (1, -2, 2, 4)
+    observed = sum(r for r, d in zip(ranks, differences, strict=True) if d > 0)
+    distance = abs(observed - sum(ranks) / 2)
+    extreme = sum(
+        abs(sum(r * sign for r, sign in zip(ranks, signs, strict=True)) - sum(ranks) / 2)
+        >= distance
+        for signs in product((0, 1), repeat=4)
+    )
+    assert wilcoxon_signed_rank(differences, (0, 0, 0, 0)) == extreme / 16
+
+
+def test_primary_family_retains_missing_comparisons() -> None:
+    from pramana_eval.__main__ import primary_tests
+    from pramana_eval.runner import Episode
+
+    def episode(policy: str, seed: int, success: bool) -> Episode:
+        return Episode(
+            policy, seed, "single", True, True, "x", 0.9, success, success, 1, 1, 1, False
+        )
+
+    result = primary_tests(
+        {
+            "E_ours": [episode("E", i, True) for i in range(5)],
+            "A_checklist": [episode("A", i, False) for i in range(5)],
+        }
+    )
+    assert result["success"]["A_checklist"] == {"n": 5, "p": 0.0625, "p_holm": 0.3125}
+    assert result["success"]["B_llm"]["p"] is None

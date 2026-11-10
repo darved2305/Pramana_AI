@@ -10,7 +10,7 @@ import numpy as np
 
 from pramana_contracts import PlanKind, ProbeAction
 from pramana_domain import DomainPack
-from pramana_engine import CompiledModel, Engine, Evidence, schedule
+from pramana_engine import MULTIPLE_FAULTS, CompiledModel, Engine, Evidence, schedule
 
 from .policies import Conclusion, History, ParallelOurs, Policy
 from .scenarios import Answers, Scenario
@@ -237,6 +237,15 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
             sum(1 for e in must_abstain if e.decided),
         ),
         "pair_accuracy": _rate(sum(e.correct for e in pairs), len(pairs)),
+        # A multiple-fault escalation is not itself an action addressing either fault.
+        "pair_first_useful_action_rate": _rate(
+            sum(e.correct and e.decision != MULTIPLE_FAULTS for e in pairs), len(pairs)
+        ),
+        # Episodes stop at the first conclusion; they do not simulate both repairs.
+        "pair_full_resolution_rate": None,
+        "pair_outcome_denominator": len(pairs),
+        "justified_abstentions": sum(e.identifiable is False for e in abstained),
+        "abstentions_with_unknown_identifiability": sum(e.identifiable is None for e in abstained),
         "abstention_precision": _rate(
             sum(1 for e in abstained if e.identifiable is False or e.kind == "pair"), len(abstained)
         ),

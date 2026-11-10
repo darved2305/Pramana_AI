@@ -22,6 +22,7 @@ from pramana_engine import compile_pack
 from .policies import Policy, ablations, baseline_policies
 from .runner import Episode, paired_difference, run_episode, summarize, to_rows
 from .scenarios import generate
+from .statistics import holm, mcnemar_exact, wilcoxon_signed_rank
 
 
 def _git_sha() -> str:
@@ -49,6 +50,39 @@ SHORT = {
     "P2": "E_parallel2",
     "P3": "E_parallel3",
 }
+
+PRIMARY = ("A_checklist", "B_llm", "C_random", "D_greedy_entropy", "E_parallel3")
+
+
+def primary_tests(results: dict[str, list[Episode]]) -> dict[str, Any]:
+    """The five registered comparisons, corrected separately for each outcome.
+
+    Missing comparisons occupy a family slot with p=1, so omitting B or K=3 cannot
+    make the remaining tests more permissive. Only paired completed episodes count.
+    """
+    output: dict[str, Any] = {}
+    ours = {e.seed: e for e in results.get("E_ours", []) if not e.failed}
+    for field in ("success", "probes", "effort_s"):
+        entries: dict[str, Any] = {}
+        raw: list[float] = []
+        for name in PRIMARY:
+            paired = [
+                (ours[e.seed], e) for e in results.get(name, []) if not e.failed and e.seed in ours
+            ]
+            a = [float(getattr(x, field)) for x, _ in paired]
+            b = [float(getattr(y, field)) for _, y in paired]
+            p = (
+                (mcnemar_exact(a, b) if field == "success" else wilcoxon_signed_rank(a, b))
+                if paired
+                else None
+            )
+            raw.append(p if p is not None else 1.0)
+            entries[name] = {"n": len(paired), "p": p, "p_holm": None}
+        for name, adjusted in zip(PRIMARY, holm(raw), strict=True):
+            if entries[name]["p"] is not None:
+                entries[name]["p_holm"] = adjusted
+        output[field] = entries
+    return output
 
 
 def build_policies(
@@ -124,6 +158,7 @@ def main() -> None:
         },
         "policies": {name: summarize(eps) for name, eps in results.items()},
         "paired_vs_E": {},
+        "primary_tests": primary_tests(results),
     }
     if ours is not None:
         for name, eps in results.items():
@@ -174,6 +209,20 @@ def render(summary: dict[str, Any]) -> str:
             f"| {_fmt(m['probes_mean'])} | {_fmt(m['effort_s_mean'])} | {_fmt(m['people_mean'])} "
             f"| {_fmt(m.get('wall_s_mean'))} | {_fmt(m.get('withdrawn_mean'))} |"
         )
+    lines += [
+        "",
+        "Pair and abstention outcomes (historical success above retains its original definition):",
+        "",
+        "| Policy | Pair episodes | First useful action | Full pair resolution | "
+        "Justified abstentions | Abstentions with unknown identifiability |",
+        "|---|---|---|---|---|---|",
+    ]
+    for name, m in summary["policies"].items():
+        lines.append(
+            f"| {name} | {m['pair_outcome_denominator']} | "
+            f"{_fmt(m['pair_first_useful_action_rate'], True)} | not measured | "
+            f"{m['justified_abstentions']} | {m['abstentions_with_unknown_identifiability']} |"
+        )
     lines += ["", "Paired differences, E minus each policy (bootstrap 95% CI):", ""]
     for name, diffs in summary["paired_vs_E"].items():
         parts = [
@@ -183,6 +232,19 @@ def render(summary: dict[str, Any]) -> str:
             for f, d in diffs.items()
         ]
         lines.append(f"- vs {name}: " + "; ".join(parts))
+    if "primary_tests" in summary:
+        lines += [
+            "",
+            "Registered paired tests (Holm across five comparisons per outcome):",
+            "",
+            "| Outcome | Comparison | Paired n | p | Holm p |",
+            "|---|---|---|---|---|",
+        ]
+        for field, comparisons in summary["primary_tests"].items():
+            for name, result in comparisons.items():
+                p = "-" if result["p"] is None else f"{result['p']:.6g}"
+                adjusted = "-" if result["p_holm"] is None else f"{result['p_holm']:.6g}"
+                lines.append(f"| {field} | E vs {name} | {result['n']} | {p} | {adjusted} |")
     return "\n".join(lines) + "\n"
 
 

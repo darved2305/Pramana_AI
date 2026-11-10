@@ -410,3 +410,76 @@ def test_s1_reaches_the_electrician_dispatch_in_at_most_six_questions(
     assert plan.decision_class == "DISPATCH_ELECTRICIAN_DB_C2"
     assert plan.decision_probability >= 0.95
     assert asked <= 6
+
+
+@pytest.mark.parametrize("mean", [0.5005, 0.75, 0.9995])
+@pytest.mark.parametrize("concentration", [0.05, 0.999, 1 - 1e-9, 1.0, 1 + 1e-9, 1.001, 1e4])
+def test_beta_rule_extreme_shapes(mean: float, concentration: float) -> None:
+    nodes = 8
+    r, w = (np.asarray(v) for v in beta_reliability_rule(mean, concentration, nodes))
+    x = (r - 0.5) / 0.5
+    a = (2 * mean - 1) * concentration
+    b = concentration - a
+    expected = 1.0
+    assert np.all(np.isfinite(r))
+    assert np.all(w > 0)
+    assert w.sum() == pytest.approx(1.0, abs=1e-14)
+    for degree in range(2 * nodes):
+        if degree:
+            expected *= (a + degree - 1) / (a + b + degree - 1)
+        assert w @ x**degree == pytest.approx(expected, abs=2e-12)
+
+
+def test_concentration_one_investigation(campus: DomainPack, campus_model: CompiledModel) -> None:
+    eng = Engine(campus_model, ANALYST, EngineConfig(reliability_concentration=1))
+    eng.observe(Evidence("p_riya", "internet_works", "F3_R304", "no"))
+    _, kind = _investigate(campus, eng, World(campus, frozenset({("SW_C2", "dead")})))
+    assert np.isfinite(eng.posterior()).all()
+    assert eng.posterior().sum() == pytest.approx(1)
+    assert kind != PlanKind.ASK
+
+
+@pytest.mark.parametrize("pattern", ["unknown", "one_person", "several_people"])
+@pytest.mark.parametrize("reliability", [0.500001, 0.999999])
+def test_long_contradictory_history_stays_finite(
+    toy_model: CompiledModel, pattern: str, reliability: float
+) -> None:
+    people = [person(f"p_{i}", ["student"], "lay", "ROOM") for i in range(3)]
+    cfg = EngineConfig(reliability={key: reliability for key in EngineConfig().reliability})
+    eng = Engine(toy_model, people, cfg)
+    prior = eng.posterior().copy()
+    for i in range(510):
+        participant = f"p_{i % 3}" if pattern == "several_people" else "p_0"
+        outcome = "unknown" if pattern == "unknown" else ("on" if i % 2 else "off")
+        eng.observe(Evidence(participant, "lamp", "ROOM", outcome))
+    posterior = eng.posterior()
+    assert np.isfinite(posterior).all()
+    assert np.all(posterior >= 0)
+    assert posterior.sum() == pytest.approx(1.0)
+    if pattern == "unknown":
+        np.testing.assert_array_equal(posterior, prior)
+    assert eng.plan() is not None
+
+
+def test_replay_is_identical_across_hash_seeds() -> None:
+    import os
+    import subprocess
+    import sys
+
+    script = r"""
+import json
+from pramana_contracts import ParticipantSpec
+from pramana_domain import load_pack
+from pramana_engine import Engine, Evidence, compile_pack
+p = ParticipantSpec.model_validate({"id": "p", "display_name": "P", "roles": ["student"],
+    "skill": "lay", "location_id": "F3_R304", "languages": {"stt_candidates": ["en-IN"]}})
+e = Engine(compile_pack(load_pack("campus_block_c")), [p])
+for probe, answer in [("internet_works", "no"), ("wifi_status", "no_network")]:
+    e.observe(Evidence("p", probe, "F3_R304", answer))
+print(json.dumps([e.posterior().tolist(), e.plan().model_dump(mode="json")], sort_keys=True))
+"""
+    outputs = []
+    for seed in ("1", "83417"):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        outputs.append(subprocess.check_output([sys.executable, "-c", script], env=env))
+    assert outputs[0] == outputs[1]

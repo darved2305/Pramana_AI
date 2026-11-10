@@ -41,7 +41,19 @@ def gauss_jacobi(n: int, alpha: float, beta: float) -> tuple[FloatArray, FloatAr
         diag[1:] = (beta**2 - alpha**2) / (s * (s + 2.0))
     kk = np.arange(1, n, dtype=np.float64)
     s = 2.0 * kk + ab
-    off2 = 4.0 * kk * (kk + alpha) * (kk + beta) * (kk + ab) / (s**2 * (s + 1.0) * (s - 1.0))
+    off2 = np.empty(n - 1)
+    if n > 1:
+        # At k=1, k+ab and s-1 are the same factor. Cancel it
+        # analytically, including near ab=-1 where division loses accuracy.
+        off2[0] = 4.0 * (1.0 + alpha) * (1.0 + beta) / (s[0] ** 2 * (s[0] + 1.0))
+        off2[1:] = (
+            4.0
+            * kk[1:]
+            * (kk[1:] + alpha)
+            * (kk[1:] + beta)
+            * (kk[1:] + ab)
+            / (s[1:] ** 2 * (s[1:] + 1.0) * (s[1:] - 1.0))
+        )
     jac = np.diag(diag) + np.diag(np.sqrt(off2), 1) + np.diag(np.sqrt(off2), -1)
     nodes, vecs = np.linalg.eigh(jac)
     weights = vecs[0] ** 2
