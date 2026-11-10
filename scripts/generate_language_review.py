@@ -235,16 +235,19 @@ def _migration_string_rows(path: Path, rows: set[ReviewRow]) -> None:
     """Devanagari string literals in a migration that writes practice-model copy."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if DEVANAGARI.search(node.value):
-                rows.add(
-                    ReviewRow(
-                        _guess_language(node.value),
-                        _relative(path),
-                        f"line {node.lineno}, practice model copy",
-                        node.value,
-                    )
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and DEVANAGARI.search(node.value)
+        ):
+            rows.add(
+                ReviewRow(
+                    _guess_language(node.value),
+                    _relative(path),
+                    f"line {node.lineno}, practice model copy",
+                    node.value,
                 )
+            )
 
 
 def _visible_code_rows(rows: set[ReviewRow]) -> None:
@@ -358,12 +361,12 @@ def render_review_sheet() -> str:
         "",
         "The packet covers localized values in the shipped packs and builder templates, the",
         "neutral practice model (`services/core/alembic/data/sandbox_v1.json` and migration 0021),",
-        "visible web copy and consent email, preview transcripts, voice consent, and runtime campus",
-        "questions, and synthetic answers in the committed text-mode demo timeline. Templates",
-        "retain placeholders so reviewers can see the actual source wording.",
+        "visible web copy and consent email, preview transcripts, voice consent, and runtime",
+        "campus questions, and synthetic answers in the committed text-mode demo timeline.",
+        "Templates retain placeholders so reviewers can see the actual source wording.",
         "Answer-matching vocabulary in `services/core/src/pramana_core/language/` (extraction,",
-        "intake, presence, lint) is matched against answers and never displayed or spoken, so it is",
-        "not listed. Developer scripts under `scripts/` are not product copy and are not listed.",
+        "intake, presence, lint) is matched against answers and never displayed or spoken,",
+        "so it is not listed. Developer scripts under `scripts/` are not product copy.",
         "Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the language.",
         "",
         (

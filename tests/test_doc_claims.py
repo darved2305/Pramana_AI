@@ -56,9 +56,12 @@ def _claims(text: str) -> list[str]:
     findings: list[str] = []
     for paragraph in text.split("\n\n"):
         normalized = paragraph.casefold()
-        if MODEL_OR_FRONTIER.search(normalized) and COMPARISON.search(normalized):
-            if not NEGATION.search(normalized):
-                findings.append("unqualified comparison with a frontier or named LLM")
+        if (
+            MODEL_OR_FRONTIER.search(normalized)
+            and COMPARISON.search(normalized)
+            and not NEGATION.search(normalized)
+        ):
+            findings.append("unqualified comparison with a frontier or named LLM")
 
         site = re.search(r"\b(?:real[- ]site|real building|field deployment)\b", normalized)
         result = re.search(
