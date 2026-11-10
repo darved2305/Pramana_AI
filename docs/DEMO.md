@@ -102,9 +102,10 @@ at a cloud database.
    check; the honest participant reads the label from the participant's own simulator card. The
    recorded Nov 7 voice S7 variants abstained because the remaining useful panel question needed an
    electrician. A passed presence check is not a diagnosis.
-6. Use `make preflight` only for the configured voice integration preflight. Do not add `--live` to
-   this local rehearsal: it makes a provider request and spends Gnani credits. The primary walkthrough
-   needs neither a live provider nor a live key.
+6. **Pre-flight (`make preflight`).** Use this only for the configured local voice-readiness check.
+   It does not check phone microphone permissions or measure voice latency. Do not add `--live` to
+   this local rehearsal: it makes a provider request and spends Gnani credits. The primary
+   walkthrough needs neither a live provider nor a live key.
 7. Stop the local supervisor with Ctrl+C. Confirm its child services have stopped. Leave the shared
    PostgreSQL cluster running.
 
