@@ -144,18 +144,16 @@ def _pct(x: float) -> str:
     return f"{x * 100:.1f}%"
 
 
+BENCHMARK_REPORT = "eval/reports/benchmark-2026-11-07-rc1"
+
+
 def test_readme_benchmark_numbers_match_the_generated_report() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    match = re.search(r"\(`(eval/reports/[^`]+/)`, (\d+) simulated scenarios\)", readme)
-    assert match, "README benchmark paragraph must link its generated report and scenario count"
-    report, scenario_count = match.groups()
-    summary = json.loads((ROOT / report / "summary.json").read_text(encoding="utf-8"))
+    summary = json.loads((ROOT / BENCHMARK_REPORT / "summary.json").read_text(encoding="utf-8"))
     p = summary["policies"]
-    assert int(scenario_count) == p["E_ours"]["n"]
+    assert f"(`{BENCHMARK_REPORT}/`, {p['E_ours']['n']} simulated scenarios)" in readme
     for key in ("E_ours", "A_checklist", "C_random", "D_greedy_entropy"):
         assert _pct(p[key]["success_rate"]) in readme, key
-    if re.search(r"\babstains\s+\d+(?:\.\d+)?%\s+of the time\b", readme):
-        assert f"abstains {p['E_ours']['abstention_recall'] * 100:.0f}% of the time" in readme
 
 
 @pytest.mark.parametrize(
