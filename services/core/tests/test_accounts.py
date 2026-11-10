@@ -515,6 +515,43 @@ def test_or_09_simultaneous_create_returns_in_flight_then_replays(
     )
 
 
+def test_or_09_simultaneous_different_body_for_key_is_rejected(
+    account_core: TestClient, monkeypatch: pytest.MonkeyPatch, migrated_db: str
+) -> None:
+    client = account_core
+    service = client.app.state.accounts  # type: ignore[union-attr]
+    original = service.create_organization
+    entered = threading.Event()
+    release = threading.Event()
+
+    async def slow(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        await asyncio.to_thread(release.wait, 10)
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "create_organization", slow)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(client.post, "/v1/orgs", json={"name": "First body"}, headers=HEADERS)
+        try:
+            assert entered.wait(10)
+            changed = client.post("/v1/orgs", json={"name": "Changed body"}, headers=HEADERS)
+            assert changed.status_code == 422, changed.text
+            assert changed.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+        finally:
+            release.set()
+        completed = first.result(timeout=15)
+
+    assert completed.status_code == 201, completed.text
+    assert completed.json()["organization"]["name"] == "First body"
+    assert (
+        sql(
+            migrated_db,
+            "select count(*) as n from organizations where name in ('First body', 'Changed body')",
+        )[0]["n"]
+        == 1
+    )
+
+
 def test_workspace_and_response_roll_back_together_after_handler_failure(
     account_core: TestClient, monkeypatch: pytest.MonkeyPatch, migrated_db: str
 ) -> None:

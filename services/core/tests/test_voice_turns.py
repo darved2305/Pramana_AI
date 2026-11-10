@@ -396,3 +396,27 @@ def test_restarted_core_replays_question_audio_without_paying(
     with TestClient(app()) as again:  # a new process on the same disk cache
         assert again.get(url).headers["X-Audio-Cached"] == "true"
     assert fake.paths().count("/api/v1/tts/inference") == 1
+
+
+def test_voice_transcript_and_personal_identifiers_are_not_logged(
+    voice: tuple[TestClient, FakeGnaniHttp], capsys: pytest.CaptureFixture[str]
+) -> None:
+    client, fake = voice
+    transcript = "Riya Rao +919876543210 riya@example.invalid secret transcript marker"
+    fake.transcript = transcript
+    inv = create(client)
+    question = inv["pending_question"]
+    response = client.post(
+        f"/v1/investigations/{inv['id']}/answers/voice",
+        data={"question_id": question["id"], "participant_id": "p_riya"},
+        files={"audio": ("answer.wav", wav(1.2), "audio/wav")},
+    )
+    assert response.status_code == 200, response.text
+    logged = capsys.readouterr().out
+    for private_value in (
+        "Riya Rao",
+        "+919876543210",
+        "riya@example.invalid",
+        "secret transcript marker",
+    ):
+        assert private_value not in logged

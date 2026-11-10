@@ -47,6 +47,7 @@ async def question_audio(inv_id: str, question_id: str, request: Request) -> Res
     (``X-Audio-Streamed: true``; its header has an open-ended data length, as Timbre's own
     WAVs do), so the browser can start playing before synthesis finishes."""
     svc, gnani, cache = _deps(request)
+    await authorize_participant(request, inv_id, None)
     q = await svc.pending_question(inv_id, question_id)
     await authorize_participant(request, inv_id, q.participant.id)  # before any paid call
     audio = QuestionAudio(gnani, cache, q.text, q.language)

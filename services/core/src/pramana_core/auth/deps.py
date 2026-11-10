@@ -140,13 +140,18 @@ async def _scenario_of(request: Request, inv_id: str) -> str:
     return str(sid)
 
 
-async def authorize_participant(request: Request, inv_id: str, participant_id: str) -> Principal:
-    """Allow an operator, or the participant themself holding a token for this investigation."""
+async def authorize_participant(
+    request: Request, inv_id: str, participant_id: str | None
+) -> Principal:
+    """Allow an operator or the participant holding a token for this investigation.
+
+    ``None`` checks identity and investigation scope before loading a target participant.
+    """
     p = await current_principal(request)
     if p.kind in ("open", "automation") or p.has(StaffRole.OPERATOR):
         return p
     if p.kind == "participant":
-        if p.participant_id != participant_id:
+        if participant_id is not None and p.participant_id != participant_id:
             raise ApiError(403, "PARTICIPANT_FORBIDDEN", "this token is for another participant")
         if p.scenario_id != await _scenario_of(request, inv_id):
             raise ApiError(403, "PARTICIPANT_FORBIDDEN", "this token is for another investigation")

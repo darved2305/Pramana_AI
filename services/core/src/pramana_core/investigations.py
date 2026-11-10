@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
+import anyio
 from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1264,36 +1265,49 @@ class InvestigationService:
             row.org_id = org
             inspect(row).info["pinned_model"] = pinned
         engine = Engine(model, list(req.participants), self._engine_config)
-        async with self._lock(inv_id), self.db.transaction() as session:
-            session.add(row)
-            await session.flush()
-            if vault is not None and pinned is not None:
-                await self._keep_request(session, vault, row, pinned.site_id, req)
-            self._event(
-                session,
-                inv_id,
-                "InvestigationCreated",
-                {
-                    "pack_id": pack.pack,
-                    **(
-                        {
-                            "site_id": ids.encode("site", pinned.site_id),
-                            "site_model_id": ids.encode("model", pinned.model_id),
-                            "model_sha256": pinned.spec_sha256.hex(),
-                        }
-                        if pinned
-                        else {}
-                    ),
-                    "scenario_id": scenario.scenario_id,
-                    "commitment": scenario.commitment,
-                    "participants": stored["participants"],
-                    "engine_model_version": MODEL_VERSION,
-                },
-            )
-            self._event(session, inv_id, "ReportReceived", stored["report"])
-            await self._intake(session, row, engine, req)
-            await self._schedule(session, row, engine)
-            row.version = 1
+        try:
+            async with self._lock(inv_id), self.db.transaction() as session:
+                session.add(row)
+                await session.flush()
+                if vault is not None and pinned is not None:
+                    await self._keep_request(session, vault, row, pinned.site_id, req)
+                self._event(
+                    session,
+                    inv_id,
+                    "InvestigationCreated",
+                    {
+                        "pack_id": pack.pack,
+                        **(
+                            {
+                                "site_id": ids.encode("site", pinned.site_id),
+                                "site_model_id": ids.encode("model", pinned.model_id),
+                                "model_sha256": pinned.spec_sha256.hex(),
+                            }
+                            if pinned
+                            else {}
+                        ),
+                        "scenario_id": scenario.scenario_id,
+                        "commitment": scenario.commitment,
+                        "participants": stored["participants"],
+                        "engine_model_version": MODEL_VERSION,
+                    },
+                )
+                self._event(session, inv_id, "ReportReceived", stored["report"])
+                await self._intake(session, row, engine, req)
+                await self._schedule(session, row, engine)
+                row.version = 1
+        except BaseException:
+            # Scenario creation is an external write. Close that world if its database record
+            # cannot commit, so no participant can continue in an orphaned investigation.
+            with anyio.CancelScope(shield=True):
+                try:
+                    await self.sim.close(scenario.scenario_id)
+                except Exception as compensation_error:
+                    log.error(
+                        "simulator_compensation_failed",
+                        error_type=type(compensation_error).__name__,
+                    )
+            raise
         self._cache_engine(inv_id, row.version, engine)
         log.info("investigation_created", investigation_id=inv_id, status=row.status)
         return await self.get(inv_id)
