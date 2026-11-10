@@ -1,8 +1,12 @@
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from pramana_core.migrations import migration_database_url, require_database_name
+
+CORE = Path(__file__).resolve().parents[1]
 
 
 def test_migration_url_uses_the_explicit_alembic_selection(tmp_path: Path) -> None:
@@ -47,3 +51,10 @@ def test_migration_url_refuses_a_database_outside_checkout_allowlist(tmp_path: P
     )
     with pytest.raises(RuntimeError, match="not listed in PRAMANA_DB_NAMES"):
         migration_database_url(None, "postgresql://local/other", dotenv)
+
+
+def test_alembic_has_a_single_head() -> None:
+    config = Config(str(CORE / "alembic.ini"))
+    config.set_main_option("script_location", str(CORE / "alembic"))
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert len(heads) == 1, f"alembic has several heads, so upgrade head is ambiguous: {heads}"
