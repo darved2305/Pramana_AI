@@ -133,7 +133,7 @@ function LoginInner() {
             <GoogleMark />
             Continue with Google
           </a>
-          <div className="mt-7 flex items-center gap-3 text-[12px] uppercase tracking-[0.08em] text-cream/45" aria-hidden>
+          <div className="mt-7 flex items-center gap-3 text-[12px] uppercase tracking-[0.08em] text-cream/70" aria-hidden>
             <span className="h-px flex-1 bg-cream/20" />
             or with email
             <span className="h-px flex-1 bg-cream/20" />
@@ -256,7 +256,7 @@ function LoginInner() {
           ) : null}
         </div>
 
-        <p className="text-[12px] text-cream/40">Email sign-in is for accounts your site operator set up.</p>
+        <p className="text-[12px] text-cream/70">Email sign-in is for accounts your site operator set up.</p>
       </main>
     </div>
   );

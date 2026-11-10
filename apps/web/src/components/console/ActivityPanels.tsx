@@ -569,6 +569,12 @@ function ApprovalCard({
         </div>
       </dl>
       <p className="mt-2 text-[13px] text-fg-2">{a.rationale}</p>
+      <p className="mt-1 text-[12px] text-fg-2">
+        Requested by {a.requested_by ? (me && a.requested_by === me.userId ? `${me.displayName} (you)` : a.requested_by) : "an unrecorded account"}. The requester cannot approve their own request.
+      </p>
+      <p className="mt-1 text-[12px] text-fg-2">
+        If approved, the participant can collect a permission for this repair that can be used once and expires five minutes after collection.
+      </p>
       {a.approver_id ? (
         <p className="mt-1 text-[12px] text-muted">
           {a.status === "denied" ? "Denied" : "Approved"} by {me && a.approver_id === me.userId ? `${me.displayName} (you)` : a.approver_id}
@@ -607,7 +613,7 @@ function ApprovalCard({
         title={confirm === "approve" ? "Approve this repair?" : "Deny this repair?"}
         description={
           confirm === "approve"
-            ? `${participantName(state, a.participant_id)} will receive a capability to ${a.action_label.toLowerCase()} on ${a.target}. It expires five minutes after it is collected.`
+            ? `${participantName(state, a.participant_id)} can collect a single-use permission to ${a.action_label.toLowerCase()} on ${a.target}. It expires five minutes after collection.`
             : "The repair will not go ahead. The investigation keeps its diagnosis."
         }
         footer={

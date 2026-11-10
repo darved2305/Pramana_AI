@@ -81,7 +81,7 @@ function CapabilityStrip() {
   return (
     <div className="relative z-10 mt-auto px-[var(--gutter)] pb-[26px]">
       <p className="sr-only">Languages and answer modes Pramana supports</p>
-      <ul className="flex items-center justify-between gap-6 overflow-x-auto text-cream [scrollbar-width:none]">
+      <ul tabIndex={0} aria-label="Languages and answer modes" className="flex items-center justify-between gap-6 overflow-x-auto text-cream [scrollbar-width:none] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cream">
         {CAPS.map((c) => (
           <li key={c.label} className="flex shrink-0 items-center gap-[10px]">
             <span aria-hidden className="grid h-[34px] w-[34px] place-items-center rounded-[9px] border-[1.5px] border-cream/90">

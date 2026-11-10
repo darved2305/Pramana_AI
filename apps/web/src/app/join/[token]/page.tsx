@@ -623,8 +623,9 @@ function Repair({
     <section className="mt-4" aria-live="polite">
       <h1 className="display-slab text-[36px]">You are cleared to act</h1>
       <p className="mt-2 text-[15px] text-cream/75">
-        {approval.action_label} on <span className="font-mono">{approval.target}</span>. Approved by {approval.approver_id ?? "a supervisor"}.
+        {approval.action_label} on <span className="font-mono">{approval.target}</span>. Requested by {approval.requested_by ?? "an unrecorded account"}; approved by {approval.approver_id ?? "an unrecorded account"}. The requester cannot approve their own request.
       </p>
+      <p className="mt-2 text-[13px] text-cream/75">This simulated repair uses a permission once. It expires five minutes after you collect it.</p>
       {!cap ? (
         <button
           type="button"

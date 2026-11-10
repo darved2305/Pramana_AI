@@ -66,4 +66,14 @@ test.describe("preview console", () => {
     await expect(panel.getByTestId("disagreement")).toContainText("One is likely mistaken");
     await expect(panel.getByTestId("disagreement")).toContainText("mistaken 31%");
   });
+
+  test("the change card compares recorded beliefs around an answer", async ({ page }) => {
+    await page.goto("/app/investigations/preview-0001");
+    const card = page.getByRole("region", { name: "What changed" });
+    await expect(card).toContainText("Before");
+    await expect(card).toContainText("After");
+    await expect(card).toContainText("Breaker C2-7 tripped");
+    await expect(card).toContainText("36%");
+    await expect(card).toContainText("43%");
+  });
 });
