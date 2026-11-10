@@ -13,7 +13,10 @@ and approver credentials were generated for this run and were not written to the
 The generated timeline records the questions and answers as they occurred. The generated JSON
 summary records the S1 repair as verified, the revealed fault as correct, the commitment as
 verified and matching, and replay as identical. It records 8 questions and 3-way parallelism. The
-timeline records 40 replayed events. These are facts about this single simulated local run, not a
+timeline prints 6 asks. The other 2 questions were asked and then withdrawn after the decision
+(`corridor_lights` for p_mahesh and `room_socket` for p_riya); the runner does not print them.
+The rehearsal database holds 8 `QuestionAsked` and 2 `QuestionWithdrawn` events for this
+investigation, which is the source for the 8. The timeline records 40 replayed events. These are facts about this single simulated local run, not a
 benchmark or speech-quality measurement.
 
 Files:

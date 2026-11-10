@@ -38,7 +38,11 @@ single take. The shot timing is an editing target, not a measured run or speech 
 | 0:55-1:00 | 07 | End card with the project name and evidence links. | `Text-mode local rehearsal; not a human voice take` |
 
 Source for every result in this cut: the committed [timeline](../eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt)
-and [generated summary](../eval/reports/demo-rehearsal-2026-11-10-s1/summary.json). Do not replace
+and [generated summary](../eval/reports/demo-rehearsal-2026-11-10-s1/summary.json). The summary
+counts 8 questions, but the timeline prints 6 asks: the other 2 were asked and then withdrawn
+after the decision (`corridor_lights` for p_mahesh and `room_socket` for p_riya). The timeline
+file does not print them; the rehearsal database holds the 8 `QuestionAsked` and 2
+`QuestionWithdrawn` events. Do not present the timeline as showing all 8. Do not replace
 the observed gateway or breaker questions with the old CCTV storyboard. Do not add an accuracy,
 latency, real-site, or frontier-LLM comparison card.
 
