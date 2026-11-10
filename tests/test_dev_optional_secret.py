@@ -28,3 +28,13 @@ def test_empty_vault_key_is_rejected_in_production():
             PRAMANA_PII_KEY="",
             _env_file=None,
         )
+
+
+def test_blank_database_is_rejected():
+    with pytest.raises(ValidationError, match="DATABASE_URL"):
+        Settings(
+            DATABASE_URL="   ",
+            SIM_OPERATOR_KEY="x",
+            PARTICIPANT_SIGNING_KEY="x",
+            _env_file=None,
+        )

@@ -105,6 +105,13 @@ class Settings(BaseSettings):
     login_lockout_s: float = Field(default=300.0, gt=0, alias="LOGIN_LOCKOUT_S")
     eval_reports_dir: str = Field(default="eval/reports", alias="EVAL_REPORTS_DIR")
 
+    @field_validator("database_url")
+    @classmethod
+    def _database_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("DATABASE_URL must explicitly select a database")
+        return value
+
     @field_validator(
         "pii_master_key",
         "gnani_api_key",
