@@ -170,7 +170,13 @@ async def _pump(ws: WebSocket, upstream: GnaniSttStream, send: Any, max_s: float
                     break
                 await upstream.send_pcm(chunk)
             elif msg.get("text") is not None:
-                kind = json.loads(msg["text"]).get("type")
+                try:
+                    control = json.loads(msg["text"])
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(control, dict):
+                    continue
+                kind = control.get("type")
                 if kind == "commit":
                     await upstream.commit()
                 elif kind == "stop":

@@ -59,6 +59,32 @@ async def test_stream_ignores_malformed_and_non_object_frames() -> None:
     assert [event.type for event in events] == ["transcript", "closed"]
 
 
+async def test_stream_rejects_non_object_connected_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Socket:
+        close_code = 1000
+        close_reason = ""
+        closed = False
+
+        async def recv(self) -> str:
+            return "[]"
+
+        async def close(self) -> None:
+            self.closed = True
+
+    socket = Socket()
+
+    async def connect(*args: Any, **kwargs: Any) -> Socket:
+        return socket
+
+    monkeypatch.setattr(gmod.websockets, "connect", connect)
+    g = client(lambda _: httpx.Response(200))
+    with pytest.raises(VoiceError) as exc:
+        await g.open_stream(["hi-IN"])
+    assert exc.value.code == "VOICE_STREAM_FAILED"
+    assert socket.closed
+    await g.aclose()
+
+
 async def test_stream_never_sends_audio_beyond_reserved_limit() -> None:
     class Socket:
         def __init__(self) -> None:
@@ -330,6 +356,28 @@ def test_browser_stream_relay_end_to_end(fake: FakeGnani, migrated_db: str) -> N
         assert msg["text"] == "बंद आहे"
         assert msg["provider_latency_ms"] == 320
         assert msg["end_of_speech_to_transcript_ms"] >= 0
+        assert seen == ["speech_start", "processing", "transcript"]
+
+
+def test_browser_stream_ignores_malformed_and_non_object_control_frames(
+    fake: FakeGnani, migrated_db: str
+) -> None:
+    app = create_app(core_settings(migrated_db, GNANI_API_KEY="k", GNANI_BASE_URL=fake.base_url))
+    with TestClient(app) as c, c.websocket_connect("/v1/voice/stream") as ws:
+        ws.send_text(json.dumps({"type": "start", "language_code": ["mr-IN", "hi-IN"]}))
+        assert json.loads(ws.receive_text()) == {"type": "ready", "model_confirmed": True}
+        ws.send_text("{")
+        ws.send_text("null")
+        ws.send_text("[]")
+        ws.send_bytes(b"\x01\x00" * 600)
+        ws.send_text(json.dumps({"type": "commit"}))
+        seen = []
+        while True:
+            msg = json.loads(ws.receive_text())
+            seen.append(msg["type"])
+            if msg["type"] == "transcript":
+                break
+        assert msg["text"] == "बंद आहे"
         assert seen == ["speech_start", "processing", "transcript"]
 
 
