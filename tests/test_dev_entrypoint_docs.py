@@ -46,3 +46,16 @@ def test_demo_stack_marks_the_local_voice_protocol_emulator(
     env = service_env(parse_args(["--demo"]), base={})
 
     assert env["GNANI_PROTOCOL_EMULATOR"] == "true"
+
+
+def test_supervisor_passes_one_web_port_without_changing_direct_dev_default() -> None:
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from dev import Options, children
+
+    web = next(
+        child for child in children(Options(web=True, web_port=4321), {}) if child.name == "web"
+    )
+    package = (ROOT / "apps/web/package.json").read_text(encoding="utf-8")
+
+    assert web.args[-4:] == ["dev:server", "--", "-p", "4321"]
+    assert '"dev": "next dev -p 3002"' in package

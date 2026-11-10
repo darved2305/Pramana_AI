@@ -298,7 +298,9 @@ class InvestigationState(StrictModel):
     sequential)."""
     observations: list[Observation]
     questions_asked: int
-    ground_truth: GroundTruthComparison | None = None
+    ground_truth: GroundTruthComparison | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     approvals: list[Approval] = Field(default_factory=list)
     pending_questions: list[Question] = Field(default_factory=list)
     """Every question waiting for an answer, oldest first (several with parallel calls)."""

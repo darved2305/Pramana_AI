@@ -31,7 +31,7 @@ export function Hero() {
       aria-labelledby="hero-title"
       className="relative isolate flex min-h-[640px] h-[100svh] max-h-[1000px] flex-col overflow-hidden bg-ink text-cream"
     >
-      <div className="relative z-10 flex flex-col items-center px-[var(--gutter)] pt-[118px] text-center lg:pt-[120px]">
+      <div className="relative z-10 flex flex-col items-center px-[var(--gutter)] pt-[88px] text-center sm:pt-[118px] lg:pt-[120px]">
         <BlurText
           as="h1"
           trigger="load"
@@ -81,13 +81,13 @@ function CapabilityStrip() {
   return (
     <div className="relative z-10 mt-auto px-[var(--gutter)] pb-[26px]">
       <p className="sr-only">Languages and answer modes Pramana supports</p>
-      <ul tabIndex={0} aria-label="Languages and answer modes" className="flex items-center justify-between gap-6 overflow-x-auto text-cream [scrollbar-width:none] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cream">
+      <ul tabIndex={0} aria-label="Languages and answer modes" className="grid grid-cols-2 gap-x-3 gap-y-2 text-cream sm:flex sm:items-center sm:justify-between sm:gap-6 sm:overflow-visible [scrollbar-width:none] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cream">
         {CAPS.map((c) => (
-          <li key={c.label} className="flex shrink-0 items-center gap-[10px]">
-            <span aria-hidden className="grid h-[34px] w-[34px] place-items-center rounded-[9px] border-[1.5px] border-cream/90">
+          <li key={c.label} className="flex min-w-0 items-center gap-2 sm:shrink-0 sm:gap-[10px]">
+            <span aria-hidden className="grid h-[28px] w-[28px] shrink-0 place-items-center rounded-[9px] border-[1.5px] border-cream/90 sm:h-[34px] sm:w-[34px]">
               <span className="h-[10px] w-[10px] rounded-full bg-cream" />
             </span>
-            <span className="text-[21px] font-medium tracking-[-0.01em]">{c.label}</span>
+            <span className="text-[16px] font-medium tracking-[-0.01em] sm:text-[21px]">{c.label}</span>
             <span className="sr-only">({c.note})</span>
           </li>
         ))}

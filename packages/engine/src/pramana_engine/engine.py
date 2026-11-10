@@ -953,18 +953,31 @@ class Engine:
             a = best.action
             ps = self.participants[a.participant_id]
             alt = next((candidates[i] for i in worth[1:]), None)
+            probe = self.model.pack.probe_by_id.get(a.probe_id)
+            probe_label = probe.label if probe else a.probe_id.replace("_", " ")
+            location = self.model.pack.location_by_id.get(a.location_id)
+            location_label = location.label.en if location else a.location_id.replace("_", " ")
             reason = (
-                f"Ask {ps.spec.display_name} ({'/'.join(ps.roles)}) about {a.probe_id} at "
-                f"{a.location_id}: {best.eig_decision_bits:.2f} bits about the decision "
-                f"(+{best.eig_hypothesis_bits:.2f} bits about the cause) for about "
-                f"{best.cost_s:.0f} s of their time; worth {best.net_value_min:.2f} min of "
-                f"expected loss after effort."
+                f"Ask {ps.spec.display_name} to check {probe_label} at {location_label}. "
+                "This check is expected to make the right action clearer and narrow down "
+                f"the cause. It takes about {best.cost_s:.0f} seconds and could prevent "
+                f"{best.net_value_min:.2f} minutes of wasted effort."
             )
-            if alt is not None:
+            if alt is not None and round(alt.score * 60, 2) != round(best.score * 60, 2):
+                alt_probe = self.model.pack.probe_by_id.get(alt.action.probe_id)
+                alt_probe_label = (
+                    alt_probe.label if alt_probe else alt.action.probe_id.replace("_", " ")
+                )
+                alt_location = self.model.pack.location_by_id.get(alt.action.location_id)
+                alt_location_label = (
+                    alt_location.label.en
+                    if alt_location
+                    else alt.action.location_id.replace("_", " ")
+                )
+                alt_name = self.participants[alt.action.participant_id].spec.display_name
                 reason += (
-                    f" Next best: {alt.action.probe_id} at {alt.action.location_id} by "
-                    f"{self.participants[alt.action.participant_id].spec.display_name} "
-                    f"({alt.score * 60:.2f} vs {best.score * 60:.2f} bits/min)."
+                    f" If {ps.spec.display_name} cannot answer, ask {alt_name} to check "
+                    f"{alt_probe_label} at {alt_location_label} next."
                 )
             return PlanDecision(
                 kind=PlanKind.ASK,

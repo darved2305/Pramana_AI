@@ -167,8 +167,24 @@ def create_app(
                 if k not in {"sub", "email", "hd", "name", "approve", "email_verified"}
             )
             return HTMLResponse(
-                '<!doctype html><html lang="en"><meta charset="utf-8"><title>Mock sign-in</title>'
-                "<h1>Pramana local mock sign-in</h1><p>This is a simulated identity provider.</p>"
+                '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                "<title>Pramana local mock sign-in</title><style>"
+                "body{margin:0;background:#101012;color:#fffaf2;"
+                "font:16px/1.55 system-ui,sans-serif}"
+                "main{box-sizing:border-box;width:min(100% - 32px,560px);"
+                "margin:10vh auto;padding:32px;"
+                "border:1px solid #5b5960;border-radius:20px;background:#1a191d}"
+                "h1{font-size:clamp(27px,6vw,36px);line-height:1.15;margin:0 0 8px}"
+                ".note{color:#c5c0b7;margin:0 0 24px}label{display:grid;gap:6px;margin:14px 0}"
+                "input:not([type=checkbox]){box-sizing:border-box;width:100%;padding:12px;"
+                "border:1px solid #77727c;border-radius:8px;"
+                "background:#111;color:#fffaf2;font:inherit}"
+                "button{margin-top:12px;padding:12px 18px;border:0;border-radius:999px;"
+                "background:#fffaf2;color:#17161a;"
+                "font:600 16px system-ui,sans-serif}"
+                "</style></head><body><main><h1>Pramana local mock sign-in</h1>"
+                '<p class="note">Local demo sign-in. No Google account is used.</p>'
                 f'<form method="get">{hidden}<input type="hidden" name="approve" value="1">'
                 '<p><label>Subject <input name="sub" value="local-user" required></label></p>'
                 '<p><label>Email <input name="email" value="local@gmail.com" required></label></p>'
@@ -176,7 +192,8 @@ def create_app(
                 '<p><label>Workspace domain <input name="hd"></label></p>'
                 '<p><label><input type="checkbox" name="email_verified" value="true" checked>'
                 "Email verified</label></p>"
-                '<button type="submit">Continue with mock account</button></form></html>'
+                '<button type="submit">Continue with mock account</button></form>'
+                "</main></body></html>"
             )
         claims: dict[str, Any] = {
             "sub": query.get("sub", "local-user"),
