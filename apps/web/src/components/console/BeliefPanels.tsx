@@ -30,7 +30,7 @@ export function HypothesisPanel({ state }: { state: InvestigationState }) {
         id="hyp-title"
         title="Competing causes"
         subtitle={`From ${b.observations_used} observation${b.observations_used === 1 ? "" : "s"}`}
-        action={<Badge tone="info">{bits(b.hypothesis_entropy_bits)} uncertain</Badge>}
+        action={<span title="A higher number means the remaining evidence is less certain."><Badge tone="info">{bits(b.hypothesis_entropy_bits)} uncertain</Badge></span>}
       />
       <UncertaintyMeter value={b.hypothesis_entropy_bits} max={maxBits} />
       <LayoutGroup>
@@ -44,8 +44,8 @@ export function HypothesisPanel({ state }: { state: InvestigationState }) {
             >
               <div className="flex items-baseline justify-between gap-3">
                 <span className={clsx("min-w-0 text-[14px]", i === 0 ? "font-medium text-fg" : "text-fg-2")}>{h.label}</span>
-                <span className={clsx("shrink-0 font-mono text-[13px] tabular-nums", i === 0 ? "text-accent" : "text-fg-2")}>
-                  {pct(h.probability, h.probability < 0.1 ? 1 : 0)}
+                <span className="shrink-0 font-mono text-[13px] tabular-nums text-fg-2">
+                  {pct(h.probability)}
                 </span>
               </div>
               <ProbBar value={h.probability} tone={i === 0 ? "accent" : "muted"} className="mt-1.5" label={`${h.label} probability`} />
@@ -70,7 +70,7 @@ export function HypothesisPanel({ state }: { state: InvestigationState }) {
       <div className="mt-3 rounded-[10px] border border-dashed border-line-strong px-3 py-2.5">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-[13px] text-fg-2">Something not in the model</span>
-          <span className="font-mono text-[13px] text-fg-2">{pct(b.open_world_probability, 1)}</span>
+          <span className="font-mono text-[13px] tabular-nums text-fg-2">{pct(b.open_world_probability)}</span>
         </div>
         <ProbBar value={b.open_world_probability} tone="warn" className="mt-1.5" label="Open-world probability" />
       </div>
@@ -107,7 +107,7 @@ export function DecisionBar({ state }: { state: InvestigationState }) {
         id="dec-title"
         title="What to do"
         subtitle="Probability that each action is the right one"
-        action={<Badge tone="info">{bits(state.belief.decision_entropy_bits)}</Badge>}
+        action={<span title="The remaining uncertainty about which action is best, measured in bits."><Badge tone="info">{bits(state.belief.decision_entropy_bits)}</Badge></span>}
       />
       <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-white/[.06]" role="img" aria-label="Decision probabilities">
         {top.map((d, i) => (
@@ -224,7 +224,7 @@ export function ReasoningPanel({ state, pack }: { state: InvestigationState; pac
                       </span>
                     </span>
                     <span className="grid grid-cols-3 gap-4 text-right font-mono text-[12px] tabular-nums">
-                      <Metric k="info gain" v={bits(c.eig_decision_bits)} />
+                      <Metric k="decision clarity" v={bits(c.eig_decision_bits)} title="Expected information about which action is best, measured in bits." />
                       <Metric k="cost" v={duration(c.cost_s)} />
                       <Metric k="net value" v={`${c.net_value_min.toFixed(1)} min`} />
                     </span>
@@ -277,9 +277,9 @@ export function ReasoningPanel({ state, pack }: { state: InvestigationState; pac
   );
 }
 
-function Metric({ k, v }: { k: string; v: string }) {
+function Metric({ k, v, title }: { k: string; v: string; title?: string }) {
   return (
-    <span>
+    <span title={title}>
       <span className="block text-fg">{v}</span>
       <span className="block text-[10px] uppercase tracking-[0.06em] text-muted">{k}</span>
     </span>
