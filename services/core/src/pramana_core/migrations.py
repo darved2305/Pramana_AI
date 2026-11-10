@@ -32,6 +32,8 @@ def migration_database_url(
     url = config_url or environment_url
     if not url and dotenv_path.is_file():
         url = dotenv_values(dotenv_path).get("DATABASE_URL")
+    if url is None:
+        url = ""
     try:
         return require_database_name(url)
     except RuntimeError as exc:
