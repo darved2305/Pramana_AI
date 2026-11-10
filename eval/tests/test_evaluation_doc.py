@@ -21,7 +21,10 @@ def test_every_policy_number_comes_from_the_summary() -> None:
     for p in summary["policies"].values():
         assert f"{p['success_rate'] * 100:.1f}%" in block
     assert summary["git_sha"] in block
-    assert "not** significantly better than greedy entropy" in block
+    assert (
+        "These exploratory comparisons do not establish adjusted statistical significance or "
+        "full incident resolution."
+    ) in block
 
 
 def test_splicing_replaces_only_the_generated_block() -> None:
