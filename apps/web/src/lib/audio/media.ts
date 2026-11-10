@@ -179,20 +179,25 @@ export class QuestionMediaSession {
     this.mic = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
-    const ctx = this.audioContext();
-    await ctx.audioWorklet.addModule(this.options.workletUrl ?? "/worklets/pcm16-capture.js");
-    const src = ctx.createMediaStreamSource(this.mic);
-    const node = new AudioWorkletNode(ctx, "pcm16-capture", { numberOfInputs: 1, numberOfOutputs: 0 });
-    node.port.onmessage = (e: MessageEvent) => {
-      if (e.data instanceof ArrayBuffer) {
-        if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(e.data);
-      } else if (e.data?.type === "level") {
-        this.handlers.onLevel?.(e.data.rms as number);
-      }
-    };
-    src.connect(node);
-    this.node = node;
-    this.setState("listening");
+    try {
+      const ctx = this.audioContext();
+      await ctx.audioWorklet.addModule(this.options.workletUrl ?? "/worklets/pcm16-capture.js");
+      const src = ctx.createMediaStreamSource(this.mic);
+      const node = new AudioWorkletNode(ctx, "pcm16-capture", { numberOfInputs: 1, numberOfOutputs: 0 });
+      this.node = node;
+      node.port.onmessage = (e: MessageEvent) => {
+        if (e.data instanceof ArrayBuffer) {
+          if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(e.data);
+        } else if (e.data?.type === "level") {
+          this.handlers.onLevel?.(e.data.rms as number);
+        }
+      };
+      src.connect(node);
+      this.setState("listening");
+    } catch (error) {
+      this.stopMic();
+      throw error;
+    }
   }
 
   /** End of the answer (push-to-talk release): flush the last partial frame and commit. */

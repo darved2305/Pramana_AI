@@ -88,7 +88,9 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   low-pass filters (63-tap windowed sinc) and resamples 48/44.1 kHz input to 16 kHz mono PCM16
   in 1,024-byte frames; `node apps/web/scripts/check-pcm-worklet.mjs` checks frame size, rate,
   passband gain and 12 kHz rejection. `apps/web/src/lib/audio/media.ts` is the client, with
-  barge-in (playback stops on `speech_start`).
+  barge-in (playback stops on `speech_start`). If capture setup fails after microphone access,
+  the client stops the acquired tracks and leaves tap answers and retry available. Run
+  `cd apps/web && node --test scripts/media-mic.test.mjs` for the setup failure checks.
 - **Call runtime skeleton** (`calls/runtime.py`): the PLAN §12 state machine as an explicit
   transition table, with an injected clock for the 30 s ring, 8 s re-prompt (once) and 20 s
   unavailable timers, utterance ids for dropping stale audio, and a preemption hook. Every
