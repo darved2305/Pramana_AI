@@ -24,12 +24,12 @@ Nov 9 label. The [Nov 8 operational handoff](docs/engineering/HANDOFF.md) is his
 the [product spec](docs/PRODUCT.md), [evaluation and caveats](docs/EVALUATION.md), or
 [artifact index](docs/engineering/ARTIFACT_INDEX.md).
 
-## Five-minute judge path
+## Judge path
 
 1. **Watch:** no selected public recording is documented in this repository. External posting status
    is unknown. The [demo runbook](docs/DEMO.md) has the shot list and the
    [Nov 10 local rehearsal timeline](eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt).
-2. **Run:** after the prerequisites in [Run it](#run-it), start the local app with one command:
+2. **Run:** follow the prerequisites in [Run it](#run-it), then start the local app with
    `uv run python scripts/dev.py --demo`.
 3. **Sign in locally:** use `demo-operator@local.test` with password `local-demo-operator-2026`.
    This account is created only in the local demo database. The password is for this demo only.
@@ -38,7 +38,7 @@ the [product spec](docs/PRODUCT.md), [evaluation and caveats](docs/EVALUATION.md
    `MAINT_ROOM`; mark Riya as the reporter. Use the report "Floor 3 pe WiFi nahi chal raha, kuch
    khul nahi raha", seed `19`, and the specified scenario `CB_C2_7` / `tripped`. Confirm that the
    people agreed to be contacted, then start it.
-5. **Answer:** open **Participant links**, create a link for each person and open it. Read each
+5. **Answer:** open **Participant links**, choose **Create link** for each person and open it. Read each
    person's own simulation card and submit that answer. Return to the operator page and wait for
    **Decided**.
 6. **Approve and verify:** choose **Propose repair** and select **Reset a tripped breaker: Breaker
@@ -171,6 +171,10 @@ All evaluation numbers below come from committed reports and are checked against
 
 **Benchmark** (`eval/reports/benchmark-2026-11-10-heldout/summary.json`; run commit `56382dc`, frozen code `cfca50bf31959f828c77936580632c9a9bf3f7ad`, seeds 40000-40299). This logic-mode run completed 300 scenarios per policy with no failed episodes. The generated mix was 197 single, 40 pair, 16 no-fault and 47 access-limited cases (`scenario-manifest.json`). Historical success retains RC1's pair credit; honest success excludes pair abstentions because pair identifiability is unknown. E's historical success was 83.3%, and its honest success was 80.3%. After Holm correction, honest success was higher for E than the checklist (p=1.72924e-15, adjusted p=6.91696e-15) and random selection (p=2.26252e-19, adjusted p=1.13126e-18). The registered comparisons did not show an honest-success difference between E and greedy entropy (adjusted p=1) or E with three-way parallel scheduling (adjusted p=1); we do not claim E beats greedy entropy. The LLM baseline was unavailable because no provider credential was configured and paid providers were not allowed. The requested 20000-20299 seeds had prior use, so the committed protocol uses the searched disjoint 40000-40299 range; it also records the 300-scenario shortfall against the broader 500-scenario target.
 
+The Nov 10 held-out report is the primary benchmark. The Nov 7 RC1 report
+(`eval/reports/benchmark-2026-11-07-rc1/`) is exploratory because its seeds were examined during
+calibration.
+
 | Policy | Historical success | Honest success | Completed | Failed |
 |---|---:|---:|---:|---:|
 | E_ours | 83.3% | 80.3% | 300 | 0 |
@@ -224,8 +228,10 @@ Fixed question and effort curves, the calibration diagram, raw budget episodes, 
   53/80 with 0 invented, 19 missed and 0 wrong on the first, and 27/40 with 0 invented, 10 missed
   and 0 wrong on the second. All post-tuning results are in
   `eval/reports/extraction-after-attribution-2026-11-06/`.
-- **LLM policy comparison**: in progress on the free tier (32 of 100 LLM episodes so far); too
-  few to report yet.
+- **LLM policy comparison**: an earlier free-tier batch completed 32 episodes and had 68 failed
+  runs excluded. It finished below the 50-episode reporting threshold, and its run artifacts were
+  not committed, so no LLM comparison is reported. No provider credential is configured in this
+  checkout.
 
 Under the Gnani EULA, measured speech-recognition accuracy and latency are kept private.
 

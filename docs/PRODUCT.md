@@ -1,4 +1,4 @@
-# PRODUCT.md — Pramana: an AI that investigates what it cannot see
+# PRODUCT.md - Pramana: an AI that investigates what it cannot see
 
 > **Working name.** *Pramāṇa* (प्रमाण, Sanskrit/Hindi/Marathi): "proof", "a valid means of knowledge". Nyāya epistemology lists perception (*pratyakṣa*), inference (*anumāna*), comparison (*upamāna*) and testimony from a reliable person (*śabda*). That maps directly onto this product: people perceive, they testify by voice, the machine infers, and each testimony is weighted by how reliable that person has proven to be. You can rename it. Check availability of the name before publishing.
 
@@ -223,16 +223,16 @@ Detailed notes, including what each paper demonstrated, what remains unsolved an
 | Need | Classic foundation | Recent LLM-era work | How we use it |
 |---|---|---|---|
 | Choose the next measurement | de Kleer & Williams, *Diagnosing Multiple Faults* (AI 1987): minimum-entropy measurement selection; Reiter 1987 | [UoT (NeurIPS 2024)](https://arxiv.org/abs/2402.03271), [BED-LLM (ICLR 2026)](https://arxiv.org/abs/2508.21184), [MedClarify (2026)](https://arxiv.org/abs/2602.17308) | Exact EIG over an enumerable hypothesis space, computed in code rather than by the LLM |
-| Cost-aware troubleshooting | [Heckerman, Breese & Rommelse](https://www.microsoft.com/en-us/research/publication/decision-theoretic-troubleshooting/): observe only if expected repair cost falls | — | EVOI-based continue/stop rule |
-| Noisy tests, near-optimality | [Golovin, Krause & Ray, EC² (NeurIPS 2010)](https://arxiv.org/abs/1010.3091): greedy information gain can fail under noise | — | Decision-focused gain; noise modelled explicitly |
-| Decide, don't identify | [Javdani et al., HEC/DRD (AISTATS 2014)](https://proceedings.mlr.press/v33/javdani14.html) | — | Hypotheses grouped into *decision classes*; stop on class certainty |
-| Parallel observations | Krause & Guestrin 2005 (UAI); Golovin & Krause 2011 (JAIR, adaptive submodularity) | — | Greedy batch selection with conditional gains |
-| Localize faults from end-user observations | [Sherlock (SIGCOMM 2007, MSR)](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/sherlock_sigcomm_07.pdf): multi-level inference graph; SCORE, Shrink, Boolean network tomography | — | People act as "end hosts" in a multi-level dependency graph that spans power and network |
-| Unreliable human sources | Dawid & Skene 1979 (EM over annotator errors); [social-sensing MLE (Wang et al.)](https://www3.nd.edu/~sslab/pdf/tosn14.pdf); [physical constraints (RTSS 2013)](https://www3.nd.edu/~sslab/pdf/rtss13.pdf) | — | Joint fault × reliability posterior |
+| Cost-aware troubleshooting | [Heckerman, Breese & Rommelse](https://www.microsoft.com/en-us/research/publication/decision-theoretic-troubleshooting/): observe only if expected repair cost falls | - | EVOI-based continue/stop rule |
+| Noisy tests, near-optimality | [Golovin, Krause & Ray, EC² (NeurIPS 2010)](https://arxiv.org/abs/1010.3091): greedy information gain can fail under noise | - | Decision-focused gain; noise modelled explicitly |
+| Decide, don't identify | [Javdani et al., HEC/DRD (AISTATS 2014)](https://proceedings.mlr.press/v33/javdani14.html) | - | Hypotheses grouped into *decision classes*; stop on class certainty |
+| Parallel observations | Krause & Guestrin 2005 (UAI); Golovin & Krause 2011 (JAIR, adaptive submodularity) | - | Greedy batch selection with conditional gains |
+| Localize faults from end-user observations | [Sherlock (SIGCOMM 2007, MSR)](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/sherlock_sigcomm_07.pdf): multi-level inference graph; SCORE, Shrink, Boolean network tomography | - | People act as "end hosts" in a multi-level dependency graph that spans power and network |
+| Unreliable human sources | Dawid & Skene 1979 (EM over annotator errors); [social-sensing MLE (Wang et al.)](https://www3.nd.edu/~sslab/pdf/tosn14.pdf); [physical constraints (RTSS 2013)](https://www3.nd.edu/~sslab/pdf/rtss13.pdf) | - | Joint fault × reliability posterior |
 | Asking well | Cognitive interview meta-analyses ([Köhnken 1999](https://informahealthcare.com/doi/abs/10.1080/10683169908414991); [Memon et al. 2010](https://works.bepress.com/christian_meissner/57/)): more correct detail, small error increase; Loftus & Palmer 1974 (wording distorts reports); [Saris et al. 2010](https://ojs.ub.uni-konstanz.de/srm/article/view/2682): item-specific beats agree/disagree | [MediQ (NeurIPS 2024)](https://arxiv.org/abs/2406.00922): naive question-asking *hurts* without abstention | Non-leading, observation-first questions; acquiescence modelled for yes/no forms |
-| Know when to ask or abstain | — | [KnowNo (CoRL 2023)](https://arxiv.org/abs/2307.01928): conformal "ask for help"; MediQ abstention | Constructive abstention; calibration checked in evaluation |
-| Untrusted input → tool use | — | [CaMeL (DeepMind 2025)](https://arxiv.org/abs/2503.18813): dual LLM, control/data separation | The extractor is quarantined and outputs typed data only; the planner is not an LLM |
-| Multi-party speech | — | [MultiPartyTurnBench (Oct 2026)](https://arxiv.org/abs/2610.20172): selective interruption near chance; [Speak or Stay Silent](https://arxiv.org/abs/2603.11409); [JarvisBench](https://arxiv.org/abs/2608.14870) | We avoid shared-floor conversation: isolated 1:1 calls coordinated by a belief state, which also keeps observations independent |
+| Know when to ask or abstain | - | [KnowNo (CoRL 2023)](https://arxiv.org/abs/2307.01928): conformal "ask for help"; MediQ abstention | Constructive abstention; calibration checked in evaluation |
+| Untrusted input → tool use | - | [CaMeL (DeepMind 2025)](https://arxiv.org/abs/2503.18813): dual LLM, control/data separation | The extractor is quarantined and outputs typed data only; the planner is not an LLM |
+| Multi-party speech | - | [MultiPartyTurnBench (Oct 2026)](https://arxiv.org/abs/2610.20172): selective interruption near chance; [Speak or Stay Silent](https://arxiv.org/abs/2603.11409); [JarvisBench](https://arxiv.org/abs/2608.14870) | We avoid shared-floor conversation: isolated 1:1 calls coordinated by a belief state, which also keeps observations independent |
 | Closed-loop discovery | Autonomous labs (Coscientist, A-Lab; Nature 2023) | [AgentRCA (2026)](https://arxiv.org/abs/2607.22385): digital twin + LLM evidence-gathering | Hypothesis → experiment → update → verification |
 
 ---
@@ -400,11 +400,11 @@ Every capability below follows the same template: problem → story → behavior
      - `keyterms` with the answer vocabulary and site names in all relevant scripts;
      - `previous_text` set to the question as spoken;
      - `topic`.
-  6. TTS uses Timbre v3.0 (one voice persona that speaks all 10 languages [V]) or v2.5 per-language voices, decided by a Day-1 listening test. Audio tags such as `<pauses>` give natural pacing.
+  6. TTS uses Timbre v3.0 (one voice persona that speaks all 10 languages [V]) or v2.5 per-language voices, decided by the initial listening test. Audio tags such as `<pauses>` give natural pacing.
 - **Agents/algorithms.** Call Runtime (deterministic state machine, Darshan), Dialogue Policy and Question Realizer (templates + LLM paraphrase + linter, Nikhil), Confirmation Arbiter (deterministic), Voice Gateway (Darshan).
 - **Inputs.** Commands from the actor; participant language profile; probe templates; audio frames.
 - **Outputs.** Turns, transcripts, `ObservationProposed`, call state events, latency metrics.
-- **Dependencies.** Gnani STT/TTS access, concurrency limits (unknown [V] → Day-1 spike), LLM extractor latency.
+- **Dependencies.** Gnani STT/TTS access, concurrency limits (unknown [V] → initial spike), LLM extractor latency.
 - **Happy path.**
   1. Riya (Hinglish) and Mahesh (Marathi) are called in parallel.
   2. Mahesh's answer ("ground floor Wi-Fi works") arrives first. Riya's pending follow-up ("check the ground floor") is preempted and replaced with "does your phone show NAVA-WiFi?".
@@ -476,7 +476,7 @@ Every capability below follows the same template: problem → story → behavior
 
 ## 14. Complete user journeys
 
-**J1 — Duty manager (primary)**
+**J1 - Duty manager (primary)**
 1. Opens the console → **New investigation** → selects site "Hostel Block C (simulated)" → sees the participant directory with presence, role and language.
 2. Either a reporter's voice report arrives (J2), or the manager types or speaks the report.
 3. The console shows affected areas tinted, 8–15 initial hypotheses, and the first plan with reasons.
@@ -485,34 +485,34 @@ Every capability below follows the same template: problem → story → behavior
 6. Receives **Decision**: "Dispatch electrician to DB-C2 (93%)". Reads the rationale and evidence list, then clicks **Approve breaker check & reset (Imran)**.
 7. Watches verification. Gets **Verified** (or **Reopened**). Exports the investigation record and can replay it.
 
-**J2 — Reporter.** Opens the "Report a problem" link/QR → consents → speaks naturally ("Floor 3 pe WiFi bilkul nahi chal raha") → hears a short acknowledgement and an estimated time → may be asked 1–2 follow-ups → gets a closing message when the incident is resolved.
+**J2 - Reporter.** Opens the "Report a problem" link/QR → consents → speaks naturally ("Floor 3 pe WiFi bilkul nahi chal raha") → hears a short acknowledgement and an estimated time → may be asked 1–2 follow-ups → gets a closing message when the incident is resolved.
 
-**J3 — Lay observer (student)**
+**J3 - Lay observer (student)**
 1. Receives a call invitation in the browser, with a notification and ringtone.
 2. Hears a consent line in their language, including that they can decline.
 3. Answers 1–3 questions about what they can see on their phone or around them. Never asked to touch equipment.
 4. Gets thanked, with how their answer helped.
 5. Can say "baad mein" (later) to decline. The system respects it and re-plans.
 
-**J4 — Observer with access (guard).** Gets the same call flow, plus:
+**J4 - Observer with access (guard).** Gets the same call flow, plus:
 - "Could you walk to the IDF-2 closet on floor 2? Tell me when you're there." The walking time is counted as cost; the guard taps "I'm here" or says so.
 - Questions about LEDs and screens.
 - Possibly a proof-of-presence challenge.
 - Never asked to open panels or touch equipment.
 
-**J5 — Authorized technician (electrician)**
+**J5 - Authorized technician (electrician)**
 1. Called with context: "The likely cause is breaker 7 in DB-C2."
 2. Asked to *observe* first ("is breaker 7 up or down?").
 3. On a finding, the system requests approval; once approved: "You're cleared to reset breaker 7."
 4. The technician performs the action (simulator button gated by the capability token) and reports.
 
-**J6 — Judge/evaluator (sealed mode)**
+**J6 - Judge/evaluator (sealed mode)**
 1. Picks or randomizes the hidden fault and sees only the commitment hash.
 2. Optionally plays a participant and answers however they like, including lying.
 3. Sees the plan adapt.
 4. At the end, verifies the reveal against the hash and checks the ground-truth panel.
 
-**J7 — First-time onboarding (site admin)**
+**J7 - First-time onboarding (site admin)**
 1. Loads a domain pack: YAML for components, dependencies, locations, probes and actions. Bundled packs are available.
 2. Adds participants: synthetic names, roles, languages, location or post.
 3. Prints or shares QR invite links. Participants open them and grant microphone permission.
@@ -833,8 +833,8 @@ Barge-in: Prisma `speech_start` or local VAD energy during playback → stop pla
 | **Timbre TTS** (v3.0: 13 voices, each speaks 10 languages, audio tags; v2.5: 42 per-language voices including Marathi Zahira/Ishaan and Hinglish Poorvi `hi-en`) | Available; the programme page labels Timbre "Beta" | The agent's voice; a consistent persona across languages; `<pauses>` | Questions must be clear to non-English speakers |
 | **Evon v3.3** (30B MoE, ~3.5B active; 128K context; 11 languages including Marathi; Apache-2.0; open weights; **not on the API platform**) | Self-host only (vLLM ≥ 0.12; H100/A100 class recommended) | **P1 "sovereign path"**: run the Extractor and Realizer on Evon if a Day-2 gate passes (accuracy and latency) | It makes the language layer sovereign. The decision layer is our own code already. |
 | Python SDK `gnani-vachana`, `livekit-plugins-gnani`, `pipecat-gnani` | Available; docs inconsistent across pages (e.g., SDK STT shows no `model` param; LiveKit's own page lists only older Timbre versions) | Raw WebSocket/REST clients in our gateway; LiveKit plugin is plan B | Control over per-question headers and the multiplexer |
-| Agent Builder / Inya | **Out of programme scope** ("we don't offer APIs for it yet") [V] | Not used | — |
-| Warp (speech-to-speech) | Not on the API platform [I from programme FAQ: credits cover hosted models] | Not used | — |
+| Agent Builder / Inya | **Out of programme scope** ("we don't offer APIs for it yet") [V] | Not used | - |
+| Warp (speech-to-speech) | Not on the API platform [I from programme FAQ: credits cover hosted models] | Not used | - |
 
 **Compliance notes.**
 - **EULA §16** says results of benchmark tests on the Gnani Product "may not be disclosed outside Your organization", and **§4.2(g)** prohibits disclosing "information relating to the performance or quality" [V] ([EULA](https://www.gnani.ai/legal/eula)). Therefore:
@@ -1074,11 +1074,11 @@ Key entities (full DDL in PLAN.md §7):
 
 | Risk | Likelihood | Impact | Early test |
 |---|---|---|---|
-| Gnani concurrency cap (the docs example says "Only 1 active request is allowed at a time" [V]) | Medium-High | High for C3 | Day-1 spike: open 1→4 STT sessions; 1→3 TTS |
-| Credits insufficient (no conversion published [V]) | Medium | High | Day-1 metering |
-| Short-answer recognition in Marathi/Hinglish | Medium | High | Day-1 test with 20 short answers; tune `x-min-segment-ms`, keyterms |
+| Gnani concurrency cap (the docs example says "Only 1 active request is allowed at a time" [V]) | Medium-High | High for C3 | Initial spike: open 1→4 STT sessions; 1→3 TTS |
+| Credits insufficient (no conversion published [V]) | Medium | High | Initial metering |
+| Short-answer recognition in Marathi/Hinglish | Medium | High | Initial test with 20 short answers; tune `x-min-segment-ms`, keyterms |
 | Timbre Hinglish quality (`hi-en` only in v2.5 [V]) | Medium | Medium | Listening test v3.0 vs v2.5 Poorvi |
-| LLM extraction latency | Medium | Medium | Day-1 latency test per model |
+| LLM extraction latency | Medium | Medium | Initial latency test per model |
 | Evon hosting (64 GB BF16 class; GPU rental) | High | Low (P1) | Gate on Nov 6 noon |
 | Browser echo/barge-in | Medium | Medium | Headphones for demo; echo gate |
 | Simulator too simple → "toy" criticism | Medium | Medium | Open-world, map drift, changing world scenarios; honest framing |

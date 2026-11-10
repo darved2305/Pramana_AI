@@ -1,4 +1,4 @@
-# 0005 — Local PostgreSQL without Docker for development
+# 0005 - Local PostgreSQL without Docker for development
 
 **Status:** accepted
 

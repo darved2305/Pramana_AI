@@ -1,4 +1,4 @@
-# 0003 — Append-only events plus projections, single writer per investigation
+# 0003 - Append-only events plus projections, single writer per investigation
 
 **Status:** accepted
 

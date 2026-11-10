@@ -25,3 +25,16 @@ def test_honesty_checklist_names_generated_rehearsal_evidence_and_no_em_dash() -
     assert chr(0x2014) not in text
     assert "generated rehearsal report" in text.lower()
     assert "recorded take log" in text.lower()
+
+
+def test_readme_judge_path_reaches_participants_approval_reveal_and_replay() -> None:
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    for phrase in (
+        "Participant links",
+        "Create link",
+        "demo-approver@local.test",
+        "separate session",
+        "Reveal ground truth",
+        "Replay identical",
+    ):
+        assert phrase in text

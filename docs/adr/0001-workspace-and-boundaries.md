@@ -1,4 +1,4 @@
-# 0001 — One uv workspace, one package per ownership boundary
+# 0001 - One uv workspace, one package per ownership boundary
 
 **Status:** accepted
 

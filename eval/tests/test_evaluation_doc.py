@@ -57,6 +57,8 @@ def test_every_policy_number_comes_from_the_summary() -> None:
         assert pair_row in block
     assert summary["git_sha"] in block
     assert summary["protocol"]["frozen_code_commit"] in block
+    assert "B1 lane" not in block
+    assert "matching the requested 300-seed range" in block
     assert "Adjusted success comparisons below 0.05:" in block
     for field, comparisons in summary["primary_tests"].items():
         if field == "success_definition":

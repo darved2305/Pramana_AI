@@ -1,12 +1,12 @@
-# RESEARCH.md — Questions, verified facts, papers, search log
+# RESEARCH.md - Questions, verified facts, papers, search log
 
 All web material below was accessed on **2026-11-04**.
 
 **Labels**
-- **[V]** — verified on a primary page today.
-- **[C]** — the company's or authors' own claim.
-- **[S]** — secondary or aggregator source.
-- **[B]** — a classic reference we cite from bibliographic knowledge; it was not re-fetched today.
+- **[V]** - verified on a primary page today.
+- **[C]** - the company's or authors' own claim.
+- **[S]** - secondary or aggregator source.
+- **[B]** - a classic reference we cite from bibliographic knowledge; it was not re-fetched today.
 
 **Depth of verification.** For papers, we read the abstract page. Full texts were not read unless a note says otherwise.
 
@@ -104,7 +104,7 @@ Each entry covers: what it contributes; its method; what it demonstrated; what r
 
 ### 3.2 LLM-era information seeking
 
-**UoT — "Uncertainty of Thoughts", NeurIPS 2024 [V-abstract]** ([arXiv 2402.03271](https://arxiv.org/abs/2402.03271))
+**UoT - "Uncertainty of Thoughts", NeurIPS 2024 [V-abstract]** ([arXiv 2402.03271](https://arxiv.org/abs/2402.03271))
 - *Method:* the LLM simulates possible futures; rewards are based on information gain; rewards are propagated back.
 - *Result:* +38.1% average task success versus direct prompting across medical diagnosis, troubleshooting and 20 Questions, with fewer questions (NeurIPS version; an earlier version reported 57.8%).
 - *Unsolved:* hypotheses and likelihoods come from the LLM; there is one respondent and no model of reliability.
@@ -125,13 +125,13 @@ Each entry covers: what it contributes; its method; what it demonstrated; what r
 - *Result:* reportedly about 27 percentage points fewer errors than a single-shot LLM.
 - *Use for us:* the closest recent diagnostic analogue. It has one respondent and no reliability or cost routing.
 
-**KnowNo — "Robots That Ask For Help", CoRL 2023 [V-abstract]** ([arXiv 2307.01928](https://arxiv.org/abs/2307.01928))
+**KnowNo - "Robots That Ask For Help", CoRL 2023 [V-abstract]** ([arXiv 2307.01928](https://arxiv.org/abs/2307.01928))
 - *Method:* conformal prediction over LLM-proposed options. The robot asks for help when the prediction set contains more than one option. Comes with statistical guarantees.
 - *Use for us:* future work on conformal calibration of the decision to stop or abstain.
 
 ### 3.3 Fault localization from end-user observations
 
-**Sherlock — Bahl et al., SIGCOMM 2007 (MSR) [V-abstract]** ([PDF](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/sherlock_sigcomm_07.pdf))
+**Sherlock - Bahl et al., SIGCOMM 2007 (MSR) [V-abstract]** ([PDF](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/sherlock_sigcomm_07.pdf))
 - *Method:* a multi-level, three-state inference graph built from host observations; the Ferret localization algorithm.
 - *Result:* modelling multiple levels improved localization by 30% compared with two-level approaches.
 - *Use for us:* people play the role of "end hosts". Our graph spans power, network and services.
@@ -297,7 +297,7 @@ Coscientist (Boiko et al., *Nature* 2023) and A-Lab (Szymanski et al., *Nature* 
 
 ## 6. Unresolved findings
 
-1. The real concurrency and credit consumption on the programme account (Day-1 spike).
+1. The real concurrency and credit consumption on the programme account (initial spike).
 2. Whether the EULA's benchmark clause applies to programme participants' public posts (ask Gnani).
 3. Whether Timbre v3.0 handles Hinglish written in Latin script well (listening test).
 4. The real-world rate of model misspecification on uninstrumented sites. Our benchmark only simulates it.

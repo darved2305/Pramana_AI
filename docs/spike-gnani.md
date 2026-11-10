@@ -1,6 +1,6 @@
 # Gnani spike
 
-PLAN.md names this file as the home of the Day-1 Gnani spike. The findings live in
+PLAN.md names this file as the home of the initial Gnani spike. The findings live in
 [`docs/engineering/GNANI_INTEGRATION.md`](engineering/GNANI_INTEGRATION.md): what was verified
 against the documentation, the package sources and live calls, the account limits, billing
 granularity, and the usage guards that came out of it. The voice design is in
