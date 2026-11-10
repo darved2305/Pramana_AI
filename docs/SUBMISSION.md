@@ -9,7 +9,14 @@ The public requirements reviewed on 2026-11-10 are described by the [programme p
 [participation terms](https://www.gnani.ai/great-indian-ai-internship-registration-form), and
 [organiser challenge post](https://www.gnani.ai/resources/blogs/great-indian-ai-internship-challenge-2026).
 The form shown after registration was not inspected, so reconcile this draft with the actual form
-before submission.
+before submission. The organiser's November 8 email supplies the
+[final submission form](https://forms.cloud.microsoft/r/dfFShbp7W7). One member submits for the
+team and lists both members. The form's fields have not been inspected in this session.
+
+**November 10 closeout:** Darshan confirmed both members are over 18, currently enrolled at a
+college or university in India, and entering only once as this team. The final video is still in
+production. Posting and submission remain pending. Use [SUBMISSION_CLOSEOUT.md](SUBMISSION_CLOSEOUT.md)
+for the remaining sequence, prepared post copy, and the verified live-stage status.
 
 ## Project title
 
@@ -102,25 +109,34 @@ caveats, and the saved reports.
 | effort_s | E_parallel3 | 300 | 3.06103e-40 | 9.18309e-40 |
 
 **Limits.** The committed evaluation uses a simulated building. The answer-extraction test sets
-were written by AI models and have been tuned on. [Fill: number of real human runs and their
-outcome, from the take sheet and `eval/reports/m2-human/` when it exists.] Native-language review
+were written by AI models and have been tuned on. One older mixed human/bot run is documented
+in the voice provenance notes. No complete three-human validation set or take sheet was found
+in this checkout; local audio files alone do not establish a run count or outcome.
+[Fill: any additional real human runs and outcomes, supported by their take sheet or aggregate report.]
+Native-language review
 and a human-recorded public demo are not documented as complete here. No frontier LLM comparison
 or real-site outcome is claimed.
 
 ## Individual contributions
 
-Human-owned. Each person must confirm or rewrite their own line against the work they actually did.
-The planned split is in `PLAN.md` section 25; the git history records implementation changes but
-does not establish personal contribution or eligibility.
+The planned split is in `PLAN.md` section 25. At Darshan's request, his draft below was checked
+against commits authored by `darved2305`. This supports the listed implementation areas, without
+claiming exclusive authorship. Nikhil still confirms his own line.
 
 - Darshan: voice gateway to Gnani, call runtime, event-sourced core, recovery and replay,
   authentication, approvals and capabilities, console and participant app, staging and load
-  testing. [Fill: Darshan confirms or corrects this contribution.]
+  testing. Repository references: `9739fd7` (core and speech adapters), `46c9656` (call runtime),
+  `72e8db0` (second decode), `47b8c3d` (event streaming and recovery), `ffbe8a4` (log seal and
+  replay), `87e05bd` (authentication), `52f2480` and `75e840b` (repairs and approval separation),
+  `b57ffe5` (web layouts), `3f0ebdc` (deployment preparation), and `a0ae44f` (emulated load test).
+  The final Cloud Run deployment and later shared work are not attributed exclusively to Darshan.
 - Nikhil: domain pack and physics, Bayesian engine, planner and verification, simulator scenarios,
   extraction and LLM roles, evaluation harness and benchmarks, staging host and validation runs.
   [Fill: Nikhil confirms or corrects this contribution.]
-- Team members confirm names, number of members, and their eligibility directly in the registered
-  form. No eligibility fact is inferred here.
+- Team: Darshan and Nikhil. Darshan confirmed on November 10 that both are over 18, enrolled at
+  a college or university in India, and entering only once as this team. Each member still checks
+  the precise age-on-registration condition, registered details, and their own acceptance of terms
+  in the organiser's process; no identity or education documents belong in this repository.
 
 ## Video, post, and tags
 
@@ -151,8 +167,8 @@ speech accuracy or latency measurements.
 | Public post link and nominated post | Human-owned, incomplete | Publish on LinkedIn and/or X, then paste and nominate the actual link |
 | Required hashtags | Agent-ready | `#GnaniAI` and `#GreatIndianAIInternshipChallenge` |
 | Gnani account tag | Human-owned, incomplete | Confirm the official account handle on each platform |
-| Individual contributions | Human-owned, incomplete | Each named person confirms their own work |
-| Registration and eligibility details | Human-owned, incomplete | Enter and verify in the registered official form |
+| Individual contributions | Darshan draft checked against git history; Nikhil confirmation pending | Commit references above; Nikhil confirms his line |
+| Registration and eligibility details | Core facts confirmed by Darshan; registered details still need checking | Both over 18, enrolled in India, one team entry; verify age at registration and individual terms |
 | Final submission and confirmation | Human-owned, incomplete | Submit through current organiser instructions and retain confirmation |
 
 ## Award fit and evidence
