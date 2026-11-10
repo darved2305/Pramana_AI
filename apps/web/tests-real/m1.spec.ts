@@ -12,7 +12,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type BrowserContext, type Page } from "@playwright/test";
-import { answerTruthfully, api, seedDirectory, signIn } from "./helpers";
+import { answerTruthfully, api, signIn } from "./helpers";
 
 const reviewOutput = process.env.PRAMANA_REVIEW_SHOTS ? path.resolve(process.env.PRAMANA_REVIEW_SHOTS) : path.resolve(process.cwd(), "../../.cache/review-shots");
 const reviewSizes = [
@@ -20,6 +20,25 @@ const reviewSizes = [
   { width: 768, height: 1024 },
   { width: 390, height: 844 },
 ];
+
+async function addDemoParticipant(
+  page: Page,
+  person: { name: string; role: string; skill: string; location: string },
+) {
+  await page.getByRole("button", { name: /Add participant|Add someone new/ }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Add participant" });
+  await dialog.getByLabel("Name").fill(person.name);
+  if (person.role !== "Student") {
+    const defaultRole = dialog.getByRole("button", { name: "Student", exact: true });
+    if ((await defaultRole.getAttribute("aria-pressed")) === "true") await defaultRole.click();
+    await dialog.getByRole("button", { name: person.role, exact: true }).click();
+  }
+  await dialog.getByLabel("Skill").selectOption(person.skill);
+  await dialog.getByLabel("Current location").selectOption(person.location);
+  await dialog.getByRole("button", { name: "Add and select" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: new RegExp(`^${person.name}`) })).toBeChecked();
+}
 
 async function captureReviewState(page: Page, label: string) {
   const original = page.viewportSize() ?? reviewSizes[0];
@@ -69,6 +88,8 @@ interface State {
   id: string;
   status: string;
   questions_asked: number;
+  participants: { id: string; display_name: string }[];
+  observations: { participant_id: string; probe_id: string; outcome: string }[];
   pending_question: { id: string; text: string; action: { participant_id: string; probe_id: string; requires_move: boolean } } | null;
   plan: { decision_class?: string | null };
   belief: { repair?: { fixed_probability: number } | null };
@@ -76,9 +97,8 @@ interface State {
   ground_truth?: { correct?: boolean | null; reveal?: { commitment_verified?: boolean } } | null;
 }
 
-test("M1: S1 from the console to a verified repair", async ({ page, sessionPage, request }) => {
+test("README judge path: diagnosis, approval, reveal and replay", async ({ page, sessionPage, request }) => {
   test.setTimeout(300_000);
-  await seedDirectory(request);
   const pack = await api<{ probes: { id: string; label: string }[] }>(request, "GET", "/v1/packs/campus_block_c");
   const label = (probe: string) => pack.probes.find((x) => x.id === probe)?.label ?? probe;
 
@@ -89,13 +109,30 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   });
 
   // 1. The operator creates S1 in the console.
-  await signIn(page, "operator", "/app/investigations/new");
+  await signIn(page, "demoOperator", "/app/investigations/new");
   const next = () => page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByText(/floors, \d+ places/)).toBeVisible();
   await next();
   await page.getByLabel("What is wrong?").fill("Floor 3 pe WiFi nahi chal raha, kuch khul nahi raha");
   await next();
-  for (const name of ["Riya", "Mahesh", "Imran"]) await page.getByRole("checkbox", { name: new RegExp(`^${name}`) }).check({ force: true }); // styled, visually hidden input
+  await addDemoParticipant(page, {
+    name: "Riya",
+    role: "Student",
+    skill: "lay",
+    location: "F3_R304",
+  });
+  await addDemoParticipant(page, {
+    name: "Mahesh",
+    role: "Security guard",
+    skill: "access",
+    location: "GUARD_DESK",
+  });
+  await addDemoParticipant(page, {
+    name: "Imran",
+    role: "Electrician",
+    skill: "technician",
+    location: "MAINT_ROOM",
+  });
   await page.getByRole("listitem").filter({ hasText: "Riya" }).getByLabel("Reported it").check();
   await next(); // participants
   await next(); // languages
@@ -144,10 +181,24 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   while (state.pending_question && answered < 8) {
     const { participant_id, probe_id } = state.pending_question.action;
     const before = state.questions_asked;
-    await answerTruthfully(people[participant_id], state.pending_question.text, label(probe_id), answered === 0);
+    const probeLabel = label(probe_id);
+    await answerTruthfully(people[participant_id], state.pending_question.text, probeLabel, answered === 0);
     answered++;
     await expect.poll(async () => (state = await api<State>(request, "GET", `/v1/investigations/${invId}`)).questions_asked > before || !state.pending_question).toBe(true);
+    if (answered === 3) {
+      const observation = state.observations.at(-1);
+      const participant = state.participants.find((item) => item.id === participant_id);
+      expect(participant).toBeTruthy();
+      expect(observation?.participant_id).toBe(participant_id);
+      expect(observation?.probe_id).toBe(probe_id);
+      const change = page.locator('[aria-labelledby="change-title"]');
+      await expect(page.getByText("This screen failed to load", { exact: true })).toHaveCount(0);
+      await expect(change).toContainText(participant!.display_name);
+      await expect(change).toContainText(probeLabel);
+      await expect(change).toContainText(observation!.outcome.replace(/_/g, " "));
+    }
   }
+  expect(answered).toBeGreaterThanOrEqual(3);
   expect(state.status).toBe("decided");
   expect(state.plan.decision_class).toBe("DISPATCH_ELECTRICIAN_DB_C2");
   expect(state.questions_asked).toBeLessThanOrEqual(6);
@@ -172,14 +223,14 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
 
   // 5. An approver approves in their own session; the approval records their account.
   const approver = await sessionPage();
-  await signIn(approver, "approver", `/app/investigations/${invId}`);
+  await signIn(approver, "demoApprover", `/app/investigations/${invId}`);
   // Revealing is for operators only: an approver is not offered the button.
   await expect(approver.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   await expect(approver.getByRole("button", { name: "Reveal ground truth" })).toHaveCount(0);
   await captureReviewState(approver, "approval-ready");
   await approver.getByRole("button", { name: "Approve", exact: true }).click();
   await approver.getByRole("dialog").getByRole("button", { name: "Approve", exact: true }).click();
-  await expect(approver.getByText(/Approved by Asha Approver \(you\)/)).toBeVisible();
+  await expect(approver.getByText(/Approved by Demo approver \(you\)/)).toBeVisible();
   await captureReviewState(approver, "approval-approved");
   state = await api<State>(request, "GET", `/v1/investigations/${invId}`);
   expect(state.status).toBe("acting");

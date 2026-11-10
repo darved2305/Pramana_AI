@@ -31,7 +31,26 @@ the [product spec](docs/PRODUCT.md), [evaluation and caveats](docs/EVALUATION.md
    [Nov 10 local rehearsal timeline](eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt).
 2. **Run:** after the prerequisites in [Run it](#run-it), start the local app with one command:
    `uv run python scripts/dev.py --demo`.
-3. **Read:** open the [current doc status](docs/engineering/STATUS_2026-11-10.md),
+3. **Sign in locally:** use `demo-operator@local.test` with password `local-demo-operator-2026`.
+   This account is created only in the local demo database. The password is for this demo only.
+4. **Investigate:** create a new investigation with the campus model. Add Riya as a student at
+   `F3_R304`, Mahesh as a security guard at `GUARD_DESK`, and Imran as an electrician at
+   `MAINT_ROOM`; mark Riya as the reporter. Use the report "Floor 3 pe WiFi nahi chal raha, kuch
+   khul nahi raha", seed `19`, and the specified scenario `CB_C2_7` / `tripped`. Confirm that the
+   people agreed to be contacted, then start it.
+5. **Answer:** open **Participant links**, create a link for each person and open it. Read each
+   person's own simulation card and submit that answer. Return to the operator page and wait for
+   **Decided**.
+6. **Approve and verify:** choose **Propose repair** and select **Reset a tripped breaker: Breaker
+   C2-7 (IDF-2 rack) at distribution board DB-C2**. Sign in in a separate session as
+   `demo-approver@local.test` with password `local-demo-approver-2026`, open the investigation and
+   approve it. Return to Imran's participant link, collect permission, go to the panel and report
+   the repair. Answer the verification questions from the participant cards until the investigation
+   is **Verified**.
+7. **Reveal and replay:** on the operator page choose **Reveal ground truth**, confirm the reveal,
+   then open **Replay**. The integrity panel should say **Replay identical** and **Log unchanged
+   since the reveal**.
+8. **Read:** open the [current doc status](docs/engineering/STATUS_2026-11-10.md),
    [generated evaluation evidence](docs/EVALUATION.md), and
    [artifact index](docs/engineering/ARTIFACT_INDEX.md).
 
@@ -222,8 +241,10 @@ cd apps/web && npm ci && cd ../..
 uv run python scripts/dev.py --demo
 ```
 
-Open http://localhost:3002 and use the mock sign-in for `local@gmail.com`. Create a practice
-investigation and answer using the simulated participant cards. The demo uses a synthetic
+Open http://localhost:3002 and sign in with `demo-operator@local.test` / `local-demo-operator-2026`.
+The demo supervisor creates that operator and `demo-approver@local.test` /
+`local-demo-approver-2026` in the local database after migrations. These credentials are local-demo
+only. If either account already exists, its existing password is kept. The demo uses a synthetic
 identity and no paid voice provider. Press Ctrl+C to stop the services; the database server stays
 up. The first run can take longer while the console compiles.
 

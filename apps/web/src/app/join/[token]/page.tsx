@@ -524,7 +524,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       ) : null}
 
       {q && callPhase !== "consent" && callPhase !== "connecting" ? (
-        <section aria-live="polite" className="mt-2 flex flex-col">
+        <section aria-live="polite" className="mt-5 flex flex-col">
           {voiceInfo ? (
             <div className="mt-2 flex flex-wrap gap-2 text-[12px]" aria-live="polite">
               {voiceInfo.protocol_emulator ? (
@@ -562,14 +562,14 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
             </div>
           ) : (
             <>
-              <div className="mt-6 grid grid-cols-2 gap-3" role="group" aria-label="Answers">
+              <div className={clsx("mt-6 grid gap-3", q.outcomes.length >= 3 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2")} role="group" aria-label="Answers">
                 {q.outcomes.map((o) => (
                   <button
                     key={o}
                     type="button"
                     disabled={phase !== "idle"}
                     onClick={() => sendAnswer({ outcome: o })}
-                    className="btn-line lg min-h-[60px] w-full text-[15px] disabled:opacity-40"
+                    className="btn-line lg min-h-[60px] w-full px-4 text-[15px] disabled:opacity-40"
                   >
                     {outcomeWord(o)}
                   </button>

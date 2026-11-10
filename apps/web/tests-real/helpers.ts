@@ -4,7 +4,16 @@ import { expect, type APIRequestContext, type Browser, type Page } from "@playwr
 export const CORE = process.env.E2E_CORE_URL as string;
 export const AUTO = { "X-Automation-Key": process.env.E2E_AUTOMATION_KEY as string };
 export const PASSWORD = process.env.E2E_PASSWORD as string;
-export const USERS = { operator: "operator@e2e.test", approver: "approver@e2e.test" } as const;
+export const DEMO_PASSWORDS = {
+  operator: "local-demo-operator-2026",
+  approver: "local-demo-approver-2026",
+} as const;
+export const USERS = {
+  operator: "operator@e2e.test",
+  approver: "approver@e2e.test",
+  demoOperator: "demo-operator@local.test",
+  demoApprover: "demo-approver@local.test",
+} as const;
 
 export const PEOPLE = [
   {
@@ -48,7 +57,8 @@ export async function seedDirectory(request: APIRequestContext) {
 export async function signIn(page: Page, who: keyof typeof USERS, next = "/app") {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
   await page.getByLabel("Email").fill(USERS[who]);
-  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  const password = who === "demoOperator" ? DEMO_PASSWORDS.operator : who === "demoApprover" ? DEMO_PASSWORDS.approver : PASSWORD;
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Log in", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${next.replace(/[/?]/g, (c) => `\\${c}`)}$`));
 }
@@ -73,6 +83,19 @@ export async function answerTruthfully(p: Page, questionText: string, probeLabel
   const row = card.locator("div", { has: p.locator("dt", { hasText: probeLabel }) }).last();
   await expect(row).toBeVisible();
   const value = (await row.locator("dd").innerText()).trim();
+  const answerButtons = p.getByRole("group", { name: "Answers" }).getByRole("button");
+  const answerLines = await answerButtons.evaluateAll((buttons) => buttons.flatMap((button) => {
+    const rect = button.getBoundingClientRect();
+    const style = getComputedStyle(button);
+    const available = rect.width - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+    const range = document.createRange();
+    range.selectNodeContents(button);
+    return [...range.getClientRects()]
+      .filter((line) => line.width > 0)
+      .map((line) => ({ line: line.width, available, left: Number.parseFloat(style.paddingLeft), right: Number.parseFloat(style.paddingRight) }));
+  }));
+  expect(answerLines.length, "answer buttons have visible labels").toBeGreaterThan(0);
+  expect(answerLines.every(({ line, available, left, right }) => left >= 16 && right >= 16 && line <= available + 1), "each answer label fits between its 16 px side paddings").toBe(true);
   if (typed) {
     await p.getByLabel("Type your answer").fill(PHRASES[value] ?? value);
     await p.getByRole("button", { name: "Send" }).click();

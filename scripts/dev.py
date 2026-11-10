@@ -46,6 +46,11 @@ from pramana_core.migrations import require_allowlisted_database
 
 ROOT = Path(__file__).resolve().parents[1]
 
+DEMO_ACCOUNTS = (
+    ("demo-operator@local.test", "Demo operator", "operator", "local-demo-operator-2026"),
+    ("demo-approver@local.test", "Demo approver", "approver", "local-demo-approver-2026"),
+)
+
 
 def _assign_kill_on_close_job(proc: subprocess.Popen[bytes]) -> int | None:
     """Track a Windows process tree so closing its job cannot leave orphaned children."""
@@ -390,7 +395,7 @@ def children(opts: Options, env: dict[str, str]) -> list[Child]:
         out.append(
             Child(
                 "web",
-                [npm, "run", "dev", "--", "-p", str(opts.web_port)],
+                [npm, "run", "dev:server", "--", "-p", str(opts.web_port)],
                 env,
                 cwd=ROOT / "apps" / "web",
             )
@@ -448,6 +453,26 @@ def prepare(opts: Options) -> dict[str, str]:
         check=True,
         env=env,
     )
+    if opts.demo:
+        for email, name, role, password in DEMO_ACCOUNTS:
+            account_env = {**env, "PRAMANA_NEW_USER_PASSWORD": password}
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pramana_core.auth.bootstrap",
+                    "--email",
+                    email,
+                    "--name",
+                    name,
+                    "--roles",
+                    role,
+                    "--if-missing",
+                ],
+                cwd=ROOT,
+                check=True,
+                env=account_env,
+            )
     return env
 
 

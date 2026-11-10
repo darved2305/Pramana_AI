@@ -91,6 +91,18 @@ async def _users(url: str) -> None:
         password = os.environ["E2E_PASSWORD"]
         await svc.create_user("operator@e2e.test", "Olu Operator", password, [StaffRole.OPERATOR])
         await svc.create_user("approver@e2e.test", "Asha Approver", password, [StaffRole.APPROVER])
+        await svc.create_user(
+            "demo-operator@local.test",
+            "Demo operator",
+            "local-demo-operator-2026",
+            [StaffRole.OPERATOR],
+        )
+        await svc.create_user(
+            "demo-approver@local.test",
+            "Demo approver",
+            "local-demo-approver-2026",
+            [StaffRole.APPROVER],
+        )
     finally:
         await db.dispose()
 
