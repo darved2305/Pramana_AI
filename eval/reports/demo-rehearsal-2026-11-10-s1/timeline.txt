@@ -1,0 +1,19 @@
+[   0.6s] S1 investigation inv_01M72CG1Q5E2TT18B8WPXF9Y05 created; People asked at once: 3; sealed commitment f844a932054a15c2642f7515e2f8a6d2272f60a6e5f586a7fa8e1e0fcbf5d44b
+[   0.6s] ask p_riya (hi-en): Phone ki WiFi list kholiye. NAVA-WiFi dikh hi nahi raha, connecting pe atka hai, ya connected hai? | in flight: 3
+[   0.7s] card Wi-Fi status on the phone: no_network; answer 'NAVA-WiFi dikh hi nahi raha' -> no_network
+[   0.7s] ask p_imran (hi): फ़ोन की वाई-फ़ाई सूची खोलिए। NAVA-WiFi दिख ही नहीं रहा, कनेक्ट होने पर अटका है, या कनेक्टेड है? | in flight: 3
+[   0.8s] card Wi-Fi status on the phone: connected; answer 'connected hai' -> connected
+[   0.8s] ask p_mahesh (mr): तुम्ही नेटवर्क खोली IDF-1 पर्यंत जाऊ शकाल का? तिथे पोहोचल्यावर: नेटवर्क खोली IDF-1 मध्ये GATEWAY लिहिलेला राउटर शोधा. INTERNET असं लिहिलेला दिवा हिरवा आहे, लाल आहे, की बंद? | in flight: 3
+[   0.9s] card Gateway internet light: green; answer 'lights green hain' -> green
+[   0.9s] ask p_riya (hi-en): Bahar corridor mein dekhiye. Corridor ki lights on hain ya off? | in flight: 3
+[   1.0s] card Corridor lights: on; answer 'haan chalu hai' -> on
+[   1.0s] ask p_imran (hi): क्या आप डिस्ट्रीब्यूशन बोर्ड DB-C2 तक जा सकते हैं? वहाँ पहुँचकर: डिस्ट्रीब्यूशन बोर्ड DB-C2 पर, बिना कुछ छुए, ब्रेकर नंबर 7 ऊपर है या ट्रिप होकर नीचे है? | in flight: 3
+[   1.1s] card Breaker C2-7 position: tripped; answer 'breaker neeche hai, trip hai' -> tripped
+[   1.1s] conclusion: decided (Send the electrician to panel DB-C2: P = 0.974 >= 0.95.)
+[   1.2s] approved by usr_01M72CFZYBENSR65EP2963NNHH: Reset a tripped breaker CB_C2_7
+[   1.2s] repair performed; held-out verification started
+[   1.2s] ask p_riya (hi-en): Phone ki WiFi list kholiye. NAVA-WiFi dikh hi nahi raha, connecting pe atka hai, ya connected hai? | in flight: 1
+[   1.3s] card Wi-Fi status on the phone: connected; answer 'connected hai' -> connected
+[   1.3s] verification result: verified
+[   1.4s] reveal: [{"component_id": "CB_C2_7", "mode": "tripped"}]; commitment verified: True; correct: True
+[   1.4s] replay identical: True; events 40

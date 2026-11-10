@@ -1,47 +1,68 @@
-# Submission draft
+# Submission draft and readiness
 
-A draft for the written explanation the submission form asks for (PLAN.md §32), and a check
-of the post drafts in DEMO.md §8. Nothing here has been posted or submitted. Fill the marked
-gaps from the actual recording take and the take sheet, never from this draft.
+This document prepares the written fields reported for the official entry. It is not a record of
+an external post or submission. No selected public video or post link is recorded in this repository;
+external posting status is unknown. Human-owned fields stay blank until the people responsible
+confirm them against the selected take and the registered form.
 
-## Written explanation (draft)
+The public requirements reviewed on 2026-11-10 are described by the [programme page](https://www.gnani.ai/internship),
+[participation terms](https://www.gnani.ai/great-indian-ai-internship-registration-form), and
+[organiser challenge post](https://www.gnani.ai/resources/blogs/great-indian-ai-internship-challenge-2026).
+The form shown after registration was not inspected, so reconcile this draft with the actual form
+before submission.
 
-**Problem.** When Wi-Fi or power fails in a building, the person responsible usually cannot
-see what is wrong. Sensors are rare in Indian campuses and offices, and the people who could
-look (a student in a room, a guard with the closet keys, an electrician) speak different
-languages and have limited time. Calling around takes long and the answers conflict.
+## Project title
 
-**Users.** Campus IT and facilities staff on duty, and the people already in the building who
-can look at something when asked.
+**Pramana: an AI that investigates what it cannot see**
 
-**What Pramana does.** It keeps a probability over every cause a model of the building allows
-(single faults, pairs of faults, no fault, and "something not in the model"). It picks the
-next question by how much it would change the right decision per second of a person's time,
-calls that person in their language, reads their spoken or typed answer as evidence with an
-estimate of how reliable they are, and stops when it knows what to do or when nobody present
-can tell the causes apart (then it says which check would help). A physical repair needs an
-approver who is not the person who asked, and a single-use capability for the named
-electrician. After the repair it checks, from new answers, that the fault is actually gone.
-Language models only translate; deterministic code makes every decision; every decision can
-be replayed byte for byte from the event log, and the log is sealed at the reveal.
+## Problem
 
-**What is real and what is simulated.** The building, its faults and what each person can see
-are simulated (one pack, `packs/campus_block_c.yaml`). The hidden fault is sealed in a
-separate service with a published SHA-256 commitment and revealed only at the end. The
-engine, planner, API, event log, approvals, and the Gnani speech services are real.
-[Fill from the take: whether the speakers were real people or synthetic voice bots.]
+When Wi-Fi or power fails in a building without sensors, the cause may be visible only to people
+already there. A student can check a phone, a guard can reach a locked closet, and a technician can
+inspect a panel. Calling around takes time, people may disagree, and a consequential repair needs
+authorization.
 
-**Gnani technology used and why.**
-- **Prisma v3.0 realtime STT** (`wss://.../stt/v3/stream`), one session per question, with that
-  question's language candidates (English, Hindi, Marathi, Hinglish code-mixing) and the
-  answer's vocabulary as keyterms, so short answers like "breaker neeche hai" are heard in
-  context. Barge-in stops question playback; silence gets one re-prompt.
-- **Prisma v3.0 REST STT** (`POST /stt/v3`) for uploaded answers and for a second, unsteered
-  decode that confirms a decision-critical spoken answer without asking the person again.
-- **Timbre v3.0 TTS**, streamed over SSE (`/api/v1/tts/sse`) so a question starts playing
-  while it is synthesised, and cached for reuse; **Timbre v2.5** for Hinglish (code-mixed) questions.
-- Every call goes through a governor (rate, concurrency, Rs 150 daily budget priced before
-  sending).
+## Users
+
+Campus IT and facilities staff investigating a physical outage, plus consenting people in the
+building who can make a safe observation when asked.
+
+## Gnani models and APIs used
+
+- **Prisma v3.0 realtime STT** for participant WebSocket speech turns, and **Prisma v3.0 REST STT**
+  for uploaded answers and the second unsteered decode used to confirm a decision-critical spoken
+  answer.
+- **Timbre v3.0 TTS** streams question audio over SSE. **Timbre v2.5 Poorvi** is used for Hinglish
+  (`hi-en`) synthesis because v3.0 has no Hinglish voice.
+- The implementation and dated live runs are documented in
+  [GNANI_INTEGRATION.md](engineering/GNANI_INTEGRATION.md) and
+  [VOICE_PROVENANCE.md](engineering/VOICE_PROVENANCE.md). The challenge page markets Prisma and
+  Timbre v2.5; this repository's documented integration uses the versions above. Integration
+  evidence does not establish speech accuracy or latency.
+
+## Written explanation
+
+Pramana investigates physical faults in a modeled building by asking consenting people what they
+can safely observe, by voice or text. It keeps a probability over the modeled single faults, fault
+pairs, no-fault case, and an open-world case. A deterministic Bayesian engine chooses the next
+question based on its expected effect on the decision and the person's time. A rules-first language
+extractor turns answers into evidence; an optional schema-limited language model can help interpret
+an answer the rules cannot map, but it does not make the diagnosis.
+
+The building, hidden fault, participant cards, and observations in practice mode are simulated. The
+simulator keeps the fault sealed behind a published SHA-256 commitment. The core records an
+append-only event history and can replay it exactly. A physical repair requires an approver who is
+not the person who requested the action and a single-use capability for the named technician. New
+evidence checks the repair; the system can reopen the investigation or abstain when the evidence is
+not enough.
+
+The code integrates Gnani speech services. The local practice run uses no Gnani key. Prior live
+integration runs include synthetic voice bots and one documented mixed run with a team member on an
+Android phone. The current reproducible local run is text mode with simulator cards, not a live
+speech recording. See [DEMO.md](DEMO.md) and the committed
+[Nov 10 rehearsal timeline](../eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt) for its exact
+observed sequence. See [EVALUATION.md](EVALUATION.md) for metric definitions, denominators,
+caveats, and the saved reports.
 
 **Evaluation (logic mode, simulated participants).** From `eval/reports/benchmark-2026-11-10-heldout/summary.json` (run commit `56382dc`, frozen code `cfca50bf31959f828c77936580632c9a9bf3f7ad`, seeds 40000-40299). This run completed 300 scenarios per policy with no failures. The seed conflict, smaller sample than the 500-scenario target, and unavailable LLM baseline are recorded in `eval/protocols/2026-11-10-heldout.md`. Historical success preserves RC1's pair credit; honest success does not count abstentions where pair identifiability is unknown. E's honest success was higher than the checklist and random selection after Holm correction, but not significantly different from greedy entropy or K=3. The report does not claim that E beats greedy entropy. For E, 29/40 pair episodes had a first useful action and 3/40 reached full resolution. Speech-recognition accuracy and latency are not published (Gnani EULA §16).
 
@@ -79,35 +100,75 @@ engine, planner, API, event log, approvals, and the Gnani speech services are re
 | effort_s | D_greedy_entropy | 300 | 7.22868e-13 | 1.44574e-12 |
 | effort_s | E_parallel3 | 300 | 3.06103e-40 | 9.18309e-40 |
 
-**Limits.** One simulated building. The answer-extraction test sets were written by AI models
-and have been tuned on. [Fill: number of real human runs and their outcome, from the take
-sheet and `eval/reports/m2-human/` when it exists.] The LLM policy comparison has too few
-completed episodes to report.
+**Limits.** The committed evaluation uses a simulated building. The answer-extraction test sets
+were written by AI models and have been tuned on. [Fill: number of real human runs and their
+outcome, from the take sheet and `eval/reports/m2-human/` when it exists.] Native-language review
+and a human-recorded public demo are not documented as complete here. No frontier LLM comparison
+or real-site outcome is claimed.
 
-**Team contributions.** [Each person confirms or rewrites their own line against what they
-actually built. The planned split is PLAN.md §25; git history is the record.]
-- Darshan: voice gateway to Gnani (per-question Prisma sessions, barge-in, second decode,
-  streamed and cached Timbre), call runtime, event-sourced core with recovery and replay,
+## Individual contributions
+
+Human-owned. Each person must confirm or rewrite their own line against the work they actually did.
+The planned split is in `PLAN.md` section 25; the git history records implementation changes but
+does not establish personal contribution or eligibility.
+
+- Darshan: voice gateway to Gnani, call runtime, event-sourced core, recovery and replay,
   authentication, approvals and capabilities, console and participant app, staging and load
-  testing. [confirm]
-- Nikhil: domain pack and physics, Bayesian engine, planner and verification, simulator
-  scenarios, extraction and LLM roles, evaluation harness and benchmarks, staging host and
-  validation runs. [confirm]
+  testing. [Fill: Darshan confirms or corrects this contribution.]
+- Nikhil: domain pack and physics, Bayesian engine, planner and verification, simulator scenarios,
+  extraction and LLM roles, evaluation harness and benchmarks, staging host and validation runs.
+  [Fill: Nikhil confirms or corrects this contribution.]
+- Team members confirm names, number of members, and their eligibility directly in the registered
+  form. No eligibility fact is inferred here.
 
-## Check of the post drafts (DEMO.md §8)
+## Video, post, and tags
 
-Each line must be true for the take that is posted. Mark it before posting.
+- Public working demo/video URL: [Fill: link to the selected, verified public take.]
+- LinkedIn post URL and nominated post: [Fill: actual public post URL, if used.]
+- X post URL and nominated post: [Fill: actual public post URL, if used.]
+- Required hashtags: `#GnaniAI` and `#GreatIndianAIInternshipChallenge`.
+- Tag Gnani AI's official account on each platform. [Human: confirm the current platform handle
+  before publishing; no handle is guessed here.]
+- [Fill: final form submission confirmation and timestamp, if submitted.]
 
-| Draft claim | True only if |
-|---|---|
-| "Watch it find a hidden fault across Marathi, Hindi & Hinglish" | the selected take actually used those languages (take sheet) |
-| "Real people, voices and reasoning" | the take's participants were people, not bots; otherwise say "synthetic voices" |
-| "Then it verified with a prediction it hadn't used: the recorder must be rebooting" | that verification question appears in the take's event log |
-| "Why it asked a guard about the CCTV" | the guard was asked about the NVR screen in that take |
-| "It never acts on its own: an authorized human approves every action" | the approver in the take was a separate approver account (automation is not) |
-| Any benchmark number | it is copied from `summary.json` with its commit, and greedy entropy is not claimed to be beaten |
-| Nikhil's planned interview line "a benchmark against a frontier-LLM policy" (PLAN.md §25) | **not true as of Nov 7**: no frontier model was run; the free-tier comparison is below its threshold. Do not use it |
+The take must be a working demonstration of the app and Gnani technology. Do not splice separate
+investigations into one run. The building and participants must be labelled accurately, and every
+spoken line, consent record, approver identity, and on-screen claim must be checked against that
+take. Use the verification and captions templates in [DEMO.md](DEMO.md). Do not publish Gnani
+speech accuracy or latency measurements.
 
-Also from DEMO.md §7: "Simulated building" on screen in the first 3 s; time compression labelled;
-seal and reveal in the same take; no real names, numbers or IDs on screen; no Gnani accuracy
-or latency figures.
+## Submission readiness checklist
+
+| Form field or requirement | State | Evidence or owner |
+|---|---|---|
+| Project title | Agent-ready draft | This document, title above |
+| Problem | Agent-ready draft | This document, problem above |
+| Users | Agent-ready draft | This document, users above |
+| Gnani models and APIs | Agent-ready draft | Integration code, dated run record, and voice provenance link above |
+| Written explanation | Agent-ready draft, take-dependent statements still need review | This document and `docs/DEMO.md` |
+| Public working video/demo link | Human-owned, incomplete | Record, verify, publish, and paste the real link |
+| Public post link and nominated post | Human-owned, incomplete | Publish on LinkedIn and/or X, then paste and nominate the actual link |
+| Required hashtags | Agent-ready | `#GnaniAI` and `#GreatIndianAIInternshipChallenge` |
+| Gnani account tag | Human-owned, incomplete | Confirm the official account handle on each platform |
+| Individual contributions | Human-owned, incomplete | Each named person confirms their own work |
+| Registration and eligibility details | Human-owned, incomplete | Enter and verify in the registered official form |
+| Final submission and confirmation | Human-owned, incomplete | Submit through current organiser instructions and retain confirmation |
+
+## Award fit and evidence
+
+These are project-fit assessments, not claims of award eligibility, judging outcome, or completed
+human evidence. The official categories and terms are linked above. An award claim belongs in the
+entry only when the selected take and any personal eligibility facts support it.
+
+| Official award criterion | Project fit and evidence | Readiness boundary |
+|---|---|---|
+| Code mixing | The pack contains Hinglish templates, and the voice integration routes `hi-en` synthesis to Timbre v2.5. The Nov 5 integration note documents one team-member Hinglish phone run. | Native review is unchecked; verify the chosen take's actual language and model path. |
+| Regional language | Hindi and Marathi questions and UI copy exist; the generated review packet is at `docs/engineering/LANGUAGE_REVIEW.md`. | Every review row is unchecked; do not imply native-speaker approval. |
+| Practical impact | The product models campus Wi-Fi and power troubleshooting and includes authorization and repair verification. The current committed rehearsal is simulated. | No real-site pilot or measured field impact is documented. |
+| Creativity | The engine chooses observations across participants, models uncertainty in their reports, seals simulated truth, and can abstain. Evidence is in the engine, simulator, ADRs, and generated rehearsal. | Describe the mechanism; do not claim it is first or unique. |
+| 60-second demo | The demo runbook has a 60-second shot list and a current reproducible local run. | No selected human-recorded public cut is documented. Submit only a truthful single take with take-specific verification. |
+| Noisy telephonic audio | The project has a voice path and a documented phone integration run. | No real telephone-noise robustness result is documented. Do not target this criterion without permitted real evidence. |
+| Duo award | The repo records two planned contributors. | Team membership and eligibility are personal facts that the team must confirm. |
+| Solo award | No solo-entry fact is established by repository evidence. | Human-owned; do not claim. |
+| Tier 2/3 town award | No qualifying town fact is established by repository evidence. | Human-owned; do not claim. |
+| Public vote | A public post and engagement link are not recorded here; external status is unknown. | Human-owned; publish truthfully and follow the official terms. |
