@@ -284,3 +284,10 @@ def test_demo_uses_local_mock_identity_and_no_live_voice() -> None:
     assert env["OIDC_ISSUER"] == "http://localhost:8410"
     assert env["GNANI_API_KEY"] == ""
     assert [child.name for child in dev.children(opts, env)] == ["oidc", "sim", "core", "web"]
+
+
+def test_demo_rejects_a_remote_database() -> None:
+    with pytest.raises(ValueError, match="local database"):
+        dev.service_env(
+            dev.parse_args(["--demo"]), {"DATABASE_URL": "postgresql+asyncpg://remote.example/db"}
+        )

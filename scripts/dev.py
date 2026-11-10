@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 from typing import IO
+from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 
@@ -298,8 +299,14 @@ def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, 
         PYTHONUNBUFFERED="1",
     )
     if opts.demo:
+        database = urlsplit(env["DATABASE_URL"])
+        if database.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("demo requires a local database")
         env.update(
             PRAMANA_MODE="dev",
+            AUTH_REQUIRED="true",
+            SIM_DATABASE_URL="",
+            SIM_SERVERLESS_AUTH="false",
             OIDC_ISSUER=f"http://localhost:{opts.oidc_port}",
             OIDC_DISCOVERY_URL=f"http://localhost:{opts.oidc_port}/.well-known/openid-configuration",
             GOOGLE_OAUTH_CLIENT_ID="pramana-local",
