@@ -7,6 +7,8 @@ audio, transcripts and secrets are never logged by default.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import logging
 import re
 import sys
@@ -14,6 +16,7 @@ import time
 import uuid
 
 import structlog
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -71,6 +74,9 @@ class RequestContextMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "websocket":
+            await self._websocket(scope, receive, send)
+            return
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -84,10 +90,13 @@ class RequestContextMiddleware:
         scope.setdefault("state", {})["request_id"] = rid
         start = time.perf_counter()
         status_code: int | None = None
+        response_started = False
+        response_complete = False
 
         async def send_with_context(message: Message) -> None:
-            nonlocal status_code
+            nonlocal status_code, response_started, response_complete
             if message["type"] == "http.response.start":
+                response_started = True
                 status_code = int(message["status"])
                 request_id_header = REQUEST_ID_HEADER.lower().encode("ascii")
                 message["headers"] = [
@@ -95,6 +104,8 @@ class RequestContextMiddleware:
                     for name, value in message.get("headers", [])
                     if name.lower() != request_id_header
                 ] + [(request_id_header, rid.encode("ascii"))]
+            elif message["type"] == "http.response.body" and not message.get("more_body", False):
+                response_complete = True
             await send(message)
 
         try:
@@ -104,14 +115,35 @@ class RequestContextMiddleware:
             raise
         except Exception as exc:
             # Exception text and tracebacks can contain request data, transcripts, or
-            # dependency-provided values. Keep the useful failure shape without logging them.
+            # dependency-provided values. Keep the useful failure shape without logging them or
+            # letting the ASGI server log the original exception after a response is sent.
             log.error(
                 "request_failed",
                 error_type=type(exc).__name__,
                 method=scope.get("method", ""),
                 path=_logged_path(scope.get("path", "")),
+                status=status_code or 500,
             )
-            raise
+            if not response_started:
+                response = JSONResponse(
+                    {
+                        "error": {
+                            "code": "INTERNAL",
+                            "message": "internal error",
+                            "request_id": rid,
+                        }
+                    },
+                    status_code=500,
+                )
+                with contextlib.suppress(Exception):
+                    await response(scope, receive, send_with_context)
+                    # A disconnected client may make even the sanitized response unsendable.
+            elif not response_complete:
+                with contextlib.suppress(Exception):
+                    await send_with_context(
+                        {"type": "http.response.body", "body": b"", "more_body": False}
+                    )
+                    # The peer may have disconnected during a streaming response.
         else:
             if status_code is not None:
                 log.info(
@@ -121,5 +153,64 @@ class RequestContextMiddleware:
                     status=status_code,
                     ms=round((time.perf_counter() - start) * 1000, 1),
                 )
+        finally:
+            structlog.contextvars.clear_contextvars()
+
+    async def _websocket(self, scope: Scope, receive: Receive, send: Send) -> None:
+        headers = dict(scope.get("headers", ()))
+        rid = _safe_request_id(
+            headers.get(REQUEST_ID_HEADER.lower().encode("ascii"), b"").decode("latin-1")
+        )
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id=rid)
+        scope.setdefault("state", {})["request_id"] = rid
+        accepted = False
+        closed = False
+
+        async def send_with_context(message: Message) -> None:
+            nonlocal accepted, closed
+            if message["type"] == "websocket.accept":
+                accepted = True
+                request_id_header = REQUEST_ID_HEADER.lower().encode("ascii")
+                message["headers"] = [
+                    (name, value)
+                    for name, value in message.get("headers", [])
+                    if name.lower() != request_id_header
+                ] + [(request_id_header, rid.encode("ascii"))]
+            elif message["type"] == "websocket.close":
+                closed = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_context)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error(
+                "websocket_request_failed",
+                error_type=type(exc).__name__,
+                path=_logged_path(scope.get("path", "")),
+            )
+            with contextlib.suppress(Exception):
+                if accepted and not closed:
+                    await send_with_context(
+                        {
+                            "type": "websocket.send",
+                            "text": json.dumps(
+                                {
+                                    "type": "error",
+                                    "code": "INTERNAL",
+                                    "message": "internal error",
+                                    "request_id": rid,
+                                },
+                                separators=(",", ":"),
+                            ),
+                        }
+                    )
+                if not closed:
+                    await send_with_context(
+                        {"type": "websocket.close", "code": 1011, "reason": "internal error"}
+                    )
+                # The peer may have disconnected before the generic close could be sent.
         finally:
             structlog.contextvars.clear_contextvars()
