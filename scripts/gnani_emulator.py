@@ -23,6 +23,7 @@ import asyncio
 import base64
 import io
 import json
+import random
 import struct
 import threading
 import time
@@ -38,14 +39,27 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 MARK = b"PRAMANA-LOADTEST:"
+STT_PLACEHOLDER_DELAY_S = 0.05
+TTS_CHUNK_PLACEHOLDER_DELAY_S = 0.05
+TTS_CHUNKS_PER_REQUEST = 3
+SLOW_FIRST_BYTE_DELAY_S = 0.5
 
 
-def encode_clip(text: str, rate: int = 16_000, pad_s: float = 0.6) -> bytes:
+def encode_clip(
+    text: str, rate: int = 16_000, pad_s: float = 0.6, *, noise_seed: int | None = None
+) -> bytes:
     """A 16 kHz mono PCM16 WAV whose samples spell ``text`` for the emulator to read back."""
     payload = MARK + struct.pack("<H", len(text.encode())) + text.encode()
     if len(payload) % 2:
         payload += b"\x00"
-    pcm = payload + b"\x00\x00" * int(rate * pad_s)
+    if noise_seed is None:
+        padding = b"\x00\x00" * int(rate * pad_s)
+    else:
+        rng = random.Random(noise_seed)
+        padding = b"".join(
+            struct.pack("<h", rng.randint(-512, 512)) for _ in range(int(rate * pad_s))
+        )
+    pcm = payload + padding
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
@@ -65,6 +79,27 @@ def decode(data: bytes) -> str:
     return data[start : start + n].decode(errors="replace")
 
 
+def add_seeded_noise(data: bytes, seed: int, amplitude: int = 512) -> bytes:
+    """Add deterministic low-level PCM noise while preserving an emulator text marker.
+
+    The marker is a test fixture, not speech. Noise is added after its transcript payload when
+    present and to the whole buffer otherwise.
+    """
+    start = 0
+    marker = data.rfind(MARK)
+    if marker >= 0 and marker + len(MARK) + 2 <= len(data):
+        (length,) = struct.unpack("<H", data[marker + len(MARK) : marker + len(MARK) + 2])
+        start = marker + len(MARK) + 2 + length
+    start += start % 2
+    out = bytearray(data)
+    rng = random.Random(seed)
+    for offset in range(start, len(out) - 1, 2):
+        sample = struct.unpack_from("<h", out, offset)[0]
+        noise = rng.randint(-amplitude, amplitude)
+        struct.pack_into("<h", out, offset, max(-32768, min(32767, sample + noise)))
+    return bytes(out)
+
+
 def _silent_wav(seconds: float = 0.4, rate: int = 24_000) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -77,6 +112,10 @@ def _silent_wav(seconds: float = 0.4, rate: int = 24_000) -> bytes:
 
 @dataclass
 class Stats:
+    fault: str = "none"
+    noise_seed: int = 7
+    fault_triggered: int = 0
+    noise_applied: int = 0
     streams_now: int = 0
     streams_max: int = 0
     streams_total: int = 0
@@ -91,9 +130,16 @@ class Stats:
     started: float = field(default_factory=time.time)
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
-    def as_dict(self) -> dict[str, float | int]:
+    def as_dict(self) -> dict[str, float | int | str]:
         with self.lock:
             return {k: v for k, v in self.__dict__.items() if k != "lock"}
+
+    def trigger(self, fault: str) -> bool:
+        with self.lock:
+            if self.fault != fault or self.fault_triggered:
+                return False
+            self.fault_triggered += 1
+            return True
 
 
 def create_app(stats: Stats) -> Starlette:
@@ -133,13 +179,27 @@ def create_app(stats: Stats) -> Starlette:
                 elif (
                     msg.get("text") is not None and json.loads(msg["text"]).get("type") == "commit"
                 ):
+                    if stats.trigger("drop"):
+                        await ws.close(code=1011, reason="emulated upstream drop")
+                        return
                     await ws.send_text(json.dumps({"type": "processing", "timestamp": "t"}))
-                    await asyncio.sleep(0.05)
-                    text = decode(bytes(buf))
+                    await asyncio.sleep(STT_PLACEHOLDER_DELAY_S)
+                    audio = bytes(buf)
+                    if stats.trigger("noise"):
+                        audio = add_seeded_noise(audio, stats.noise_seed)
+                        with stats.lock:
+                            stats.noise_applied += 1
+                    text = decode(audio)
                     buf.clear()
                     speaking = False
                     with stats.lock:
                         stats.transcripts += 1
+                    if stats.trigger("partial"):
+                        await ws.send_text(
+                            json.dumps({"type": "transcript", "text": "partial", "is_final": False})
+                        )
+                    if stats.trigger("malformed"):
+                        await ws.send_text("{")
                     await ws.send_text(
                         json.dumps(
                             {
@@ -160,6 +220,10 @@ def create_app(stats: Stats) -> Starlette:
                 stats.streams_now -= 1
 
     async def stt_rest(request: Request) -> JSONResponse:
+        if stats.trigger("429"):
+            return JSONResponse({"error": "emulated rate limit"}, status_code=429)
+        if stats.trigger("5xx"):
+            return JSONResponse({"error": "emulated failure"}, status_code=503)
         form = await request.form()
         upload = form.get("audio_file")
         data = await upload.read() if upload is not None and not isinstance(upload, str) else b""
@@ -176,19 +240,29 @@ def create_app(stats: Stats) -> Starlette:
         )
 
     async def tts(_: Request) -> Response:
+        if stats.trigger("429"):
+            return JSONResponse({"error": "emulated rate limit"}, status_code=429)
+        if stats.trigger("5xx"):
+            return JSONResponse({"error": "emulated failure"}, status_code=503)
         with stats.lock:
             stats.tts_rest += 1
         return Response(_silent_wav(), media_type="audio/wav")
 
-    async def tts_sse(_: Request) -> StreamingResponse:
+    async def tts_sse(_: Request) -> Response:
+        if stats.trigger("429"):
+            return JSONResponse({"error": "emulated rate limit"}, status_code=429)
+        if stats.trigger("5xx"):
+            return JSONResponse({"error": "emulated failure"}, status_code=503)
         with stats.lock:
             stats.tts_sse += 1
         chunk = base64.b64encode(b"\x00\x00" * 4800).decode()
 
         async def events():  # type: ignore[no-untyped-def]
+            if stats.trigger("slow"):
+                await asyncio.sleep(SLOW_FIRST_BYTE_DELAY_S)
             yield "event: start\ndata: {}\n\n"
-            for _ in range(3):
-                await asyncio.sleep(0.05)
+            for _ in range(TTS_CHUNKS_PER_REQUEST):
+                await asyncio.sleep(TTS_CHUNK_PLACEHOLDER_DELAY_S)
                 yield f"event: chunk\ndata: {json.dumps({'audio': chunk})}\n\n"
             yield 'event: complete\ndata: {"is_final": true}\n\n'
 
@@ -208,12 +282,16 @@ def create_app(stats: Stats) -> Starlette:
     )
 
 
-def serve_in_thread(port: int) -> tuple[Stats, uvicorn.Server]:
-    stats = Stats()
+def serve_in_thread(
+    port: int, fault: str = "none", *, noise_seed: int = 7
+) -> tuple[Stats, uvicorn.Server]:
+    stats = Stats(fault=fault, noise_seed=noise_seed)
     server = uvicorn.Server(
         uvicorn.Config(create_app(stats), host="127.0.0.1", port=port, log_level="warning")
     )
-    threading.Thread(target=server.run, daemon=True).start()
+    thread = threading.Thread(target=server.run, daemon=True)
+    _SERVER_THREADS[server] = thread
+    thread.start()
     deadline = time.time() + 10
     while not server.started and time.time() < deadline:
         time.sleep(0.05)
@@ -222,15 +300,38 @@ def serve_in_thread(port: int) -> tuple[Stats, uvicorn.Server]:
     return stats, server
 
 
+_SERVER_THREADS: dict[uvicorn.Server, threading.Thread] = {}
+
+
+def stop_in_thread(server: uvicorn.Server) -> None:
+    """Stop and join an emulator started by serve_in_thread."""
+    server.should_exit = True
+    thread = _SERVER_THREADS.pop(server, None)
+    if thread is None:
+        return
+    thread.join(timeout=10)
+    if thread.is_alive():
+        server.force_exit = True
+        thread.join(timeout=5)
+    if thread.is_alive():
+        raise RuntimeError("emulator server did not stop")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Serve the local Gnani protocol emulator.")
     parser.add_argument("--serve", action="store_true", help="run as a foreground server")
     parser.add_argument("--port", type=int, default=8099)
+    parser.add_argument(
+        "--fault",
+        choices=("none", "drop", "429", "5xx", "slow", "partial", "malformed", "noise"),
+        default="none",
+    )
+    parser.add_argument("--noise-seed", type=int, default=7)
     options = parser.parse_args(argv)
     if not options.serve:
         parser.error("--serve is required")
     uvicorn.run(
-        create_app(Stats()),
+        create_app(Stats(fault=options.fault, noise_seed=options.noise_seed)),
         host="127.0.0.1",
         port=options.port,
         log_level="warning",
