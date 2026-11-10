@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
   // A label only: the core address the build was made for. The proxy reads PRAMANA_CORE_URL at runtime.
   env: { NEXT_PUBLIC_CORE_ADDRESS: new URL(CORE_URL).host },
   poweredByHeader: false,
+  experimental: {
+    // The core scales to zero on Cloud Run; a cold start took 36 s on Nov 10 and Next's default
+    // 30 s rewrite timeout reset sign-in requests with "socket hang up". Wait for the instance instead.
+    proxyTimeout: 120_000,
+  },
   async headers() {
     return [
       {
