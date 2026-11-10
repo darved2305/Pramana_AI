@@ -25,7 +25,7 @@ import { ForecastPanel } from "@/components/console/ForecastPanel";
 import { useEventLog, useInvestigation, useInvestigationPack } from "@/lib/data/hooks";
 import { useCurrentUser } from "@/lib/data/session";
 import { hasRole } from "@/lib/api/auth";
-import { STATUS_LABEL, STATUS_TONE, findContradictions, locationLabel, outcomeWord, participantName, pct, probeLabel, reasonSummary, relative } from "@/lib/data/derive";
+import { STATUS_LABEL, STATUS_TONE, abstainRationale, checkRationale, findContradictions, locationLabel, outcomeWord, participantName, pct, probeLabel, relative } from "@/lib/data/derive";
 import { ApiError, describeError } from "@/lib/api/http";
 import { encodeJoin } from "@/lib/join";
 import { useOptionalWorkspace } from "@/lib/org/context";
@@ -317,14 +317,15 @@ function CurrentStep({ state, pack }: { state: InvestigationState; pack?: SitePa
   const decisionId = state.plan.decision_class ?? state.belief.map_decision;
   const decision = state.belief.decisions.find((item) => item.id === decisionId)?.label
     ?? pack?.decision_classes.find((item) => item.id === decisionId)?.label;
-  const planReason = stopped || (question && matchesPlan(question)) ? reasonSummary(state.plan.reason).trim() : "";
-  const fallbackReason = stopped
+  const reason = stopped
     ? state.plan.kind === "abstain"
-      ? "The available evidence did not support a confident recommendation."
-      : "The recorded evidence supports this recommendation."
-    : question
-      ? "This check is expected to help narrow the reported problem."
-      : "See the conversation for the questions in progress.";
+      ? abstainRationale(state.plan, pack)
+      : state.plan.moderate_confidence
+        ? "Confidence is moderate: nobody available can check anything more."
+        : "The recorded evidence supports this recommendation."
+    : question && matchesPlan(question)
+      ? checkRationale(state.plan, participantName(state, question.action.participant_id))
+      : "This check is expected to help narrow the reported problem.";
   if (!question && !stopped) return null;
   return (
     <section aria-label="Current step" aria-live="polite" className="rounded-[12px] border border-info/40 bg-info/[.06] p-4">
@@ -339,7 +340,7 @@ function CurrentStep({ state, pack }: { state: InvestigationState; pack?: SitePa
           <p lang={question.language === "hi-en" ? "hi-Latn" : question.language} className="mt-1 text-[17px] text-fg">{question.text}</p>
         </>
       ) : null}
-      <p className="mt-2 text-[13px] text-fg-2">{planReason || fallbackReason}</p>
+      <p className="mt-2 text-[13px] text-fg-2">{reason}</p>
     </section>
   );
 }

@@ -17,7 +17,7 @@ import { participantApi } from "@/lib/api/participant";
 import { startRecording, type Recording } from "@/lib/audio/recorder";
 import { QuestionMediaSession } from "@/lib/audio/media";
 import type { AnswerResult, Approval, Extraction, InvestigationState, ParticipantView } from "@/lib/api/types";
-import { outcomeWord, pct, reasonSummary } from "@/lib/data/derive";
+import { outcomeWord } from "@/lib/data/derive";
 
 /** What the participant is told was understood. A location check is a reading, not an outcome. */
 function heardAs(x: Extraction): string {
@@ -155,13 +155,6 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const needsMove = q?.action.requires_move && moved !== q.id;
   const place = q ? (state.participants.length ? q.action.location_id : "") : "";
   const grant = state.approvals?.find((a) => a.participant_id === payload.p && a.status === "approved");
-  const matchesPlan = !!q && state.plan.kind === "ask" && !!state.plan.action &&
-    q.action.participant_id === state.plan.action.participant_id &&
-    q.action.probe_id === state.plan.action.probe_id && q.action.location_id === state.plan.action.location_id;
-  const questionReason = matchesPlan ? reasonSummary(state.plan.reason).trim() : "";
-  const decisionId = state.plan.decision_class ?? state.belief.map_decision;
-  const decision = state.belief.decisions.find((item) => item.id === decisionId);
-  const hasDecision = !q && ["decided", "awaiting_approval", "acting", "verifying", "verified", "not_verified", "closed"].includes(state.status) && !!decisionId;
 
   const sendAnswer = async (body: { outcome?: string; text?: string }) => {
     if (!q) return;
@@ -426,7 +419,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         {me ? <>Hello {me.display_name}.</> : <>Hello.</>} {view ? <>You are at {view.location_label}.</> : null}
       </p>
 
-      {q ? (
+      {q && callPhase !== "consent" && callPhase !== "connecting" ? (
         <div data-testid="participant-current-step" aria-live="polite" className="mt-4 rounded-[16px] border border-info/40 bg-info/[.06] p-4">
           {q.kind === "confirm" ? <span className="mb-2 inline-flex rounded-full bg-warn/15 px-2.5 py-1 text-[12px] text-warn">Just checking</span> : null}
           {q.kind === "challenge" ? <span className="mb-2 inline-flex rounded-full bg-cream/15 px-2.5 py-1 text-[12px] text-cream">Quick location check</span> : null}
@@ -434,18 +427,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           <h1 lang={q.language === "hi-en" ? "hi-Latn" : q.language} className="mt-1 text-[23px] font-medium leading-snug">{q.text}</h1>
           <p className="mt-2 text-[13px] leading-relaxed text-fg-2">
             <span className="font-medium text-fg">Why this check: </span>
-            {questionReason || ((state.pending_questions?.length ?? 0) > 1
-              ? "Several people are answering different checks to help narrow the reported problem."
-              : "Your answer adds an observation that helps narrow the reported problem.")}
-          </p>
-        </div>
-      ) : hasDecision ? (
-        <div data-testid="participant-current-step" aria-live="polite" className="mt-4 rounded-[16px] border border-info/40 bg-info/[.06] p-4">
-          <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-info">Investigation recommendation</p>
-          <h1 className="mt-1 text-[22px] font-medium leading-snug">{decision?.label ?? "A recommendation is ready"}</h1>
-          <p className="mt-2 text-[15px]">{pct(state.plan.decision_probability ?? state.belief.map_decision_probability)} confidence</p>
-          <p className="mt-2 text-[13px] leading-relaxed text-fg-2">
-            {state.ground_truth ? "The simulator's fault has been revealed." : "This is the investigation's recommendation. The simulator's hidden fault stays sealed until it is revealed."}
+            Your answer adds an observation that helps narrow the reported problem.
           </p>
         </div>
       ) : null}
@@ -647,7 +629,10 @@ function Repair({
     <section className="mt-4" aria-live="polite">
       <h1 className="display-slab text-[36px]">You are cleared to act</h1>
       <p className="mt-2 text-[15px] text-cream/75">
-        {approval.action_label} on <span className="font-mono">{approval.target}</span>. Requested by {approval.requested_by ?? "an unrecorded account"}; approved by {approval.approver_id ?? "an unrecorded account"}. The requester cannot approve their own request.
+        {approval.action_label} on <span className="font-mono">{approval.target}</span>.{" "}
+        {approval.requested_by && approval.approver_id
+          ? "It was requested by one staff account and approved by another. The requester cannot approve their own request."
+          : "Pramana did not record both accounts, so it cannot confirm that the approval came from someone other than the requester."}
       </p>
       <p className="mt-2 text-[13px] text-cream/75">This simulated repair uses a permission once. It expires five minutes after you collect it.</p>
       {!cap ? (
