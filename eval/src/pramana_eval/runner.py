@@ -242,27 +242,14 @@ def _complete_pair_repair_loop(
             if decision == MULTIPLE_FAULTS
             or pack.decision_of.get(f"{fault[0]}.{fault[1]}") == decision
         )
-        fault = next((item for item in candidates if attempts.get(item, 0) < 2), None)
-        if fault is None:
+        candidate = _next_repair_candidate(pack, candidates, attempts)
+        if candidate is None:
             return False, sum(attempts.values()), extra_probes
+        fault, action_id = candidate
         cid, mode = fault
-        comp = pack.component_by_id[cid]
-        decision_for_fault = pack.decision_of[f"{cid}.{mode}"]
-        action = next(
-            (
-                item
-                for item in pack.actions
-                if item.fixes == mode
-                and item.target_kind == comp.kind
-                and decision_for_fault in item.decision_classes
-            ),
-            None,
-        )
-        if action is None:
-            return False, sum(attempts.values()), extra_probes
         attempt = attempts.get(fault, 0)
         attempts[fault] = attempt + 1
-        engine.apply_intervention(action.id, cid)
+        engine.apply_intervention(action_id, cid)
         seed_material = f"{scenario.seed}|{cid}|{mode}|{attempt}".encode()
         repair_rng = random.Random(
             int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
@@ -318,6 +305,33 @@ def _complete_pair_repair_loop(
             history.append((step, ev))
             extra_probes += 1
     return not remaining, sum(attempts.values()), extra_probes
+
+
+def _next_repair_candidate(
+    pack: DomainPack,
+    candidates: list[tuple[str, str]],
+    attempts: dict[tuple[str, str], int],
+) -> tuple[tuple[str, str], str] | None:
+    """Return the first remaining fault with an available, not-exhausted repair action."""
+    for fault in sorted(candidates):
+        if attempts.get(fault, 0) >= 2:
+            continue
+        component_id, mode = fault
+        component = pack.component_by_id[component_id]
+        decision = pack.decision_of[f"{component_id}.{mode}"]
+        action_id = next(
+            (
+                action.id
+                for action in pack.actions
+                if action.fixes == mode
+                and action.target_kind == component.kind
+                and decision in action.decision_classes
+            ),
+            None,
+        )
+        if action_id is not None:
+            return fault, action_id
+    return None
 
 
 def _challenge_presence(engine: Engine, answers: Answers, ev: Evidence, observed: Any) -> int:
