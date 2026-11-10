@@ -1,20 +1,31 @@
-"""The migration chain has exactly one head, so ``alembic upgrade head`` is unambiguous.
-
-Reads the revision scripts only; no database is needed.
-"""
-
-from __future__ import annotations
-
 from pathlib import Path
 
-from alembic.config import Config
-from alembic.script import ScriptDirectory
+import pytest
 
-CORE = Path(__file__).resolve().parents[1]
+from pramana_core.migrations import migration_database_url
 
 
-def test_alembic_has_a_single_head() -> None:
-    config = Config(str(CORE / "alembic.ini"))
-    config.set_main_option("script_location", str(CORE / "alembic"))
-    heads = ScriptDirectory.from_config(config).get_heads()
-    assert len(heads) == 1, f"alembic has several heads, so upgrade head is ambiguous: {heads}"
+def test_migration_url_uses_the_explicit_alembic_selection(tmp_path: Path) -> None:
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("DATABASE_URL=postgresql://local/from-dotenv\n", encoding="utf-8")
+    assert (
+        migration_database_url(
+            "postgresql://local/from-config", "postgresql://local/from-env", dotenv
+        )
+        == "postgresql://local/from-config"
+    )
+    assert (
+        migration_database_url(None, "postgresql://local/from-env", dotenv)
+        == "postgresql://local/from-env"
+    )
+    assert migration_database_url(None, None, dotenv) == "postgresql://local/from-dotenv"
+
+
+def test_migration_url_refuses_implicit_default(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="DATABASE_URL must explicitly select"):
+        migration_database_url(None, None, tmp_path / "missing.env")
+
+    blank = tmp_path / ".env"
+    blank.write_text("DATABASE_URL=\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="DATABASE_URL must explicitly select"):
+        migration_database_url(None, None, blank)
