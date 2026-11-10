@@ -245,6 +245,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
       status: string;
       questions_asked: number;
       pending_question: { text: string; action: { participant_id: string; probe_id: string } } | null;
+      observations: { participant_id: string; probe_id: string; outcome: string }[];
       participants: { id: string; display_name: string }[];
       site_id: string;
       site_model_id: string;
@@ -294,6 +295,8 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
     const phone = await phoneFor(question.action.participant_id);
     const probeLabel = model.spec.probes.find((probe: { id: string }) => probe.id === question.action.probe_id)?.label;
     expect(probeLabel).toBeTruthy();
+    const participant = practiceState.participants.find((item) => item.id === question.action.participant_id);
+    expect(participant).toBeTruthy();
     await expect(phone.getByRole("heading", { level: 1 })).toHaveText(question.text);
     await expect(phone.getByTestId("participant-current-step").locator("p").last()).toHaveText(/Why this check:\s*\S+/);
     await expect(phone.getByRole("button", { name: "Accept", exact: true })).toHaveCSS("background-color", "rgb(255, 252, 247)");
@@ -307,9 +310,19 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
       practiceState = await readState();
       return practiceState.questions_asked > before || !practiceState.pending_question;
     }).toBe(true);
+    if (answered === 3) {
+      const observation = practiceState.observations.at(-1);
+      expect(observation?.participant_id).toBe(participant!.id);
+      expect(observation?.probe_id).toBe(question.action.probe_id);
+      const change = page.locator('[aria-labelledby="change-title"]');
+      await expect(page.getByText("This screen failed to load", { exact: true })).toHaveCount(0);
+      await expect(change).toContainText(participant!.display_name);
+      await expect(change).toContainText(probeLabel);
+      await expect(change).toContainText(observation!.outcome.replace(/_/g, " "));
+    }
   }
   expect(["decided", "abstained"]).toContain(practiceState.status);
-  expect(answered).toBeGreaterThan(0);
+  expect(answered).toBeGreaterThanOrEqual(3);
   await capture(page, "practice-investigation-decided");
   await Promise.all(Array.from(phones.values(), (phone) => phone.context().close()));
   await page.getByRole("button", { name: "Reveal ground truth" }).first().click();

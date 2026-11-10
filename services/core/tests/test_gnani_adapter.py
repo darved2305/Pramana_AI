@@ -527,8 +527,14 @@ def test_voice_status_names_the_provider_the_core_actually_calls(migrated_db: st
         status = c.get("/v1/voice/status").json()
         assert (status["provider"], status["provider_host"]) == ("gnani", "api.vachana.ai")
     emulated = create_app(
-        core_settings(migrated_db, GNANI_API_KEY="k", GNANI_BASE_URL="http://127.0.0.1:8190")
+        core_settings(
+            migrated_db,
+            GNANI_API_KEY="k",
+            GNANI_BASE_URL="http://127.0.0.1:8190",
+            GNANI_PROTOCOL_EMULATOR=True,
+        )
     )
     with TestClient(emulated) as c:
         status = c.get("/v1/voice/status").json()
         assert (status["provider"], status["provider_host"]) == ("other", "127.0.0.1")
+        assert status["protocol_emulator"] is True
