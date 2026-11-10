@@ -166,6 +166,7 @@ export interface VoiceStatus {
   configured: boolean;
   /** "gnani" only for HTTPS to Gnani's own host; "other" for an emulator or anything else. */
   provider?: "gnani" | "other";
+  protocol_emulator?: boolean;
   provider_host?: string | null;
   stt_model?: string;
   tts_models?: string[];

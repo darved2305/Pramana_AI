@@ -212,11 +212,13 @@ class GnaniClient:
         api_key: str | None,
         base_url: str,
         timeout_s: float,
+        protocol_emulator: bool = False,
         governor: VoiceGovernor | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._key = api_key
         self.base_url = base_url.rstrip("/")
+        self.protocol_emulator = protocol_emulator and provider_of(self.base_url) != "gnani"
         self._timeout = timeout_s
         # Every call goes through a governor; tests get conservative in-memory defaults.
         self.governor = governor or VoiceGovernor(GovernorLimits(), MemoryLedger())

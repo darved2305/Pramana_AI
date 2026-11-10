@@ -59,6 +59,7 @@ async def voice_status(request: Request) -> dict[str, object]:
     return {
         "configured": g.configured,
         "provider": g.provider,
+        "protocol_emulator": g.protocol_emulator,
         "provider_host": urlsplit(g.base_url).hostname,
         "stt_model": "prisma-v3.0",
         "tts_models": ["timbre-v3.0", "timbre-v2.5"],
