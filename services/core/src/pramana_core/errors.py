@@ -70,5 +70,6 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
-        log.exception("unhandled_error", error_type=type(exc).__name__)
+        # Exception messages may include personal data or upstream response content.
+        log.error("unhandled_error", error_type=type(exc).__name__)
         return JSONResponse(_body(request, "INTERNAL", "internal error"), status_code=500)

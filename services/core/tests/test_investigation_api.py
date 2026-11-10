@@ -351,12 +351,13 @@ def test_failed_command_rolls_back_everything(core: TestClient, monkeypatch: Any
         raise RuntimeError("simulated crash after the observation was recorded")
 
     monkeypatch.setattr(svc, "_apply_plan", boom)
-    # TestClient re-raises server errors; a real server answers 500 {"error": {"code": "INTERNAL"}}.
-    with pytest.raises(RuntimeError, match="simulated crash"):
-        core.post(
-            f"/v1/investigations/{inv['id']}/answers",
-            json={"question_id": q["id"], "participant_id": "p_riya", "outcome": "no_network"},
-        )
+    response = core.post(
+        f"/v1/investigations/{inv['id']}/answers",
+        json={"question_id": q["id"], "participant_id": "p_riya", "outcome": "no_network"},
+    )
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL"
+    assert "simulated crash" not in response.text
     monkeypatch.undo()
     after = core.get(f"/v1/investigations/{inv['id']}").json()
     assert after["pending_question"]["id"] == q["id"]
