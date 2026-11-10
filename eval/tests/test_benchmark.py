@@ -378,3 +378,33 @@ def test_a_long_retry_after_is_not_slept_through(tmp_path: Path) -> None:
         c.complete_json([{"role": "user", "content": "1"}], {})
     assert time.monotonic() - started < 5
     assert calls == 1
+
+
+def test_pair_outcomes_are_not_claimed_as_full_resolution() -> None:
+    from pramana_eval.runner import Episode
+
+    def episode(decision: str | None, correct: bool, identifiable: bool | None) -> Episode:
+        return Episode(
+            "E",
+            1,
+            "pair",
+            identifiable,
+            decision is not None,
+            decision,
+            0.9,
+            correct,
+            correct or decision is None,
+            1,
+            1.0,
+            1,
+            False,
+        )
+
+    useful = episode("DISPATCH_ONE", True, None)
+    abstained = episode(None, False, None)
+    justified = episode(None, False, False)
+    result = summarize([useful, abstained, justified])
+    assert result["pair_first_useful_action_rate"] == pytest.approx(1 / 3)
+    assert result["pair_full_resolution_rate"] is None
+    assert result["justified_abstentions"] == 1
+    assert result["abstentions_with_unknown_identifiability"] == 1

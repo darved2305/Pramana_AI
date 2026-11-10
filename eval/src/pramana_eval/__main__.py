@@ -174,6 +174,20 @@ def render(summary: dict[str, Any]) -> str:
             f"| {_fmt(m['probes_mean'])} | {_fmt(m['effort_s_mean'])} | {_fmt(m['people_mean'])} "
             f"| {_fmt(m.get('wall_s_mean'))} | {_fmt(m.get('withdrawn_mean'))} |"
         )
+    lines += [
+        "",
+        "Pair and abstention outcomes (historical success above retains its original definition):",
+        "",
+        "| Policy | Pair episodes | First useful action | Full pair resolution | "
+        "Justified abstentions | Abstentions with unknown identifiability |",
+        "|---|---|---|---|---|---|",
+    ]
+    for name, m in summary["policies"].items():
+        lines.append(
+            f"| {name} | {m['pair_outcome_denominator']} | "
+            f"{_fmt(m['pair_first_useful_action_rate'], True)} | not measured | "
+            f"{m['justified_abstentions']} | {m['abstentions_with_unknown_identifiability']} |"
+        )
     lines += ["", "Paired differences, E minus each policy (bootstrap 95% CI):", ""]
     for name, diffs in summary["paired_vs_E"].items():
         parts = [
