@@ -56,6 +56,7 @@ from pramana_contracts.tokens import (
 from pramana_domain import DomainPack, load_pack
 from pramana_domain.spec_storage import load_spec, spec_digest
 
+from .body_limit import BodyLimitMiddleware
 from .scenario import Scenario, ScenarioError, draw_fault
 
 _Result = TypeVar("_Result")
@@ -374,6 +375,10 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
         allow_origins=cfg.cors_origins,
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type"],
+    )
+
+    app.add_middleware(
+        BodyLimitMiddleware, limit_for_path=lambda _: 4 * 1024 * 1024, cors_origins=cfg.cors_origins
     )
 
     @app.exception_handler(ScenarioError)
