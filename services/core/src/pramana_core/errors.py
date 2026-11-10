@@ -58,12 +58,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(TimeoutError)
     async def _database(request: Request, exc: Exception) -> JSONResponse:
         orig = getattr(exc, "orig", None)
-        detail = str(orig or exc).splitlines()[0][:200] if (orig or str(exc)) else ""
         log.error(
             "dependency_unavailable",
             error_type=type(exc).__name__,
             driver_error=type(orig).__name__ if orig else None,
-            detail=detail,
         )
         return JSONResponse(
             _body(request, "DEPENDENCY_UNAVAILABLE", "a backing service is unavailable"),
