@@ -7,9 +7,11 @@ import uuid
 from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from auth_testkit import CSRF, login
 from core_testkit import body, core_settings
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from participant_bot import run_to_conclusion
 from sqlalchemy.exc import DBAPIError
@@ -95,6 +97,28 @@ def test_saved_site_diagnosis_reveal_and_exact_cold_replay(
     assert replay.status_code == 200, replay.text
     assert replay.json()["identical"] is True
     assert replay.json()["log_intact"] is True
+
+
+def test_startup_recovery_replays_a_saved_site_investigation_in_its_tenant(
+    account_core: TestClient, sim_app: FastAPI
+) -> None:
+    raw = account_core
+    workspace = create(raw).json()
+    scoped = TenantClient(raw, workspace)
+    initial = scoped.start()
+
+    restarted_app = create_app(
+        raw.app.state.settings,
+        sim_transport=httpx.ASGITransport(app=sim_app),
+    )
+    with TestClient(restarted_app) as restarted:
+        report = restarted.app.state.recovery
+        assert report is not None
+        assert report["checked"] == 1
+        assert report["identical"] == 1
+        assert report["mismatched"] == []
+        assert report["failed"] == []
+        assert initial["id"] not in report["failed"]
 
 
 def test_creation_retries_return_one_pinned_investigation(account_core: TestClient) -> None:
