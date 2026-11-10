@@ -687,3 +687,174 @@ def test_creation_response_shape_does_not_depend_on_hidden_fault(client: TestCli
         assert not any(fault["component_id"] in response.text for fault in hidden_fault["faults"])
         results.append(result)
     assert all(set(result) == set(results[0]) for result in results)
+
+
+SIM_AUTH_ACTORS = ("anonymous", "participant", "operator", "oracle")
+SIM_AUTH_MATRIX = {
+    ("GET", "/health"): {actor: True for actor in SIM_AUTH_ACTORS},
+    ("GET", "/ready"): {actor: True for actor in SIM_AUTH_ACTORS},
+    ("POST", "/sim/v1/scenarios"): {
+        "anonymous": False,
+        "participant": False,
+        "operator": True,
+        "oracle": False,
+    },
+    ("GET", "/sim/v1/scenarios/{sid}/view"): {
+        "anonymous": False,
+        "participant": True,
+        "operator": False,
+        "oracle": False,
+    },
+    ("POST", "/sim/v1/scenarios/{sid}/move"): {
+        "anonymous": False,
+        "participant": True,
+        "operator": False,
+        "oracle": False,
+    },
+    ("POST", "/sim/v1/scenarios/{sid}/observe"): {
+        "anonymous": False,
+        "participant": True,
+        "operator": False,
+        "oracle": False,
+    },
+    ("POST", "/sim/v1/scenarios/{sid}/act"): {
+        "anonymous": False,
+        "participant": 403,
+        "operator": False,
+        "oracle": False,
+    },
+    ("POST", "/sim/v1/scenarios/{sid}/presence/check"): {
+        "anonymous": False,
+        "participant": False,
+        "operator": True,
+        "oracle": False,
+    },
+    ("POST", "/sim/v1/scenarios/{sid}/close"): {
+        "anonymous": False,
+        "participant": False,
+        "operator": True,
+        "oracle": False,
+    },
+    ("POST", "/sim/v1/scenarios/{sid}/reveal"): {
+        "anonymous": False,
+        "participant": False,
+        "operator": True,
+        "oracle": False,
+    },
+    ("GET", "/sim/v1/scenarios/{sid}/truth"): {
+        "anonymous": 403,
+        "participant": 403,
+        "operator": 403,
+        "oracle": True,
+    },
+}
+
+
+def test_simulator_authorization_matrix_covers_every_registered_route(
+    client: TestClient,
+) -> None:
+    actual = {
+        (method, route.path)
+        for route in client.app.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods or ()
+    }
+    expected = set(SIM_AUTH_MATRIX)
+    assert actual == expected
+    assert all(set(cells) == set(SIM_AUTH_ACTORS) for cells in SIM_AUTH_MATRIX.values())
+
+
+@pytest.mark.parametrize(
+    ("method", "template", "actor", "expected"),
+    [
+        (method, template, actor, allowed)
+        for (method, template), cells in SIM_AUTH_MATRIX.items()
+        for actor, allowed in cells.items()
+    ],
+)
+def test_simulator_route_actor_matrix(
+    client: TestClient, method: str, template: str, actor: str, expected: bool | int
+) -> None:
+    body: dict[str, Any] = {
+        "pack_id": "campus_block_c",
+        "seed": 1,
+        "participants": PEOPLE,
+        "fault": CB7,
+    }
+    if "{sid}" in template:
+        sid = scenario(client, CB7)
+        path = template.replace("{sid}", sid)
+        if method == "GET":
+            request_body = None
+        elif path.endswith("/move"):
+            request_body = {"to": "IDF2"}
+        elif path.endswith("/observe"):
+            # The guard must first walk to the IDF to read its recorder.
+            if actor == "participant":
+                client.post(
+                    f"/sim/v1/scenarios/{sid}/move",
+                    json={"to": "IDF2"},
+                    headers=bearer("p_mahesh", sid),
+                )
+            request_body = {"probe_id": "nvr_screen"}
+        elif path.endswith("/act"):
+            request_body = {
+                "action": "reset_breaker",
+                "target": "CB_C2_7",
+                "capability": "invalid-capability",
+            }
+        elif path.endswith("/presence/check"):
+            request_body = {
+                "participant_id": "p_mahesh",
+                "token_id": "idf2_switch_label",
+                "answer": "AAA",
+            }
+        elif path.endswith("/reveal"):
+            client.post(f"/sim/v1/scenarios/{sid}/close", headers=OPERATOR)
+            request_body = None
+        elif path.endswith("/close"):
+            request_body = None
+        else:
+            request_body = None
+        headers = (
+            bearer("p_mahesh", sid)
+            if actor == "participant"
+            else OPERATOR
+            if actor == "operator"
+            else ORACLE
+            if actor == "oracle"
+            else {}
+        )
+    else:
+        sid = ""
+        path = template
+        request_body = body if method == "POST" else None
+        headers = (
+            bearer("p_mahesh", "sc_missing")
+            if actor == "participant"
+            else OPERATOR
+            if actor == "operator"
+            else ORACLE
+            if actor == "oracle"
+            else {}
+        )
+
+    response = client.request(method, path, json=request_body, headers=headers)
+    if expected is True:
+        assert response.status_code < 400, (
+            method,
+            template,
+            actor,
+            response.status_code,
+            response.text,
+        )
+    elif expected is False:
+        assert response.status_code == 401, (
+            method,
+            template,
+            actor,
+            response.status_code,
+            response.text,
+        )
+    else:
+        assert response.status_code == expected, (method, template, actor, response.text)
