@@ -130,6 +130,7 @@ class Options:
     skip_db: bool = False
     timeout_s: float = 60.0
     demo: bool = False
+    oidc_port: int = 8410
 
 
 def _port(value: str) -> int:
@@ -142,6 +143,7 @@ def _port(value: str) -> int:
 def parse_args(argv: Sequence[str] | None = None) -> Options:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--demo", action="store_true", help="start the local console with mock sign-in")
+    p.add_argument("--oidc-port", type=_port, default=8410)
     p.add_argument("--web", action="store_true", help="also start the Next.js dev server")
     p.add_argument("--core-port", type=_port, default=8000)
     p.add_argument("--sim-port", type=_port, default=8100)
@@ -152,12 +154,16 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     p.add_argument("--timeout", type=float, default=60.0, help="readiness timeout in seconds")
     a = p.parse_args(argv)
     a.web = a.web or a.demo
-    ports = [a.core_port, a.sim_port] + ([a.web_port] if a.web else []) + ([8410] if a.demo else [])
+    ports = [a.core_port, a.sim_port] + ([a.web_port] if a.web else [])
+    if a.demo:
+        ports.append(a.oidc_port)
     if len(set(ports)) != len(ports):
         p.error(f"ports must differ: {ports}")
     if a.timeout <= 0:
         p.error("--timeout must be positive")
-    return Options(a.core_port, a.sim_port, a.web_port, a.web, a.skip_db, a.timeout, a.demo)
+    return Options(
+        a.core_port, a.sim_port, a.web_port, a.web, a.skip_db, a.timeout, a.demo, a.oidc_port
+    )
 
 
 def say(msg: str) -> None:
@@ -294,8 +300,8 @@ def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, 
     if opts.demo:
         env.update(
             PRAMANA_MODE="dev",
-            OIDC_ISSUER="http://localhost:8410",
-            OIDC_DISCOVERY_URL="http://localhost:8410/.well-known/openid-configuration",
+            OIDC_ISSUER=f"http://localhost:{opts.oidc_port}",
+            OIDC_DISCOVERY_URL=f"http://localhost:{opts.oidc_port}/.well-known/openid-configuration",
             GOOGLE_OAUTH_CLIENT_ID="pramana-local",
             GOOGLE_OAUTH_CLIENT_SECRET="local-only",
             OIDC_REDIRECT_URL=f"http://localhost:{opts.web_port}/api/core/v1/auth/google/callback",
@@ -319,7 +325,12 @@ def children(opts: Options, env: dict[str, str]) -> list[Child]:
     ]
     if opts.demo:
         out.insert(
-            0, Child("oidc", [py, str(ROOT / "scripts" / "mock_oidc.py"), "--port", "8410"], env)
+            0,
+            Child(
+                "oidc",
+                [py, str(ROOT / "scripts" / "mock_oidc.py"), "--port", str(opts.oidc_port)],
+                env,
+            ),
         )
     if opts.web:
         npm = shutil.which("npm") or "npm"
@@ -370,7 +381,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         env = prepare(opts)
         procs = children(opts, env)
         checks = {
-            "oidc": "http://127.0.0.1:8410/.well-known/openid-configuration",
+            "oidc": f"http://127.0.0.1:{opts.oidc_port}/.well-known/openid-configuration",
             "sim": f"http://127.0.0.1:{opts.sim_port}/health",
             "core": f"http://127.0.0.1:{opts.core_port}/ready",
             "web": f"http://127.0.0.1:{opts.web_port}/",
