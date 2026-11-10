@@ -22,20 +22,28 @@ measured Gnani accuracy or latency numbers must not be published outside the tea
 | Default STT model | v2.5 unless v3.0 is requested | doc, src (pipecat `_prisma.py`) | We always send `model: prisma-v3.0` |
 | Unknown streaming model | Silently ignored; v2.5 used, no error | doc (stt-websocket) | We check the `connected.config` echo; `model_confirmed=false` is logged and returned to the client |
 | Streaming header names | Canonical: `language_code`, `model`, `format`, `keyterms`, `topic`. Legacy (`lang_code`, `x-model`, `x-format`) still accepted | doc | We send canonical names, plus `x-model` for robustness. PLAN.md's names were correct |
-| SDK/plugin header names | SDK sends `x-language-candidates` and `x-keywords`, which the docs never mention | src | Not used; we follow the docs |
-| Language candidates | v3.0: `language_code` = `indic-auto` or 1–4 comma-separated codes | doc | `LanguageProfile.stt_candidates` (1–4) maps straight to it |
-| `previous_text` on streaming | Contradictory: header table lists it, limits table says "REST only" | doc | Not sent on streaming; REST only |
+| SDK/plugin header names | `x-language-candidates` and `x-keywords` are not listed on the current realtime page | doc, src | The adapter retains these as a live-observed workaround; vendor support for them remains unconfirmed |
+| Language candidates | v3.0 documents `indic-auto` or 1–4 comma-separated codes | doc | A previously observed live rejection of the list led to `indic-auto` plus `x-language-candidates`; candidate enforcement needs live verification |
+| `previous_text` on streaming | The previous audio's transcript provides context | doc | The live question stream does not send it; using a question as previous text is an experiment, not an established contract |
 | Frames | Exactly 1,024 bytes of PCM s16le mono at real-time cadence | doc, src | `send_pcm` re-chunks and zero-pads the tail; test asserts `[1024, 1024, 1024]` |
 | Transcripts | Final-only; no interim results, no confidence, no word timestamps | doc | No ASR confidence exists; decision-critical confirmation must use re-asking or a second REST decode |
 | Short answers | High `x-min-segment-ms` silently drops "yes" | doc | We send 100 (the minimum) |
 | Session cap | 15 min, then `error` and close 1001 | doc | We report the real close code. **Bug found by test**: `websockets` ends iteration silently on 1001; fixed |
 | Errors | 401 key, 402 credit, 403 scope, 429 (no Retry-After), 504 upstream 5 s | doc | Typed `VOICE_*` codes; retry only 429/5xx/connection errors with 0.5/1/2 s backoff (Gnani's guidance) |
 | Concurrency | Per-organisation cap; the number is not published | doc | `GNANI_MAX_CONCURRENCY=1` until measured |
-| TTS | REST/SSE/WS with the same JSON body; WS takes one request at a time; no incremental text | doc | REST WAV for now (simplest playable artefact) |
-| TTS chunk format | Not documented whether WS/SSE chunks are WAV or raw; SDK strips a RIFF header from every chunk | doc + src + live | Live (2026-11-05): SSE with `container: raw` gives headerless PCM16 chunks (base64 in `chunk` events, `complete` at the end). Used for uncached questions; REST WAV is the fallback |
+| TTS | REST/SSE/WS with the same JSON body; WS takes one request at a time; no incremental text | doc | Streaming SSE serves uncached questions; REST WAV is a fallback |
+| TTS chunk format | SSE documents raw PCM output with `container: raw` and `linear_pcm`; audio is base64 in `chunk` events | doc + live | This configuration produced headerless PCM16 in the 2026-11-05 live check |
 | Voices | v3.0: 13 voices × 10 languages, **no Hinglish**; v2.5 Poorvi = `hi-en` | doc | `hi-en` is routed to timbre-v2.5/Poorvi; Marathi defaults to v3.0 Shivani (provisional, pending a listening test) |
 | Devanagari TTS | Auto-detect treats Devanagari as Hindi; Marathi must be explicit | doc | We always pass the language explicitly |
 | LiveKit plugin | Cannot select v3.0 | src | LiveKit is dropped as plan B (see VOICE_ARCHITECTURE.md) |
+
+Public documentation checked on 2026-11-10: [realtime STT](https://docs.gnani.ai/api/STT/stt-websocket),
+[Prisma v3](https://docs.gnani.ai/api/STT/models/prisma-v3), [TTS SSE](https://docs.gnani.ai/api/TTS/tts-sse),
+and [voice catalog](https://docs.gnani.ai/api/TTS/available-voices). The
+[challenge page](https://www.gnani.ai/internship) markets Prisma and Timbre v2.5. This project
+selects Prisma v3.0 for multilingual detection and code-mixing, and Timbre v3.0 for its multilingual
+voices; Hinglish TTS uses v2.5 Poorvi, which the catalog lists for `hi-en`. These choices do not
+establish measured quality or compliance with any account-specific model entitlement.
 
 ## Tested (protocol emulation, `services/core/tests/test_gnani_adapter.py`, 26 tests)
 
