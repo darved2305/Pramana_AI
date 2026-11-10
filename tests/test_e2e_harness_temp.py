@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from e2e.harness import Process, temporary_work_directory
 
 
@@ -81,3 +82,26 @@ def _kill_pid(pid: int) -> None:
     else:
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
+
+
+def test_e2e_work_directory_retries_while_a_log_is_briefly_locked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import e2e.harness as harness
+
+    real_rmtree = harness.shutil.rmtree
+    calls: list[int] = []
+
+    def locked_then_free(path: Path) -> None:
+        calls.append(1)
+        if len(calls) < 3:
+            raise PermissionError("[WinError 32] The process cannot access the file")
+        real_rmtree(path)
+
+    monkeypatch.setattr(harness.shutil, "rmtree", locked_then_free)
+    monkeypatch.setattr(harness.time, "sleep", lambda _seconds: None)
+    with temporary_work_directory(parent=tmp_path) as work:
+        work.joinpath("sim.log").write_text("held", encoding="utf-8")
+
+    assert len(calls) == 3
+    assert not work.exists()
