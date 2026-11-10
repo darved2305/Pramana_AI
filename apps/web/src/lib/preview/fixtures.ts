@@ -295,6 +295,7 @@ export const previewEvents: EventEnvelope[] = (() => {
     return { ...belief, hypotheses: hyps, open_world_probability: ow, observations_used: used };
   };
   const recorded = (o: Observation) => ({
+    observation_id: o.id,
     evidence: {
       participant_id: o.participant_id,
       probe_id: o.probe_id,
