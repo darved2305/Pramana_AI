@@ -1,0 +1,6 @@
+compiled hypotheses: 95
+pair hypotheses: 78
+pair prior mass: 0.010147 (1.0147%)
+single faults in catalogue: 15
+single faults with a modelled repair: 3 [('CB_MAIN_1', 'tripped'), ('CB_C2_5', 'tripped'), ('CB_C2_7', 'tripped')]
+upper bound on pair scenarios that can be fully resolved (both faults repairable, C(3,2)/C(15,2)): 0.0286 (2.86%)

@@ -1,0 +1,121 @@
+
+=== EPISODE E/60009 faults=(('GATEWAY', 'dead'), ('AP_3A', 'dead')) true_decisions=['IT_ONSITE_CORE', 'IT_REPLACE_AP_3A', 'MULTIPLE_FAULTS'] ===
+  ANSWER [initial diagnosis] p_reporter/internet_works@F2_CORRIDOR: truth=no, said=no
+  OBS [initial diagnosis] p_reporter/internet_works@F2_CORRIDOR=no used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_reporter' probe_id='wifi_status' location_id='F2_CORRIDOR' requires_move=False
+  ANSWER [initial diagnosis] p_reporter/wifi_status@F2_CORRIDOR: truth=stuck_connecting, said=stuck_connecting
+  OBS [initial diagnosis] p_reporter/wifi_status@F2_CORRIDOR=stuck_connecting used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_electrician' probe_id='wifi_status' location_id='MAINT_ROOM' requires_move=False
+  ANSWER [initial diagnosis] p_electrician/wifi_status@MAINT_ROOM: truth=stuck_connecting, said=stuck_connecting
+  OBS [initial diagnosis] p_electrician/wifi_status@MAINT_ROOM=stuck_connecting used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_electrician' probe_id='switch_leds' location_id='IDF1' requires_move=True
+  ANSWER [initial diagnosis] p_electrician/switch_leds@IDF1: truth=amber, said=amber
+  OBS [initial diagnosis] p_electrician/switch_leds@IDF1=amber used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_guard' probe_id='wan_led' location_id='IDF1' requires_move=True
+  ANSWER [initial diagnosis] p_guard/wan_led@IDF1: truth=off, said=off
+  OBS [initial diagnosis] p_guard/wan_led@IDF1=off used=True reason=committed
+  POLICY [initial diagnosis] -> Conclusion(decision='IT_ONSITE_CORE', confidence=0.9649940419108212, failed=False)
+  RESULT decision='IT_ONSITE_CORE' correct=True resolved=False repairs=0 extra_probes=0
+
+=== EPISODE E/60058 faults=(('SW_C2', 'dead'), ('CB_MAIN_1', 'tripped')) true_decisions=['DISPATCH_ELECTRICIAN_MAIN', 'IT_ONSITE_SW_C2', 'MULTIPLE_FAULTS'] ===
+  ANSWER [initial diagnosis] p_reporter/internet_works@F2_CORRIDOR: truth=no, said=no
+  OBS [initial diagnosis] p_reporter/internet_works@F2_CORRIDOR=no used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_reporter' probe_id='wifi_status' location_id='F2_CORRIDOR' requires_move=False
+  ANSWER [initial diagnosis] p_reporter/wifi_status@F2_CORRIDOR: truth=no_network, said=no_network
+  OBS [initial diagnosis] p_reporter/wifi_status@F2_CORRIDOR=no_network used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_reporter' probe_id='corridor_lights' location_id='F2_CORRIDOR' requires_move=False
+  ANSWER [initial diagnosis] p_reporter/corridor_lights@F2_CORRIDOR: truth=on, said=on
+  OBS [initial diagnosis] p_reporter/corridor_lights@F2_CORRIDOR=on used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_it' probe_id='internet_works' location_id='MAINT_ROOM' requires_move=False
+  ANSWER [initial diagnosis] p_it/internet_works@MAINT_ROOM: truth=no, said=no
+  OBS [initial diagnosis] p_it/internet_works@MAINT_ROOM=no used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_it' probe_id='wifi_status' location_id='MAINT_ROOM' requires_move=False
+  ANSWER [initial diagnosis] p_it/wifi_status@MAINT_ROOM: truth=no_network, said=no_network
+  OBS [initial diagnosis] p_it/wifi_status@MAINT_ROOM=no_network used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_guard' probe_id='wifi_status' location_id='GUARD_DESK' requires_move=False
+  ANSWER [initial diagnosis] p_guard/wifi_status@GUARD_DESK: truth=no_network, said=no_network
+  OBS [initial diagnosis] p_guard/wifi_status@GUARD_DESK=no_network used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_guard' probe_id='fibre_light' location_id='IDF1' requires_move=True
+  ANSWER [initial diagnosis] p_guard/fibre_light@IDF1: truth=off, said=green
+  OBS [initial diagnosis] p_guard/fibre_light@IDF1=green used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_guard' probe_id='switch_leds' location_id='IDF1' requires_move=False
+  ANSWER [initial diagnosis] p_guard/switch_leds@IDF1: truth=off, said=amber
+  OBS [initial diagnosis] p_guard/switch_leds@IDF1=amber used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_reporter' probe_id='ap_light' location_id='F2_CORRIDOR' requires_move=False
+  ANSWER [initial diagnosis] p_reporter/ap_light@F2_CORRIDOR: truth=off, said=off
+  OBS [initial diagnosis] p_reporter/ap_light@F2_CORRIDOR=off used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_it' probe_id='switch_leds' location_id='IDF2' requires_move=True
+  ANSWER [initial diagnosis] p_it/switch_leds@IDF2: truth=off, said=off
+  OBS [initial diagnosis] p_it/switch_leds@IDF2=off used=True reason=committed
+  POLICY [initial diagnosis] -> Conclusion(decision='MULTIPLE_FAULTS', confidence=0.9096744065081964, failed=False)
+  REPAIR request [initial diagnosis] action=reset_breaker target=CB_MAIN_1
+  REPAIR state p_fixed=0.001 post_obs=0
+  PLAN [verification 1] not_verified rule='verification_failed' p_fixed=0.001 action=None decision=None
+  REOPEN [verification 1] p_fixed=0.001 post_obs=0
+  PLAN [follow-up diagnosis 1] decide rule='no_value_confident_enough' p_fixed=- action=None decision='MULTIPLE_FAULTS'
+  PLAN [follow-up diagnosis 1] decide rule='no_value_confident_enough' p_fixed=- action=None decision='MULTIPLE_FAULTS'
+  POLICY [follow-up diagnosis 1] -> Conclusion(decision='MULTIPLE_FAULTS', confidence=0.8796554320540351, failed=False)
+  RESULT decision='MULTIPLE_FAULTS' correct=True resolved=False repairs=1 extra_probes=0
+
+=== EPISODE E/60098 faults=(('ISP_LINK', 'down'), ('CB_MAIN_1', 'tripped')) true_decisions=['DISPATCH_ELECTRICIAN_MAIN', 'ESCALATE_ISP', 'MULTIPLE_FAULTS'] ===
+  ANSWER [initial diagnosis] p_reporter/internet_works@F1_LOBBY: truth=no, said=no
+  OBS [initial diagnosis] p_reporter/internet_works@F1_LOBBY=no used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_student_1' probe_id='wifi_status' location_id='F2_R210' requires_move=False
+  ANSWER [initial diagnosis] p_student_1/wifi_status@F2_R210: truth=stuck_connecting, said=stuck_connecting
+  OBS [initial diagnosis] p_student_1/wifi_status@F2_R210=stuck_connecting used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_electrician' probe_id='wifi_status' location_id='MAINT_ROOM' requires_move=False
+  ANSWER [initial diagnosis] p_electrician/wifi_status@MAINT_ROOM: truth=no_network, said=no_network
+  OBS [initial diagnosis] p_electrician/wifi_status@MAINT_ROOM=no_network used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_electrician' probe_id='breaker_main_1' location_id='IDF1' requires_move=True
+  ANSWER [initial diagnosis] p_electrician/breaker_main_1@IDF1: truth=tripped, said=tripped
+  OBS [initial diagnosis] p_electrician/breaker_main_1@IDF1=tripped used=True reason=committed
+  POLICY [initial diagnosis] -> Conclusion(decision='DISPATCH_ELECTRICIAN_MAIN', confidence=0.9467803773821596, failed=False)
+  REPAIR request [initial diagnosis] action=reset_breaker target=CB_MAIN_1
+  REPAIR state p_fixed=0.852 post_obs=0
+  PLAN [verification 1] ask rule='positive_value' p_fixed=0.852 action={'participant_id': 'p_electrician', 'probe_id': 'switch_leds', 'location_id': 'IDF1', 'requires_move': False} decision=None
+  ANSWER [verification 1] p_electrician/switch_leds@IDF1: truth=green, said=green
+  OBS [verification 1] p_electrician/switch_leds@IDF1=green used=True reason=after repair: P(fixed) 0.852 -> 0.970
+  PLAN [verification 1] verified rule='verification_confirmed' p_fixed=0.970 action=None decision=None
+  RESULT decision='DISPATCH_ELECTRICIAN_MAIN' correct=True resolved=False repairs=1 extra_probes=1
+
+=== EPISODE E/60236 faults=(('CB_C2_7', 'tripped'), ('AP_3A', 'dead')) true_decisions=['DISPATCH_ELECTRICIAN_DB_C2', 'IT_REPLACE_AP_3A', 'MULTIPLE_FAULTS'] ===
+  ANSWER [initial diagnosis] p_reporter/internet_works@F2_R205: truth=no, said=no
+  OBS [initial diagnosis] p_reporter/internet_works@F2_R205=no used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_reporter' probe_id='wifi_status' location_id='F2_R205' requires_move=False
+  ANSWER [initial diagnosis] p_reporter/wifi_status@F2_R205: truth=no_network, said=no_network
+  OBS [initial diagnosis] p_reporter/wifi_status@F2_R205=no_network used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_student_1' probe_id='wifi_status' location_id='F3_R310' requires_move=False
+  ANSWER [initial diagnosis] p_student_1/wifi_status@F3_R310: truth=no_network, said=connected
+  OBS [initial diagnosis] p_student_1/wifi_status@F3_R310=connected used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_electrician' probe_id='internet_works' location_id='MAINT_ROOM' requires_move=False
+  ANSWER [initial diagnosis] p_electrician/internet_works@MAINT_ROOM: truth=yes, said=yes
+  OBS [initial diagnosis] p_electrician/internet_works@MAINT_ROOM=yes used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_reporter' probe_id='room_socket' location_id='F2_R205' requires_move=False
+  ANSWER [initial diagnosis] p_reporter/room_socket@F2_R205: truth=on, said=on
+  OBS [initial diagnosis] p_reporter/room_socket@F2_R205=on used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_student_1' probe_id='internet_works' location_id='F3_R310' requires_move=False
+  ANSWER [initial diagnosis] p_student_1/internet_works@F3_R310: truth=no, said=no
+  OBS [initial diagnosis] p_student_1/internet_works@F3_R310=no used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_it' probe_id='internet_works' location_id='MAINT_ROOM' requires_move=False
+  ANSWER [initial diagnosis] p_it/internet_works@MAINT_ROOM: truth=yes, said=yes
+  OBS [initial diagnosis] p_it/internet_works@MAINT_ROOM=yes used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_electrician' probe_id='nvr_screen' location_id='IDF2' requires_move=True
+  ANSWER [initial diagnosis] p_electrician/nvr_screen@IDF2: truth=off, said=on
+  OBS [initial diagnosis] p_electrician/nvr_screen@IDF2=on used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_electrician' probe_id='switch_leds' location_id='IDF2' requires_move=False
+  ANSWER [initial diagnosis] p_electrician/switch_leds@IDF2: truth=off, said=off
+  OBS [initial diagnosis] p_electrician/switch_leds@IDF2=off used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_electrician' probe_id='breaker_c2_7' location_id='DB_C2_PANEL' requires_move=True
+  ANSWER [initial diagnosis] p_electrician/breaker_c2_7@DB_C2_PANEL: truth=tripped, said=tripped
+  OBS [initial diagnosis] p_electrician/breaker_c2_7@DB_C2_PANEL=tripped used=True reason=committed
+  POLICY [initial diagnosis] -> participant_id='p_it' probe_id='nvr_screen' location_id='IDF2' requires_move=True
+  ANSWER [initial diagnosis] p_it/nvr_screen@IDF2: truth=off, said=off
+  OBS [initial diagnosis] p_it/nvr_screen@IDF2=off used=True reason=committed
+  POLICY [initial diagnosis] -> Conclusion(decision='DISPATCH_ELECTRICIAN_DB_C2', confidence=0.9654263794933227, failed=False)
+  REPAIR request [initial diagnosis] action=reset_breaker target=CB_C2_7
+  REPAIR state p_fixed=0.867 post_obs=0
+  PLAN [verification 1] ask rule='positive_value' p_fixed=0.867 action={'participant_id': 'p_it', 'probe_id': 'switch_leds', 'location_id': 'IDF2', 'requires_move': False} decision=None
+  ANSWER [verification 1] p_it/switch_leds@IDF2: truth=green, said=green
+  OBS [verification 1] p_it/switch_leds@IDF2=green used=True reason=after repair: P(fixed) 0.867 -> 0.987
+  PLAN [verification 1] verified rule='verification_confirmed' p_fixed=0.987 action=None decision=None
+  RESULT decision='DISPATCH_ELECTRICIAN_DB_C2' correct=True resolved=False repairs=1 extra_probes=1
