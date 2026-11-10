@@ -59,7 +59,8 @@ not enough.
 The code integrates Gnani speech services. The local practice run uses no Gnani key. Prior live
 integration runs include synthetic voice bots and one documented mixed run with a team member on an
 Android phone. The current reproducible local run is text mode with simulator cards, not a live
-speech recording. See [DEMO.md](DEMO.md) and the committed
+speech recording. [Fill from the take: whether the speakers were real people or synthetic voice bots.]
+See [DEMO.md](DEMO.md) and the committed
 [Nov 10 rehearsal timeline](../eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt) for its exact
 observed sequence. See [EVALUATION.md](EVALUATION.md) for metric definitions, denominators,
 caveats, and the saved reports.
@@ -167,7 +168,7 @@ entry only when the selected take and any personal eligibility facts support it.
 | Practical impact | The product models campus Wi-Fi and power troubleshooting and includes authorization and repair verification. The current committed rehearsal is simulated. | No real-site pilot or measured field impact is documented. |
 | Creativity | The engine chooses observations across participants, models uncertainty in their reports, seals simulated truth, and can abstain. Evidence is in the engine, simulator, ADRs, and generated rehearsal. | Describe the mechanism; do not claim it is first or unique. |
 | 60-second demo | The demo runbook has a 60-second shot list and a current reproducible local run. | No selected human-recorded public cut is documented. Submit only a truthful single take with take-specific verification. |
-| Noisy telephonic audio | The project has a voice path and a documented phone integration run. | No real telephone-noise robustness result is documented. Do not target this criterion without permitted real evidence. |
+| Noisy telephonic audio | The project has a voice path and one documented mixed run with a team member on an Android phone over a tunnel. That run was not a telephone-network test. | No real telephone-noise robustness result is documented. Do not target this criterion without permitted real evidence. |
 | Duo award | The repo records two planned contributors. | Team membership and eligibility are personal facts that the team must confirm. |
 | Solo award | No solo-entry fact is established by repository evidence. | Human-owned; do not claim. |
 | Tier 2/3 town award | No qualifying town fact is established by repository evidence. | Human-owned; do not claim. |

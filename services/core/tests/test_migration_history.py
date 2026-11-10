@@ -16,3 +16,4 @@ def test_migrations_have_one_head_after_production_merge() -> None:
     assert script.get_current_head() == heads[0]
     assert script.get_revision("0022").down_revision == "0021"
     assert script.get_revision("0023").down_revision == "0022"
+    assert script.get_revision("0024").down_revision == "0023"

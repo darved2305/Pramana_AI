@@ -38,5 +38,55 @@ def test_packet_has_context_for_all_three_languages_and_localized_sources() -> N
         for line in sheet.splitlines()
         if line.startswith("| ") and not line.startswith(("| Language |", "| ---"))
     ]
-    assert rows
+    assert len(rows) == 1053
     assert all(line.endswith("| unchecked |") for line in rows)
+
+
+def test_every_user_facing_devanagari_source_is_in_the_packet_or_excluded() -> None:
+    """A new Hindi or Marathi source file must be reviewed or consciously excluded."""
+    sheet = review.render_review_sheet()
+    scanned_roots = (
+        "apps/web/src",
+        "packages",
+        "packs",
+        "services/core/src",
+        "services/core/alembic",
+    )
+    suffixes = {".py", ".ts", ".tsx", ".js", ".mjs", ".json", ".yaml", ".yml"}
+    missing: list[str] = []
+    for root in scanned_roots:
+        for path in sorted((ROOT / root).rglob("*")):
+            relative = path.relative_to(ROOT).as_posix()
+            if path.suffix not in suffixes or not path.is_file():
+                continue
+            if "__pycache__" in relative or "/tests/" in relative or "tests-real" in relative:
+                continue
+            if path.name.startswith("test_") or relative in review.RECOGNITION_ONLY:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if review.DEVANAGARI.search(text) and f"`{relative}`" not in sheet:
+                missing.append(relative)
+    assert missing == [], f"Devanagari sources missing from the packet: {missing}"
+
+
+def test_committed_demo_answer_transcripts_are_reviewable() -> None:
+    sheet = review.render_review_sheet()
+    source = "`eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line "
+    rows = [
+        line
+        for line in sheet.splitlines()
+        if source in line and "synthetic text-mode simulator-card answer" in line
+    ]
+    assert len(rows) == 6
+    assert all(line.startswith("| Hinglish |") for line in rows)
+    assert all(line.endswith("| unchecked |") for line in rows)
+    assert all("| not spoken |" in line for line in rows)
+    for phrase in (
+        "NAVA-WiFi dikh hi nahi raha",
+        "connected hai",
+        "lights green hain",
+        "haan chalu hai",
+        "breaker neeche hai, trip hai",
+    ):
+        assert any(f"| {phrase} |" in line for line in rows)
+    assert sum("| connected hai |" in line for line in rows) == 2

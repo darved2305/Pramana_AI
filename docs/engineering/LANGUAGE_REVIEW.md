@@ -5,9 +5,14 @@
 record their role and date, and propose a corrected line where needed. No native review
 or endorsement is implied by generating this packet.
 
-The packet covers localized values in the shipped packs and builder templates, visible
-web copy and consent email, preview transcripts, voice consent, and runtime campus
-questions. Templates retain placeholders so reviewers can see the actual source wording.
+The packet covers localized values in the shipped packs and builder templates, the
+neutral practice model (`services/core/alembic/data/sandbox_v1.json` and migration 0021),
+visible web copy and consent email, preview transcripts, voice consent, and runtime
+campus questions, and synthetic answers in the committed text-mode demo timeline.
+Templates retain placeholders so reviewers can see the actual source wording.
+Answer-matching vocabulary in `services/core/src/pramana_core/language/` (extraction,
+intake, presence, lint) is matched against answers and never displayed or spoken,
+so it is not listed. Developer scripts under `scripts/` are not product copy.
 Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the language.
 
 | Language | Source path and context | Exact display or spoken text | Spoken rendering | Reviewer status |
@@ -307,8 +312,55 @@ Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the lan
 | Hindi | `packs/templates/building_water_supply.yaml`: probes.7.templates.hi | {place} में संप में आने वाली नगरपालिका की पाइप देखिए। पानी आ रहा है? हाँ या नहीं? | not spoken | unchecked |
 | Hindi | `packs/templates/building_water_supply.yaml`: probes.8.templates.hi | {place} पर PUMP लिखा ब्रेकर ढूँढिए। उसका स्विच ऊपर है, या नीचे ट्रिप हुआ है? | not spoken | unchecked |
 | Hindi | `packs/templates/building_water_supply.yaml`: probes.9.templates.hi | {place} में FLOOR 1 लिखा वाल्व ढूँढिए। हैंडल पाइप के साथ सीधा है (खुला) या आड़ा है (बंद)? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: actions.0.instructions.hi | आपको {place} पर {target} रीसेट करने की अनुमति मिल गई है। हो जाए तो बताइए। | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.0.label.hi | गार्ड डेस्क | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.1.label.hi | मेंटेनेंस रूम | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.10.label.hi | रूम 304 | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.11.label.hi | रूम 310 | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.2.label.hi | ग्राउंड फ़्लोर की लॉबी | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.3.label.hi | नेटवर्क क्लोज़ेट IDF-1 | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.4.label.hi | दूसरी मंज़िल का कॉरिडोर | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.5.label.hi | रूम 205 | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.6.label.hi | रूम 210 | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.7.label.hi | नेटवर्क क्लोज़ेट IDF-2 | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.8.label.hi | डिस्ट्रीब्यूशन बोर्ड DB-C2 | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: locations.9.label.hi | तीसरी मंज़िल का कॉरिडोर | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: move_templates.hi | क्या आप {place} तक जा सकते हैं? वहाँ पहुँचकर:  | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.0.templates.hi | एक छोटी सी जाँच, आप {place} में हैं: नेटवर्क स्विच के सफ़ेद लेबल के आख़िरी तीन अक्षर पढ़िए। | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.1.templates.hi | एक छोटी सी जाँच, आप {place} में हैं: रैक के दरवाज़े के लेबल के आख़िरी तीन अक्षर पढ़िए। | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.2.templates.hi | एक छोटी सी जाँच, आप {place} पर हैं: पैनल के दरवाज़े के अंदर वाले लेबल के आख़िरी तीन अक्षर पढ़िए। | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.0.templates.hi | आपके फ़ोन पर हॉस्टल वाई-फ़ाई से कोई सामान्य वेबसाइट खुल रही है? हाँ या नहीं बताइए। | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.1.templates.hi | फ़ोन की वाई-फ़ाई सूची खोलिए। NAVA-WiFi दिख ही नहीं रहा, कनेक्ट होने पर अटका है, या कनेक्टेड है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.10.templates.hi | {place} पर, बिना कुछ छुए, ब्रेकर नंबर 5 ऊपर है या ट्रिप होकर नीचे है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.11.templates.hi | {place} में, बिना कुछ छुए, MAIN-1 लिखा ब्रेकर ऊपर है या ट्रिप होकर नीचे है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.12.templates.hi | {place} में दीवार के सॉकेट में फ़ोन चार्जर लगाइए। क्या फ़ोन चार्ज होने लगता है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.13.templates.hi | {place} में ONT लिखा छोटा सफ़ेद फ़ाइबर डिब्बा ढूँढिए। उसकी PON लाइट हरी है, लाल है, या बंद? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.2.templates.hi | फ़ोन में 'IP test page' नाम का बुकमार्क खोलिए। क्या वह पेज खुलता है? हाँ या नहीं? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.3.templates.hi | बाहर कॉरिडोर में देखिए। कॉरिडोर की लाइटें जल रही हैं या बंद हैं? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.4.templates.hi | {place} में छत पर एक सफ़ेद वाई-फ़ाई डिब्बा है। उसकी छोटी लाइट जल रही है या बंद है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.5.templates.hi | {place} में रैक वाले नेटवर्क स्विच को देखिए। उसकी लाइटें हरी हैं, नारंगी हैं, या बिल्कुल बंद? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.6.templates.hi | {place} में सीसीटीवी रिकॉर्डर की छोटी स्क्रीन है। वह स्क्रीन चालू है या बंद? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.7.templates.hi | {place} की लाइट का स्विच चालू करने पर छत की लाइट जलती है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.8.templates.hi | {place} में GATEWAY लिखा राउटर ढूँढिए। INTERNET वाली लाइट हरी है, लाल है, या बंद? | not spoken | unchecked |
+| Hindi | `services/core/alembic/data/sandbox_v1.json`: probes.9.templates.hi | {place} पर, बिना कुछ छुए, ब्रेकर नंबर 7 ऊपर है या ट्रिप होकर नीचे है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 179, practice model copy | क्या आपके फ़ोन पर कोई सामान्य वेबसाइट खुलती है? हाँ या नहीं बताइए। | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 187, practice model copy | अपने फ़ोन पर उपलब्ध नेटवर्क की सूची खोलें। क्या साइट का नेटवर्क नहीं दिख रहा, जुड़ने की कोशिश कर रहा है, या जुड़ चुका है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 198, practice model copy | अपने फ़ोन पर जाँच वाला पेज खोलें। क्या वह खुलता है? हाँ या नहीं? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 205, practice model copy | छत पर लगे छोटे उपकरण को देखें। उसकी बत्ती चालू है या बंद? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 212, practice model copy | पास के गलियारे में देखें। वहाँ की बत्तियाँ जल रही हैं या बंद हैं? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 220, practice model copy | कई नेटवर्क तारों वाले डिब्बे को देखें। उसकी छोटी बत्तियाँ हरी, नारंगी, या बंद हैं? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 228, practice model copy | सुरक्षा कैमरे देखने वाली छोटी स्क्रीन को देखें। वह चालू है या बंद? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 235, practice model copy | बत्ती का स्विच चालू करने पर छत की बत्ती जलती है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 242, practice model copy | इंटरनेट राउटर देखें। INTERNET लिखी बत्ती हरी, लाल, या बंद है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 250, practice model copy | बिना कुछ छुए, उपकरण कक्ष 2 का बिजली का स्विच ऊपर है या नीचे? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 257, practice model copy | बिना कुछ छुए, लाइटों का बिजली का स्विच ऊपर है या नीचे? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 264, practice model copy | बिना कुछ छुए, मुख्य बिजली का स्विच ऊपर है या नीचे? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 271, practice model copy | फ़ोन का चार्जर लगाएँ। क्या फ़ोन चार्ज होने लगता है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 278, practice model copy | इंटरनेट कनेक्शन वाले डिब्बे को देखें। उसकी बत्ती हरी, लाल, या बंद है? | not spoken | unchecked |
+| Hindi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 309, practice model copy | आप {place} में हैं। उपकरण के लेबल के आख़िरी तीन अक्षर पढ़िए। | not spoken | unchecked |
 | Hindi | `services/core/src/pramana_core/consent.py`: consent email body, language hi | साइट टीम जानना चाहती है कि जाँच के दौरान Pramana आपसे वेब पर सवाल पूछ सकता है या नहीं.<br><br>Apna faisla dene ke liye yahan kholen:<br>{CONSENT_LINK}<br><br>Aap haan ya mana kar sakte hain. Faisla aapka hai. | not spoken | unchecked |
 | Hindi | `services/core/src/pramana_core/consent.py`: consent email subject, language hi | Pramana se sawal paane ki aapki marzi | not spoken | unchecked |
+| Hindi | `services/core/src/pramana_core/language/realize.py`: localized mapping at line 12.hi | एक बार पक्का कर लेते हैं:  | not spoken | unchecked |
 | Hindi | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 37.hi | गेटवे | not spoken | unchecked |
 | Hindi | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 38.hi | इंटरनेट | not spoken | unchecked |
 | Hindi | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 39.hi | मेन | not spoken | unchecked |
@@ -322,9 +374,42 @@ Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the lan
 | Hindi or Marathi, classify | `apps/web/src/app/consent/[token]/ConsentForm.tsx`: line 44: refuse: "नाही, मी सहमत नाही", | नाही, मी सहमत नाही | not spoken | unchecked |
 | Hindi or Marathi, classify | `apps/web/src/app/consent/[token]/ConsentForm.tsx`: line 47: unavailable: "Pramana शी संपर्क होऊ शकला नाही. इंटरनेट कनेक्शन तपासून पुन्हा प्रयत्न करा.", | Pramana शी संपर्क होऊ शकला नाही. इंटरनेट कनेक्शन तपासून पुन्हा प्रयत्न करा. | not spoken | unchecked |
 | Hindi or Marathi, classify | `apps/web/src/app/consent/[token]/ConsentForm.tsx`: line 50: working: "तुमचा निर्णय जतन करत आहोत...", | तुमचा निर्णय जतन करत आहोत... | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 237, practice model copy | दिवा लावल्यावर छताचा दिवा लागतो का? | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 273, practice model copy | फोनचा चार्जर लावा. फोन चार्ज व्हायला लागतो का? | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 294, practice model copy | कृपया {place} पर जाएँ। वहाँ पहुँचकर:  | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 296, practice model copy | कृपया {place} येथे जा. तिथे पोहोचल्यावर:  | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 45, practice model copy | साइट का रिसेप्शन | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 45, practice model copy | साइटचे रिसेप्शन | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 46, practice model copy | उपकरण कक्ष | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 49, practice model copy | भूतल की लॉबी | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 51, practice model copy | तळमजल्याची लॉबी | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 55, practice model copy | पहले तल का उपकरण कक्ष | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 57, practice model copy | पहिल्या मजल्यावरील उपकरण कक्ष | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 61, practice model copy | दूसरे तल का गलियारा | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 63, practice model copy | दुसऱ्या मजल्यावरील कॉरिडॉर | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 65, practice model copy | कामाची जागा 205 | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 65, practice model copy | कार्य क्षेत्र 205 | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 66, practice model copy | कामाची जागा 210 | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 66, practice model copy | कार्य क्षेत्र 210 | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 69, practice model copy | दूसरे तल का उपकरण कक्ष | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 71, practice model copy | दुसऱ्या मजल्यावरील उपकरण कक्ष | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 73, practice model copy | बिजली का पैनल | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 73, practice model copy | विद्युत पॅनेल | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 76, practice model copy | तीसरे तल का गलियारा | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 78, practice model copy | तिसऱ्या मजल्यावरील कॉरिडॉर | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 80, practice model copy | कामाची जागा 304 | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 80, practice model copy | कार्य क्षेत्र 304 | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 81, practice model copy | कामाची जागा 310 | not spoken | unchecked |
+| Hindi or Marathi, classify | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 81, practice model copy | कार्य क्षेत्र 310 | not spoken | unchecked |
 | Hinglish | `apps/web/src/lib/builder/description.ts`: line 123, language key hi-en | {place} mein, kya lights jal rahi hain? | not spoken | unchecked |
 | Hinglish | `apps/web/src/lib/preview/fixtures.ts`: line 136: transcript: "WiFi list mein NAVA-WiFi dikh hi nahi raha.", | WiFi list mein NAVA-WiFi dikh hi nahi raha. | not spoken | unchecked |
 | Hinglish | `apps/web/src/lib/preview/fixtures.ts`: line 149: transcript: "Mere roommate ka phone connected dikha raha hai shayad.", | Mere roommate ka phone connected dikha raha hai shayad. | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 11, synthetic text-mode simulator-card answer | breaker neeche hai, trip hai | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 16, synthetic text-mode simulator-card answer | connected hai | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 3, synthetic text-mode simulator-card answer | NAVA-WiFi dikh hi nahi raha | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 5, synthetic text-mode simulator-card answer | connected hai | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 7, synthetic text-mode simulator-card answer | lights green hain | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 9, synthetic text-mode simulator-card answer | haan chalu hai | not spoken | unchecked |
 | Hinglish | `packages/domain/src/pramana_domain/builder.py`: localized mapping at line 372.hi-en | Kya aap {place} tak ja sakte hain? Wahan pahunch kar:  | not spoken | unchecked |
 | Hinglish | `packages/domain/src/pramana_domain/library.py`: localized mapping at line 101.hi-en | {place} mein {name} ki power light dekhiye. Woh on hai, ya off? | not spoken | unchecked |
 | Hinglish | `packages/domain/src/pramana_domain/library.py`: localized mapping at line 117.hi-en | {place} mein {name} ki screen dekhiye. Woh jal rahi hai, ya blank hai? | not spoken | unchecked |
@@ -609,6 +694,26 @@ Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the lan
 | Hinglish | `packs/templates/building_water_supply.yaml`: probes.7.templates.hi-en | {place} mein sump mein aane wali municipal pipe dekhiye. Paani aa raha hai? Haan ya nahi? | not spoken | unchecked |
 | Hinglish | `packs/templates/building_water_supply.yaml`: probes.8.templates.hi-en | {place} pe PUMP likha breaker dhoondiye. Uska switch upar hai, ya neeche trip hua hai? | not spoken | unchecked |
 | Hinglish | `packs/templates/building_water_supply.yaml`: probes.9.templates.hi-en | {place} mein FLOOR 1 likha valve dhoondiye. Handle pipe ke saath seedha hai (khula) ya aada hai (band)? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: actions.0.instructions.hi-en | Aapko {place} pe {target} reset karne ki permission mil gayi hai. Ho jaye toh bataiye. | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: move_templates.hi-en | Kya aap {place} tak ja sakte hain? Wahan pahunch kar:  | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.0.templates.hi-en | Ek chhota sa check, aap {place} mein hain: network switch ke white label ke aakhri teen akshar padhiye. | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.1.templates.hi-en | Ek chhota sa check, aap {place} mein hain: rack ke darwaze ke label ke aakhri teen akshar padhiye. | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.2.templates.hi-en | Ek chhota sa check, aap {place} pe hain: panel ke darwaze ke andar wale label ke aakhri teen akshar padhiye. | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.0.templates.hi-en | Aapke phone pe hostel WiFi se koi normal website khul rahi hai? Haan ya nahi batayiye. | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.1.templates.hi-en | Phone ki WiFi list kholiye. NAVA-WiFi dikh hi nahi raha, connecting pe atka hai, ya connected hai? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.10.templates.hi-en | {place} pe, bina kuch chhue, breaker number 5 upar hai ya trip hokar neeche hai? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.11.templates.hi-en | {place} mein, bina kuch chhue, MAIN-1 likha breaker upar hai ya trip hokar neeche hai? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.12.templates.hi-en | {place} mein deewar ke socket mein phone charger lagaiye. Kya phone charge hone lagta hai? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.13.templates.hi-en | {place} mein ONT likha chhota white fibre box dhoondhiye. Uski PON light green hai, red hai, ya band? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.2.templates.hi-en | Phone mein 'IP test page' naam ka bookmark kholiye. Kya woh page khulta hai? Haan ya nahi? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.3.templates.hi-en | Bahar corridor mein dekhiye. Corridor ki lights on hain ya off? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.4.templates.hi-en | {place} mein chhat pe ek white WiFi box hai. Uski chhoti light on hai ya off? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.5.templates.hi-en | {place} mein rack wale network switch ko dekhiye. Uski lights green hain, orange hain, ya bilkul band? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.6.templates.hi-en | {place} mein CCTV recorder ki chhoti screen hai. Woh screen on hai ya off? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.7.templates.hi-en | {place} ki light ka switch on karne par chhat ki light jalti hai? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.8.templates.hi-en | {place} mein GATEWAY likha router dhoondhiye. INTERNET wali light green hai, red hai, ya band? | not spoken | unchecked |
+| Hinglish | `services/core/alembic/data/sandbox_v1.json`: probes.9.templates.hi-en | {place} pe, bina kuch chhue, breaker number 7 upar hai ya trip hokar neeche hai? | not spoken | unchecked |
+| Hinglish | `services/core/src/pramana_core/language/realize.py`: localized mapping at line 12.hi-en | Ek baar pakka kar lete hain:  | not spoken | unchecked |
 | Hinglish | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 37.hi-en | gateway | not spoken | unchecked |
 | Hinglish | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 38.hi-en | internet | not spoken | unchecked |
 | Hinglish | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 39.hi-en | main | not spoken | unchecked |
@@ -912,8 +1017,53 @@ Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the lan
 | Marathi | `packs/templates/building_water_supply.yaml`: probes.7.templates.mr | {place} मध्ये संपमध्ये येणारा महापालिकेचा पाइप बघा. पाणी येतंय का? हो की नाही? | not spoken | unchecked |
 | Marathi | `packs/templates/building_water_supply.yaml`: probes.8.templates.mr | {place} वर PUMP लिहिलेला ब्रेकर शोधा. त्याचा स्विच वर आहे, की खाली ट्रिप झालाय? | not spoken | unchecked |
 | Marathi | `packs/templates/building_water_supply.yaml`: probes.9.templates.mr | {place} मध्ये FLOOR 1 लिहिलेला व्हॉल्व शोधा. हँडल पाइपच्या बाजूने सरळ आहे (उघडा) की आडवा आहे (बंद)? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: actions.0.instructions.mr | तुम्हाला {place} येथे {target} रीसेट करण्याची परवानगी मिळाली आहे. झाल्यावर सांगा. | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.0.label.mr | गार्ड डेस्क | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.1.label.mr | मेंटेनन्स रूम | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.10.label.mr | खोली 304 | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.11.label.mr | खोली 310 | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.2.label.mr | तळमजल्याची लॉबी | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.3.label.mr | नेटवर्क खोली IDF-1 | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.4.label.mr | दुसऱ्या मजल्याचा कॉरिडॉर | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.5.label.mr | खोली 205 | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.6.label.mr | खोली 210 | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.7.label.mr | नेटवर्क खोली IDF-2 | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.8.label.mr | डिस्ट्रिब्युशन बोर्ड DB-C2 | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: locations.9.label.mr | तिसऱ्या मजल्याचा कॉरिडॉर | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: move_templates.mr | तुम्ही {place} पर्यंत जाऊ शकाल का? तिथे पोहोचल्यावर:  | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.0.templates.mr | एक छोटी तपासणी, तुम्ही {place} मध्ये आहात: नेटवर्क स्विचच्या पांढऱ्या लेबलवरची शेवटची तीन अक्षरं वाचा. | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.1.templates.mr | एक छोटी तपासणी, तुम्ही {place} मध्ये आहात: रॅकच्या दरवाज्यावरच्या लेबलची शेवटची तीन अक्षरं वाचा. | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: presence_tokens.2.templates.mr | एक छोटी तपासणी, तुम्ही {place} जवळ आहात: पॅनलच्या दरवाज्याच्या आतल्या लेबलची शेवटची तीन अक्षरं वाचा. | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.0.templates.mr | तुमच्या फोनवर हॉस्टेलच्या वाय-फायवर एखादी साधी वेबसाइट उघडते का? हो किंवा नाही सांगा. | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.1.templates.mr | फोनमधली वाय-फाय यादी उघडा. NAVA-WiFi दिसतच नाही, कनेक्ट होताना अडकलंय, की कनेक्टेड आहे? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.10.templates.mr | {place} वर, कशालाही हात न लावता, ब्रेकर नंबर 5 वर आहे की ट्रिप होऊन खाली आहे? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.11.templates.mr | {place} मध्ये, कशालाही हात न लावता, MAIN-1 लिहिलेला ब्रेकर वर आहे की ट्रिप होऊन खाली आहे? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.12.templates.mr | {place} मध्ये भिंतीतल्या सॉकेटला फोनचा चार्जर लावा. फोन चार्ज व्हायला लागतो का? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.13.templates.mr | {place} मध्ये ONT लिहिलेला छोटा पांढरा फायबर डबा शोधा. त्याचा PON दिवा हिरवा आहे, लाल आहे, की बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.2.templates.mr | फोनमधला 'IP test page' नावाचा बुकमार्क उघडा. ते पान उघडतं का? हो की नाही? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.3.templates.mr | बाहेर कॉरिडॉरमध्ये बघा. कॉरिडॉरमधले दिवे चालू आहेत की बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.4.templates.mr | {place} मध्ये छताला एक पांढरा वाय-फाय डबा आहे. त्यावरचा छोटा दिवा चालू आहे की बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.5.templates.mr | {place} मध्ये रॅकमधला नेटवर्क स्विच बघा. त्याचे दिवे हिरवे आहेत, नारंगी आहेत, की पूर्ण बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.6.templates.mr | {place} मध्ये CCTV रेकॉर्डरचा छोटा स्क्रीन आहे. तो स्क्रीन चालू आहे की बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.7.templates.mr | {place} मधल्या दिव्याचं बटण चालू केल्यावर छताचा दिवा लागतो का? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.8.templates.mr | {place} मध्ये GATEWAY लिहिलेला राउटर शोधा. INTERNET असं लिहिलेला दिवा हिरवा आहे, लाल आहे, की बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/data/sandbox_v1.json`: probes.9.templates.mr | {place} वर, कशालाही हात न लावता, ब्रेकर नंबर 7 वर आहे की ट्रिप होऊन खाली आहे? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 181, practice model copy | तुमच्या फोनवर एखादी साधी वेबसाइट उघडते का? हो किंवा नाही सांगा. | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 192, practice model copy | तुमच्या फोनवर उपलब्ध नेटवर्कची यादी उघडा. साइटचे नेटवर्क दिसत नाही, जोडण्याचा प्रयत्न करत आहे, की जोडले आहे? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 200, practice model copy | तुमच्या फोनवर तपासणीचे पान उघडा. ते उघडते का? हो की नाही? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 207, practice model copy | छतावरचे छोटे उपकरण पाहा. त्याचा दिवा चालू आहे की बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 214, practice model copy | जवळच्या मार्गिकेत पाहा. तिथले दिवे चालू आहेत की बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 223, practice model copy | अनेक नेटवर्क तारा जोडलेला डबा पाहा. त्याचे छोटे दिवे हिरवे, नारंगी, की बंद आहेत? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 230, practice model copy | सुरक्षा कॅमेरे पाहण्याची छोटी स्क्रीन पाहा. ती चालू आहे की बंद? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 244, practice model copy | इंटरनेट राउटर पाहा. INTERNET लिहिलेला दिवा हिरवा, लाल, की बंद आहे? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 252, practice model copy | कशालाही हात न लावता, उपकरण कक्ष 2 चा वीजेचा स्विच वर आहे की खाली? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 259, practice model copy | कशालाही हात न लावता, दिव्यांचा वीजेचा स्विच वर आहे की खाली? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 266, practice model copy | कशालाही हात न लावता, मुख्य वीजेचा स्विच वर आहे की खाली? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 280, practice model copy | इंटरनेट जोडणीचा डबा पाहा. त्याची बत्ती हिरवी, लाल, की बंद आहे? | not spoken | unchecked |
+| Marathi | `services/core/alembic/versions/0021_general_sandbox_copy.py`: line 311, practice model copy | तुम्ही {place} मध्ये आहात. उपकरणावरील लेबलची शेवटची तीन अक्षरे वाचा. | not spoken | unchecked |
 | Marathi | `services/core/src/pramana_core/consent.py`: consent email body, language mr | तपासादरम्यान Pramana तुम्हाला वेबवर प्रश्न विचारू शकतो का, हे साइट टीमला जाणून घ्यायचे आहे.<br><br>Tumcha nirnay denyasathi hi link ughada:<br>{CONSENT_LINK}<br><br>Tumhi ho kiwa nahi mhanu shakta. Nirnay tumcha aahe. | not spoken | unchecked |
 | Marathi | `services/core/src/pramana_core/consent.py`: consent email subject, language mr | Pramana kadun prashna milavnyasathi tumchi parvangi | not spoken | unchecked |
+| Marathi | `services/core/src/pramana_core/language/realize.py`: localized mapping at line 12.mr | एकदा खात्री करून घेऊया:  | not spoken | unchecked |
 | Marathi | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 37.mr | गेटवे | not spoken | unchecked |
 | Marathi | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 38.mr | इंटरनेट | not spoken | unchecked |
 | Marathi | `services/core/src/pramana_core/language/speakable.py`: localized mapping at line 39.mr | मेन | not spoken | unchecked |
