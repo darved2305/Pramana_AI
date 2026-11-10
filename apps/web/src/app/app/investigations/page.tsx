@@ -23,7 +23,7 @@ import { IconHistory, IconPlus, IconSearch } from "@/components/ui/icons";
 import { InvestigationBoard } from "@/components/console/InvestigationBoard";
 import { usePreviewMode } from "@/lib/store/local";
 import { useInvestigationList } from "@/lib/data/hooks";
-import { STATUS_LABEL, STATUS_TONE, relative } from "@/lib/data/derive";
+import { STATUS_LABEL, STATUS_TONE, pct, relative } from "@/lib/data/derive";
 import type { InvestigationStatus, InvestigationSummary } from "@/lib/api/types";
 
 type Filter = "all" | "active" | "settled";
@@ -244,7 +244,7 @@ function InvestigationCard({ r }: { r: InvestigationSummary }) {
       {r.decision_class ? (
         <p className="mt-1 text-[13px] text-fg-2">
           {r.decision_class}
-          {r.decision_probability != null ? ` at P = ${r.decision_probability.toFixed(2)}` : ""}
+          {r.decision_probability != null ? ` (${pct(r.decision_probability)} confident)` : ""}
         </p>
       ) : null}
       <div className="relative z-10 mt-4 flex items-center justify-between gap-2 border-t border-line pt-3">
