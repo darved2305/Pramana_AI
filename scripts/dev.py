@@ -132,6 +132,7 @@ class Options:
     timeout_s: float = 60.0
     demo: bool = False
     oidc_port: int = 8410
+    gnani_port: int = 8099
 
 
 def _port(value: str) -> int:
@@ -145,6 +146,7 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--demo", action="store_true", help="start the local console with mock sign-in")
     p.add_argument("--oidc-port", type=_port, default=8410)
+    p.add_argument("--gnani-port", type=_port, default=8099)
     p.add_argument("--web", action="store_true", help="also start the Next.js dev server")
     p.add_argument("--core-port", type=_port, default=8000)
     p.add_argument("--sim-port", type=_port, default=8100)
@@ -157,13 +159,21 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     a.web = a.web or a.demo
     ports = [a.core_port, a.sim_port] + ([a.web_port] if a.web else [])
     if a.demo:
-        ports.append(a.oidc_port)
+        ports.extend([a.oidc_port, a.gnani_port])
     if len(set(ports)) != len(ports):
         p.error(f"ports must differ: {ports}")
     if a.timeout <= 0:
         p.error("--timeout must be positive")
     return Options(
-        a.core_port, a.sim_port, a.web_port, a.web, a.skip_db, a.timeout, a.demo, a.oidc_port
+        a.core_port,
+        a.sim_port,
+        a.web_port,
+        a.web,
+        a.skip_db,
+        a.timeout,
+        a.demo,
+        a.oidc_port,
+        a.gnani_port,
     )
 
 
@@ -310,10 +320,11 @@ def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, 
             SIM_SERVERLESS_AUTH="false",
             OIDC_ISSUER=f"http://localhost:{opts.oidc_port}",
             OIDC_DISCOVERY_URL=f"http://localhost:{opts.oidc_port}/.well-known/openid-configuration",
+            GNANI_API_KEY="local-emulator",
+            GNANI_BASE_URL=f"http://127.0.0.1:{opts.gnani_port}",
             GOOGLE_OAUTH_CLIENT_ID="pramana-local",
             GOOGLE_OAUTH_CLIENT_SECRET="local-only",
             OIDC_REDIRECT_URL=f"http://localhost:{opts.web_port}/api/core/v1/auth/google/callback",
-            GNANI_API_KEY="",
             LLM_EXTRACTOR_PROVIDER="none",
             GMAIL_ADDRESS="",
             GMAIL_APP_PASSWORD="",
@@ -337,6 +348,20 @@ def children(opts: Options, env: dict[str, str]) -> list[Child]:
             Child(
                 "oidc",
                 [py, str(ROOT / "scripts" / "mock_oidc.py"), "--port", str(opts.oidc_port)],
+                env,
+            ),
+        )
+        out.insert(
+            1,
+            Child(
+                "gnani-emulator",
+                [
+                    py,
+                    str(ROOT / "scripts" / "gnani_emulator.py"),
+                    "--serve",
+                    "--port",
+                    str(opts.gnani_port),
+                ],
                 env,
             ),
         )
@@ -390,6 +415,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         procs = children(opts, env)
         checks = {
             "oidc": f"http://127.0.0.1:{opts.oidc_port}/.well-known/openid-configuration",
+            "gnani-emulator": f"http://127.0.0.1:{opts.gnani_port}/stats",
             "sim": f"http://127.0.0.1:{opts.sim_port}/health",
             "core": f"http://127.0.0.1:{opts.core_port}/ready",
             "web": f"http://127.0.0.1:{opts.web_port}/",

@@ -136,6 +136,9 @@ investigation and answer using the simulated participant cards. The demo uses a 
 identity and no paid voice provider. Press Ctrl+C to stop the services; the database server stays
 up. The first run can take longer while the console compiles.
 
+Voice requests stay on the local protocol emulator. It recognizes encoded test clips rather than
+ordinary speech, so use the text practice cards for the guided investigation.
+
 The generator selects a unique local database for a new checkout and preserves existing settings.
 To use another database, set both `DATABASE_URL` and `PRAMANA_DB_NAMES` in `.env`. The supervisor
 initializes the selected database and applies migrations before starting core. To create password
