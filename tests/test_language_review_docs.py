@@ -38,5 +38,28 @@ def test_packet_has_context_for_all_three_languages_and_localized_sources() -> N
         for line in sheet.splitlines()
         if line.startswith("| ") and not line.startswith(("| Language |", "| ---"))
     ]
-    assert rows
+    assert len(rows) == 914
     assert all(line.endswith("| unchecked |") for line in rows)
+
+
+def test_committed_demo_answer_transcripts_are_reviewable() -> None:
+    sheet = review.render_review_sheet()
+    source = "`eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line "
+    rows = [
+        line
+        for line in sheet.splitlines()
+        if source in line and "synthetic text-mode simulator-card answer" in line
+    ]
+    assert len(rows) == 6
+    assert all(line.startswith("| Hinglish |") for line in rows)
+    assert all(line.endswith("| unchecked |") for line in rows)
+    assert all("| not spoken |" in line for line in rows)
+    for phrase in (
+        "NAVA-WiFi dikh hi nahi raha",
+        "connected hai",
+        "lights green hain",
+        "haan chalu hai",
+        "breaker neeche hai, trip hai",
+    ):
+        assert any(f"| {phrase} |" in line for line in rows)
+    assert sum("| connected hai |" in line for line in rows) == 2

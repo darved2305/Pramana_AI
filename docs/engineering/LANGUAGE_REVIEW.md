@@ -7,7 +7,8 @@ or endorsement is implied by generating this packet.
 
 The packet covers localized values in the shipped packs and builder templates, visible
 web copy and consent email, preview transcripts, voice consent, and runtime campus
-questions. Templates retain placeholders so reviewers can see the actual source wording.
+questions, and synthetic answers in the committed text-mode demo timeline. Templates
+retain placeholders so reviewers can see the actual source wording.
 Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the language.
 
 | Language | Source path and context | Exact display or spoken text | Spoken rendering | Reviewer status |
@@ -325,6 +326,12 @@ Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the lan
 | Hinglish | `apps/web/src/lib/builder/description.ts`: line 123, language key hi-en | {place} mein, kya lights jal rahi hain? | not spoken | unchecked |
 | Hinglish | `apps/web/src/lib/preview/fixtures.ts`: line 136: transcript: "WiFi list mein NAVA-WiFi dikh hi nahi raha.", | WiFi list mein NAVA-WiFi dikh hi nahi raha. | not spoken | unchecked |
 | Hinglish | `apps/web/src/lib/preview/fixtures.ts`: line 149: transcript: "Mere roommate ka phone connected dikha raha hai shayad.", | Mere roommate ka phone connected dikha raha hai shayad. | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 11, synthetic text-mode simulator-card answer | breaker neeche hai, trip hai | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 16, synthetic text-mode simulator-card answer | connected hai | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 3, synthetic text-mode simulator-card answer | NAVA-WiFi dikh hi nahi raha | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 5, synthetic text-mode simulator-card answer | connected hai | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 7, synthetic text-mode simulator-card answer | lights green hain | not spoken | unchecked |
+| Hinglish | `eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt`: line 9, synthetic text-mode simulator-card answer | haan chalu hai | not spoken | unchecked |
 | Hinglish | `packages/domain/src/pramana_domain/builder.py`: localized mapping at line 372.hi-en | Kya aap {place} tak ja sakte hain? Wahan pahunch kar:  | not spoken | unchecked |
 | Hinglish | `packages/domain/src/pramana_domain/library.py`: localized mapping at line 101.hi-en | {place} mein {name} ki power light dekhiye. Woh on hai, ya off? | not spoken | unchecked |
 | Hinglish | `packages/domain/src/pramana_domain/library.py`: localized mapping at line 117.hi-en | {place} mein {name} ki screen dekhiye. Woh jal rahi hai, ya blank hai? | not spoken | unchecked |
