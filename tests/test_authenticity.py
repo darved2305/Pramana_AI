@@ -147,18 +147,52 @@ def _pct(x: float) -> str:
 def test_readme_benchmark_numbers_match_the_generated_report() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     summary = json.loads(
-        (ROOT / "eval/reports/benchmark-2026-11-07-rc1/summary.json").read_text(encoding="utf-8")
+        (ROOT / "eval/reports/benchmark-2026-11-10-heldout/summary.json").read_text(
+            encoding="utf-8"
+        )
     )
     p = summary["policies"]
     normalized = " ".join(readme.split())
-    assert (
-        f"`eval/reports/benchmark-2026-11-07-rc1/`, {p['E_ours']['n']} simulated scenarios"
-        in readme
+    assert "`eval/reports/benchmark-2026-11-10-heldout/summary.json`" in normalized
+    assert summary["git_sha"] in normalized
+    for key, policy in p.items():
+        if key in {"E_ours", "A_checklist", "C_random", "D_greedy_entropy", "E_parallel3"}:
+            assert (
+                f"| {key} | {_pct(policy['success_rate'])} | "
+                f"{_pct(policy['honest_success_rate'])} |" in normalized
+            ), key
+    for outcome, comparisons in summary["primary_tests"].items():
+        if outcome == "success_definition":
+            continue
+        for comparison, result in comparisons.items():
+            raw = "n/a" if result["p"] is None else f"{result['p']:.6g}"
+            adjusted = "n/a" if result["p_holm"] is None else f"{result['p_holm']:.6g}"
+            row = f"| {outcome} | {comparison} | {result['n']} | {raw} | {adjusted} |"
+            assert row in normalized
+
+
+def test_submission_benchmark_claims_match_the_heldout_artifact() -> None:
+    submission = " ".join((ROOT / "docs/SUBMISSION.md").read_text(encoding="utf-8").split())
+    summary = json.loads(
+        (ROOT / "eval/reports/benchmark-2026-11-10-heldout/summary.json").read_text(
+            encoding="utf-8"
+        )
     )
-    for key in ("E_ours", "A_checklist", "C_random", "D_greedy_entropy"):
-        assert _pct(p[key]["success_rate"]) in readme, key
-    assert "These seeds were examined before the stated freeze" in normalized
-    assert "does not measure full resolution" in normalized
+    assert "eval/reports/benchmark-2026-11-10-heldout/summary.json" in submission
+    assert summary["git_sha"] in submission
+    assert summary["protocol"]["frozen_code_commit"] in submission
+    for key in ("E_ours", "A_checklist", "C_random", "D_greedy_entropy", "E_parallel3"):
+        policy = summary["policies"][key]
+        row = f"| {key} | {_pct(policy['success_rate'])} | {_pct(policy['honest_success_rate'])} |"
+        assert row in submission
+    for outcome, comparisons in summary["primary_tests"].items():
+        if outcome == "success_definition":
+            continue
+        for comparison, result in comparisons.items():
+            raw = "n/a" if result["p"] is None else f"{result['p']:.6g}"
+            adjusted = "n/a" if result["p_holm"] is None else f"{result['p_holm']:.6g}"
+            row = f"| {outcome} | {comparison} | {result['n']} | {raw} | {adjusted} |"
+            assert row in submission
 
 
 @pytest.mark.parametrize(

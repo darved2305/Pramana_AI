@@ -94,14 +94,16 @@ counts and exit codes: `eval/reports/verification-2026-11-07/report.md`. CI runs
 
 From generated reports only; nothing below is typed by hand.
 
-- **Benchmark** (`eval/reports/benchmark-2026-11-07-rc1/`, 300 simulated scenarios): the
-  exploratory historical success metric is 84.7% for our planner, 64.0% for a checklist,
-  56.3% for random questions and 83.3% for greedy entropy. It credits a partial action or
-  abstention on a pair, and does not measure full resolution. These seeds were examined before
-  the stated freeze; the registered multiple-comparison analysis was not performed.
-- **Parallel calls** (ADR 0011): asking up to three people at once cuts the simulated time to a
-  conclusion by about a third with no significant change in success, at the cost of about two
-  more questions per investigation.
+- **Benchmark** (`eval/reports/benchmark-2026-11-10-heldout/summary.json`, commit recorded in the
+  artifact): the table below reports historical and honest success separately for 300 simulated
+  scenarios. Historical success retains RC1's pair credit; honest success does not count pair
+  abstentions. The pair table reports first useful actions and full repair-verification
+  resolution with denominators. Seeds and the code commit are recorded in the frozen protocol.
+- **Parallel calls** (ADR 0011): the RC1 exploratory comparison reported 83.3% historical success
+  for three-at-once vs 84.7% sequential, with a bootstrap interval for the difference that
+  included zero. The registered adjusted paired tests were not run on RC1, so this does not
+  establish that success is unchanged. See the heldout artifact for the adjusted success,
+  question and effort comparisons.
 - **Stopping-rule calibration** (`eval/reports/calibration-2026-11-05/`): in the explored
   variants, valuing people's time at half increased the historical success metric by 2.7
   points for 0.37 more questions. This is exploratory and was not adopted.

@@ -1,7 +1,8 @@
 """Run the benchmark: ``python -m pramana_eval --n 500 --out <dir> [--policies E,A,C,D]``.
 
-Seeds 0-9,999 are for development; 10,000+ are reserved for the final, reported run
-(docs/EVALUATION.md §9: never tune on the reporting seeds).
+Seed ranges belong in committed protocol files. RC1 seeds 10000-10299 were examined before the
+freeze, and 20000-20299 were used by the separate presence experiment; do not call either range
+held out.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import argparse
 import csv
 import json
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -59,6 +61,7 @@ SHORT = {
     "P2": "E_parallel2",
     "P3": "E_parallel3",
 }
+ROOT = Path(__file__).resolve().parents[3]
 
 PRIMARY = ("A_checklist", "B_llm", "C_random", "D_greedy_entropy", "E_parallel3")
 
@@ -132,6 +135,7 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--budget-curves", action="store_true")
     ap.add_argument("--budget-questions", type=int, default=10)
+    ap.add_argument("--protocol", help="frozen held-out protocol markdown file")
     ap.add_argument("--llm-provider", default="groq", choices=["groq", "gemini"])
     ap.add_argument("--llm-model", default=None)
     ap.add_argument(
@@ -147,6 +151,62 @@ def main() -> None:
         help="run the LLM policy on the first N scenarios only (free-tier quota)",
     )
     args = ap.parse_args()
+    if args.budget_questions < 1:
+        ap.error("--budget-questions must be at least one")
+    protocol_meta: dict[str, Any] | None = None
+    if args.protocol:
+        protocol_path = Path(args.protocol)
+        protocol_text = protocol_path.read_text(encoding="utf-8")
+        code_match = re.search(r"Frozen code commit:\s*`([0-9a-f]{40})`", protocol_text)
+        seeds_match = re.search(r"Seeds:\s*`(\d+)-(\d+)`", protocol_text)
+        policies_match = re.search(r"Policies:\s*`([^`]+)`", protocol_text)
+        budget_match = re.search(r"Budget questions:\s*`(\d+)`", protocol_text)
+        if (
+            code_match is None
+            or seeds_match is None
+            or policies_match is None
+            or budget_match is None
+        ):
+            ap.error(
+                "protocol must state a 40-character frozen code commit, seeds, policies, "
+                "and budget question count"
+            )
+        frozen_commit = code_match.group(1)
+        frozen_seeds = (int(seeds_match.group(1)), int(seeds_match.group(2)))
+        frozen_policies = [item.strip() for item in policies_match.group(1).split(",")]
+        frozen_budget = int(budget_match.group(1))
+        if args.seed_start != frozen_seeds[0] or args.n != frozen_seeds[1] - frozen_seeds[0] + 1:
+            ap.error("benchmark seed arguments do not match the frozen protocol")
+        if args.policies.split(",") != frozen_policies:
+            ap.error("benchmark policy arguments do not match the frozen protocol")
+        if not args.budget_curves or args.budget_questions != frozen_budget:
+            ap.error("budget curve arguments do not match the frozen protocol")
+        try:
+            protocol_rel = protocol_path.resolve().relative_to(ROOT).as_posix()
+        except ValueError:
+            ap.error("protocol must be inside the repository")
+        changed = subprocess.run(
+            ["git", "diff", "--name-only", frozen_commit, "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+        if any(path != protocol_rel for path in changed):
+            ap.error("tracked files besides the frozen protocol changed after the code commit")
+        if _git_sha().endswith("-dirty"):
+            ap.error("tracked worktree changes are not allowed during the held-out run")
+        protocol_meta = {
+            "path": protocol_rel,
+            "frozen_code_commit": frozen_commit,
+            "seeds": list(frozen_seeds),
+            "policies": frozen_policies,
+            "budget_questions": frozen_budget,
+            "deviations": [
+                line.removeprefix("- Deviation: ").strip()
+                for line in protocol_text.splitlines()
+                if line.startswith("- Deviation: ")
+            ],
+        }
 
     code_version = _git_sha()  # captured before running, not after
     pack = load_pack("campus_block_c")
@@ -204,13 +264,15 @@ def main() -> None:
         "paired_vs_E": {},
         "primary_tests": primary_tests(results),
     }
+    if protocol_meta is not None:
+        summary["protocol"] = protocol_meta
     if ours is not None:
         for name, eps in results.items():
             if name == "E_ours":
                 continue
             summary["paired_vs_E"][name] = {
                 f: paired_difference(ours, eps, f)
-                for f in ("success", "probes", "effort_s", "wall_s")
+                for f in ("success", "honest_success", "probes", "effort_s", "wall_s")
             }
     out = Path(args.out)
     if args.budget_curves:
@@ -274,11 +336,14 @@ def render(summary: dict[str, Any]) -> str:
         f"Commit `{summary['git_sha']}`, seeds {summary['seeds'][0]}-{summary['seeds'][1]}, "
         f"scenario mix {summary['scenario_mix']}.",
         "",
-        "| Policy | Completed episodes | Excluded failed runs | Success | Accuracy (decided) "
-        "| Honest success | Accuracy (identifiable) | False confidence "
-        "| Abstention recall (unidentifiable) | Pair accuracy | Probes (mean) | Effort s (mean) "
-        "| People | Time to conclusion s (mean) | Withdrawn (mean) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        (
+            "| Policy | Completed episodes | Excluded failed runs | Historical success | "
+            "Honest success | Accuracy (decided) | Accuracy (identifiable) | False confidence | "
+            "Abstention recall (unidentifiable) | Historical precision | Justified P/R | "
+            "Pair accuracy | Diagnostic probes (mean) | Diagnostic effort s (mean) | People | "
+            "Time to conclusion s (mean) | Withdrawn (mean) |"
+        ),
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, m in summary["policies"].items():
         lines.append(
@@ -287,6 +352,9 @@ def render(summary: dict[str, Any]) -> str:
             f"| {_fmt(m['decision_accuracy'], True)} "
             f"| {_fmt(m['accuracy_on_identifiable'], True)} "
             f"| {_fmt(m['false_confidence_rate'], True)} | {_fmt(m['abstention_recall'], True)} "
+            f"| {_fmt(m['abstention_precision'], True)} "
+            f"| {_fmt(m['justified_abstention_precision'], True)} / "
+            f"{_fmt(m['justified_abstention_recall'], True)} "
             f"| {_fmt(m['pair_accuracy'], True)} "
             f"| {_fmt(m['probes_mean'])} | {_fmt(m['effort_s_mean'])} | {_fmt(m['people_mean'])} "
             f"| {_fmt(m.get('wall_s_mean'))} | {_fmt(m.get('withdrawn_mean'))} |"
@@ -326,13 +394,17 @@ def render(summary: dict[str, Any]) -> str:
         "Pair and abstention outcomes (historical success above retains its original definition):",
         "",
         "| Policy | Pair episodes | First useful action | Full pair resolution | "
-        "Justified abstentions | Abstentions with unknown identifiability |",
-        "|---|---|---|---|---|---|",
+        "Resolution n | Mean repairs | Verification probes | Justified abstentions | "
+        "Abstentions with unknown identifiability |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for name, m in summary["policies"].items():
         lines.append(
             f"| {name} | {m['pair_outcome_denominator']} | "
-            f"{_fmt(m['pair_first_useful_action_rate'], True)} | not measured | "
+            f"{_fmt(m['pair_first_useful_action_rate'], True)} | "
+            f"{_fmt(m['pair_full_resolution_rate'], True)} | {m['pair_resolution_denominator']} | "
+            f"{_fmt(m['pair_repairs_mean'])} | "
+            f"{_fmt(m['pair_resolution_extra_probes_mean'])} | "
             f"{m['justified_abstentions']} | {m['abstentions_with_unknown_identifiability']} |"
         )
     lines += ["", "Paired differences, E minus each policy (bootstrap 95% CI):", ""]

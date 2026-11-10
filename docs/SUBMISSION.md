@@ -44,12 +44,13 @@ engine, planner, API, event log, approvals, and the Gnani speech services are re
   sending).
 
 **Evaluation (logic mode, simulated participants).** From
-`eval/reports/benchmark-2026-11-07-rc1/summary.json` (300 scenarios, seeds 10000-10299,
-commit `8b24d0d`, tag `v1.0-rc1`): the exploratory historical success metric is 84.7% for
-Pramana, 64.0% for a checklist, 56.3% for random questions and 83.3% for greedy entropy. It
-credits a partial action or abstention on a pair and does not measure full resolution. These
-seeds were examined before the stated freeze; the registered multiple-comparison analysis was
-not performed. Speech-recognition accuracy and latency are not published (Gnani EULA §16).
+`eval/reports/benchmark-2026-11-10-heldout/summary.json` (300 scenarios; commit and seeds in the
+protocol): the table below reports historical success and honest success separately for Pramana,
+the checklist, random selection, greedy entropy and three-at-once Pramana. Historical success
+retains RC1's pair credit; honest success excludes pair abstentions. Full pair resolution is
+reported separately with its denominator. The paired p-values and Holm adjusted values below
+come from the frozen analysis; only adjusted comparisons below 0.05 are described as significant.
+Speech-recognition accuracy and latency are not published (Gnani EULA §16).
 
 **Limits.** One simulated building. The answer-extraction test sets were written by AI models
 and have been tuned on. [Fill: number of real human runs and their outcome, from the take
