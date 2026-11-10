@@ -142,6 +142,9 @@ def render(summary: dict[str, Any], source: str) -> str:
     lines += [
         "",
         "Pair outcomes, calibration and stratum counts are reported separately below.",
+        "The full-resolution outcome is limited by the pack's repair catalogue: only breaker "
+        "resets are modelled, so a pair with any other fault cannot be fully resolved by this "
+        "evaluator.",
         "",
         "| Policy | Pair n | First useful action | Full pair resolution | "
         "Resolution n | Mean repairs | Verification probes | Justified abstentions | "

@@ -155,6 +155,14 @@ against the simulated faults. Treat these pair results as development stress
 evidence for the current workflow, not a population estimate or replacement for the frozen held-out
 result.
 
+The frozen held-out `3/40` full-resolution count uses the original metric and repair loop. Only
+three of the campus pack's 15 single-fault modes have a modeled repair, so the result is limited by
+repair coverage and is not a general measure of pair-resolution policy performance. A post-freeze
+audit also fixed an evaluator defect that could stop at an unrepairable first fault despite another
+repairable fault (`dbcc64c`). The development rerun on seeds 60000-60299 produced the same 600
+episode rows and pair aggregates. This correction does not replace or alter the frozen report or
+protocol.
+
 ---
 
 ## 5. Ablations (on top of E)
@@ -304,6 +312,7 @@ Paired differences E minus X, mean with bootstrap 95% CI. Success in percentage 
 - Protocol deviation: policy B is not run because no Groq or Gemini API credential is configured and paid providers are prohibited. Its primary-family slot remains unavailable and is retained for Holm adjustment.
 
 Pair outcomes, calibration and stratum counts are reported separately below.
+The full-resolution outcome is limited by the pack's repair catalogue: only breaker resets are modelled, so a pair with any other fault cannot be fully resolved by this evaluator.
 
 | Policy | Pair n | First useful action | Full pair resolution | Resolution n | Mean repairs | Verification probes | Justified abstentions | Unknown-identifiability abstentions |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
