@@ -22,6 +22,7 @@ for (const failure of ["module", "node"]) {
         disconnect() {}
       },
       WebSocket: { OPEN: 1 },
+      performance: { now: () => 1 },
       setTimeout,
     };
     const source = fs.readFileSync("src/lib/audio/media.ts", "utf8");
@@ -55,4 +56,28 @@ test("malformed socket control frames do not prevent a later ready frame", async
   for (const data of ["{", "null", "[]"]) socket.onmessage({ data });
   socket.onmessage({ data: '{"type":"ready","question_id":"q"}' });
   assert.equal((await connected).question_id, "q");
+});
+
+test("a microphone granted after the session closes is stopped", async () => {
+  let grant;
+  const track = { stopped: 0, stop() { this.stopped++; } };
+  const context = {
+    exports: {},
+    navigator: { mediaDevices: { getUserMedia: () => new Promise((resolve) => { grant = resolve; }) } },
+    AudioContext: class {
+      audioWorklet = { addModule: async () => {} };
+      createMediaStreamSource() { return { connect() {} }; }
+    },
+    AudioWorkletNode: class { port = {}; disconnect() {} },
+    setTimeout,
+  };
+  const source = fs.readFileSync("src/lib/audio/media.ts", "utf8");
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, context);
+  const session = new context.exports.QuestionMediaSession("inv", "q", "token");
+  const starting = session.startMic();
+  session.close();
+  grant({ getTracks: () => [track] });
+  await assert.rejects(starting);
+  assert.equal(track.stopped, 1);
+  assert.notEqual(session.current, "listening");
 });

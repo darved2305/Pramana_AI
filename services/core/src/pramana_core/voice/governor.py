@@ -181,7 +181,7 @@ class DbLedger:
                     {"id": reservation},
                 )
             ).first()
-            if row is not None:
+            if row is not None and (units > 0 or cost > 0):
                 await session.execute(
                     text("""
                     insert into voice_usage(day, service, units, cost_inr)
@@ -340,7 +340,7 @@ class VoiceGovernor:
     async def _settle(self, reserved: float, service: str, units: float, cost: float) -> None:
         async with self._budget_lock:
             self._reserved -= reserved
-        if units > 0:
+        if units > 0 or cost > 0:
             try:
                 await self.ledger.record(service, units, cost)
             except Exception:
@@ -359,6 +359,9 @@ class VoiceGovernor:
             return
         window = self.stt_rest if service == "stt_rest" else self.tts
         await window.acquire(self.limits.max_wait_s)
+        attempts = _attempts.get()
+        if attempts is not None:
+            attempts[0] += 1
 
     @asynccontextmanager
     async def rest_call(
@@ -372,7 +375,10 @@ class VoiceGovernor:
         if isinstance(self.ledger, DbLedger):
             # Up to four provider attempts can be billed. Preserve the full reservation on
             # uncertainty, including cancellation or a failed settlement transaction.
-            worst = est_cost * 4
+            per_attempt_worst = (
+                max(est_cost, STT_MIN_CHARGE_INR) if service == "stt_rest" else est_cost
+            )
+            worst = per_attempt_worst * 4
             deadline = time.monotonic() + self.limits.max_wait_s
             while True:
                 try:
@@ -392,25 +398,44 @@ class VoiceGovernor:
                 ok = True
             finally:
                 _attempts.reset(token)
-                units = actual[0]
-                cost = stt_cost(units) if service == "stt_rest" else tts_cost(int(units))
-                cost = cost * max(1, attempts[0]) if ok else worst
+                units = actual[0] * attempts[0]
+                if attempts[0] == 0:
+                    cost = 0.0
+                elif ok:
+                    cost = (
+                        stt_cost(actual[0]) if service == "stt_rest" else tts_cost(int(actual[0]))
+                    )
+                    if service == "stt_rest":
+                        cost = max(cost, STT_MIN_CHARGE_INR)
+                    cost *= attempts[0]
+                else:
+                    cost = worst
                 try:
                     await asyncio.shield(self.ledger.settle(reservation, units, cost))
                 except Exception:
                     log.exception("voice_usage_settlement_failed", service=service)
             return
-        await self._reserve(est_cost)
+        worst = max(est_cost, STT_MIN_CHARGE_INR) * 4 if service == "stt_rest" else est_cost * 4
+        await self._reserve(worst)
         actual = [est_units]
+        attempts = [0]
+        token = _attempts.set(attempts)
         ok = False
         try:
             async with self._inflight:
                 yield actual
             ok = True
         finally:
-            units = actual[0] if ok else 0.0
-            cost = stt_cost(units) if service == "stt_rest" else tts_cost(int(units))
-            await self._settle(est_cost, service, units, cost)
+            _attempts.reset(token)
+            units = actual[0] * attempts[0] if ok else 0.0
+            if ok and attempts[0] > 0:
+                cost = stt_cost(actual[0]) if service == "stt_rest" else tts_cost(int(actual[0]))
+                if service == "stt_rest":
+                    cost = max(cost, STT_MIN_CHARGE_INR)
+                cost *= attempts[0]
+            else:
+                cost = 0.0
+            await self._settle(worst, service, units, cost)
 
     @asynccontextmanager
     async def stream_slot(self) -> AsyncIterator[list[float]]:

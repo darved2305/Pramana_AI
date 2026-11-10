@@ -51,8 +51,11 @@ import asyncio
 import contextlib
 import io
 import json
+import math
+import secrets
 import time
 import wave
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -136,6 +139,8 @@ class MediaSession:
         call: CallSession | None = None,
         send_lock: asyncio.Lock | None = None,
         organization: str | None = None,
+        previous_trace_id: str | None = None,
+        on_answer_trace: Callable[[str], None] | None = None,
     ) -> None:
         self.ws, self.inv_id, self.question_id = ws, inv_id, question_id
         self.organization = organization
@@ -153,6 +158,11 @@ class MediaSession:
         self.spoken: bytes | None = None
         self.answer_audio = bytearray()
         self.submitting = False
+        self.trace_id = secrets.token_hex(8)
+        self.commit_received_at: float | None = None
+        self.previous_trace_id = previous_trace_id
+        self.on_answer_trace = on_answer_trace
+        self.turn_started_at: float | None = None
         self.done = asyncio.Event()
         self._send_lock = send_lock or asyncio.Lock()
 
@@ -267,11 +277,15 @@ class MediaSession:
     async def _converse(self, q: PendingQuestion, play: bool) -> None:
         langs, codemix = stt_options(q.participant)
         t0 = time.perf_counter()
+        self.turn_started_at = t0
+        self.commit_received_at = None
+        log.info("voice_hop", trace_id=self.trace_id, hop="proxy_capture_ready")
         # Synthesise (or fetch) the question audio while the recognizer connects.
         audio: QuestionAudio | None = (
             QuestionAudio(self.gnani, self.cache, q.text, q.language) if play else None
         )
         try:
+            log.info("voice_hop", trace_id=self.trace_id, hop="upstream_request_started")
             async with self.gnani.stream(
                 langs,
                 codemix=codemix,
@@ -281,6 +295,12 @@ class MediaSession:
                 min_segment_ms=100,
             ) as upstream:
                 stream_ms = round((time.perf_counter() - t0) * 1000)
+                log.info(
+                    "voice_hop",
+                    trace_id=self.trace_id,
+                    hop="upstream_connected",
+                    duration_ms=stream_ms,
+                )
                 await self.send(
                     {
                         "type": "ready",
@@ -293,6 +313,10 @@ class MediaSession:
                         if q.kind == "challenge"
                         else list(q.pack.probe_by_id[q.probe_id].outcomes),
                         "model_confirmed": upstream.model_confirmed,
+                        "provider": self.gnani.provider,
+                        "protocol_emulator": self.gnani.protocol_emulator,
+                        "stt_model": "prisma-v3.0",
+                        "tts_model": "timbre-v2.5" if q.language == "hi-en" else "timbre-v3.0",
                     }
                 )
                 self.call.start_question(q.id)
@@ -325,6 +349,14 @@ class MediaSession:
         Timbre produces them (``format: pcm_s16le``), so playback starts before synthesis ends.
         """
         first = await audio.chunks.get()
+        log.info("voice_hop", trace_id=self.trace_id, hop="tts_first_byte")
+        if self.previous_trace_id is not None:
+            log.info(
+                "voice_hop",
+                trace_id=self.previous_trace_id,
+                hop="next_question_tts_first_byte",
+            )
+            self.previous_trace_id = None
         if first is None:
             if audio.wav is not None:
                 await self._send_audio(audio.wav, audio.cached)
@@ -429,7 +461,16 @@ class MediaSession:
                 continue
             kind = ctl.get("type") if isinstance(ctl, dict) else None
             if kind == "commit":
+                self.commit_received_at = time.perf_counter()
+                log.info("voice_hop", trace_id=self.trace_id, hop="proxy_commit_received")
                 await upstream.commit()
+            elif kind in {"capture_end", "playback_started"}:
+                fields: dict[str, float] = {}
+                if kind == "capture_end":
+                    duration = ctl.get("capture_duration_ms")
+                    if isinstance(duration, (int, float)) and math.isfinite(duration):
+                        fields["capture_duration_ms"] = min(30_000.0, max(0.0, float(duration)))
+                log.info("voice_hop", trace_id=self.trace_id, hop=kind, **fields)
             elif kind == "tap_answer":
                 outcome = str(ctl.get("outcome", ""))
                 await self._submit(q, outcome=outcome)
@@ -451,6 +492,18 @@ class MediaSession:
                     await self._heard_speech()
                 await self.send({"type": ev.type})
             elif ev.type == "transcript":
+                transcript_received_at = time.perf_counter()
+                log.info(
+                    "voice_hop",
+                    trace_id=self.trace_id,
+                    hop="transcript_received",
+                    since_commit_ms=(
+                        round((transcript_received_at - self.commit_received_at) * 1000, 2)
+                        if self.commit_received_at is not None
+                        else None
+                    ),
+                    provider_ms=ev.raw.get("latency"),
+                )
                 if ev.raw.get("is_final") is False:
                     continue
                 text = str(ev.raw.get("text", "")).strip()
@@ -548,6 +601,8 @@ class MediaSession:
             return None if alt.empty else alt.transcript
 
         try:
+            extraction_started = time.perf_counter()
+            log.info("voice_hop", trace_id=self.trace_id, hop="extraction_started")
             result = await self.svc.answer(
                 self.inv_id,
                 SubmitAnswer(
@@ -558,6 +613,17 @@ class MediaSession:
                     modality=Modality.VOICE if text is not None else Modality.TEXT,
                 ),
                 second_decode=unbiased_decode if text is not None else None,
+            )
+            log.info(
+                "voice_hop",
+                trace_id=self.trace_id,
+                hop="extraction_complete",
+                duration_ms=round((time.perf_counter() - extraction_started) * 1000, 2),
+                total_turn_ms=(
+                    round((time.perf_counter() - self.turn_started_at) * 1000, 2)
+                    if self.turn_started_at is not None
+                    else None
+                ),
             )
         except ApiError as exc:
             if self.in_call and exc.code in {
@@ -576,6 +642,8 @@ class MediaSession:
         except ValueError as exc:  # SubmitAnswer validation
             await self.fail(ApiError(422, "INVALID_ANSWER", str(exc)))
             return
+        if self.in_call and self.on_answer_trace is not None:
+            self.on_answer_trace(self.trace_id)
         log.info(
             "media_answer",
             investigation_id=self.inv_id,

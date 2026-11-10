@@ -120,6 +120,7 @@ def create_app(
             api_key=cfg.gnani_api_key.get_secret_value() if cfg.gnani_api_key else None,
             base_url=cfg.gnani_base_url,
             timeout_s=cfg.gnani_timeout_s,
+            protocol_emulator=cfg.gnani_protocol_emulator,
             governor=VoiceGovernor(
                 GovernorLimits(
                     stt_rest_per_min=cfg.gnani_stt_rest_per_min,

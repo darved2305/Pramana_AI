@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     gnani_api_key: SecretStr | None = Field(default=None, alias="GNANI_API_KEY")
     gnani_base_url: str = Field(default="https://api.vachana.ai", alias="GNANI_BASE_URL")
+    gnani_protocol_emulator: bool = Field(default=False, alias="GNANI_PROTOCOL_EMULATOR")
     gnani_timeout_s: float = Field(default=15.0, gt=0, alias="GNANI_TIMEOUT_S")
     gnani_rest_max_inflight: int = Field(default=1, ge=1, le=16, alias="GNANI_REST_MAX_INFLIGHT")
     """Simultaneous REST calls. Gnani's documented 429 says one active request at a time."""

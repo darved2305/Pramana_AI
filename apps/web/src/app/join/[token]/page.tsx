@@ -15,7 +15,7 @@ import { ApiError, describeError } from "@/lib/api/http";
 import { decodeJoin, type JoinPayload } from "@/lib/join";
 import { participantApi } from "@/lib/api/participant";
 import { startRecording, type Recording } from "@/lib/audio/recorder";
-import { QuestionMediaSession } from "@/lib/audio/media";
+import { QuestionMediaSession, type MediaReady } from "@/lib/audio/media";
 import type { AnswerResult, Approval, Extraction, InvestigationState, ParticipantView } from "@/lib/api/types";
 import { outcomeWord } from "@/lib/data/derive";
 
@@ -27,6 +27,10 @@ function heardAs(x: Extraction): string {
     return value === "-" ? "no label reading. Thank you, someone else will be asked" : `the label reads ${value}. Thank you`;
   }
   return outcomeWord(x.outcome);
+}
+
+function modelName(model: string | undefined, fallback: string): string {
+  return (model ?? fallback).replace(/^prisma-/i, "Prisma ").replace(/^timbre-/i, "Timbre ");
 }
 
 export default function JoinPage() {
@@ -69,7 +73,7 @@ function Invalid() {
   );
 }
 
-type Phase = "idle" | "recording" | "sending";
+type Phase = "idle" | "recording" | "sending" | "checking";
 /** The call over one socket (services/core/.../voice/call.py): ring, consent, then questions. */
 type CallPhase = "none" | "connecting" | "consent" | "active" | "ended";
 
@@ -87,6 +91,8 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const liveRef = useRef<QuestionMediaSession | null>(null);
   const callRef = useRef<QuestionMediaSession | null>(null);
   const [callPhase, setCallPhase] = useState<CallPhase>("none");
+  const [voiceInfo, setVoiceInfo] = useState<MediaReady | null>(null);
+  const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
   const [consentText, setConsentText] = useState<string | null>(null);
   const levelRef = useRef(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -157,7 +163,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const grant = state.approvals?.find((a) => a.participant_id === payload.p && a.status === "approved");
 
   const sendAnswer = async (body: { outcome?: string; text?: string }) => {
-    if (!q) return;
+    if (!q || phase !== "idle") return;
     setMsg(null);
     setUnderstood(null);
     if (preview) {
@@ -181,12 +187,27 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
     }
   };
 
+  const recoverConnection = async () => {
+    setPhase("checking");
+    setMsg("The voice connection closed. Checking the current question before you try again.");
+    try {
+      const current = await participantApi(payload).getInvestigation();
+      setState(current);
+      setMsg("The voice connection closed. If a question is still open, you can answer by voice, tapping, or typing.");
+      setPhase("idle");
+    } catch {
+      setMsg("We could not check whether your answer was received. Reconnect before trying again.");
+    }
+  };
+
   /** Accept the incoming call: open the call socket, answer the ring, wait for the consent line. */
   const acceptCall = async () => {
     if (preview) return;
     setMsg(null);
     setCallPhase("connecting");
     let heard = "";
+    let callEnded = false;
+    let callConnected = false;
     const session: QuestionMediaSession = new QuestionMediaSession(
       payload.i,
       "",
@@ -196,11 +217,13 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           setConsentText(text);
           setCallPhase("consent");
         },
+        onReady: (info) => setVoiceInfo(info),
         onLevel: (rms) => {
           levelRef.current = rms;
         },
         onTranscript: (t) => {
           heard = t.text;
+          setDetectedLanguage(t.detected_language);
         },
         onAnswer: (result) => {
           const r = result as AnswerResult;
@@ -223,6 +246,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           if (e.fatal) setMsg(describeError(new ApiError(e.status, e.code, e.message, null)));
         },
         onCallEnd: (reason) => {
+          callEnded = true;
           setCallPhase("ended");
           setPhase("idle");
           setHint(null);
@@ -231,23 +255,27 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         },
         onClose: () => {
           if (callRef.current === session) callRef.current = null;
+          if (!callConnected) return;
           setCallPhase((c) => (c === "none" ? c : "ended"));
-          setPhase("idle");
+          if (callEnded) setPhase("idle");
+          else void recoverConnection();
         },
       },
       { callParticipantId: payload.p, playQuestion: false, organization: payload.o },
     );
     try {
-      await Promise.race([
+      const ready = await Promise.race([
         session.connect(),
         new Promise((_, reject) => setTimeout(() => reject(new Error("call socket timeout")), 5000)),
       ]);
+      setVoiceInfo(ready as MediaReady);
     } catch {
       session.close();
       setCallPhase("none");
       setMsg("The call could not connect. You can still answer below.");
       return;
     }
+    callConnected = true;
     callRef.current = session;
     session.accept();
   };
@@ -270,6 +298,8 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const startLive = async (question: NonNullable<typeof q>): Promise<boolean> => {
     let heard = "";
     let finished = false;
+    let connected = false;
+    let socketLost = false;
     setHint(null);
     const done = (session: QuestionMediaSession) => {
       finished = true;
@@ -289,6 +319,11 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         },
         onTranscript: (t) => {
           heard = t.text;
+          setDetectedLanguage(t.detected_language);
+        },
+        onReady: (info) => {
+          setVoiceInfo(info);
+          setDetectedLanguage(null);
         },
         onAnswer: (result) => {
           const r = result as AnswerResult;
@@ -302,36 +337,41 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         },
         onError: (e) => {
           if (!e.fatal) return;
-          setMsg(describeError(new ApiError(e.status, e.code, e.message, null)));
           done(session);
+          if (e.status >= 500 || ["VOICE_STREAM_CLOSED", "VOICE_UNREACHABLE", "VOICE_TIMEOUT"].includes(e.code)) {
+            void recoverConnection();
+          } else {
+            setMsg(describeError(new ApiError(e.status, e.code, e.message, null)));
+          }
         },
         // The call runtime asks again after a silence; show what it said.
         onReprompt: (text) => setHint(text || "Are you still there? Please answer when you are ready."),
         onClose: (code) => {
           if (finished) return;
+          if (!connected) return;
+          socketLost = true;
           // 4408: twenty seconds of silence. The question stays open, so they can simply retry.
-          setMsg(
-            code === 4408
-              ? "We could not hear you. Tap Answer by voice and try again, or answer by tapping or typing."
-              : code === 1000
-                ? null
-                : "The voice connection closed. Try again, or answer by tapping or typing.",
-          );
           done(session);
+          if (code === 4408) setMsg("We could not hear you. Checking the question before you try again.");
+          void recoverConnection();
         },
       },
       { playQuestion: false, organization: payload.o },
     );
     try {
-      await Promise.race([
+      const ready = await Promise.race([
         session.connect(),
         new Promise((_, reject) => setTimeout(() => reject(new Error("media socket timeout")), 4000)),
       ]);
+      setVoiceInfo(ready as MediaReady);
+      setDetectedLanguage(null);
+      connected = true;
       await session.startMic();
     } catch {
       session.close();
-      return false;
+      return socketLost;
     }
+    if (socketLost) return true;
     liveRef.current = session;
     setPhase("recording");
     return true;
@@ -473,6 +513,18 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           {q.kind === "challenge" ? (
             <span className="mb-2 w-fit rounded-full bg-cream/15 px-2.5 py-1 text-[12px] text-cream">Quick location check</span>
           ) : null}
+          {voiceInfo ? (
+            <div className="mt-2 flex flex-wrap gap-2 text-[12px]" aria-live="polite">
+              {voiceInfo.protocol_emulator ? (
+                <span className="rounded-full border border-warn/50 bg-warn/10 px-2.5 py-1 text-warn">Gnani protocol emulator - synthetic audio</span>
+              ) : voiceInfo.provider !== "gnani" ? (
+                <span className="rounded-full border border-line px-2.5 py-1 text-[12px] text-muted">Voice provider: {voiceInfo.provider ?? "unknown"}</span>
+              ) : (
+                <span className="rounded-full border border-line px-2.5 py-1 text-muted">{modelName(voiceInfo.stt_model, "Prisma")} / {modelName(voiceInfo.tts_model, "Timbre")} · {voiceInfo.language}</span>
+              )}
+              {detectedLanguage ? <span className="rounded-full border border-line px-2.5 py-1 text-muted">Detected: {detectedLanguage}</span> : null}
+            </div>
+          ) : null}
           <h1 lang={q.language === "hi-en" ? "hi-Latn" : q.language} className="text-[24px] font-medium leading-snug">
             {q.text}
           </h1>
@@ -517,7 +569,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
               <button
                 type="button"
                 onClick={toggleVoice}
-                disabled={phase === "sending"}
+                disabled={phase === "sending" || phase === "checking"}
                 aria-pressed={phase === "recording"}
                 className={clsx(
                   "mt-4 flex h-[64px] w-full items-center justify-center gap-3 rounded-full text-[16px] font-semibold transition-colors duration-300 disabled:opacity-50",
@@ -525,7 +577,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
                 )}
               >
                 <IconMic />
-                {phase === "recording" ? "Stop and send" : phase === "sending" ? "Sending..." : "Answer by voice"}
+                {phase === "recording" ? "Stop and send" : phase === "sending" ? "Sending..." : phase === "checking" ? "Checking..." : "Answer by voice"}
               </button>
               <form
                 className="mt-4 flex gap-2"
@@ -540,6 +592,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
                 <input
                   id="ans"
                   value={text}
+                  disabled={phase === "checking"}
                   onChange={(e) => setText(e.target.value)}
                   placeholder={q.kind === "challenge" ? "Type what the label says" : "Or type your answer"}
                   className="h-[52px] min-w-0 flex-1 border-[0.8px] border-cream/40 bg-transparent px-4 text-[16px] outline-none transition-[border-radius] duration-500 placeholder:text-cream/40 focus:rounded-[26px] focus:border-cream"
@@ -575,6 +628,11 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         <p role="alert" className="mt-5 rounded-[14px] bg-bad/10 px-4 py-3 text-[14px] text-[#ff8a7f]">
           {msg}
         </p>
+      ) : null}
+      {phase === "checking" ? (
+        <button type="button" onClick={recoverConnection} className="btn-line mt-3">
+          Check connection
+        </button>
       ) : null}
 
       {view && (view.items.length || view.labels?.length) ? (

@@ -144,4 +144,22 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   with three questions in flight, verified repairs and identical replay. These are integration
   checks with synthetic voices, not the missing three-human M2 milestone.
 - Sustained emulated-load results and human/phone limitations are recorded in STATUS_2026-11-07.md.
-- Published latency figures. Measurements exist but stay private under the Gnani EULA.
+- No Gnani latency figures are published. VOICE_LATENCY_EMULATOR.md reports local synthetic timing
+  and does not describe provider performance.
+
+## Recovery and emulator measurement
+
+- If a participant socket closes during capture or submission, the browser fetches the investigation
+  again before offering another attempt. An answer already accepted is not submitted again. If the
+  question remains pending, voice, tap and text remain available. Browser tests cover both drop
+  points; the server emulator matrix checks that recovery records at most one observation and keeps
+  replay identical.
+- The local emulator can drop an upstream stream, return a 429 or 5xx response, delay the first TTS
+  byte, send a partial transcript or malformed frame, and add deterministic seeded noise to
+  synthetic PCM. The fault matrix drives each mode through the core and local PostgreSQL without
+  contacting Gnani.
+- Structured voice_hop events record capture, proxy, upstream, transcript, extraction,
+  next-question TTS and playback timings under a random trace id. They contain no audio or
+  transcript content. scripts/load_test.py runs a fixed number of emulator investigations and
+  writes p50/p95 hops. VOICE_LATENCY_EMULATOR.md is explicitly emulator-only, not Gnani
+  performance. Provider measurements stay private under the Gnani EULA.

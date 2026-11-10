@@ -37,14 +37,15 @@ measured Gnani accuracy or latency numbers must not be published outside the tea
 | Devanagari TTS | Auto-detect treats Devanagari as Hindi; Marathi must be explicit | doc | We always pass the language explicitly |
 | LiveKit plugin | Cannot select v3.0 | src | LiveKit is dropped as plan B (see VOICE_ARCHITECTURE.md) |
 
-Public documentation checked on 2026-11-10: [realtime STT](https://docs.gnani.ai/api/STT/stt-websocket),
-[Prisma v3](https://docs.gnani.ai/api/STT/models/prisma-v3), [TTS SSE](https://docs.gnani.ai/api/TTS/tts-sse),
-and [voice catalog](https://docs.gnani.ai/api/TTS/available-voices). The
-[challenge page](https://www.gnani.ai/internship) markets Prisma and Timbre v2.5. This project
-selects Prisma v3.0 for multilingual detection and code-mixing, and Timbre v3.0 for its multilingual
-voices; Hinglish TTS uses v2.5 Poorvi, which the catalog lists for `hi-en`. These choices do not
-establish measured quality or compliance with any account-specific model entitlement.
+Public contract checked on 2026-11-10:
 
+- [Realtime STT](https://docs.gnani.ai/api/STT/stt-websocket): the page now documents Prisma v3.0 with indic-auto or a comma-separated list of up to four language codes. On 2026-11-04, our authorized live check found the gateway rejected the comma list with "exactly one locale is required". The adapter therefore retains the then-working indic-auto plus x-language-candidates workaround. That earlier live result has not been rechecked against the current service. The realtime page documents keyterms, but not the x-language-candidates or x-keywords header names.
+- [Prisma v3.0](https://docs.gnani.ai/api/STT/models/prisma-v3): the model documents per-segment language selection, code-mixed output and detected-language fields. Its streaming previous_text header means what was said just before this audio. The app does not send the question as previous_text; treating a question as that prior audio's transcript remains an experiment.
+- [TTS SSE](https://docs.gnani.ai/api/TTS/tts-sse): each SSE chunk contains base64 audio. With audio_config.container: raw and encoding: linear_pcm, the documented output is headerless 16-bit PCM; container: wav includes a WAV header. The stream adapter requests raw.
+- [Timbre voice catalog](https://docs.gnani.ai/api/TTS/available-voices): separate v3.0 and v2.5 voice catalogs are listed, including Poorvi for Hinglish (hi-en) on v2.5.
+- [Great Indian AI Internship Challenge](https://www.gnani.ai/internship) and its [model overview](https://www.gnani.ai/resources/blogs/great-indian-ai-internship-challenge-2026): the programme markets Prisma v2.5 and Timbre v2.5, while this integration requests Prisma v3.0 and Timbre v3.0 for their current documented multilingual detection and voice catalogs. Hinglish TTS stays on Timbre v2.5 with Poorvi because that is the selected catalog voice for hi-en and the existing integration path was live-tested. This describes model selection, not a measured quality advantage. Account-specific model entitlement still needs checking before any live run.
+
+Each page above was accessed on 2026-11-10. The [Gnani Vachana SDK](https://github.com/Gnani-AI-Mintlify/Gnani-Vachana) was also read that day: it shows language_candidates and keywords in SDK examples, but that does not document the x-language-candidates or x-keywords names on the realtime API page.
 ## Tested (protocol emulation, `services/core/tests/test_gnani_adapter.py`, 26 tests)
 
 - The REST multipart fields we send: `model`, the language list, `format=codemix`, and
