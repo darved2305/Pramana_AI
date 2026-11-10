@@ -202,6 +202,8 @@ async def _relay_upstream(upstream: GnaniSttStream, send: object) -> None:
             speech_end = ev.received_at
             await send(MediaServerMessage(type="processing"))
         elif ev.type == "transcript":
+            if ev.raw.get("is_final") is False:
+                continue
             eos_ms = (ev.received_at - speech_end) * 1000 if speech_end else None
             speech_end = None
             latency = ev.raw.get("latency")

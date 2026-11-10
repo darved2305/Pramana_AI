@@ -359,6 +359,24 @@ def test_browser_stream_relay_end_to_end(fake: FakeGnani, migrated_db: str) -> N
         assert seen == ["speech_start", "processing", "transcript"]
 
 
+def test_browser_stream_relay_ignores_non_final_transcripts(
+    fake: FakeGnani, migrated_db: str
+) -> None:
+    fake.partial_transcript = "not yet final"
+    app = create_app(core_settings(migrated_db, GNANI_API_KEY="k", GNANI_BASE_URL=fake.base_url))
+    with TestClient(app) as c, c.websocket_connect("/v1/voice/stream") as ws:
+        ws.send_text(json.dumps({"type": "start", "language_code": ["mr-IN", "hi-IN"]}))
+        assert json.loads(ws.receive_text()) == {"type": "ready", "model_confirmed": True}
+        ws.send_bytes(b"\x01\x00" * 600)
+        ws.send_text(json.dumps({"type": "commit"}))
+        transcripts = []
+        while not transcripts:
+            msg = json.loads(ws.receive_text())
+            if msg["type"] == "transcript":
+                transcripts.append(msg["text"])
+        assert transcripts == ["बंद आहे"]
+
+
 def test_browser_stream_ignores_malformed_and_non_object_control_frames(
     fake: FakeGnani, migrated_db: str
 ) -> None:
