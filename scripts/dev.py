@@ -41,6 +41,8 @@ from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 
+from pramana_core.migrations import require_allowlisted_database
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -296,10 +298,23 @@ class Child:
 
 
 def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, str]:
-    env = {k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None}
-    env.update(os.environ if base is None else base)
-    if not env.get("DATABASE_URL", "").strip():
-        raise ValueError("DATABASE_URL must explicitly select a database")
+    checkout_env = {k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None}
+    inherited = os.environ if base is None else base
+    for name in ("DATABASE_URL", "PRAMANA_DB_NAMES"):
+        selected = checkout_env.get(name, "").strip()
+        override = inherited.get(name, "").strip()
+        if not selected:
+            raise ValueError(f"{name} must be explicitly set in the checkout .env")
+        if override and override != selected:
+            raise ValueError(f"{name} in the process environment conflicts with the checkout .env")
+    env = dict(checkout_env)
+    env.update(inherited)
+    env["DATABASE_URL"] = checkout_env["DATABASE_URL"].strip()
+    env["PRAMANA_DB_NAMES"] = checkout_env["PRAMANA_DB_NAMES"].strip()
+    try:
+        require_allowlisted_database(env["DATABASE_URL"], env["PRAMANA_DB_NAMES"])
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
     env.update(
         CORE_PORT=str(opts.core_port),
         SIM_PORT=str(opts.sim_port),

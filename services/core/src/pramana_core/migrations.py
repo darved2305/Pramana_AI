@@ -23,18 +23,35 @@ def require_database_name(url: str, setting: str = "DATABASE_URL") -> str:
     return url
 
 
+def require_allowlisted_database(
+    url: str, allowed_names: str, setting: str = "DATABASE_URL"
+) -> str:
+    """Refuse a database URL unless its name appears in this checkout's allowlist."""
+    require_database_name(url, setting)
+    database = make_url(url).database
+    allowed = {name.strip() for name in allowed_names.split(",") if name.strip()}
+    if not allowed:
+        raise RuntimeError("PRAMANA_DB_NAMES must explicitly list allowed databases")
+    if database not in allowed:
+        raise RuntimeError(f"{setting} database {database!r} is not listed in PRAMANA_DB_NAMES")
+    return url
+
+
 def migration_database_url(
     config_url: str | None,
     environment_url: str | None,
     dotenv_path: Path,
 ) -> str:
     """Resolve an explicit migration URL, refusing every empty or implicit fallback."""
+    dotenv = dotenv_values(dotenv_path) if dotenv_path.is_file() else {}
     url = config_url or environment_url
-    if not url and dotenv_path.is_file():
-        url = dotenv_values(dotenv_path).get("DATABASE_URL")
+    if not url:
+        url = dotenv.get("DATABASE_URL")
     if url is None:
         url = ""
     try:
+        if dotenv_path.is_file():
+            return require_allowlisted_database(url, dotenv.get("PRAMANA_DB_NAMES") or "")
         return require_database_name(url)
     except RuntimeError as exc:
         raise RuntimeError(

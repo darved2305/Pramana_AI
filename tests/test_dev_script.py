@@ -266,7 +266,8 @@ def test_output_the_console_cannot_encode_never_freezes_a_child() -> None:
 def test_service_env_loads_selected_database_from_checkout(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(dev, "ROOT", tmp_path)
     (tmp_path / ".env").write_text(
-        "DATABASE_URL=postgresql+asyncpg://local/selected\n", encoding="utf-8"
+        "DATABASE_URL=postgresql+asyncpg://local/selected\nPRAMANA_DB_NAMES=selected\n",
+        encoding="utf-8",
     )
     assert dev.service_env(dev.Options(), {})["DATABASE_URL"].endswith("/selected")
 
@@ -277,9 +278,36 @@ def test_service_env_requires_database(monkeypatch, tmp_path: Path) -> None:
         dev.service_env(dev.Options(), {})
 
 
-def test_demo_uses_local_mock_identity_and_emulator() -> None:
+def test_service_env_refuses_a_process_database_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://local/selected\nPRAMANA_DB_NAMES=selected\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="DATABASE_URL in the process environment conflicts"):
+        dev.service_env(dev.Options(), {"DATABASE_URL": "postgresql+asyncpg://local/other"})
+
+
+def test_service_env_refuses_a_database_outside_the_checkout_allowlist(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://local/other\nPRAMANA_DB_NAMES=selected\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="not listed in PRAMANA_DB_NAMES"):
+        dev.service_env(dev.Options(), {})
+
+
+def test_demo_uses_local_mock_identity_and_emulator(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://localhost/safe\nPRAMANA_DB_NAMES=safe\n",
+        encoding="utf-8",
+    )
     opts = dev.parse_args(["--demo"])
-    env = dev.service_env(opts, {"DATABASE_URL": "postgresql+asyncpg://localhost/safe"})
+    env = dev.service_env(opts, {})
     assert opts.web
     assert env["OIDC_ISSUER"] == "http://localhost:8410"
     assert env["GNANI_API_KEY"] == "local-emulator"
@@ -294,15 +322,21 @@ def test_demo_uses_local_mock_identity_and_emulator() -> None:
     ]
 
 
-def test_demo_rejects_a_remote_database() -> None:
+def test_demo_rejects_a_remote_database(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://remote.example/db\nPRAMANA_DB_NAMES=db\n",
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="local database"):
-        dev.service_env(
-            dev.parse_args(["--demo"]), {"DATABASE_URL": "postgresql+asyncpg://remote.example/db"}
-        )
+        dev.service_env(dev.parse_args(["--demo"]), {})
 
 
-def test_demo_rejects_a_database_url_without_a_name() -> None:
+def test_demo_rejects_a_database_url_without_a_name(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://localhost\nPRAMANA_DB_NAMES=safe\n",
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="database name"):
-        dev.service_env(
-            dev.parse_args(["--demo"]), {"DATABASE_URL": "postgresql+asyncpg://localhost"}
-        )
+        dev.service_env(dev.parse_args(["--demo"]), {})
