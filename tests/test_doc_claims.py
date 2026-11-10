@@ -129,6 +129,27 @@ def test_submission_judge_path_has_supported_claims_and_existing_local_links() -
         assert missing == [], f"{relative}: {missing}"
 
 
+def test_readme_and_docs_have_no_em_dashes() -> None:
+    paths = [ROOT / "README.md", *(ROOT / "docs").rglob("*")]
+    offenders = [
+        str(path.relative_to(ROOT))
+        for path in paths
+        if path.is_file() and chr(0x2014) in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
+
+
+def test_judge_docs_avoid_internal_lane_labels() -> None:
+    paths = [
+        ROOT / "README.md",
+        *(ROOT / "docs").glob("*.md"),
+        ROOT / "docs/engineering/STATUS_2026-11-10.md",
+    ]
+    label = re.compile(r"\bB[0-9]L?\b|Day-?1|lane", re.IGNORECASE)
+    for path in paths:
+        assert not label.search(path.read_text(encoding="utf-8")), path
+
+
 @pytest.mark.parametrize(
     "text",
     [

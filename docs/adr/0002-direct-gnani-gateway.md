@@ -1,4 +1,4 @@
-# 0002 — Direct FastAPI gateway to Gnani; LiveKit dropped as plan B
+# 0002 - Direct FastAPI gateway to Gnani; LiveKit dropped as plan B
 
 **Status:** accepted (supersedes the "LiveKit plan B" line in PLAN.md §2)
 

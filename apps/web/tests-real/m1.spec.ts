@@ -102,6 +102,13 @@ test("README judge path: diagnosis, approval, reveal and replay", async ({ page,
   const pack = await api<{ probes: { id: string; label: string }[] }>(request, "GET", "/v1/packs/campus_block_c");
   const label = (probe: string) => pack.probes.find((x) => x.id === probe)?.label ?? probe;
 
+  // Other real-stack specs seed the shared test directory. Clear it first so this acceptance
+  // path can create the named participants through the UI, including when rerun on its own.
+  const directory = await api<{ participant: { id: string } }[]>(request, "GET", "/v1/participants?pack_id=campus_block_c");
+  for (const entry of directory) {
+    await api(request, "DELETE", `/v1/participants/${entry.participant.id}?pack_id=campus_block_c`);
+  }
+
   // The console follows events over server-sent events (polling is only the fallback).
   const streams: string[] = [];
   page.on("request", (r) => {

@@ -1,4 +1,4 @@
-# USP_LAB.md — Every unconventional capability we considered
+# USP_LAB.md - Every unconventional capability we considered
 
 This lab started from the 10 seed ideas in our brief and extended them to 17 candidates. Every candidate was put through the same screening question:
 
