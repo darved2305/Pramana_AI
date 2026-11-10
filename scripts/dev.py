@@ -26,6 +26,7 @@ import contextlib
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -396,6 +397,38 @@ def children(opts: Options, env: dict[str, str]) -> list[Child]:
     return out
 
 
+def _port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def busy_ports(opts: Options) -> list[tuple[str, int]]:
+    """Ports this run needs that another process already holds, with the service that needs them.
+
+    A busy port must stop the run: a health check would otherwise accept whatever answers there
+    (for example another checkout's demo) and report it as this run's own service.
+    """
+    needed = [("core", opts.core_port), ("sim", opts.sim_port)]
+    if opts.web:
+        needed.append(("web", opts.web_port))
+    if opts.demo:
+        needed += [("oidc", opts.oidc_port), ("gnani-emulator", opts.gnani_port)]
+    return [(name, port) for name, port in needed if not _port_free(port)]
+
+
+PORT_FLAGS = {
+    "core": "--core-port",
+    "sim": "--sim-port",
+    "web": "--web-port",
+    "oidc": "--oidc-port",
+    "gnani-emulator": "--gnani-port",
+}
+
+
 def prepare(opts: Options) -> dict[str, str]:
     if not (ROOT / ".env").exists():
         say("[dev] no .env found: generating one with fresh keys (scripts/dev_env.py)")
@@ -428,6 +461,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), _interrupt)
     procs: list[Child] = []
+    busy = busy_ports(opts)
+    if busy:
+        for name, port in busy:
+            say(
+                f"[dev] port {port} for {name} is already in use. Stop the process that holds it"
+                f" or pass {PORT_FLAGS[name]} with a free port."
+            )
+        return 1
     try:
         env = prepare(opts)
         procs = children(opts, env)
