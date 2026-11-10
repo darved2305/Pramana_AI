@@ -9,8 +9,11 @@ from typing import Any
 import pytest
 from auth_testkit import AUTO, CSRF, PASSWORD, USERS, login
 from core_testkit import SIGNING_KEY, body
-from fastapi.routing import APIRoute, _IncludedRouter
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from route_inventory import base_route as _base_route
+from route_inventory import effective_path as _effective_path
+from route_inventory import registered_routes as _registered_routes
 from starlette.routing import WebSocketRoute
 from test_accounts import create
 from test_auth import secure_core as secure_core
@@ -240,19 +243,6 @@ def _matrix_path(template: str, workspace: dict[str, Any], *, org: str | None = 
     )
 
 
-def _registered_routes(app: Any) -> list[Any]:
-    """Expand included routers using the same candidate graph used by the ASGI router."""
-    pending = list(app.router.routes)
-    routes: list[Any] = []
-    while pending:
-        route = pending.pop()
-        if isinstance(route, _IncludedRouter):
-            pending.extend(route.effective_candidates())
-        else:
-            routes.append(route)
-    return routes
-
-
 def _matrix_context(
     client: TestClient, migrated_db: str
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, dict[str, str]], dict[str, str]]:
@@ -322,15 +312,6 @@ def _matrix_context(
         "viewer": "viewer",
     }
     return workspace_a, workspace_b, actor_headers, actor_roles
-
-
-def _base_route(route: Any) -> Any:
-    return getattr(route, "original_route", route)
-
-
-def _effective_path(route: Any) -> str:
-    starlette_route = getattr(route, "starlette_route", None)
-    return getattr(starlette_route, "path", getattr(route, "path", ""))
 
 
 def test_every_registered_org_http_route_has_an_exercised_role_matrix(
