@@ -160,6 +160,19 @@ async def test_successful_calls_are_metered_failed_calls_are_not(
         await c.aclose()
 
 
+async def test_zero_length_stt_is_metered_at_the_minimum_with_memory_ledger() -> None:
+    g, ledger = client(
+        lambda _: httpx.Response(
+            200,
+            json={"success": True, "request_id": "zero-length", "transcript": ""},
+        )
+    )
+    result = await g.transcribe(wav(0), "empty.wav", ["hi-IN"])
+    assert result.audio_ms == 0
+    assert ledger.rows[-1][1:] == ("stt_rest", 0.0, pytest.approx(0.02))
+    await g.aclose()
+
+
 async def test_retries_consume_rate_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(gmod, "RETRY_BACKOFF_S", (0.0, 0.0, 0.0))
     g, _ = client(lambda _: httpx.Response(429))
@@ -437,5 +450,84 @@ async def test_shared_governor_accounts_for_retry_attempts(
     await client.synthesize("hi", language="en-IN")
     assert await ledger.spent_today() == pytest.approx(0.02)
     assert (await ledger.status())["window_used"] == {"stt_rest": 0, "tts": 2}
+    await client.aclose()
+    await db.dispose()
+
+
+@pytest.mark.db
+async def test_rate_refusal_before_provider_does_not_consume_daily_budget(
+    migrated_db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core_testkit import core_settings
+    from sqlalchemy import text
+
+    db = Database(make_engine(core_settings(migrated_db)))
+    async with db.transaction() as session:
+        for table in ("voice_usage", "voice_reservations", "voice_rate_events"):
+            await session.execute(text(f"delete from {table}"))
+    ledger = DbLedger(db)
+
+    async def refuse(service: str, limit: int, max_wait_s: float) -> None:
+        raise ApiError(429, "VOICE_RATE_LIMITED_LOCAL", "voice rate limit reached")
+
+    monkeypatch.setattr(ledger, "pace", refuse)
+    provider_called = False
+
+    def provider(_: httpx.Request) -> httpx.Response:
+        nonlocal provider_called
+        provider_called = True
+        return ok_tts(httpx.Request("POST", "http://test"))
+
+    client = GnaniClient(
+        "k",
+        "http://127.0.0.1",
+        5,
+        governor=VoiceGovernor(GovernorLimits(daily_budget_inr=1.0), ledger),
+        transport=httpx.MockTransport(provider),
+    )
+    with pytest.raises(ApiError) as exc:
+        await client.synthesize("hello", language="en-IN")
+    assert exc.value.code == "VOICE_RATE_LIMITED_LOCAL"
+    assert not provider_called
+    assert await ledger.spent_today() == 0
+    assert (await ledger.status())["reserved_inr"] == 0
+    await client.aclose()
+    await db.dispose()
+
+
+@pytest.mark.db
+async def test_zero_length_stt_request_is_metered_at_the_provider_minimum(
+    migrated_db: str,
+) -> None:
+    from core_testkit import core_settings
+    from sqlalchemy import text
+
+    db = Database(make_engine(core_settings(migrated_db)))
+    async with db.transaction() as session:
+        for table in ("voice_usage", "voice_reservations", "voice_rate_events"):
+            await session.execute(text(f"delete from {table}"))
+    ledger = DbLedger(db)
+    provider_called = False
+
+    def provider(_: httpx.Request) -> httpx.Response:
+        nonlocal provider_called
+        provider_called = True
+        return httpx.Response(
+            200,
+            json={"success": True, "request_id": "zero-length", "transcript": ""},
+        )
+
+    client = GnaniClient(
+        "k",
+        "http://127.0.0.1",
+        5,
+        governor=VoiceGovernor(GovernorLimits(), ledger),
+        transport=httpx.MockTransport(provider),
+    )
+    result = await client.transcribe(wav(0), "empty.wav", ["hi-IN"])
+    assert provider_called
+    assert result.audio_ms == 0
+    assert await ledger.spent_today() == pytest.approx(0.02)
+    assert (await ledger.by_service_today())["stt_rest"]["cost_inr"] == pytest.approx(0.02)
     await client.aclose()
     await db.dispose()
