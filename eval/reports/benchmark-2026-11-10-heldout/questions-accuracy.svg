@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="440" viewBox="0 0 720 440">
+<rect width="100%" height="100%" fill="white"/>
+<text x="70" y="25" font-family="sans-serif" font-size="16">Accuracy by questions</text>
+<path d="M 70 45 V 375 H 680" fill="none" stroke="#555"/>
+<path d="M 70 45.0 H 680" stroke="#ddd"/>
+<text x="42" y="49.0" font-family="sans-serif" font-size="11">1.0</text>
+<path d="M 70 111.0 H 680" stroke="#ddd"/>
+<text x="42" y="115.0" font-family="sans-serif" font-size="11">0.8</text>
+<path d="M 70 177.0 H 680" stroke="#ddd"/>
+<text x="42" y="181.0" font-family="sans-serif" font-size="11">0.6</text>
+<path d="M 70 243.0 H 680" stroke="#ddd"/>
+<text x="42" y="247.0" font-family="sans-serif" font-size="11">0.4</text>
+<path d="M 70 309.0 H 680" stroke="#ddd"/>
+<text x="42" y="313.0" font-family="sans-serif" font-size="11">0.2</text>
+<path d="M 70 375.0 H 680" stroke="#ddd"/>
+<text x="42" y="379.0" font-family="sans-serif" font-size="11">0.0</text>
+<path d="M 192.00 45.00 V 45.00 M 189.00 45.00 H 195.00 M 189.00 45.00 H 195.00" stroke="#155eef"/>
+<path d="M 253.00 45.00 V 96.56 M 250.00 45.00 H 256.00 M 250.00 96.56 H 256.00" stroke="#155eef"/>
+<path d="M 314.00 45.00 V 75.39 M 311.00 45.00 H 317.00 M 311.00 75.39 H 317.00" stroke="#155eef"/>
+<path d="M 375.00 48.17 V 76.73 M 372.00 48.17 H 378.00 M 372.00 76.73 H 378.00" stroke="#155eef"/>
+<path d="M 436.00 52.73 V 75.94 M 433.00 52.73 H 439.00 M 433.00 75.94 H 439.00" stroke="#155eef"/>
+<path d="M 497.00 53.46 V 80.96 M 494.00 53.46 H 500.00 M 494.00 80.96 H 500.00" stroke="#155eef"/>
+<path d="M 558.00 54.59 V 75.75 M 555.00 54.59 H 561.00 M 555.00 75.75 H 561.00" stroke="#155eef"/>
+<path d="M 619.00 52.25 V 74.01 M 616.00 52.25 H 622.00 M 616.00 74.01 H 622.00" stroke="#155eef"/>
+<path d="M 680.00 51.88 V 72.50 M 677.00 51.88 H 683.00 M 677.00 72.50 H 683.00" stroke="#155eef"/>
+<polyline points="192.00,45.00 253.00,65.62 314.00,58.03 375.00,60.87 436.00,63.05 497.00,66.15 558.00,64.19 619.00,63.13 680.00,62.19" fill="none" stroke="#155eef" stroke-width="2"/>
+<text x="70" y="420" font-family="sans-serif" font-size="11" fill="#155eef">E_ours</text>
+<path d="M 192.00 45.00 V 135.00 M 189.00 45.00 H 195.00 M 189.00 135.00 H 195.00" stroke="#e05d44"/>
+<path d="M 253.00 45.00 V 77.35 M 250.00 45.00 H 256.00 M 250.00 77.35 H 256.00" stroke="#e05d44"/>
+<path d="M 314.00 53.53 V 79.14 M 311.00 53.53 H 317.00 M 311.00 79.14 H 317.00" stroke="#e05d44"/>
+<path d="M 375.00 45.00 V 61.50 M 372.00 45.00 H 378.00 M 372.00 61.50 H 378.00" stroke="#e05d44"/>
+<path d="M 436.00 49.18 V 67.97 M 433.00 49.18 H 439.00 M 433.00 67.97 H 439.00" stroke="#e05d44"/>
+<path d="M 497.00 48.93 V 66.61 M 494.00 48.93 H 500.00 M 494.00 66.61 H 500.00" stroke="#e05d44"/>
+<path d="M 558.00 50.32 V 69.84 M 555.00 50.32 H 561.00 M 555.00 69.84 H 561.00" stroke="#e05d44"/>
+<path d="M 619.00 50.18 V 69.19 M 616.00 50.18 H 622.00 M 616.00 69.19 H 622.00" stroke="#e05d44"/>
+<path d="M 680.00 50.35 V 69.97 M 677.00 50.35 H 683.00 M 677.00 69.97 H 683.00" stroke="#e05d44"/>
+<polyline points="192.00,75.00 253.00,57.94 314.00,64.91 375.00,52.07 436.00,57.53 497.00,56.79 558.00,59.19 619.00,58.82 680.00,59.27" fill="none" stroke="#e05d44" stroke-width="2"/>
+<text x="215" y="420" font-family="sans-serif" font-size="11" fill="#e05d44">D_greedy_entropy</text>
+<path d="M 314.00 375.00 V 375.00 M 311.00 375.00 H 317.00 M 311.00 375.00 H 317.00" stroke="#159570"/>
+<path d="M 375.00 45.00 V 375.00 M 372.00 45.00 H 378.00 M 372.00 375.00 H 378.00" stroke="#159570"/>
+<path d="M 436.00 45.00 V 45.00 M 433.00 45.00 H 439.00 M 433.00 45.00 H 439.00" stroke="#159570"/>
+<path d="M 497.00 45.00 V 45.00 M 494.00 45.00 H 500.00 M 494.00 45.00 H 500.00" stroke="#159570"/>
+<path d="M 558.00 45.00 V 45.00 M 555.00 45.00 H 561.00 M 555.00 45.00 H 561.00" stroke="#159570"/>
+<path d="M 619.00 45.00 V 45.00 M 616.00 45.00 H 622.00 M 616.00 45.00 H 622.00" stroke="#159570"/>
+<path d="M 680.00 45.00 V 67.00 M 677.00 45.00 H 683.00 M 677.00 67.00 H 683.00" stroke="#159570"/>
+<polyline points="314.00,375.00 375.00,210.00 436.00,45.00 497.00,45.00 558.00,45.00 619.00,45.00 680.00,52.33" fill="none" stroke="#159570" stroke-width="2"/>
+<text x="360" y="420" font-family="sans-serif" font-size="11" fill="#159570">A_checklist</text>
+<path d="M 192.00 45.00 V 45.00 M 189.00 45.00 H 195.00 M 189.00 45.00 H 195.00" stroke="#a35bd4"/>
+<path d="M 253.00 45.00 V 45.00 M 250.00 45.00 H 256.00 M 250.00 45.00 H 256.00" stroke="#a35bd4"/>
+<path d="M 314.00 45.00 V 45.00 M 311.00 45.00 H 317.00 M 311.00 45.00 H 317.00" stroke="#a35bd4"/>
+<path d="M 375.00 45.00 V 45.00 M 372.00 45.00 H 378.00 M 372.00 45.00 H 378.00" stroke="#a35bd4"/>
+<path d="M 436.00 45.00 V 106.88 M 433.00 45.00 H 439.00 M 433.00 106.88 H 439.00" stroke="#a35bd4"/>
+<path d="M 497.00 45.00 V 113.75 M 494.00 45.00 H 500.00 M 494.00 113.75 H 500.00" stroke="#a35bd4"/>
+<path d="M 558.00 45.00 V 117.19 M 555.00 45.00 H 561.00 M 555.00 117.19 H 561.00" stroke="#a35bd4"/>
+<path d="M 619.00 45.00 V 101.34 M 616.00 45.00 H 622.00 M 616.00 101.34 H 622.00" stroke="#a35bd4"/>
+<path d="M 680.00 51.73 V 98.88 M 677.00 51.73 H 683.00 M 677.00 98.88 H 683.00" stroke="#a35bd4"/>
+<polyline points="192.00,45.00 253.00,45.00 314.00,45.00 375.00,45.00 436.00,65.62 497.00,72.50 558.00,75.94 619.00,69.15 680.00,71.94" fill="none" stroke="#a35bd4" stroke-width="2"/>
+<text x="505" y="420" font-family="sans-serif" font-size="11" fill="#a35bd4">C_random</text>
+<text x="375.0" y="428" text-anchor="middle" font-family="sans-serif" font-size="12">questions</text>
+</svg>

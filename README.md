@@ -92,16 +92,51 @@ counts and exit codes: `eval/reports/verification-2026-11-07/report.md`. CI runs
 
 ## Results so far (simulated building, logic mode)
 
-From generated reports only; nothing below is typed by hand.
+All evaluation numbers below come from committed reports and are checked against their summary files.
 
-- **Benchmark** (`eval/reports/benchmark-2026-11-07-rc1/`, 300 simulated scenarios): the
-  exploratory historical success metric is 84.7% for our planner, 64.0% for a checklist,
-  56.3% for random questions and 83.3% for greedy entropy. It credits a partial action or
-  abstention on a pair, and does not measure full resolution. These seeds were examined before
-  the stated freeze; the registered multiple-comparison analysis was not performed.
-- **Parallel calls** (ADR 0011): asking up to three people at once cuts the simulated time to a
-  conclusion by about a third with no significant change in success, at the cost of about two
-  more questions per investigation.
+**Benchmark** (`eval/reports/benchmark-2026-11-10-heldout/summary.json`; run commit `56382dc`, frozen code `cfca50bf31959f828c77936580632c9a9bf3f7ad`, seeds 40000-40299). This logic-mode run completed 300 scenarios per policy with no failed episodes. The generated mix was 197 single, 40 pair, 16 no-fault and 47 access-limited cases (`scenario-manifest.json`). Historical success retains RC1's pair credit; honest success excludes pair abstentions because pair identifiability is unknown. E's historical success was 83.3%, and its honest success was 80.3%. After Holm correction, honest success was higher for E than the checklist (p=1.72924e-15, adjusted p=6.91696e-15) and random selection (p=2.26252e-19, adjusted p=1.13126e-18). The registered comparisons did not show an honest-success difference between E and greedy entropy (adjusted p=1) or E with three-way parallel scheduling (adjusted p=1); we do not claim E beats greedy entropy. The LLM baseline was unavailable because no provider credential was configured and paid providers were not allowed. The requested 20000-20299 seeds had prior use, so the committed protocol uses the searched disjoint 40000-40299 range; it also records the 300-scenario shortfall against the broader 500-scenario target.
+
+| Policy | Historical success | Honest success | Completed | Failed |
+|---|---:|---:|---:|---:|
+| E_ours | 83.3% | 80.3% | 300 | 0 |
+| A_checklist | 63.0% | 57.7% | 300 | 0 |
+| C_random | 60.7% | 50.3% | 300 | 0 |
+| D_greedy_entropy | 84.7% | 82.0% | 300 | 0 |
+| E_parallel3 | 83.0% | 78.3% | 300 | 0 |
+
+For E, 29/40 pair episodes had a first useful action, while 3/40 reached full pair resolution through repair, verification, reopen and follow-up diagnosis. The other policies' denominators and rates are below.
+
+| Policy | Pair episodes | First useful action | Full pair resolution | Resolution n |
+|---|---:|---:|---:|---:|
+| E_ours | 40 | 72.5% | 7.5% | 40 |
+| A_checklist | 40 | 40.0% | 2.5% | 40 |
+| C_random | 40 | 22.5% | 0.0% | 40 |
+| D_greedy_entropy | 40 | 75.0% | 7.5% | 40 |
+| E_parallel3 | 40 | 57.5% | 2.5% | 40 |
+
+Registered paired tests use honest success, probes and effort. Intervals and all outcome denominators are in `report.md` and `summary.json`.
+
+| Outcome | Comparison | Paired n | p | Holm p |
+|---|---|---:|---:|---:|
+| success | A_checklist | 300 | 1.72924e-15 | 6.91696e-15 |
+| success | B_llm | 0 | n/a | n/a |
+| success | C_random | 300 | 2.26252e-19 | 1.13126e-18 |
+| success | D_greedy_entropy | 300 | 0.522397 | 1 |
+| success | E_parallel3 | 300 | 0.361595 | 1 |
+| probes | A_checklist | 300 | 1.46818e-49 | 7.34089e-49 |
+| probes | B_llm | 0 | n/a | n/a |
+| probes | C_random | 300 | 1.66514e-38 | 6.66056e-38 |
+| probes | D_greedy_entropy | 300 | 4.75357e-12 | 9.50714e-12 |
+| probes | E_parallel3 | 300 | 1.54863e-35 | 4.64588e-35 |
+| effort_s | A_checklist | 300 | 1.43803e-50 | 7.19016e-50 |
+| effort_s | B_llm | 0 | n/a | n/a |
+| effort_s | C_random | 300 | 1.53253e-49 | 6.13011e-49 |
+| effort_s | D_greedy_entropy | 300 | 7.22868e-13 | 1.44574e-12 |
+| effort_s | E_parallel3 | 300 | 3.06103e-40 | 9.18309e-40 |
+
+Fixed question and effort curves, the calibration diagram, raw budget episodes, scenario manifest and all source tables are committed in `eval/reports/benchmark-2026-11-10-heldout/`.
+
+- **Parallel calls** (ADR 0011): in this heldout run, K=3 reduced mean simulated time to conclusion from 197.81s to 124.34s. The paired E-minus-K3 difference was 73.47s [64.31, 82.99] (descriptive bootstrap interval). K=3 used more diagnostic probes and participant effort than K=1 after Holm adjustment (p=4.64588e-35 and p=9.18309e-40). Its honest-success difference was not significant after Holm; that does not establish equal success.
 - **Stopping-rule calibration** (`eval/reports/calibration-2026-11-05/`): in the explored
   variants, valuing people's time at half increased the historical success metric by 2.7
   points for 0.37 more questions. This is exploratory and was not adopted.

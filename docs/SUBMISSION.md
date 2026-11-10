@@ -43,13 +43,41 @@ engine, planner, API, event log, approvals, and the Gnani speech services are re
 - Every call goes through a governor (rate, concurrency, Rs 150 daily budget priced before
   sending).
 
-**Evaluation (logic mode, simulated participants).** From
-`eval/reports/benchmark-2026-11-07-rc1/summary.json` (300 scenarios, seeds 10000-10299,
-commit `8b24d0d`, tag `v1.0-rc1`): the exploratory historical success metric is 84.7% for
-Pramana, 64.0% for a checklist, 56.3% for random questions and 83.3% for greedy entropy. It
-credits a partial action or abstention on a pair and does not measure full resolution. These
-seeds were examined before the stated freeze; the registered multiple-comparison analysis was
-not performed. Speech-recognition accuracy and latency are not published (Gnani EULA §16).
+**Evaluation (logic mode, simulated participants).** From `eval/reports/benchmark-2026-11-10-heldout/summary.json` (run commit `56382dc`, frozen code `cfca50bf31959f828c77936580632c9a9bf3f7ad`, seeds 40000-40299). This run completed 300 scenarios per policy with no failures. The seed conflict, smaller sample than the 500-scenario target, and unavailable LLM baseline are recorded in `eval/protocols/2026-11-10-heldout.md`. Historical success preserves RC1's pair credit; honest success does not count abstentions where pair identifiability is unknown. E's honest success was higher than the checklist and random selection after Holm correction, but not significantly different from greedy entropy or K=3. The report does not claim that E beats greedy entropy. For E, 29/40 pair episodes had a first useful action and 3/40 reached full resolution. Speech-recognition accuracy and latency are not published (Gnani EULA §16).
+
+| Policy | Historical success | Honest success | Completed | Failed |
+|---|---:|---:|---:|---:|
+| E_ours | 83.3% | 80.3% | 300 | 0 |
+| A_checklist | 63.0% | 57.7% | 300 | 0 |
+| C_random | 60.7% | 50.3% | 300 | 0 |
+| D_greedy_entropy | 84.7% | 82.0% | 300 | 0 |
+| E_parallel3 | 83.0% | 78.3% | 300 | 0 |
+
+| Policy | Pair episodes | First useful action | Full pair resolution | Resolution n |
+|---|---:|---:|---:|---:|
+| E_ours | 40 | 72.5% | 7.5% | 40 |
+| A_checklist | 40 | 40.0% | 2.5% | 40 |
+| C_random | 40 | 22.5% | 0.0% | 40 |
+| D_greedy_entropy | 40 | 75.0% | 7.5% | 40 |
+| E_parallel3 | 40 | 57.5% | 2.5% | 40 |
+
+| Outcome | Comparison | Paired n | p | Holm p |
+|---|---|---:|---:|---:|
+| success | A_checklist | 300 | 1.72924e-15 | 6.91696e-15 |
+| success | B_llm | 0 | n/a | n/a |
+| success | C_random | 300 | 2.26252e-19 | 1.13126e-18 |
+| success | D_greedy_entropy | 300 | 0.522397 | 1 |
+| success | E_parallel3 | 300 | 0.361595 | 1 |
+| probes | A_checklist | 300 | 1.46818e-49 | 7.34089e-49 |
+| probes | B_llm | 0 | n/a | n/a |
+| probes | C_random | 300 | 1.66514e-38 | 6.66056e-38 |
+| probes | D_greedy_entropy | 300 | 4.75357e-12 | 9.50714e-12 |
+| probes | E_parallel3 | 300 | 1.54863e-35 | 4.64588e-35 |
+| effort_s | A_checklist | 300 | 1.43803e-50 | 7.19016e-50 |
+| effort_s | B_llm | 0 | n/a | n/a |
+| effort_s | C_random | 300 | 1.53253e-49 | 6.13011e-49 |
+| effort_s | D_greedy_entropy | 300 | 7.22868e-13 | 1.44574e-12 |
+| effort_s | E_parallel3 | 300 | 3.06103e-40 | 9.18309e-40 |
 
 **Limits.** One simulated building. The answer-extraction test sets were written by AI models
 and have been tuned on. [Fill: number of real human runs and their outcome, from the take

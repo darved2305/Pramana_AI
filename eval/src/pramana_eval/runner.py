@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import random
 import statistics
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -9,9 +11,10 @@ from typing import Any
 import numpy as np
 
 from pramana_contracts import PlanKind, ProbeAction
-from pramana_domain import DomainPack
+from pramana_domain import DomainPack, World
 from pramana_engine import MULTIPLE_FAULTS, CompiledModel, Engine, Evidence, schedule
 
+from .budget import calibration, stratum_outcomes
 from .policies import Conclusion, History, ParallelOurs, Policy
 from .scenarios import Answers, Scenario
 
@@ -30,7 +33,7 @@ class Episode:
     correct: bool
     """Decided and the decision is one the true faults need."""
     success: bool
-    """Correct, or abstained where abstaining is right (unidentifiable or outside the model)."""
+    """Historical credit: correct or abstained on unidentifiable, open-world, or pair cases."""
     probes: int
     effort_s: float
     people: int
@@ -42,6 +45,11 @@ class Episode:
     withdrawn: int = 0
     """Questions withdrawn in flight because another answer made them pointless."""
     presence_challenges: int = 0
+    honest_success: bool = False
+    """Correct decision or abstention only when identifiability is false."""
+    pair_full_resolution: bool | None = None
+    pair_repairs: int = 0
+    pair_resolution_extra_probes: int = 0
 
 
 def run_episode(
@@ -86,8 +94,12 @@ def run_episode(
         conclusion = Conclusion(None, snap.map_decision_probability)
     decided = conclusion.decision is not None
     correct = decided and conclusion.decision in scenario.true_decisions
+    # Preserve the old pair-abstention credit only in the historical success field.
     abstain_ok = scenario.identifiable is False or scenario.kind == "pair"
     asked = [h for h in history if h[1].outcome != "refused"]
+    pair_resolution, pair_repairs, pair_extra_probes = _complete_pair_repair_loop(
+        pack, scenario, policy, engine, answers, history, conclusion
+    )
     return Episode(
         policy=policy.name,
         seed=scenario.seed,
@@ -105,6 +117,10 @@ def run_episode(
         failed=conclusion.failed,
         wall_s=effort,
         presence_challenges=presence_challenges,
+        honest_success=correct or (not decided and scenario.identifiable is False),
+        pair_full_resolution=pair_resolution,
+        pair_repairs=pair_repairs,
+        pair_resolution_extra_probes=pair_extra_probes,
     )
 
 
@@ -174,6 +190,9 @@ def run_parallel_episode(
     decided = conclusion.decision is not None
     correct = decided and conclusion.decision in scenario.true_decisions
     abstain_ok = scenario.identifiable is False or scenario.kind == "pair"
+    pair_resolution, pair_repairs, pair_extra_probes = _complete_pair_repair_loop(
+        pack, scenario, policy, engine, answers, [], conclusion
+    )
     return Episode(
         policy=policy.name,
         seed=scenario.seed,
@@ -191,7 +210,114 @@ def run_parallel_episode(
         wall_s=now,
         withdrawn=withdrawn,
         presence_challenges=presence_challenges,
+        honest_success=correct or (not decided and scenario.identifiable is False),
+        pair_full_resolution=pair_resolution,
+        pair_repairs=pair_repairs,
+        pair_resolution_extra_probes=pair_extra_probes,
     )
+
+
+def _complete_pair_repair_loop(
+    pack: DomainPack,
+    scenario: Scenario,
+    policy: Policy,
+    engine: Engine,
+    answers: Answers,
+    history: History,
+    conclusion: Conclusion,
+) -> tuple[bool | None, int, int]:
+    """Model repair, verification, reopen and second-fault diagnosis for pair episodes."""
+    if scenario.kind != "pair":
+        return None, 0, 0
+    remaining = set(scenario.faults)
+    attempts: dict[tuple[str, str], int] = {}
+    extra_probes = 0
+    decision = conclusion.decision
+    for _cycle in range(4):
+        if decision is None or not remaining:
+            return not remaining, sum(attempts.values()), extra_probes
+        candidates = sorted(
+            fault
+            for fault in remaining
+            if decision == MULTIPLE_FAULTS
+            or pack.decision_of.get(f"{fault[0]}.{fault[1]}") == decision
+        )
+        fault = next((item for item in candidates if attempts.get(item, 0) < 2), None)
+        if fault is None:
+            return False, sum(attempts.values()), extra_probes
+        cid, mode = fault
+        comp = pack.component_by_id[cid]
+        decision_for_fault = pack.decision_of[f"{cid}.{mode}"]
+        action = next(
+            (
+                item
+                for item in pack.actions
+                if item.fixes == mode
+                and item.target_kind == comp.kind
+                and decision_for_fault in item.decision_classes
+            ),
+            None,
+        )
+        if action is None:
+            return False, sum(attempts.values()), extra_probes
+        attempt = attempts.get(fault, 0)
+        attempts[fault] = attempt + 1
+        engine.apply_intervention(action.id, cid)
+        seed_material = f"{scenario.seed}|{cid}|{mode}|{attempt}".encode()
+        repair_rng = random.Random(
+            int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
+        )
+        if repair_rng.random() >= engine.cfg.repair_failure_prior:
+            remaining.remove(fault)
+        answers.world = World(pack, frozenset(remaining))
+
+        verdict = None
+        for _ in range(MAX_STEPS):
+            plan = engine.plan()
+            if plan.kind == PlanKind.VERIFIED:
+                verdict = True
+                break
+            if plan.kind == PlanKind.NOT_VERIFIED:
+                engine.reopen()
+                verdict = False
+                break
+            if plan.kind != PlanKind.ASK or plan.action is None:
+                return False, sum(attempts.values()), extra_probes
+            probe = plan.action
+            costs = {
+                (a.participant_id, a.probe_id, a.location_id): cost for a, cost in engine.menu()
+            }
+            key = (probe.participant_id, probe.probe_id, probe.location_id)
+            if key not in costs:
+                return False, sum(attempts.values()), extra_probes
+            engine.record_question(probe.participant_id)
+            ev = answers.ask(*key)
+            engine.observe(ev)
+            history.append((probe, ev))
+            extra_probes += 1
+        if verdict is True:
+            return not remaining, sum(attempts.values()), extra_probes
+        if verdict is None:
+            return False, sum(attempts.values()), extra_probes
+
+        decision = None
+        for _ in range(MAX_STEPS):
+            step = policy.next(engine, history)
+            if isinstance(step, Conclusion):
+                decision = step.decision
+                break
+            costs = {
+                (a.participant_id, a.probe_id, a.location_id): cost for a, cost in engine.menu()
+            }
+            key = (step.participant_id, step.probe_id, step.location_id)
+            if key not in costs:
+                continue
+            engine.record_question(step.participant_id)
+            ev = answers.ask(*key)
+            engine.observe(ev)
+            history.append((step, ev))
+            extra_probes += 1
+    return not remaining, sum(attempts.values()), extra_probes
 
 
 def _challenge_presence(engine: Engine, answers: Answers, ev: Evidence, observed: Any) -> int:
@@ -210,17 +336,18 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
     episodes = [e for e in all_episodes if not e.failed]
     n = len(episodes)
     decided = [e for e in episodes if e.decided]
-    # Abstaining is the only safe answer when the people available cannot tell the causes
-    # apart. Two-fault worlds are modelled since ADR 0008, so a correct pair decision is a
-    # success there, not a missed abstention (abstaining on a pair is still acceptable).
+    # The historical success metric remains for compatibility, including its legacy
+    # treatment of pair abstentions. Honest success below applies only the identifiability rule.
     must_abstain = [e for e in episodes if e.identifiable is False]
     pairs = [e for e in episodes if e.kind == "pair"]
+    resolved_pairs = [e for e in pairs if e.pair_full_resolution is not None]
     should_decide = [e for e in episodes if e.identifiable is True]
     abstained = [e for e in episodes if not e.decided]
     return {
         "n": n,
         "failed_runs": len(all_episodes) - n,
         "success_rate": _rate(sum(e.success for e in episodes), n),
+        "honest_success_rate": _rate(sum(e.honest_success for e in episodes), n),
         "decision_accuracy": _rate(sum(e.correct for e in decided), len(decided)),
         "decided": len(decided),
         "accuracy_on_identifiable": _rate(
@@ -241,13 +368,30 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
         "pair_first_useful_action_rate": _rate(
             sum(e.correct and e.decision != MULTIPLE_FAULTS for e in pairs), len(pairs)
         ),
-        # Episodes stop at the first conclusion; they do not simulate both repairs.
-        "pair_full_resolution_rate": None,
+        # Pair completion includes repairs, verification, reopen and diagnosis as needed.
+        "pair_full_resolution_rate": _rate(
+            sum(e.pair_full_resolution is True for e in resolved_pairs), len(resolved_pairs)
+        ),
         "pair_outcome_denominator": len(pairs),
+        "pair_resolution_denominator": len(resolved_pairs),
+        "pair_repairs_mean": (
+            statistics.fmean(e.pair_repairs for e in resolved_pairs) if resolved_pairs else None
+        ),
+        "pair_resolution_extra_probes_mean": (
+            statistics.fmean(e.pair_resolution_extra_probes for e in resolved_pairs)
+            if resolved_pairs
+            else None
+        ),
         "justified_abstentions": sum(e.identifiable is False for e in abstained),
         "abstentions_with_unknown_identifiability": sum(e.identifiable is None for e in abstained),
         "abstention_precision": _rate(
             sum(1 for e in abstained if e.identifiable is False or e.kind == "pair"), len(abstained)
+        ),
+        "justified_abstention_precision": _rate(
+            sum(e.identifiable is False for e in abstained), len(abstained)
+        ),
+        "justified_abstention_recall": _rate(
+            sum(e.identifiable is False and not e.decided for e in episodes), len(must_abstain)
         ),
         "probes_mean": statistics.fmean(e.probes for e in episodes) if n else None,
         "probes_median": statistics.median(e.probes for e in episodes) if n else None,
@@ -259,6 +403,8 @@ def summarize(all_episodes: list[Episode]) -> dict[str, Any]:
         "presence_challenges_mean": (
             statistics.fmean(e.presence_challenges for e in episodes) if n else None
         ),
+        "calibration": calibration([asdict(e) for e in episodes]),
+        "strata": stratum_outcomes([asdict(e) for e in episodes]),
     }
 
 

@@ -29,7 +29,7 @@ def gauss_jacobi(n: int, alpha: float, beta: float) -> tuple[FloatArray, FloatAr
     """Nodes on ``[-1, 1]`` and normalised weights for the weight ``(1-t)^alpha (1+t)^beta``."""
     if n < 1:
         raise ValueError("need at least one node")
-    if alpha <= -1 or beta <= -1:
+    if not np.isfinite(alpha) or not np.isfinite(beta) or alpha <= -1 or beta <= -1:
         raise ValueError("alpha and beta must exceed -1")
     k = np.arange(n, dtype=np.float64)
     ab = alpha + beta
@@ -61,6 +61,40 @@ def gauss_jacobi(n: int, alpha: float, beta: float) -> tuple[FloatArray, FloatAr
     return nodes, weights
 
 
+def _gauss_beta_jacobi(n: int, mean: float, concentration: float) -> tuple[FloatArray, FloatArray]:
+    """Jacobi rule for Beta shapes, retaining the parameters lost by alpha = shape - 1.
+
+    Factoring the recurrence in terms of ``mean`` and ``concentration`` avoids cancellation
+    when a shape is smaller than one ulp at 1, and avoids squaring very large shapes.
+    """
+    if n < 1:
+        raise ValueError("need at least one node")
+    mu = (mean - 0.5) / 0.5
+    balance = 2.0 * mu - 1.0
+    k = np.arange(n, dtype=np.float64)
+    diag = np.empty(n)
+    diag[0] = balance
+    if n > 1:
+        kk = k[1:]
+        s = 2.0 * (kk - 1.0) + concentration
+        diag[1:] = balance * (concentration / s) * ((concentration - 2.0) / (s + 2.0))
+    off2 = np.empty(n - 1)
+    if n > 1:
+        off2[0] = 4.0 * mu * (1.0 - mu) / (1.0 + concentration)
+    if n > 2:
+        kk = k[2:]
+        s = 2.0 * (kk - 1.0) + concentration
+        u = kk + (1.0 - mu) * concentration - 1.0
+        v = kk + mu * concentration - 1.0
+        w = (kk - 2.0) + concentration
+        off2[1:] = (4.0 * kk / s) * (u / s) * (v / s) * (w / s) / ((s + 1.0) / s) / ((s - 1.0) / s)
+    jac = np.diag(diag) + np.diag(np.sqrt(off2), 1) + np.diag(np.sqrt(off2), -1)
+    nodes, vecs = np.linalg.eigh(jac)
+    weights = np.maximum(vecs[0] ** 2, np.finfo(np.float64).tiny)
+    weights /= weights.sum()
+    return nodes, weights
+
+
 @lru_cache(maxsize=256)
 def beta_reliability_rule(
     mean: float, concentration: float, n: int
@@ -71,12 +105,10 @@ def beta_reliability_rule(
     """
     if not 0.5 < mean < 1.0:
         raise ValueError("mean reliability must be in (0.5, 1)")
-    if concentration <= 0:
+    if not np.isfinite(concentration) or concentration <= 0:
         raise ValueError("concentration must be positive")
-    mu = (mean - 0.5) / 0.5
-    a, b = mu * concentration, (1.0 - mu) * concentration
-    # x ~ Beta(a, b) on [0, 1]  <->  t = 2x - 1 with weight (1-t)^(b-1) (1+t)^(a-1).
-    t, w = gauss_jacobi(n, b - 1.0, a - 1.0)
+    # x ~ Beta(a, b) on [0, 1] <-> t = 2x - 1 with Jacobi shapes b-1 and a-1.
+    t, w = _gauss_beta_jacobi(n, mean, concentration)
     x = (t + 1.0) / 2.0
     r = 0.5 + 0.5 * x
     return tuple(float(v) for v in r), tuple(float(v) for v in w)

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="440" viewBox="0 0 480 440">
+<rect width="100%" height="100%" fill="white"/>
+<text x="70" y="22" font-family="sans-serif" font-size="16">Reliability diagram</text>
+<path d="M 70 35 V 375 H 410" fill="none" stroke="#555"/>
+<path d="M 70 375 L 410 35" fill="none" stroke="#999" stroke-dasharray="4 4"/>
+<circle cx="359.52" cy="98.39" r="5" fill="#155eef"/>
+<text x="366.52" y="93.39" font-family="sans-serif" font-size="10">n=59</text>
+<circle cx="392.51" cy="48.25" r="5" fill="#155eef"/>
+<text x="399.51" y="43.25" font-family="sans-serif" font-size="10">n=154</text>
+<text x="240" y="420" text-anchor="middle" font-family="sans-serif" font-size="12">Mean confidence</text>
+</svg>

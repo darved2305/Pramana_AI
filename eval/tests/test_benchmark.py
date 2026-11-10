@@ -13,7 +13,7 @@ import pytest
 
 from pramana_core.llm import LlmClient, LlmError, ProviderLimits, _duration_s
 from pramana_domain import DomainPack, load_pack
-from pramana_engine import CompiledModel, compile_pack
+from pramana_engine import CompiledModel, EngineConfig, compile_pack
 from pramana_eval.llm_policy import LlmPolicy, render_site
 from pramana_eval.policies import Checklist, Conclusion, Ours, RandomFeasible, greedy_entropy
 from pramana_eval.runner import paired_difference, run_episode, summarize
@@ -35,6 +35,9 @@ def test_report_discloses_completed_and_excluded_episodes_per_policy() -> None:
     assert "Completed episodes" in report
     assert "Excluded failed runs" in report
     assert "| B_llm | 22 | 78 |" in report
+    table = report.splitlines()
+    header_index = next(i for i, line in enumerate(table) if line.startswith("| Policy |"))
+    assert table[header_index].count("|") == table[header_index + 1].count("|")
 
 
 @pytest.fixture(scope="module")
@@ -383,7 +386,12 @@ def test_a_long_retry_after_is_not_slept_through(tmp_path: Path) -> None:
 def test_pair_outcomes_are_not_claimed_as_full_resolution() -> None:
     from pramana_eval.runner import Episode
 
-    def episode(decision: str | None, correct: bool, identifiable: bool | None) -> Episode:
+    def episode(
+        decision: str | None,
+        correct: bool,
+        identifiable: bool | None,
+        full_resolution: bool = False,
+    ) -> Episode:
         return Episode(
             "E",
             1,
@@ -398,16 +406,49 @@ def test_pair_outcomes_are_not_claimed_as_full_resolution() -> None:
             1.0,
             1,
             False,
+            honest_success=correct or (decision is None and identifiable is False),
+            pair_full_resolution=full_resolution,
         )
 
     useful = episode("DISPATCH_ONE", True, None)
     abstained = episode(None, False, None)
     justified = episode(None, False, False)
-    result = summarize([useful, abstained, justified])
-    assert result["pair_first_useful_action_rate"] == pytest.approx(1 / 3)
-    assert result["pair_full_resolution_rate"] is None
+    resolved = episode("MULTIPLE_FAULTS", True, None, full_resolution=True)
+    result = summarize([useful, abstained, justified, resolved])
+    assert result["pair_first_useful_action_rate"] == pytest.approx(1 / 4)
+    assert result["pair_full_resolution_rate"] == pytest.approx(1 / 4)
+    assert result["pair_resolution_denominator"] == 4
     assert result["justified_abstentions"] == 1
     assert result["abstentions_with_unknown_identifiability"] == 1
+    assert result["success_rate"] == 1.0
+    assert result["honest_success_rate"] == pytest.approx(3 / 4)
+    assert result["justified_abstention_precision"] == pytest.approx(1 / 2)
+    assert result["justified_abstention_recall"] == 1.0
+
+
+def test_pair_episode_runs_repair_verification_and_reopen_loop(
+    pack: DomainPack, model: CompiledModel
+) -> None:
+    scenario = generate(pack, model, 225)
+    assert scenario.kind == "pair"
+    result = run_episode(pack, model, scenario, Ours())
+    assert result.pair_full_resolution is True
+    assert result.pair_repairs == 2
+    assert result.pair_resolution_extra_probes >= 1
+
+
+def test_pair_episode_does_not_claim_resolution_after_repair_failures(
+    pack: DomainPack, model: CompiledModel
+) -> None:
+    scenario = generate(pack, model, 225)
+    result = run_episode(
+        pack,
+        model,
+        scenario,
+        Ours(config=EngineConfig(repair_failure_prior=0.9)),
+    )
+    assert result.pair_full_resolution is False
+    assert result.pair_repairs == 3
 
 
 def test_paired_statistics_and_holm_against_small_exact_cases() -> None:
@@ -445,7 +486,20 @@ def test_primary_family_retains_missing_comparisons() -> None:
 
     def episode(policy: str, seed: int, success: bool) -> Episode:
         return Episode(
-            policy, seed, "single", True, True, "x", 0.9, success, success, 1, 1, 1, False
+            policy,
+            seed,
+            "single",
+            True,
+            True,
+            "x",
+            0.9,
+            success,
+            success,
+            1,
+            1,
+            1,
+            False,
+            honest_success=success,
         )
 
     result = primary_tests(
@@ -456,3 +510,47 @@ def test_primary_family_retains_missing_comparisons() -> None:
     )
     assert result["success"]["A_checklist"] == {"n": 5, "p": 0.0625, "p_holm": 0.3125}
     assert result["success"]["B_llm"]["p"] is None
+
+
+def test_fixed_budget_trajectories_and_artifacts_are_deterministic(
+    pack: DomainPack, model: CompiledModel, tmp_path: Path
+) -> None:
+    from dataclasses import asdict
+    from xml.etree import ElementTree
+
+    from pramana_eval.budget import (
+        budget_curves,
+        calibration,
+        run_trajectory,
+        stratum_outcomes,
+        write_budget_artifacts,
+        write_calibration_svg,
+    )
+
+    scenarios = [generate(pack, model, seed) for seed in range(5)]
+    policies = [Ours(), greedy_entropy(), Checklist(), RandomFeasible()]
+    trajectories = {
+        policy.name: [run_trajectory(pack, model, scenario, policy, 3) for scenario in scenarios]
+        for policy in policies
+    }
+    curves = budget_curves(trajectories, 3)
+    assert {point["budget"] for point in curves["questions"]} == {1, 2, 3}
+    assert all(point["n"] == 5 for point in curves["questions"])
+    assert all(point["n"] == 5 for point in curves["effort_s"])
+    assert trajectories["E_ours"][0] == run_trajectory(pack, model, scenarios[0], Ours(), 3)
+
+    episodes = [asdict(run_episode(pack, model, scenario, Ours())) for scenario in scenarios]
+    bins = calibration(episodes)
+    assert sum(row["count"] for row in bins) == sum(e["decided"] for e in episodes)
+    strata = stratum_outcomes(episodes)
+    assert set(strata) == {"single", "pair", "no_fault", "access_limited"}
+    assert sum(row["n"] for row in strata.values()) == len(episodes)
+    write_budget_artifacts(tmp_path, curves)
+    before = (tmp_path / "questions-success.svg").read_bytes()
+    write_budget_artifacts(tmp_path, curves)
+    assert (tmp_path / "questions-success.svg").read_bytes() == before
+    assert (tmp_path / "questions-success.svg").read_text(encoding="utf-8").count("stroke=") > 5
+    calibration_path = tmp_path / "reliability.svg"
+    write_calibration_svg(calibration_path, bins)
+    assert "n=" in calibration_path.read_text(encoding="utf-8")
+    assert ElementTree.parse(calibration_path).getroot().tag.endswith("svg")
