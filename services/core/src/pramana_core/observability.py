@@ -6,17 +6,15 @@ audio, transcripts and secrets are never logged by default.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable
 
 import structlog
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "X-Request-ID"
 log = structlog.get_logger("pramana")
@@ -50,28 +48,59 @@ def _safe_request_id(value: str | None) -> str:
     return uuid.uuid4().hex
 
 
-class RequestContextMiddleware(BaseHTTPMiddleware):
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        rid = _safe_request_id(request.headers.get(REQUEST_ID_HEADER))
+class RequestContextMiddleware:
+    """Add request context without BaseHTTPMiddleware's cancellation task group."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", ()))
+        rid = _safe_request_id(
+            headers.get(REQUEST_ID_HEADER.lower().encode("ascii"), b"").decode("latin-1")
+        )
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=rid)
-        request.state.request_id = rid
+        scope.setdefault("state", {})["request_id"] = rid
         start = time.perf_counter()
+        status_code: int | None = None
+
+        async def send_with_context(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = int(message["status"])
+                request_id_header = REQUEST_ID_HEADER.lower().encode("ascii")
+                message["headers"] = [
+                    (name, value)
+                    for name, value in message.get("headers", [])
+                    if name.lower() != request_id_header
+                ] + [(request_id_header, rid.encode("ascii"))]
+            await send(message)
+
         try:
-            response = await call_next(request)
+            await self.app(scope, receive, send_with_context)
+        except asyncio.CancelledError:
+            # Client disconnects and server shutdown cancel normal request tasks.
+            raise
         except Exception:
             log.exception(
-                "request_failed", method=request.method, path=_logged_path(request.url.path)
+                "request_failed",
+                method=scope.get("method", ""),
+                path=_logged_path(scope.get("path", "")),
             )
             raise
-        response.headers[REQUEST_ID_HEADER] = rid
-        log.info(
-            "request",
-            method=request.method,
-            path=_logged_path(request.url.path),
-            status=response.status_code,
-            ms=round((time.perf_counter() - start) * 1000, 1),
-        )
-        return response
+        else:
+            if status_code is not None:
+                log.info(
+                    "request",
+                    method=scope.get("method", ""),
+                    path=_logged_path(scope.get("path", "")),
+                    status=status_code,
+                    ms=round((time.perf_counter() - start) * 1000, 1),
+                )
+        finally:
+            structlog.contextvars.clear_contextvars()
