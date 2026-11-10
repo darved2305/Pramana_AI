@@ -20,6 +20,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from .migrations import require_database_name
+
 ROLES = ("pramana_app", "pramana_sim")
 SCRAM_ITERATIONS = 4096
 
@@ -121,6 +123,15 @@ def main() -> None:
         raise SystemExit(
             "DATABASE_URL, DATABASE_RUNTIME_URL and DATABASE_SIMULATOR_URL are required"
         )
+    for name, url in (
+        ("DATABASE_URL", migrator),
+        ("DATABASE_RUNTIME_URL", app),
+        ("DATABASE_SIMULATOR_URL", sim),
+    ):
+        try:
+            require_database_name(url, name)
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
     asyncio.run(ensure_roles(migrator, app, sim))
     print("runtime database roles are least privilege")
 

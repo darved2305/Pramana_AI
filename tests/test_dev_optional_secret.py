@@ -38,3 +38,13 @@ def test_blank_database_is_rejected():
             PARTICIPANT_SIGNING_KEY="x",
             _env_file=None,
         )
+
+
+def test_database_url_without_a_name_is_rejected():
+    with pytest.raises(ValidationError, match="explicit database name"):
+        Settings(
+            DATABASE_URL="postgresql+asyncpg://localhost",
+            SIM_OPERATOR_KEY="x",
+            PARTICIPANT_SIGNING_KEY="x",
+            _env_file=None,
+        )

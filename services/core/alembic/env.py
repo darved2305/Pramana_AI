@@ -8,11 +8,11 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from dotenv import dotenv_values
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pramana_core.db import Base
+from pramana_core.migrations import migration_database_url
 
 config = context.config
 if config.config_file_name is not None:
@@ -20,14 +20,11 @@ if config.config_file_name is not None:
 
 
 def _url() -> str:
-    url = (
-        config.attributes.get("url")
-        or os.environ.get("DATABASE_URL")
-        or dotenv_values(Path(__file__).resolve().parents[3] / ".env").get("DATABASE_URL")
+    return migration_database_url(
+        config.attributes.get("url"),
+        os.environ.get("DATABASE_URL"),
+        Path(__file__).resolve().parents[3] / ".env",
     )
-    if not url or not url.strip():
-        raise RuntimeError("DATABASE_URL must explicitly select a database for migrations")
-    return str(url)
 
 
 def _run(connection: Connection) -> None:

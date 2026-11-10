@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .migrations import require_database_name
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -108,9 +110,10 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def _database_not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("DATABASE_URL must explicitly select a database")
-        return value
+        try:
+            return require_database_name(value)
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
 
     @field_validator(
         "pii_master_key",
