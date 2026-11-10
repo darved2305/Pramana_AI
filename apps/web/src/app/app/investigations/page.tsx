@@ -99,6 +99,7 @@ function InvestigationsInner() {
       <PageHeader
         title="Investigations"
         eyebrow={preview ? <PreviewBadge /> : undefined}
+        subtitle="Simulated investigations. Open one to follow its questions, decision and repair."
         actions={
           <>
             <div role="group" aria-label="View" className="flex rounded-full p-0.5 shadow-[inset_0_0_0_0.8px_var(--app-line)]">

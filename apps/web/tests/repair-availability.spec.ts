@@ -72,7 +72,8 @@ for (const who of [
     const panel = page.locator("[aria-labelledby=appr-title]");
     await expect(panel).toContainText(who.asked ? "Requested by Bo Both (you)" : "Requested by u_both");
     await expect(panel).toContainText("The requester cannot approve their own request");
-    await expect(panel).toContainText("used once and expires five minutes after collection");
+    await expect(panel).toContainText("single-use permission");
+    await expect(panel).toContainText("expires five minutes after collection");
     const approve = panel.getByRole("button", { name: "Approve", exact: true });
     await expect(approve).toBeVisible();
     if (who.asked) {

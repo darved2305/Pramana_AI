@@ -51,7 +51,7 @@ test("an expired repair permission is collected again and the repair completes",
 
   await page.goto(`/join/${encodeJoin({ i: "inv_exp1", p: "p_imran", s: "scn_1", t: "tok" })}`);
   await expect(page.getByRole("heading", { name: "You are cleared to act" })).toBeVisible();
-  await expect(page.getByText(/Requested by u_requester; approved by u_ap/)).toBeVisible();
+  await expect(page.getByText("It was requested by one staff account and approved by another.")).toBeVisible();
   await expect(page.getByText(/simulated repair uses a permission once/)).toBeVisible();
   await page.getByRole("button", { name: "Collect permission" }).click();
   await page.getByRole("button", { name: "I am at the panel" }).click();

@@ -25,7 +25,7 @@ export default function ReplayPage() {
       <PageHeader
         title="Replay"
         eyebrow={log.source === "preview" ? <PreviewBadge /> : undefined}
-        subtitle="Step through the investigation's event log and watch the belief change with each piece of evidence."
+        subtitle="Step through the simulated investigation's event log and watch the belief change with each piece of evidence."
       />
       {log.status === "loading" ? (
         <Skeleton className="h-[420px] rounded-[16px]" />

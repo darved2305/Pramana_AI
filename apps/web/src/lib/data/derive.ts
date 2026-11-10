@@ -2,7 +2,16 @@
  * Pure functions that derive views from API data. Nothing here invents numbers: every
  * output is a regrouping of values the core returned.
  */
-import type { EventEnvelope, InvestigationState, InvestigationStatus, JoinRequestView, Observation, SitePack } from "@/lib/api/types";
+import type {
+  EventEnvelope,
+  InvestigationState,
+  InvestigationStatus,
+  JoinRequestView,
+  Observation,
+  PlanDecision,
+  ProbeAction,
+  SitePack,
+} from "@/lib/api/types";
 
 export interface Contradiction {
   key: string;
@@ -98,10 +107,29 @@ export function duration(seconds: number) {
   return `${(seconds / 60).toFixed(1)} min`;
 }
 
-/** Keep the short, decision-relevant sentence from the planner's recorded explanation. */
-export function reasonSummary(reason: string) {
-  const sentences = reason.trim().split(/(?<=[.!?])\s+/).filter(Boolean);
-  return (sentences.at(-1) ?? reason).replace(/\s+/g, " ");
+/**
+ * Plain-language reason for the chosen check. The engine's own explanation is written for
+ * engineers (bits, expected loss, raw ids), so this reads the chosen candidate's structured
+ * fields instead: its time cost and the fact that the planner ranked it first.
+ */
+export function checkRationale(plan: PlanDecision, personName: string): string {
+  const chosen = plan.candidates.find((c) => plan.action && sameAction(c.action, plan.action));
+  if (!chosen) return "Pramana expects this check to help the investigation most among the checks available.";
+  const minutes = Math.max(1, Math.round(chosen.cost_s / 60));
+  return `Pramana expects this check to help the investigation most among the checks available, for about ${minutes} min of ${personName}'s time.`;
+}
+
+/** Why the planner stopped without a decision: the check that would help, if one is blocked. */
+export function abstainRationale(plan: PlanDecision, pack: SitePack | undefined): string {
+  const base = "Pramana did not reach a confident answer, so it is not recommending an action yet.";
+  const blocked = plan.infeasible[0];
+  if (!blocked) return base;
+  const reasons = blocked.reasons.length ? ` (${blocked.reasons.join("; ")})` : "";
+  return `${base} A check that would help is blocked: ${probeLabel(pack, blocked.probe_id)} at ${locationLabel(pack, blocked.location_id)}${reasons}.`;
+}
+
+function sameAction(a: ProbeAction, b: ProbeAction) {
+  return a.participant_id === b.participant_id && a.probe_id === b.probe_id && a.location_id === b.location_id;
 }
 
 export function clock(iso: string) {

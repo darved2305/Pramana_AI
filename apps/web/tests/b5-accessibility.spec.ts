@@ -3,7 +3,7 @@ import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-const output = path.resolve(process.cwd(), "../../../nov10-polish/.cache/nov10/out/B5/final");
+const output = process.env.PRAMANA_REVIEW_SHOTS ? path.resolve(process.env.PRAMANA_REVIEW_SHOTS) : path.resolve(process.cwd(), "../../.cache/review-shots");
 const viewports = [
   { width: 1440, height: 900 },
   { width: 768, height: 1024 },
