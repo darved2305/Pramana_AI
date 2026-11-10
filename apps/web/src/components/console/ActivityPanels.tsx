@@ -570,11 +570,16 @@ function ApprovalCard({
       </dl>
       <p className="mt-2 text-[13px] text-fg-2">{a.rationale}</p>
       <p className="mt-1 text-[12px] text-fg-2">
-        Requested by {a.requested_by ? (me && a.requested_by === me.userId ? `${me.displayName} (you)` : a.requested_by) : "an unrecorded account"}. The requester cannot approve their own request.
+        Requested by {a.requested_by ? (me && a.requested_by === me.userId ? `${me.displayName} (you)` : a.requested_by) : "an unrecorded account"}.{" "}
+        {a.requested_by
+          ? "The requester cannot approve their own request."
+          : "Pramana did not record who asked, so it cannot confirm that the approver is someone else."}
       </p>
-      <p className="mt-1 text-[12px] text-fg-2">
-        If approved, the participant can collect a permission for this repair that can be used once and expires five minutes after collection.
-      </p>
+      {a.status === "pending" ? (
+        <p className="mt-1 text-[12px] text-fg-2">
+          If approved, the participant can collect a single-use permission for this repair. It expires five minutes after collection.
+        </p>
+      ) : null}
       {a.approver_id ? (
         <p className="mt-1 text-[12px] text-muted">
           {a.status === "denied" ? "Denied" : "Approved"} by {me && a.approver_id === me.userId ? `${me.displayName} (you)` : a.approver_id}
