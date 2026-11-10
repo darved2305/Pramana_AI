@@ -45,6 +45,37 @@ def client(handler: Any, key: str | None = "k") -> GnaniClient:
     return GnaniClient(key, "https://api.vachana.ai", 5, transport=httpx.MockTransport(handler))
 
 
+async def test_stream_ignores_malformed_and_non_object_frames() -> None:
+    class Socket:
+        close_code = 1000
+        close_reason = ""
+
+        async def __aiter__(self) -> Any:
+            for frame in ("{", "null", "[]", '{"type":"transcript","text":"yes"}'):
+                yield frame
+
+    stream = GnaniSttStream(Socket(), {}, False)  # type: ignore[arg-type]
+    events = [event async for event in stream.events()]
+    assert [event.type for event in events] == ["transcript", "closed"]
+
+
+async def test_stream_never_sends_audio_beyond_reserved_limit() -> None:
+    class Socket:
+        def __init__(self) -> None:
+            self.frames: list[bytes] = []
+
+        async def send(self, frame: bytes) -> None:
+            self.frames.append(frame)
+
+    socket = Socket()
+    stream = GnaniSttStream(socket, {}, False)  # type: ignore[arg-type]
+    stream.max_audio_bytes = 1024
+    with pytest.raises(VoiceError) as exc:
+        await stream.send_pcm(bytes(2048))
+    assert exc.value.code == "VOICE_STREAM_LIMIT"
+    assert len(socket.frames) == 1
+
+
 def test_wav_duration() -> None:
     assert wav_duration_s(wav(1.5)) == pytest.approx(1.5)
     assert wav_duration_s(b"not a wav") is None

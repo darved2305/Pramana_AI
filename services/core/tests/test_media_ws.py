@@ -235,6 +235,30 @@ def test_spoken_answer_end_to_end(env: Env) -> None:
     assert env.client.get(f"/v1/investigations/{state['id']}/replay").json()["identical"]
 
 
+def test_partial_transcript_does_not_record_an_answer(env: Env) -> None:
+    state, q, phrase = start(env)
+    env.fake.partial_transcript = "partial"
+    env.fake.transcript = phrase
+    pid = q["action"]["participant_id"]
+    before = len(state["observations"])
+    with env.client.websocket_connect(url(state, q)) as ws:
+        ws.send_text(
+            json.dumps(
+                {"type": "start", "token": token(env, state["id"], pid), "play_question": False}
+            )
+        )
+        until(ws, "ready")
+        ws.send_bytes(PCM)
+        ws.send_text(json.dumps({"type": "commit"}))
+        msgs, _, code = drain(ws)
+    transcripts = [m["text"] for m in msgs if m["type"] == "transcript"]
+    assert transcripts == [phrase]
+    assert len([m for m in msgs if m["type"] == "answer"]) == 1
+    after = env.client.get(f"/v1/investigations/{state['id']}").json()
+    assert len(after["observations"]) == before + 1
+    assert code == 1000
+
+
 def test_empty_transcript_records_nothing_and_keeps_listening(env: Env) -> None:
     state, q, phrase = start(env)
     env.fake.transcripts = ["", phrase]

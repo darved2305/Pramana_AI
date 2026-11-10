@@ -451,6 +451,8 @@ class MediaSession:
                     await self._heard_speech()
                 await self.send({"type": ev.type})
             elif ev.type == "transcript":
+                if ev.raw.get("is_final") is False:
+                    continue
                 text = str(ev.raw.get("text", "")).strip()
                 if not text:
                     # Empty or pure noise: no evidence, the question stays pending.

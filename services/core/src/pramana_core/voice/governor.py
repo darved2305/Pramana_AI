@@ -10,10 +10,8 @@ work that would exceed a daily budget.
   Gnani to reject.
 * Concurrency: a fixed pool of stream slots, acquired without waiting (``429
   VOICE_TOO_MANY_STREAMS``), plus a cap on in-flight REST calls.
-* Budget: every call is priced *before* it is sent (worst case for streams: the maximum
-  session length) and recorded *after* with actual usage, in PostgreSQL so restarts do not
-  reset it. Limits are per core process; a multi-process deployment would move the rate
-  windows to the database or Redis.
+* Budget: PostgreSQL serializes reservations and settlement across instances. Abandoned or
+  uncertain work remains charged at its reserved worst case. The in-memory ledger is for tests.
 """
 
 from __future__ import annotations
@@ -21,16 +19,19 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+import uuid
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Protocol
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db import Database, VoiceUsageRow
+from ..db import Database, VoiceUsageRow, acting_as_job, apply_context
 from ..errors import ApiError
 from ..observability import log
 
@@ -40,6 +41,7 @@ STT_MIN_CHARGE_INR = 0.02
 """Observed on the dashboard (2026-11-04): a 0.03-minute stream (list Rs 0.01) cost Rs 0.02, and
 20 STT requests were billed where 17 transcribed. We meter every STT request that reaches Gnani
 at no less than this, so the budget errs high, never low."""
+_attempts: ContextVar[list[int] | None] = ContextVar("voice_attempts", default=None)
 
 
 def _per_request(raw_inr: float) -> float:
@@ -101,6 +103,151 @@ class Ledger(Protocol):
 class DbLedger:
     def __init__(self, db: Database) -> None:
         self._db = db
+
+    @asynccontextmanager
+    async def _locked(self) -> AsyncIterator[AsyncSession]:
+        # Never join a request unit of work: reservations must commit before a provider call.
+        with acting_as_job("voice-governor"):
+            async with self._db._sessions() as session, session.begin():
+                await apply_context(session)
+                await session.execute(text("select pg_advisory_xact_lock(1894308271)"))
+                yield session
+
+    async def reap(self) -> None:
+        # Commit expiry separately, even when a subsequent reservation is refused.
+        async with self._locked() as session:
+            await session.execute(
+                text("""
+                        with expired as (
+                          delete from voice_reservations where expires_at <= now()
+                          returning day, service, cost_inr
+                        )
+                        insert into voice_usage(day, service, units, cost_inr)
+                        select greatest(day, (now() at time zone 'UTC')::date), service, 0, cost_inr
+                        from expired
+                    """)
+            )
+
+    async def reserve(self, service: str, cost: float, limits: GovernorLimits) -> uuid.UUID:
+        await self.reap()
+        reservation = uuid.uuid4()
+        async with self._locked() as session:
+            spent = (
+                await session.execute(
+                    text("""
+                select coalesce((select sum(cost_inr) from voice_usage
+                    where day = (now() at time zone 'UTC')::date), 0)
+                  + coalesce((select sum(cost_inr) from voice_reservations), 0)
+            """)
+                )
+            ).scalar_one()
+            if float(spent) + cost > limits.daily_budget_inr + 1e-9:
+                raise ApiError(429, "VOICE_BUDGET_EXCEEDED", "daily voice budget would be exceeded")
+            stream = service == "stt_stream"
+            active = (
+                await session.execute(
+                    text("""
+                select count(*) from voice_reservations
+                where (service = 'stt_stream') = :stream
+            """),
+                    {"stream": stream},
+                )
+            ).scalar_one()
+            cap = limits.max_streams if stream else limits.rest_max_inflight
+            if active >= cap:
+                raise ApiError(
+                    429,
+                    "VOICE_TOO_MANY_STREAMS" if stream else "VOICE_BUSY",
+                    "voice capacity is full",
+                )
+            await session.execute(
+                text("""
+                insert into voice_reservations(id, day, service, cost_inr, expires_at)
+                values (:id, (now() at time zone 'UTC')::date, :service, :cost,
+                        now() + interval '1 hour')
+            """),
+                {"id": reservation, "service": service, "cost": cost},
+            )
+        return reservation
+
+    async def settle(self, reservation: uuid.UUID, units: float, cost: float) -> None:
+        await self.reap()
+        async with self._locked() as session:
+            row = (
+                await session.execute(
+                    text("""
+                delete from voice_reservations where id = :id returning day, service, cost_inr
+            """),
+                    {"id": reservation},
+                )
+            ).first()
+            if row is not None:
+                await session.execute(
+                    text("""
+                    insert into voice_usage(day, service, units, cost_inr)
+                    values (greatest(:day, (now() at time zone 'UTC')::date),
+                            :service, :units, :cost)
+                """),
+                    {"day": row.day, "service": row.service, "units": units, "cost": cost},
+                )
+
+    async def pace(self, service: str, limit: int, max_wait_s: float) -> None:
+        deadline = time.monotonic() + max_wait_s
+        while True:
+            async with self._locked() as session:
+                await session.execute(
+                    text(
+                        "delete from voice_rate_events "
+                        "where created_at <= now() - interval '60 seconds'"
+                    )
+                )
+                row = (
+                    await session.execute(
+                        text("""
+                    select count(*),
+                      extract(epoch from (min(created_at) + interval '60 seconds' - now()))
+                    from voice_rate_events where service = :service
+                """),
+                        {"service": service},
+                    )
+                ).one()
+                if row[0] < limit:
+                    await session.execute(
+                        text("insert into voice_rate_events(id, service) values (:id, :service)"),
+                        {"id": uuid.uuid4(), "service": service},
+                    )
+                    return
+                wait = max(float(row[1] or 0), 0.01)
+            if time.monotonic() + wait > deadline:
+                raise ApiError(429, "VOICE_RATE_LIMITED_LOCAL", "voice rate limit reached")
+            await asyncio.sleep(wait)
+
+    async def status(self) -> dict[str, object]:
+        await self.reap()
+        async with self._locked() as session:
+            counts = (
+                await session.execute(
+                    text("""
+                    select service, count(*) from voice_rate_events
+                    where created_at > now() - interval '60 seconds' group by service
+                """)
+                )
+            ).all()
+            row = (
+                await session.execute(
+                    text("""
+                    select count(*) filter (where service = 'stt_stream'),
+                           coalesce(sum(cost_inr), 0)
+                    from voice_reservations
+                """)
+                )
+            ).one()
+        used: dict[str, int] = {str(service): int(count) for service, count in counts}
+        return {
+            "window_used": {"stt_rest": used.get("stt_rest", 0), "tts": used.get("tts", 0)},
+            "open_streams": row[0],
+            "reserved_inr": float(row[1]),
+        }
 
     async def spent_today(self) -> float:
         async with self._db.read() as s:
@@ -201,6 +348,15 @@ class VoiceGovernor:
 
     async def pace(self, service: str) -> None:
         """Take one request slot; call once per HTTP attempt, retries included."""
+        if isinstance(self.ledger, DbLedger):
+            limit = (
+                self.limits.stt_rest_per_min if service == "stt_rest" else self.limits.tts_per_min
+            )
+            await self.ledger.pace(service, limit, self.limits.max_wait_s)
+            attempts = _attempts.get()
+            if attempts is not None:
+                attempts[0] += 1
+            return
         window = self.stt_rest if service == "stt_rest" else self.tts
         await window.acquire(self.limits.max_wait_s)
 
@@ -213,6 +369,37 @@ class VoiceGovernor:
         Yields a one-element list the caller may update with the actual billable units
         (defaults to the estimate). Failed calls are not charged.
         """
+        if isinstance(self.ledger, DbLedger):
+            # Up to four provider attempts can be billed. Preserve the full reservation on
+            # uncertainty, including cancellation or a failed settlement transaction.
+            worst = est_cost * 4
+            deadline = time.monotonic() + self.limits.max_wait_s
+            while True:
+                try:
+                    reservation = await self.ledger.reserve(service, worst, self.limits)
+                    break
+                except ApiError as exc:
+                    if exc.code != "VOICE_BUSY" or time.monotonic() >= deadline:
+                        raise
+                    await asyncio.sleep(min(0.05, max(0, deadline - time.monotonic())))
+            actual = [est_units]
+            attempts = [0]
+            token = _attempts.set(attempts)
+            ok = False
+            try:
+                async with asyncio.timeout(3500):
+                    yield actual
+                ok = True
+            finally:
+                _attempts.reset(token)
+                units = actual[0]
+                cost = stt_cost(units) if service == "stt_rest" else tts_cost(int(units))
+                cost = cost * max(1, attempts[0]) if ok else worst
+                try:
+                    await asyncio.shield(self.ledger.settle(reservation, units, cost))
+                except Exception:
+                    log.exception("voice_usage_settlement_failed", service=service)
+            return
         await self._reserve(est_cost)
         actual = [est_units]
         ok = False
@@ -232,6 +419,27 @@ class VoiceGovernor:
         A session that reached Gnani is charged at least the STT minimum even if it failed or
         carried no audio (failed sessions appear as billed requests on the dashboard).
         """
+        if isinstance(self.ledger, DbLedger):
+            worst = stt_cost(self.limits.max_stream_s)
+            reservation = await self.ledger.reserve("stt_stream", worst, self.limits)
+            usage = [0.0, 0.0]
+            ok = False
+            try:
+                async with asyncio.timeout(min(self.limits.max_stream_s, 3500)):
+                    yield usage
+                ok = True
+            finally:
+                seconds, attempted = usage[0], usage[1] > 0
+                cost = (
+                    stt_cost(seconds) if seconds > 0 else (STT_MIN_CHARGE_INR if attempted else 0)
+                )
+                if not ok:
+                    cost = worst
+                try:
+                    await asyncio.shield(self.ledger.settle(reservation, seconds, cost))
+                except Exception:
+                    log.exception("voice_usage_settlement_failed", service="stt_stream")
+            return
         if self._streams.locked():
             raise ApiError(
                 429,
@@ -265,3 +473,9 @@ class VoiceGovernor:
             "window_used": {"stt_rest": self.stt_rest.used(), "tts": self.tts.used()},
             "open_streams": self._open_streams,
         }
+
+    async def shared_status(self) -> dict[str, object]:
+        status = self.status()
+        if isinstance(self.ledger, DbLedger):
+            status.update(await self.ledger.status())
+        return status
