@@ -312,7 +312,7 @@ def test_demo_uses_local_mock_identity_and_emulator(monkeypatch, tmp_path: Path)
     assert env["OIDC_ISSUER"] == "http://localhost:8410"
     assert env["GNANI_API_KEY"] == "local-emulator"
     assert env["GNANI_BASE_URL"] == "http://127.0.0.1:8099"
-    assert env["SIM_STATE_FILE"] == ""
+    assert env["SIM_STATE_FILE"] == str(tmp_path / ".cache" / "demo-sim" / "scenarios.json")
     assert [child.name for child in dev.children(opts, env)] == [
         "oidc",
         "gnani-emulator",
