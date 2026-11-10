@@ -512,7 +512,7 @@ class Adversary(RuleBasedStateMachine):
             assert mine["belief"]["hypotheses"] == []
             assert mine["plan"]["candidates"] == []
             assert mine["disagreements"] == []
-            assert mine["ground_truth"] is None
+            assert "ground_truth" not in mine
 
 
 EXAMPLES = int(os.environ.get("PRAMANA_ADVERSARIAL_EXAMPLES", "8"))

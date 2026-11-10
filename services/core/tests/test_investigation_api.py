@@ -79,6 +79,7 @@ def test_runtime_engine_and_lock_caches_stay_bounded(core: TestClient) -> None:
 def test_create_returns_belief_plan_and_first_question(core: TestClient) -> None:
     inv = create(core, fault="CB_C2_7.tripped")
     assert inv["status"] == "investigating"
+    assert "ground_truth" not in inv
     assert len(inv["sealed_commitment"]) == 64
     # The report "WiFi nahi chal raha, kuch khul nahi raha" was extracted as internet_works=no.
     assert [(o["probe_id"], o["outcome"]) for o in inv["observations"]] == [
