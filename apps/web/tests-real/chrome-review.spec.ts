@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { answerTruthfully, openParticipant } from "./helpers";
 
-const output = path.resolve(process.cwd(), "../../../nov10-polish/.cache/nov10/out/B5/final");
+const output = process.env.PRAMANA_REVIEW_SHOTS ? path.resolve(process.env.PRAMANA_REVIEW_SHOTS) : path.resolve(process.cwd(), "../../.cache/review-shots");
 const diagnostics = path.resolve(process.cwd(), "../../.cache/review-shots");
 let runId = "";
 let steps: { label: string; path: string; width: number; documentWidth: number; screenshot: string }[] = [];

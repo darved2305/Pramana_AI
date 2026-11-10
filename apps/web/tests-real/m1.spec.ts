@@ -14,7 +14,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type BrowserContext, type Page } from "@playwright/test";
 import { answerTruthfully, api, seedDirectory, signIn } from "./helpers";
 
-const reviewOutput = path.resolve(process.cwd(), "../../../nov10-polish/.cache/nov10/out/B5/final");
+const reviewOutput = process.env.PRAMANA_REVIEW_SHOTS ? path.resolve(process.env.PRAMANA_REVIEW_SHOTS) : path.resolve(process.cwd(), "../../.cache/review-shots");
 const reviewSizes = [
   { width: 1440, height: 900 },
   { width: 768, height: 1024 },
