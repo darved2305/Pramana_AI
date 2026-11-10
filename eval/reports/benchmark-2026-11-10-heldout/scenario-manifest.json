@@ -1,0 +1,29 @@
+{
+  "total": 300,
+  "strata": {
+    "single": 197,
+    "pair": 40,
+    "no_fault": 16,
+    "access_limited": 47
+  },
+  "behaviors": {
+    "implemented": [
+      "single_fault",
+      "pair_fault",
+      "no_fault",
+      "access_limited",
+      "sampled_participant_reliability",
+      "hedging",
+      "lay_hearsay"
+    ],
+    "proposed_not_in_this_generator": [
+      "unmodelled_fault",
+      "changing_world",
+      "map_drift",
+      "correlated_error",
+      "stale_answer",
+      "call_drop",
+      "generic_adversary"
+    ]
+  }
+}

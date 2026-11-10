@@ -49,6 +49,31 @@ def _ci(d: dict[str, float], scale: float = 1.0, digits: int = 3) -> str:
     return f"{f(d['mean'])} [{f(d['ci95_low'])}, {f(d['ci95_high'])}]"
 
 
+def _protocol_deviations(protocol: dict[str, Any]) -> list[str]:
+    """Read full deviation bullets from the frozen protocol, including wrapped Markdown lines."""
+    path = (ROOT / str(protocol["path"])).resolve()
+    try:
+        path.relative_to(ROOT)
+    except ValueError:
+        return [str(item) for item in protocol.get("deviations", [])]
+    lines = path.read_text(encoding="utf-8").splitlines()
+    deviations: list[str] = []
+    current: str | None = None
+    for line in lines:
+        if line.startswith("- Deviation: "):
+            if current is not None:
+                deviations.append(current)
+            current = line.removeprefix("- Deviation: ").strip()
+        elif current is not None and line.startswith("  "):
+            current += " " + line.strip()
+        elif current is not None:
+            deviations.append(current)
+            current = None
+    if current is not None:
+        deviations.append(current)
+    return deviations
+
+
 def render(summary: dict[str, Any], source: str) -> str:
     seeds = summary["seeds"]
     n = {k: int(v["n"]) for k, v in summary["policies"].items()}
@@ -103,7 +128,7 @@ def render(summary: dict[str, Any], source: str) -> str:
             "- Statistical p-values below use the registered paired tests and Holm correction. "
             "Bootstrap intervals remain descriptive.",
         ]
-        lines += [f"- Protocol deviation: {item}" for item in protocol.get("deviations", [])]
+        lines += [f"- Protocol deviation: {item}" for item in _protocol_deviations(protocol)]
     else:
         lines += [
             "- These RC1 seeds were examined before the stated freeze; this analysis is "
