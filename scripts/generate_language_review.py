@@ -28,6 +28,21 @@ DEVANAGARI = re.compile(r"[\u0900-\u097f]")
 JS_LANGUAGE_KEY = re.compile(r"(?P<key>\"hi-en\"|'hi-en'|hi-en|\"hi\"|'hi'|hi|\"mr\"|'mr'|mr)\s*:")
 JS_STRINGS = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`")
 
+SANDBOX_DATA = Path("services/core/alembic/data/sandbox_v1.json")
+"""Neutral practice model copied into every workspace by migration 0010."""
+SANDBOX_MIGRATION = Path("services/core/alembic/versions/0021_general_sandbox_copy.py")
+"""Migration 0021 rebuilds the practice model with its own localized labels."""
+RECOGNITION_ONLY = frozenset(
+    {
+        # Answer-matching vocabulary: matched against speech or typed answers, never displayed.
+        "services/core/src/pramana_core/language/extraction.py",
+        "services/core/src/pramana_core/language/intake.py",
+        "services/core/src/pramana_core/language/presence.py",
+        "services/core/src/pramana_core/language/lint.py",
+    }
+)
+"""Files with Devanagari that are excluded because their strings are never shown or spoken."""
+
 CODE_FILES = (
     Path("apps/web/src/components/landing/Hero.tsx"),
     Path("apps/web/src/lib/builder/description.ts"),
@@ -41,6 +56,7 @@ CODE_FILES = (
     Path("packages/domain/src/pramana_domain/library.py"),
     Path("packages/domain/src/pramana_domain/builder.py"),
     Path("services/core/src/pramana_core/language/speakable.py"),
+    Path("services/core/src/pramana_core/language/realize.py"),
     Path("services/core/src/pramana_core/voice/call.py"),
 )
 
@@ -211,6 +227,24 @@ def _structured_rows(rows: set[ReviewRow]) -> None:
     for path in sorted(template_dir.glob("*.json")):
         value = json.loads(path.read_text(encoding="utf-8"))
         _walk_localized(value, path, (), rows)
+    sandbox = ROOT / SANDBOX_DATA
+    _walk_localized(json.loads(sandbox.read_text(encoding="utf-8")), sandbox, (), rows)
+
+
+def _migration_string_rows(path: Path, rows: set[ReviewRow]) -> None:
+    """Devanagari string literals in a migration that writes practice-model copy."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if DEVANAGARI.search(node.value):
+                rows.add(
+                    ReviewRow(
+                        _guess_language(node.value),
+                        _relative(path),
+                        f"line {node.lineno}, practice model copy",
+                        node.value,
+                    )
+                )
 
 
 def _visible_code_rows(rows: set[ReviewRow]) -> None:
@@ -222,6 +256,8 @@ def _visible_code_rows(rows: set[ReviewRow]) -> None:
             _python_localized(path, rows)
         else:
             _typescript_rows(path, rows)
+
+    _migration_string_rows(ROOT / SANDBOX_MIGRATION, rows)
 
     from pramana_core.consent import _message
 
@@ -320,10 +356,14 @@ def render_review_sheet() -> str:
         "record their role and date, and propose a corrected line where needed. No native review",
         "or endorsement is implied by generating this packet.",
         "",
-        "The packet covers localized values in the shipped packs and builder templates, visible",
-        "web copy and consent email, preview transcripts, voice consent, and runtime campus",
+        "The packet covers localized values in the shipped packs and builder templates, the",
+        "neutral practice model (`services/core/alembic/data/sandbox_v1.json` and migration 0021),",
+        "visible web copy and consent email, preview transcripts, voice consent, and runtime campus",
         "questions, and synthetic answers in the committed text-mode demo timeline. Templates",
         "retain placeholders so reviewers can see the actual source wording.",
+        "Answer-matching vocabulary in `services/core/src/pramana_core/language/` (extraction,",
+        "intake, presence, lint) is matched against answers and never displayed or spoken, so it is",
+        "not listed. Developer scripts under `scripts/` are not product copy and are not listed.",
         "Rows labelled `Hindi or Marathi, classify` need the reviewer to identify the language.",
         "",
         (
