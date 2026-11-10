@@ -45,11 +45,11 @@ engine, planner, API, event log, approvals, and the Gnani speech services are re
 
 **Evaluation (logic mode, simulated participants).** From
 `eval/reports/benchmark-2026-11-07-rc1/summary.json` (300 scenarios, seeds 10000-10299,
-commit `8b24d0d`, tag `v1.0-rc1`): Pramana's planner succeeds in 84.7% of scenarios against
-64.0% for a checklist and 56.3% for random questions, with about half as many questions; the
-differences are significant. It is **not** significantly better than greedy entropy (83.3%),
-though it costs people less time. Where nobody present can tell the causes apart it abstains
-in 68% of cases. Speech-recognition accuracy and latency are not published (Gnani EULA §16).
+commit `8b24d0d`, tag `v1.0-rc1`): the exploratory historical success metric is 84.7% for
+Pramana, 64.0% for a checklist, 56.3% for random questions and 83.3% for greedy entropy. It
+credits a partial action or abstention on a pair and does not measure full resolution. These
+seeds were examined before the stated freeze; the registered multiple-comparison analysis was
+not performed. Speech-recognition accuracy and latency are not published (Gnani EULA §16).
 
 **Limits.** One simulated building. The answer-extraction test sets were written by AI models
 and have been tuned on. [Fill: number of real human runs and their outcome, from the take

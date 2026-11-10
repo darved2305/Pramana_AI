@@ -95,10 +95,14 @@ def render(summary: dict[str, Any], source: str) -> str:
         "- E with parallel calls (K=3) is reported separately in ADR 0011, not in this run.",
         "- Stopping-rule calibration is in `eval/reports/calibration-2026-11-05/`; the default "
         "(`lambda_min_per_s = 1/60`) was kept.",
+        "- These seeds were examined before the stated freeze; this analysis is exploratory. "
+        "The success metric credits either constituent action or abstention on a pair, and "
+        "does not measure resolution of both faults.",
+        "- The registered McNemar, Wilcoxon and Holm analyses were not run. Intervals marked "
+        "above are unadjusted bootstrap intervals, not familywise significance tests.",
         "",
-        "What this supports: E beats the checklist and random selection on success with far "
-        "fewer questions. It is **not** significantly better than greedy entropy on success "
-        "(it costs people less effort). Decision focus shows no measurable effect on this mix.",
+        "These exploratory comparisons do not establish adjusted statistical significance or "
+        "full incident resolution.",
         "",
         END,
     ]

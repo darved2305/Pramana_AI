@@ -94,11 +94,11 @@ counts and exit codes: `eval/reports/verification-2026-11-07/report.md`. CI runs
 
 From generated reports only; nothing below is typed by hand.
 
-- **Benchmark** (`eval/reports/benchmark-2026-11-05/`, 300 scenarios; reproduced exactly on the
-  release candidate in `eval/reports/benchmark-2026-11-07-rc1/`): our planner succeeds in
-  84.7% of scenarios against 64.0% for a checklist and 56.3% for random questions, with about half
-  as many questions (differences significant). It is **not** significantly better than greedy
-  entropy (83.3%). Where nobody present can tell the causes apart it abstains 68% of the time.
+- **Benchmark** (`eval/reports/benchmark-2026-11-07-rc1/`, 300 simulated scenarios): the
+  exploratory historical success metric is 84.7% for our planner, 64.0% for a checklist,
+  56.3% for random questions and 83.3% for greedy entropy. It credits a partial action or
+  abstention on a pair, and does not measure full resolution. These seeds were examined before
+  the stated freeze; the registered multiple-comparison analysis was not performed.
 - **Parallel calls** (ADR 0011): asking up to three people at once cuts the simulated time to a
   conclusion by about a third with no significant change in success, at the cost of about two
   more questions per investigation.
