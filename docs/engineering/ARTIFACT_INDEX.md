@@ -1,16 +1,24 @@
 # Pramana artifact, sheet and research index
 
-Audited for the Day 4 closeout and Day 5 handoff on Nov 7, 2026. Paths are relative to the
-repository root unless stated otherwise. This index locates evidence; it does not turn a plan,
-an old research claim or an ignored experiment into a verified implementation result.
+Historical inventory audited for the Day 4 closeout and Day 5 handoff on Nov 7, 2026. Current
+entry points were refreshed on 2026-11-10. Paths are relative to the repository root unless stated
+otherwise. This index locates evidence; it does not turn a plan, an old research claim or an ignored
+experiment into a verified implementation result.
 
 ## 1. Start here
 
 | Artifact | Purpose / authority |
 |---|---|
-| docs/engineering/DAY5_PROMPT.md | Copy-paste instructions for a fresh agent session |
-| docs/engineering/HANDOFF.md | Detailed next-session execution order, dependencies and acceptance |
-| docs/engineering/STATUS_2026-11-07.md | Nov 7 implementation closeout and evidence boundaries |
+| docs/engineering/STATUS_2026-11-10.md | Current doc/evidence closeout, this worktree's changes, gates, and human-owned items |
+| docs/engineering/STATUS_PRODUCTION_2026-11-09.md | Production status report dated 2026-11-10 in its header; filename retains the Nov 9 label |
+| docs/engineering/HANDOFF.md | Historical operational handoff dated Nov 8; use only as historical context |
+| docs/SUBMISSION.md | Official-form draft, readiness checklist, and award-fit evidence map |
+| docs/DEMO.md | Current local walkthrough, take verification and captions templates, and offline emulator disclosure |
+| eval/reports/demo-rehearsal-2026-11-10-s1/ | Generated local S1 timeline, summary, and run notes dated Nov 10 |
+| docs/engineering/VOICE_PROVENANCE.md | Generated summary of committed and prose-only voice runs, with unknowns labelled |
+| docs/engineering/LANGUAGE_REVIEW.md | Generated Hindi, Marathi, and Hinglish review packet; all rows unchecked |
+| docs/COMPETITORS.md | Competitor notes with source dates and public-material limits |
+| docs/engineering/STATUS_2026-11-07.md | Historical Nov 7 implementation closeout and evidence boundaries |
 | eval/reports/verification-2026-11-07/report.md | Human-readable generated local check results |
 | eval/reports/verification-2026-11-07/checks.json | Commands, source SHA, exit codes and generated test counts |
 | .github/workflows/ci.yml | Actual Python, web and real-stack browser CI jobs |
@@ -32,8 +40,8 @@ These sheets live as Markdown tables, not separate Excel workbooks.
 | docs/PLAN.md §29 | Risk register | Match a real trigger before invoking a contingency |
 | docs/PLAN.md §30 | Original fallback matrix | Check later ADRs; the old LiveKit suggestion is not the adopted implementation |
 | docs/PLAN.md §32 | Publishing/submission checklist | Prepare outputs; the checklist itself does not authorize publishing or messaging |
-| docs/DEMO.md §§1–3 | Cast, languages/devices, briefing and storyboard | Synthetic role names; replace example numbers with actual take data |
-| docs/DEMO.md §§6–7 | Recording workflow and honesty checklist | Same-take seal/reveal, real/synthetic disclosure, native-reviewed captions |
+| docs/DEMO.md, 60-second cut | Shot list and on-screen disclosures for the committed local rehearsal | Editing target only; replace each shot with evidence from one selected take |
+| docs/DEMO.md, take verification and captions templates | Same-take evidence fields, consent, synthetic labels, approver identity, and captions | Fill only from the selected take; native review remains unchecked |
 | docs/engineering/STATUS_2026-11-06.md | Previous status/evidence table and evening fixes | Historical context; later evidence supersedes old counts/open items |
 | docs/engineering/STATUS_2026-11-07.md | Completed/pending/failed closeout table | The Nov 7 result, including external acceptance still open |
 | docs/engineering/HANDOFF.md | Next-session work packages and private take-sheet columns | Use for Day 5 execution and the actual take log |

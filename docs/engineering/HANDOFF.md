@@ -1,5 +1,11 @@
 # Day 4 closeout and Day 5 handoff: Sun Nov 8
 
+> Historical operational handoff dated Nov 8, 2026. Its staging snapshot, task order, and
+> instructions are not current status. See [STATUS_2026-11-10.md](STATUS_2026-11-10.md) for the
+> current documentation/evidence closeout and
+> [STATUS_PRODUCTION_2026-11-09.md](STATUS_PRODUCTION_2026-11-09.md) for the production report
+> dated 2026-11-10 in its header.
+
 Pramana, branch main. This is the operational handoff for the next agent. The planned next
 workday is **Sun Nov 8, 2026 (Day 5)**; use the actual session date for new evidence timestamps.
 Do not label a Nov 7 run as Nov 8 or change the machine clock to reset a provider quota.
