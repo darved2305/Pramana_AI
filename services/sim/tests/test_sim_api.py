@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
 
@@ -604,3 +605,61 @@ def test_failed_snapshot_write_rolls_back_participant_move(tmp_path: Path) -> No
         assert restored.status_code == 200
         assert restored.json()["location_id"] == "GUARD_DESK"
         assert list(tmp_path.glob("scenarios.json.*.tmp")) == []
+
+
+SIM_JSON_ROUTE_ACTOR = {
+    ("POST", "/sim/v1/scenarios"): "operator",
+    ("POST", "/sim/v1/scenarios/{sid}/move"): "participant",
+    ("POST", "/sim/v1/scenarios/{sid}/observe"): "participant",
+    ("POST", "/sim/v1/scenarios/{sid}/act"): "participant",
+    ("POST", "/sim/v1/scenarios/{sid}/presence/check"): "operator",
+}
+
+
+def test_every_simulator_json_route_has_a_fuzz_actor_entry(client: TestClient) -> None:
+    actual = {
+        (method, route.path)
+        for route in client.app.routes
+        if isinstance(route, APIRoute) and route.body_field is not None
+        for method in route.methods or ()
+    }
+    assert actual == set(SIM_JSON_ROUTE_ACTOR)
+
+
+def test_simulator_json_routes_reject_malformed_and_extreme_payloads(client: TestClient) -> None:
+    sid = scenario(client, CB7)
+    invalid_payloads = (
+        b"{",
+        b"[]",
+        b"null",
+        b"{}",
+        b'{"seed":"not-an-integer"}',
+        b'{"seed":-9223372036854775808,"to":-1,"probe_id":false}',
+        '{"text":"नेपाली 🌦️"}'.encode(),
+        ('{"value":"' + ("x" * 100_000) + '"}').encode(),
+    )
+    for method, template in SIM_JSON_ROUTE_ACTOR:
+        path = template.replace("{sid}", sid)
+        auth = (
+            OPERATOR
+            if SIM_JSON_ROUTE_ACTOR[(method, template)] == "operator"
+            else bearer("p_riya", sid)
+        )
+        for raw in invalid_payloads:
+            response = client.request(
+                method,
+                path,
+                content=raw,
+                headers={**auth, "Content-Type": "application/json"},
+            )
+            assert 400 <= response.status_code < 500, (
+                method,
+                template,
+                response.status_code,
+                response.text,
+            )
+            body = response.json()
+            assert set(body) == {"error"}, (method, template, body)
+            assert {"code", "message", "request_id"} <= set(body["error"])
+            assert "Traceback" not in response.text
+            assert 'File "' not in response.text
