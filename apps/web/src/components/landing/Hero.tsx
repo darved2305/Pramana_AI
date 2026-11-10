@@ -53,7 +53,7 @@ export function Hero() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 top-[50%] -z-0">
+      <div className="pointer-events-none absolute inset-x-0 bottom-[160px] top-[50%] -z-0 sm:bottom-0">
         <VoiceField
           modes={["lens", "pixels", "ribbons", "lines"]}
           className="h-full w-full"
