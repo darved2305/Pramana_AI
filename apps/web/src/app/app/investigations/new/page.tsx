@@ -272,7 +272,7 @@ export default function NewInvestigationPage() {
                                 <span>
                                   <span className="block text-[14px] font-medium">{p.display_name}</span>
                                   <span className="block text-[12px] text-muted">
-                                    {p.roles.map(roleLabel).join(", ")} · {pack.data?.locations.find((l) => l.id === p.location_id)?.label ?? p.location_id}
+                                    {p.roles.map((r) => roleLabel(r, pack.data)).join(", ")} · {pack.data?.locations.find((l) => l.id === p.location_id)?.label ?? p.location_id}
                                   </span>
                                 </span>
                               </span>

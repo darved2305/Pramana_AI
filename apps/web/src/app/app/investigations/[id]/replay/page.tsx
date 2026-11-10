@@ -1,5 +1,6 @@
 "use client";
 
+import { useInvestigationScope } from "@/lib/data/scope";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -10,15 +11,15 @@ import { IconArrowLeft, IconPause, IconPlay, IconSkipBack, IconSkipFwd } from "@
 import { useEventLog } from "@/lib/data/hooks";
 import { EVENT_LABEL, clock, foldEvents, outcomeWord, pct } from "@/lib/data/derive";
 import type { BeliefSnapshot, EventEnvelope, ReplayResult } from "@/lib/api/types";
-import { core } from "@/lib/api/core";
 import { usePrefersReducedMotion } from "@/lib/hooks/useReducedMotion";
 
 export default function ReplayPage() {
+  const scope = useInvestigationScope();
   const { id } = useParams<{ id: string }>();
   const log = useEventLog(id);
   return (
     <div className="flex flex-col gap-5">
-      <Link href={`/app/investigations/${id}`} className="inline-flex w-fit items-center gap-1.5 text-[14px] text-muted hover:text-fg">
+      <Link href={`${scope.base}/investigations/${id}`} className="inline-flex w-fit items-center gap-1.5 text-[14px] text-muted hover:text-fg">
         <IconArrowLeft className="h-4 w-4" /> Command center
       </Link>
       <PageHeader
@@ -48,15 +49,16 @@ export default function ReplayPage() {
 
 /** The core's own check: the belief rebuilt from the log, and the log against its seal. */
 function Integrity({ id }: { id: string }) {
+  const scope = useInvestigationScope();
   const [check, setCheck] = useState<ReplayResult | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const ctrl = new AbortController();
-    core.replayCheck(id, ctrl.signal).then(setCheck, (e: unknown) => {
+    scope.replayCheck(id, ctrl.signal).then(setCheck, (e: unknown) => {
       if ((e as Error).name !== "AbortError") setFailed(true);
     });
     return () => ctrl.abort();
-  }, [id]);
+  }, [id, scope]);
   if (failed) return <p className="text-[13px] text-muted">The replay check could not be run.</p>;
   if (!check) return null;
   const replay = check.engine_changed

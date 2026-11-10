@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -24,6 +26,28 @@ def test_round_trip_through_base64_keys() -> None:
     pub = public_key_from_b64(public_key_b64(key))
     claims = verify(pub, mint(key, participant_id="p_riya", scenario_id="sc_1"))
     assert (claims.sub, claims.scn, claims.aud) == ("p_riya", "sc_1", "sim")
+    assert claims.org is None  # Existing simulator tokens are still understood.
+
+
+def test_signed_organization_claim_round_trips() -> None:
+    key = Ed25519PrivateKey.generate()
+    token = mint(key, participant_id="p", scenario_id="s", organization_id="org_example")
+    assert verify(key.public_key(), token).org == "org_example"
+    body, signature = token.split(".")
+    changed = mint(key, participant_id="p", scenario_id="s", organization_id="org_other").split(
+        "."
+    )[0]
+    assert changed != body
+    with pytest.raises(TokenError):
+        verify(key.public_key(), f"{changed}.{signature}")
+
+
+@pytest.mark.parametrize("organization", [42, True, "", "x" * 65])
+def test_invalid_organization_claim_types_and_sizes_are_rejected(organization: Any) -> None:
+    key = Ed25519PrivateKey.generate()
+    token = mint(key, participant_id="p", scenario_id="s", organization_id=organization)
+    with pytest.raises(TokenError):
+        verify(key.public_key(), token)
 
 
 def test_tampered_payload_is_rejected() -> None:

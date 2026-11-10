@@ -10,18 +10,18 @@ from collections.abc import Iterator
 
 import httpx
 import pytest
+
 from e2e.harness import (
     CORE_PORT,
-    DB_URL,
     SIM_PORT,
     Process,
     Services,
+    e2e_database_url,
     ensure_database,
     migrate,
     port_free,
     temporary_work_directory,
 )
-
 from pramana_contracts.tokens import generate_private_key_b64, private_key_from_b64, public_key_b64
 
 
@@ -29,14 +29,16 @@ from pramana_contracts.tokens import generate_private_key_b64, private_key_from_
 def services() -> Iterator[Services]:
     if os.environ.get("PRAMANA_SKIP_E2E") == "1":
         pytest.skip("PRAMANA_SKIP_E2E=1")
+    # Outside the try below: a refused database must fail the run, not skip it as unreachable.
+    db_url = e2e_database_url()
     try:
-        asyncio.run(ensure_database(DB_URL))
+        asyncio.run(ensure_database(db_url))
     except Exception as exc:  # unreachable server, wrong credentials
         pytest.skip(f"PostgreSQL for e2e unreachable ({type(exc).__name__}); run make db-up")
     for port in (CORE_PORT, SIM_PORT):
         if not port_free(port):
             pytest.fail(f"port {port} is in use; set PRAMANA_E2E_CORE_PORT / PRAMANA_E2E_SIM_PORT")
-    migrate(DB_URL)
+    migrate(db_url)
 
     signing = generate_private_key_b64()
     operator, oracle = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
@@ -54,7 +56,7 @@ def services() -> Iterator[Services]:
         core_env = base | {
             "CORE_PORT": str(CORE_PORT),
             "PRAMANA_MODE": "dev",
-            "DATABASE_URL": DB_URL,
+            "DATABASE_URL": db_url,
             "SIM_URL": f"http://127.0.0.1:{SIM_PORT}",
             "SIM_OPERATOR_KEY": operator,
             "PARTICIPANT_SIGNING_KEY": signing,

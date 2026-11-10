@@ -10,10 +10,10 @@ import { Wordmark } from "@/components/brand/Wordmark";
 import { VoiceField } from "@/components/voice/VoiceField";
 import { DeviceCheck } from "@/components/join/DeviceCheck";
 import { IconMic, IconPlay } from "@/components/ui/icons";
-import { core } from "@/lib/api/core";
 import { sim } from "@/lib/api/sim";
 import { ApiError, describeError } from "@/lib/api/http";
 import { decodeJoin, type JoinPayload } from "@/lib/join";
+import { participantApi } from "@/lib/api/participant";
 import { startRecording, type Recording } from "@/lib/audio/recorder";
 import { QuestionMediaSession } from "@/lib/audio/media";
 import type { AnswerResult, Approval, Extraction, InvestigationState, ParticipantView } from "@/lib/api/types";
@@ -100,14 +100,16 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         setView({ location_label: "the guard desk", items: [{ label: "Hostel Wi-Fi on your phone", value: "connected" }, { label: "Lights", value: "on" }], reachable_locations: [] });
         return;
       }
-      const s = await core.getInvestigation(payload.i, undefined, payload.t);
+      const s = await participantApi(payload).getInvestigation();
       setState(s);
       setError(null);
       sim.view(payload.s, payload.t).then(setView).catch(() => setView(null));
     } catch (e) {
       setError(e);
     }
-  }, [payload.i, payload.s, payload.t, preview]);
+    // payload is decoded from the URL on every render; these fields are its whole identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload.i, payload.s, payload.t, payload.o, payload.p, preview]);
 
   useEffect(() => {
     // load() only sets state after awaiting the network or a dynamic import.
@@ -157,17 +159,18 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const sendAnswer = async (body: { outcome?: string; text?: string }) => {
     if (!q) return;
     setMsg(null);
+    setUnderstood(null);
     if (preview) {
       setUnderstood(`I understood: ${outcomeWord(body.outcome ?? "your answer")}. (Preview: nothing was sent.)`);
       return;
     }
     setPhase("sending");
     try {
-      const r = await core.answer(
-        state.id,
-        { question_id: q.id, participant_id: payload.p, ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }) },
-        payload.t,
-      );
+      const r = await participantApi(payload).answer({
+        question_id: q.id,
+        participant_id: payload.p,
+        ...(body.outcome ? { outcome: body.outcome, modality: "tap" as const } : { text: body.text, modality: "text" as const }),
+      });
       setUnderstood(`I understood: ${heardAs(r.extraction)}`);
       setText("");
       setState(r.state);
@@ -232,7 +235,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           setPhase("idle");
         },
       },
-      { callParticipantId: payload.p, playQuestion: false },
+      { callParticipantId: payload.p, playQuestion: false, organization: payload.o },
     );
     try {
       await Promise.race([
@@ -317,7 +320,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
           done(session);
         },
       },
-      { playQuestion: false },
+      { playQuestion: false, organization: payload.o },
     );
     try {
       await Promise.race([
@@ -337,6 +340,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
   const toggleVoice = async () => {
     if (!q) return;
     setMsg(null);
+    setUnderstood(null);
     const call = callPhase === "active" ? callRef.current : null;
     if (call) {
       if (phase === "recording") {
@@ -367,7 +371,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
         if (preview) {
           setUnderstood("Recorded. (Preview: nothing was sent.)");
         } else {
-          const r = await core.answerByVoice(state.id, q.id, payload.p, wav, payload.t);
+          const r = await participantApi(payload).answerByVoice(q.id, wav);
           setUnderstood(`I heard "${r.stt.transcript}" and understood: ${heardAs(r.result.extraction)}`);
           setState(r.result.state);
         }
@@ -400,7 +404,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
       // Never wait on resume(): it stays pending until the browser sees a user gesture.
       if (ctx.state === "suspended") void ctx.resume();
       listenRef.current?.stop();
-      const res = await core.questionAudioStream(state.id, q.id, payload.t);
+      const res = await participantApi(payload).questionAudioStream(q.id);
       const playback = playWavStream(res, ctx);
       listenRef.current = playback;
       await playback.done;
@@ -433,7 +437,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
             <button type="button" onClick={declineCall} className="btn-line lg w-full">
               Not now
             </button>
-            <button type="button" onClick={acceptCall} className="btn-line lg w-full bg-cream !text-ink">
+            <button type="button" onClick={acceptCall} className="btn-line lg w-full !bg-cream !text-ink">
               Accept
             </button>
           </div>
@@ -456,7 +460,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
             <button type="button" onClick={() => giveConsent("later")} className="btn-line w-full">
               Later
             </button>
-            <button type="button" onClick={() => giveConsent("yes")} className="btn-line w-full bg-cream !text-ink">
+            <button type="button" onClick={() => giveConsent("yes")} className="btn-line w-full !bg-cream !text-ink">
               Yes
             </button>
           </div>
@@ -481,7 +485,7 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
               <p className="text-[15px]">First, please go to the place in the question.</p>
               <button
                 type="button"
-                className="btn-line lg mt-4 w-full bg-cream !text-ink"
+                className="btn-line lg mt-4 w-full !bg-cream !text-ink"
                 onClick={async () => {
                   setMsg(null);
                   try {
@@ -600,7 +604,6 @@ function Participant({ payload, preview }: { payload: JoinPayload; preview: bool
 }
 
 function Repair({
-  state,
   approval,
   payload,
   preview,
@@ -625,13 +628,13 @@ function Repair({
       {!cap ? (
         <button
           type="button"
-          className="btn-line lg mt-6 w-full bg-cream !text-ink"
+          className="btn-line lg mt-6 w-full !bg-cream !text-ink"
           disabled={busy || preview}
           onClick={async () => {
             setBusy(true);
             setErr(null);
             try {
-              setCap(await core.collectCapability(state.id, approval.id, payload.p, payload.t));
+              setCap(await participantApi(payload).collectCapability(approval.id));
             } catch (e) {
               setErr(describeError(e));
             } finally {
@@ -648,7 +651,7 @@ function Repair({
           {cap.location_id && !there ? (
             <button
               type="button"
-              className="btn-line lg mt-4 w-full bg-cream !text-ink"
+              className="btn-line lg mt-4 w-full !bg-cream !text-ink"
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
@@ -681,7 +684,7 @@ function Repair({
                   // reloaded after the reset): the action happened, so report it.
                   if (!(e instanceof ApiError && e.code === "CAPABILITY_USED")) throw e;
                 }
-                onState(await core.reportIntervention(state.id, { approval_id: approval.id, participant_id: payload.p }, payload.t));
+                onState(await participantApi(payload).reportIntervention(approval.id));
               } catch (e) {
                 if (e instanceof ApiError && e.status === 403 && /expired/i.test(e.message)) {
                   setCap(null);

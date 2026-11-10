@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -12,6 +12,7 @@ from .common import Directness, Hedge, Identifier, Modality, StrictModel, Templa
 from .participants import ParticipantSpec
 from .reasoning import BeliefSnapshot, Extraction, Observation, PlanDecision, ProbeAction
 from .sim import FaultSpec, RevealResult
+from .site_people import QuestioningAvailability, QuietHoursOverrideView
 from .voice import SttResult
 
 
@@ -116,8 +117,7 @@ class ScenarioRequest(StrictModel):
     fault: Literal["random"] | FaultSpec = "random"
 
 
-class CreateInvestigation(StrictModel):
-    pack_id: Identifier
+class InvestigationInput(StrictModel):
     participants: list[ParticipantSpec] = Field(min_length=1, max_length=12)
     report: Report
     scenario: ScenarioRequest
@@ -129,13 +129,27 @@ class CreateInvestigation(StrictModel):
     to, ask them to read a detail only someone there can see (docs/adr/0014)."""
 
     @model_validator(mode="after")
-    def _consistent(self) -> CreateInvestigation:
+    def _consistent(self) -> Self:
         ids = [p.id for p in self.participants]
         if len(set(ids)) != len(ids):
             raise ValueError("participant ids must be unique")
         if self.report.reporter_id not in ids:
             raise ValueError("report.reporter_id must be one of the participants")
         return self
+
+
+class CreateInvestigation(InvestigationInput):
+    """Legacy developer/evaluation input. Production creation selects a saved site instead."""
+
+    pack_id: Identifier
+
+
+class CreateSiteInvestigation(InvestigationInput):
+    site_id: str
+    practice: bool = False
+    """Simulate faults on this site's published model. Investigating a live site with real
+    people needs real-world reach (calls, messages, work orders), which is not configured
+    yet; until then a live site can only be practised on."""
 
 
 class QuestionStatus(StrEnum):
@@ -250,9 +264,28 @@ class DisagreementView(StrictModel):
     """A plain-English sentence built only from the numbers above and the pack's names."""
 
 
+class RepairOption(StrictModel):
+    """A repair the site's model allows for the current decision, on one specific target."""
+
+    action: Identifier
+    action_label: str
+    target: Identifier
+    target_label: str
+    place: str | None
+    risk: Literal["low", "medium", "high"]
+    reversible: bool
+    participant_ids: list[Identifier]
+    """People in this investigation whose roles may carry it out."""
+    roles: list[str]
+    """Roles that may carry it out, for when nobody here holds one."""
+
+
 class InvestigationState(StrictModel):
     id: str
     pack_id: Identifier
+    site_id: str | None = None
+    site_model_id: str | None = None
+    model_sha256: str | None = None
     status: InvestigationStatus
     created_at: datetime
     report: Report
@@ -273,6 +306,14 @@ class InvestigationState(StrictModel):
     presence_checks_enabled: bool = False
     presence_checks: list[PresenceCheckView] = Field(default_factory=list)
     disagreements: list[DisagreementView] = Field(default_factory=list)
+    practice: bool = True
+    """Simulated: the shared practice site, or practice faults on a site's own model."""
+    repair_options: list[RepairOption] = Field(default_factory=list)
+    """What may be proposed for approval now, from the site's own actions."""
+    questioning_availability: QuestioningAvailability | None = None
+    """The latest logged consent and quiet-hours check for a live investigation."""
+    quiet_hours_override: QuietHoursOverrideView | None = None
+    """A logged owner/admin emergency override, if one was used."""
 
 
 class EventEnvelope(StrictModel):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -29,12 +29,21 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
 
-class Role(StrEnum):
-    STUDENT = "student"
-    GUARD = "guard"
-    ELECTRICIAN = "electrician"
-    IT_TECH = "it_tech"
-    HOUSEKEEPING = "housekeeping"
+T = TypeVar("T")
+
+
+class CursorPage(StrictModel, Generic[T]):
+    """One bounded page from a stable, server-side keyset query."""
+
+    items: list[T]
+    limit: int
+    next_cursor: str | None
+
+
+Role = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,47}$")]
+"""A role from the site model's own catalogue (a nurse, a plumber, a guard). The core checks it
+against the pinned model; the built-in hostel catalogue is student, guard, electrician, it_tech
+and housekeeping."""
 
 
 class Skill(StrEnum):

@@ -1,8 +1,9 @@
 "use client";
 
+import { useInvestigationScope } from "@/lib/data/scope";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   Badge,
   Button,
@@ -19,6 +20,7 @@ import {
   Tabs,
 } from "@/components/ui";
 import { IconHistory, IconPlus, IconSearch } from "@/components/ui/icons";
+import { InvestigationBoard } from "@/components/console/InvestigationBoard";
 import { usePreviewMode } from "@/lib/store/local";
 import { useInvestigationList } from "@/lib/data/hooks";
 import { STATUS_LABEL, STATUS_TONE, relative } from "@/lib/data/derive";
@@ -53,18 +55,43 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 function InvestigationsInner() {
+  const scope = useInvestigationScope();
   const params = useSearchParams();
   const router = useRouter();
   const preview = usePreviewMode();
-  const [q, setQ] = useState(params.get("q") ?? "");
-  const [filter, setFilter] = useState<Filter>("all");
-  const [page, setPage] = useState(0);
+  // The URL is the source of truth for filters so a filtered list can be shared or bookmarked.
+  // The search box keeps its own text while typing and follows the URL on back/forward.
+  const urlQ = params.get("q") ?? "";
+  const filterParam = params.get("filter");
+  const filter: Filter = filterParam === "active" || filterParam === "settled" ? filterParam : "all";
+  const [q, setQ] = useState(urlQ);
+  const [seenUrlQ, setSeenUrlQ] = useState(urlQ);
+  if (urlQ !== seenUrlQ) {
+    setSeenUrlQ(urlQ);
+    if (urlQ !== q.trim()) setQ(urlQ);
+  }
   const [openId, setOpenId] = useState(false);
+  const board = params.get("view") === "board";
+  const updateUrl = (values: { q?: string; filter?: Filter; view?: "list" | "board" }) => {
+    const next = new URLSearchParams(params.toString());
+    const nextQ = values.q ?? q;
+    const nextFilter = values.filter ?? filter;
+    const nextView = values.view ?? (board ? "board" : "list");
+    if (nextQ.trim()) next.set("q", nextQ.trim());
+    else next.delete("q");
+    if (nextFilter !== "all") next.set("filter", nextFilter);
+    else next.delete("filter");
+    if (nextView === "board") next.set("view", "board");
+    else next.delete("view");
+    router.replace(`${scope.base}/investigations${next.size ? `?${next}` : ""}`, { scroll: false });
+  };
+  const setView = (next: "list" | "board") => updateUrl({ view: next });
   const needle = useDebounced(q, 250);
-  const query = useMemo(() => ({ status: STATUS_FILTER[filter], q: needle, limit: PAGE, offset: page * PAGE }), [filter, needle, page]);
+  // The list hook keys on the serialized query, so a fresh object each render is fine.
+  const query = { status: STATUS_FILTER[filter], q: needle, limit: PAGE };
   const list = useInvestigationList(query);
   const rows = list.data?.items ?? [];
-  const total = list.data?.total ?? 0;
+  const nextCursor = list.data?.next_cursor;
   const filtering = filter !== "all" || needle.trim() !== "";
 
   return (
@@ -74,26 +101,43 @@ function InvestigationsInner() {
         eyebrow={preview ? <PreviewBadge /> : undefined}
         actions={
           <>
+            <div role="group" aria-label="View" className="flex rounded-full p-0.5 shadow-[inset_0_0_0_0.8px_var(--app-line)]">
+              {(["list", "board"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={board === (v === "board")} onClick={() => setView(v)}
+                  className={`h-[34px] rounded-full px-3.5 text-[13px] ${board === (v === "board") ? "bg-white/[.07] text-fg" : "text-muted hover:text-fg"}`}>
+                  {v === "list" ? "List" : "Board"}
+                </button>
+              ))}
+            </div>
             <Button onClick={() => setOpenId(true)}>Open by ID</Button>
-            <ButtonLink href="/app/investigations/new" variant="primary" size="lg">
+            <ButtonLink href={`${scope.base}/investigations/new`} variant="primary" size="lg">
               <IconPlus className="h-4 w-4" /> New investigation
             </ButtonLink>
           </>
         }
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {board ? (
+        <InvestigationBoard
+          list={list}
+          filtering={filtering}
+          onClearFilters={() => {
+            setQ("");
+            updateUrl({ q: "", filter: "all" });
+          }}
+        />
+      ) : null}
+      <div className={board ? "hidden" : "flex flex-wrap items-center justify-between gap-3"}>
         <Tabs<Filter>
           label="Filter investigations"
           value={filter}
           onChange={(f) => {
-            setFilter(f);
-            setPage(0);
+            updateUrl({ filter: f });
           }}
           items={[
-            { value: "all", label: "All", count: filter === "all" ? total : undefined },
-            { value: "active", label: "In progress", count: filter === "active" ? total : undefined },
-            { value: "settled", label: "Settled", count: filter === "settled" ? total : undefined },
+            { value: "all", label: "All" },
+            { value: "active", label: "In progress" },
+            { value: "settled", label: "Settled" },
           ]}
         />
         <div className="flex h-[38px] w-full max-w-[300px] items-center gap-2 rounded-full border-[0.8px] border-line px-3.5 focus-within:border-accent/60">
@@ -106,8 +150,7 @@ function InvestigationsInner() {
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
-              setPage(0);
-              router.replace(`/app/investigations${e.target.value ? `?q=${encodeURIComponent(e.target.value)}` : ""}`, { scroll: false });
+              updateUrl({ q: e.target.value });
             }}
             placeholder="Search by report or ID"
             className="w-full bg-transparent text-[14px] outline-none placeholder:text-muted"
@@ -115,7 +158,7 @@ function InvestigationsInner() {
         </div>
       </div>
 
-      {list.status === "loading" ? (
+      {board ? null : list.status === "loading" ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
           <Skeleton className="h-[160px]" />
           <Skeleton className="h-[160px]" />
@@ -125,14 +168,14 @@ function InvestigationsInner() {
         <Card>
           <ErrorState error={list.error} onRetry={list.reload} />
         </Card>
-      ) : rows.length === 0 && !filtering && page === 0 ? (
+      ) : rows.length === 0 && !filtering ? (
         <Card>
           <EmptyState
             icon={<IconHistory />}
             title="No investigations yet"
             body="Start one from a report. It will be listed here, and you can come back to its command center at any time."
             action={
-              <ButtonLink href="/app/investigations/new" variant="primary">
+              <ButtonLink href={`${scope.base}/investigations/new`} variant="primary">
                 <IconPlus className="h-4 w-4" /> New investigation
               </ButtonLink>
             }
@@ -147,8 +190,7 @@ function InvestigationsInner() {
               <Button
                 onClick={() => {
                   setQ("");
-                  setFilter("all");
-                  setPage(0);
+                  updateUrl({ q: "", filter: "all" });
                 }}
               >
                 Clear filters
@@ -163,20 +205,15 @@ function InvestigationsInner() {
               <InvestigationCard key={r.id} r={r} />
             ))}
           </ul>
-          {total > PAGE ? (
-            <nav className="flex items-center justify-between gap-3 text-[13px] text-muted" aria-label="Pages">
-              <span>
-                {page * PAGE + 1} to {Math.min(total, (page + 1) * PAGE)} of {total}
-              </span>
-              <span className="flex gap-2">
-                <Button size="sm" onClick={() => setPage((p) => p - 1)} disabled={page === 0}>
-                  Previous
-                </Button>
-                <Button size="sm" onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * PAGE >= total}>
-                  Next
-                </Button>
-              </span>
-            </nav>
+          {list.moreError ? (
+            <p role="alert" className="text-[13px] text-bad">Could not load more investigations. <button className="underline" onClick={list.loadMore}>Try again</button></p>
+          ) : null}
+          {nextCursor ? (
+            <div className="flex justify-center">
+              <Button size="sm" onClick={list.loadMore} disabled={list.loadingMore}>
+                {list.loadingMore ? "Loading..." : "Load more investigations"}
+              </Button>
+            </div>
           ) : null}
         </>
       )}
@@ -187,6 +224,7 @@ function InvestigationsInner() {
 }
 
 function InvestigationCard({ r }: { r: InvestigationSummary }) {
+  const scope = useInvestigationScope();
   const people = r.participant_count === 1 ? "1 person" : `${r.participant_count} people`;
   return (
     <li className="card group relative flex flex-col p-4 transition-colors hover:bg-card-2">
@@ -196,7 +234,7 @@ function InvestigationCard({ r }: { r: InvestigationSummary }) {
         </Badge>
         <span className="text-[12px] text-muted">{relative(r.created_at)}</span>
       </div>
-      <Link href={`/app/investigations/${r.id}`} className="mt-3 block text-[16px] leading-snug text-fg after:absolute after:inset-0 after:rounded-[16px]">
+      <Link href={`${scope.base}/investigations/${r.id}`} className="mt-3 block text-[16px] leading-snug text-fg after:absolute after:inset-0 after:rounded-[16px]">
         &ldquo;{r.report_text}&rdquo;
       </Link>
       <p className="mt-1.5 text-[13px] text-muted">
@@ -210,7 +248,7 @@ function InvestigationCard({ r }: { r: InvestigationSummary }) {
       ) : null}
       <div className="relative z-10 mt-4 flex items-center justify-between gap-2 border-t border-line pt-3">
         <span className="truncate font-mono text-[11px] text-muted">{r.id}</span>
-        <Link href={`/app/investigations/${r.id}/replay`} className="rounded-full px-2.5 py-1 text-[12px] text-fg-2 hover:bg-white/[.06]">
+        <Link href={`${scope.base}/investigations/${r.id}/replay`} className="rounded-full px-2.5 py-1 text-[12px] text-fg-2 hover:bg-white/[.06]">
           Replay
         </Link>
       </div>
@@ -219,6 +257,7 @@ function InvestigationCard({ r }: { r: InvestigationSummary }) {
 }
 
 function OpenByIdDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const scope = useInvestigationScope();
   const router = useRouter();
   const [id, setId] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -236,7 +275,7 @@ function OpenByIdDialog({ open, onClose }: { open: boolean; onClose: () => void 
           if (!v) return setErr("Enter an investigation ID.");
           if (!/^[\w-]{3,}$/.test(v)) return setErr("IDs contain only letters, numbers, dashes and underscores.");
           onClose();
-          router.push(`/app/investigations/${encodeURIComponent(v)}`);
+          router.push(`${scope.base}/investigations/${encodeURIComponent(v)}`);
         }}
         className="flex flex-col gap-4"
         noValidate

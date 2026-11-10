@@ -76,19 +76,25 @@ export interface MediaOptions {
   /** Call mode: one socket for this participant's whole call (ring, consent, every question),
    * `WS /v1/investigations/{id}/participants/{pid}/call` (services/core/.../voice/call.py). */
   callParticipantId?: string;
+  /** The workspace (organization id) a link belongs to: its sockets live under it. */
+  organization?: string;
 }
 
-/** ws(s)://<this origin><basePath>/v1/investigations/{id}/participants/{pid}/call */
-export function callUrl(investigationId: string, participantId: string, basePath = "/api/core"): string {
+function scopeRoot(organization?: string): string {
+  return organization ? `/v1/orgs/${encodeURIComponent(organization)}` : "/v1";
+}
+
+/** ws(s)://<this origin><basePath>/v1[/orgs/{org}]/investigations/{id}/participants/{pid}/call */
+export function callUrl(investigationId: string, participantId: string, basePath = "/api/core", organization?: string): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const path = `${basePath}/v1/investigations/${encodeURIComponent(investigationId)}/participants/${encodeURIComponent(participantId)}/call`;
+  const path = `${basePath}${scopeRoot(organization)}/investigations/${encodeURIComponent(investigationId)}/participants/${encodeURIComponent(participantId)}/call`;
   return `${proto}//${window.location.host}${path}`;
 }
 
 /** ws(s)://<this origin><basePath>/v1/investigations/{id}/questions/{qid}/media */
-export function mediaUrl(investigationId: string, questionId: string, basePath = "/api/core"): string {
+export function mediaUrl(investigationId: string, questionId: string, basePath = "/api/core", organization?: string): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const path = `${basePath}/v1/investigations/${encodeURIComponent(investigationId)}/questions/${encodeURIComponent(questionId)}/media`;
+  const path = `${basePath}${scopeRoot(organization)}/investigations/${encodeURIComponent(investigationId)}/questions/${encodeURIComponent(questionId)}/media`;
   return `${proto}//${window.location.host}${path}`;
 }
 
@@ -122,8 +128,8 @@ export class QuestionMediaSession {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(
         callPid
-          ? callUrl(this.investigationId, callPid, this.options.basePath)
-          : mediaUrl(this.investigationId, this.questionId, this.options.basePath),
+          ? callUrl(this.investigationId, callPid, this.options.basePath, this.options.organization)
+          : mediaUrl(this.investigationId, this.questionId, this.options.basePath, this.options.organization),
       );
       ws.binaryType = "arraybuffer";
       this.ws = ws;

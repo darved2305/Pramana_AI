@@ -11,6 +11,7 @@ listens on localhost; never use this cluster for anything but local development.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,7 +19,17 @@ from pathlib import Path
 
 PORT = int(os.environ.get("PRAMANA_DB_PORT", "5433"))
 USER = "pramana"
-DATABASES = ("pramana", "pramana_test")
+DATABASES = tuple(
+    d.strip()
+    for d in os.environ.get("PRAMANA_DB_NAMES", "pramana,pramana_test").split(",")
+    if d.strip()
+)
+"""Override with PRAMANA_DB_NAMES, e.g. the production worktree's
+``pramana_prod,pramana_prod_test,pramana_prod_e2e``."""
+APP_ROLE = "pramana_app"
+"""The runtime role: not a superuser and without BYPASSRLS, so row-level security applies to it
+(ADR 0015). ``pramana`` stays the owner and runs migrations."""
+SIM_ROLE = "pramana_sim"
 
 
 def data_dir() -> Path:
@@ -77,6 +88,8 @@ def init() -> None:
 
 
 def start() -> None:
+    if not DATABASES or any(not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", db) for db in DATABASES):
+        sys.exit("PRAMANA_DB_NAMES must contain comma-separated lowercase database names")
     init()
     if not is_running():
         log = data_dir().parent / "postgres.log"
@@ -104,7 +117,34 @@ def start() -> None:
         )
         if exists.stdout.strip() != "1":
             run(pg_bin("createdb"), "-h", "localhost", "-p", str(PORT), "-U", USER, db)
+    ensure_app_role()
     print(f"postgres ready on localhost:{PORT} (databases: {', '.join(DATABASES)})")
+
+
+def ensure_app_role() -> None:
+    """Create local test roles once per cluster (additive; existing roles are never altered)."""
+    roles = (
+        (APP_ROLE, "login nosuperuser nobypassrls nocreatedb nocreaterole"),
+        (SIM_ROLE, "login nosuperuser nobypassrls nocreatedb nocreaterole"),
+        ("anon", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
+        ("authenticated", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
+        ("service_role", "nologin nosuperuser nobypassrls nocreatedb nocreaterole"),
+    )
+    for name, attributes in roles:
+        run(
+            pg_bin("psql"),
+            "-h",
+            "localhost",
+            "-p",
+            str(PORT),
+            "-U",
+            USER,
+            "-d",
+            "postgres",
+            "-tAc",
+            f"do $$ begin if not exists (select 1 from pg_roles where rolname = '{name}') then "
+            f"create role {name} {attributes}; end if; end $$",
+        )
 
 
 def stop() -> None:

@@ -9,6 +9,9 @@ Propagation order (each layer depends only on earlier layers):
 5. per-location phone experience: SSID visibility, association, IP lease, page loads;
 6. indicators: lights, screens, LEDs and breaker positions.
 
+Sites with ``physics: dependency`` (any system: water, cooling, lifts...) replace layers 1-6
+with their own ``requires`` graph and declarative probe rules (rules.py).
+
 The engine evaluates this on the *documented* pack once per hypothesis to build its prediction
 table. The simulator evaluates it on its sealed *true* fault set (which may contain several
 faults) to decide what participants perceive. Neither side can see the other's inputs.
@@ -20,6 +23,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from .pack import DEVICE_KINDS, DomainPack, Probe
+from .rules import Requirement, evaluate
 
 FaultSet = frozenset[tuple[str, str]]
 """Active faults as ``(component_id, failure_mode_id)`` pairs."""
@@ -43,6 +47,33 @@ class World:
     def functioning(self, cid: str) -> bool:
         return not any(c == cid for c, _ in self.faults)
 
+    # -- state read by declarative rules -------------------------------------------------------
+
+    def faulty(self, cid: str) -> bool:
+        """Any active fault on the component, local or blocking."""
+        return not self.functioning(cid)
+
+    def fault(self, cid: str, mode: str) -> bool:
+        return (cid, mode) in self.faults
+
+    def supplied(self, cid: str) -> bool:
+        """Everything the component depends on works, whatever its own state."""
+        if self.pack.physics == "building_network":
+            return self.powered(cid)
+        key = ("supplied", cid)
+        if key not in self._memo:
+            self._memo[key] = all(
+                any(self.alive(m) for m in req.any_of)
+                if isinstance(req, Requirement)
+                else self.alive(req)
+                for req in self.pack.component_by_id[cid].requires
+            )
+        return self._memo[key]
+
+    def _blocked(self, cid: str) -> bool:
+        modes = {m.id: m for m in self.pack.component_by_id[cid].failure_modes}
+        return any(c == cid and not modes[m].local for c, m in self.faults)
+
     def powered(self, cid: str) -> bool:
         """True when electrical (or PoE) power reaches the component."""
         key = ("powered", cid)
@@ -62,6 +93,8 @@ class World:
         return self._memo[key]
 
     def alive(self, cid: str) -> bool:
+        if self.pack.physics == "dependency":
+            return self.supplied(cid) and not self._blocked(cid)
         return self.powered(cid) and self.functioning(cid)
 
     # -- layer 3-4: network --------------------------------------------------------------------
@@ -122,6 +155,9 @@ class World:
         if binding is None:
             raise ValueError(f"probe {probe.id} cannot be made at {location_id}")
         kind = probe.kind
+        if kind == "rule":
+            assert probe.default is not None  # enforced by pack validation
+            return evaluate(probe.rules, probe.default, self, binding.target)
         if kind in DEVICE_KINDS:
             if kind == "wifi_status":
                 if self.associated_ap(location_id) is None:

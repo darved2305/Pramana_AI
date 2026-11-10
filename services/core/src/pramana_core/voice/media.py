@@ -135,8 +135,11 @@ class MediaSession:
         *,
         call: CallSession | None = None,
         send_lock: asyncio.Lock | None = None,
+        organization: str | None = None,
     ) -> None:
         self.ws, self.inv_id, self.question_id = ws, inv_id, question_id
+        self.organization = organization
+        """Inside a workspace: the token's signed organization claim must match it."""
         self.svc, self.gnani, self.cache = svc, gnani, cache
         self.broadcaster, self.active, self.max_s = broadcaster, active, max_s
         self.in_call = call is not None
@@ -240,9 +243,12 @@ class MediaSession:
 
     def _authenticate(self, token: str) -> Any:
         try:
-            return self.svc.verify_participant_token(token)
+            claims = self.svc.verify_participant_token(token)
         except TokenError as exc:
             raise MediaClosedError(4401) from exc
+        if self.organization is not None and claims.org != self.organization:
+            raise MediaClosedError(4403)  # a link from another workspace
+        return claims
 
     async def _question(self, participant_id: str, scenario_id: str) -> PendingQuestion:
         try:

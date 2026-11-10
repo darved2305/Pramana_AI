@@ -86,6 +86,7 @@ async def event_stream(
     heartbeat_s: float,
     max_duration_s: float,
     retry_ms: int = 2000,
+    authorized: Callable[[], Awaitable[bool]] | None = None,
 ) -> AsyncIterator[bytes]:
     """Backfill from the log, then follow live commits; never a gap, never a duplicate."""
     started = time.monotonic()
@@ -98,8 +99,14 @@ async def event_stream(
             last = 0
         yield sse({"after_seq": last, "head_seq": head}, event="ready")
         while True:
+            if authorized is not None and not await authorized():
+                yield sse({"reason": "signed_out", "resume_after_seq": last}, event="bye")
+                return
             # Drain everything committed so far, page by page.
             while True:
+                if authorized is not None and not await authorized():
+                    yield sse({"reason": "signed_out", "resume_after_seq": last}, event="bye")
+                    return
                 rows = await fetch(last, PAGE)
                 for env in rows:
                     if env.seq <= last:

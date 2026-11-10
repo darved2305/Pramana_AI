@@ -10,7 +10,10 @@ import {
   IconUsers,
   IconPhone,
 } from "@/components/ui/icons";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { usePreviewMode } from "@/lib/store/local";
+import { useAccount } from "@/lib/data/account";
 import { useDirectory, useInvestigationList, usePack } from "@/lib/data/hooks";
 import { STATUS_LABEL, STATUS_TONE, relative } from "@/lib/data/derive";
 import type { InvestigationStatus } from "@/lib/api/types";
@@ -21,12 +24,21 @@ const RUNNING = { status: ACTIVE, limit: 4 };
 
 export default function OverviewPage() {
   const preview = usePreviewMode();
+  const account = useAccount();
+  const router = useRouter();
+  // People go where the core says they left off: their workspace, or the next onboarding step.
+  // Accounts with legacy global staff roles keep this single-site console until it is retired.
+  useEffect(() => {
+    if (preview || account.status !== "ready") return;
+    const a = account.account;
+    if (a.memberships.length > 0 || (a.user.roles ?? []).length === 0) router.replace(a.destination);
+  }, [preview, account, router]);
   const pack = usePack("campus_block_c");
   const directory = useDirectory("campus_block_c");
   const people = directory.data ?? [];
   const all = useInvestigationList(ALL);
   const running = useInvestigationList(RUNNING);
-  const total = all.data?.total ?? 0;
+  const hasInvestigations = (all.data?.items.length ?? 0) > 0 || Boolean(all.data?.next_cursor);
   const active = (running.data?.items ?? []).map((r) => ({
     id: r.id,
     createdAt: r.created_at,
@@ -55,7 +67,7 @@ export default function OverviewPage() {
       icon: IconPlus,
       title: "Create an investigation",
       body: "Describe the problem in the reporter's words. Pramana takes it from there.",
-      done: total > 0,
+      done: hasInvestigations,
     },
   ];
 
@@ -132,7 +144,7 @@ export default function OverviewPage() {
           href="/app/investigations"
           icon={<IconHistory />}
           title="Investigations"
-          body={all.status === "error" ? "List unavailable" : total ? `${total} in the core` : "None yet"}
+          body={all.status === "error" ? "List unavailable" : hasInvestigations ? "Search and filter past work" : "None yet"}
         />
         <QuickCard
           href="/app/participants"

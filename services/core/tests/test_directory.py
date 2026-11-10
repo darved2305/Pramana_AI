@@ -92,12 +92,14 @@ def test_investigation_list_pages_filters_and_searches(core: TestClient) -> None
     ids = [_make(core, f"Floor 3 pe WiFi nahi chal raha #{i}") for i in range(5)]
     special = _make(core, "100% down_now, kuch nahi")
     page = core.get("/v1/investigations", params={"limit": 2}).json()
-    assert page["total"] == 6
+    assert set(page) == {"items", "limit", "next_cursor"}
     assert page["limit"] == 2
-    assert page["offset"] == 0
     assert [i["id"] for i in page["items"]] == [special, ids[4]]  # newest first
-    rest = core.get("/v1/investigations", params={"limit": 10, "offset": 2}).json()
+    rest = core.get(
+        "/v1/investigations", params={"limit": 10, "cursor": page["next_cursor"]}
+    ).json()
     assert [i["id"] for i in rest["items"]] == [ids[3], ids[2], ids[1], ids[0]]
+    assert rest["next_cursor"] is None
     item = page["items"][1]
     assert item["status"] == "investigating"
     assert item["participant_count"] == 3
@@ -107,21 +109,20 @@ def test_investigation_list_pages_filters_and_searches(core: TestClient) -> None
     found = core.get("/v1/investigations", params={"q": "#3"}).json()
     assert [i["id"] for i in found["items"]] == [ids[3]]
     # LIKE wildcards in the query are literal characters, not patterns.
-    assert core.get("/v1/investigations", params={"q": "%"}).json()["total"] == 1
-    assert core.get("/v1/investigations", params={"q": "n_n"}).json()["total"] == 1
-    assert core.get("/v1/investigations", params={"q": "WIFI"}).json()["total"] == 5
+    assert len(core.get("/v1/investigations", params={"q": "%"}).json()["items"]) == 1
+    assert len(core.get("/v1/investigations", params={"q": "n_n"}).json()["items"]) == 1
+    assert len(core.get("/v1/investigations", params={"q": "WIFI"}).json()["items"]) == 5
     by_id = core.get("/v1/investigations", params={"q": ids[2]}).json()
     assert [i["id"] for i in by_id["items"]] == [ids[2]]
 
     none = core.get("/v1/investigations", params={"status": ["decided", "verified"]}).json()
-    assert none["total"] == 0
-    assert core.get("/v1/investigations", params={"status": "investigating"}).json()["total"] == 6
+    assert none["items"] == []
+    assert (
+        len(core.get("/v1/investigations", params={"status": "investigating"}).json()["items"]) == 6
+    )
     assert core.get("/v1/investigations", params={"status": "nonsense"}).status_code == 422
     assert core.get("/v1/investigations", params={"limit": 0}).status_code == 422
     assert core.get("/v1/investigations", params={"limit": 101}).status_code == 422
-    beyond = core.get("/v1/investigations", params={"offset": 50}).json()
-    assert beyond["items"] == []
-    assert beyond["total"] == 6
 
 
 def test_list_shows_the_decision(secure_core: TestClient) -> None:

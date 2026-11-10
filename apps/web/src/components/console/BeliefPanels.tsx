@@ -121,9 +121,9 @@ export function DecisionBar({ state }: { state: InvestigationState }) {
         ))}
         {rest > 0 ? <span className="h-full" style={{ width: `${rest * 100}%`, background: palette[4] }} /> : null}
       </div>
-      <ul className="mt-3 grid gap-1.5">
+      <ul className="mt-3 grid min-w-0 gap-1.5">
         {top.map((d, i) => (
-          <li key={d.id} className="flex items-center gap-2 text-[13px]">
+          <li key={d.id} className="flex min-w-0 items-center gap-2 text-[13px]">
             <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: palette[i] }} />
             <span className="min-w-0 flex-1 truncate text-fg-2">{d.label}</span>
             <span className="font-mono tabular-nums text-fg">{pct(d.probability)}</span>

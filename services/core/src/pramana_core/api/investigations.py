@@ -11,9 +11,11 @@ from pramana_contracts import (
     CapabilityGrant,
     CreateInvestigation,
     EventEnvelope,
+    InvestigationForecast,
     InvestigationPage,
     InvestigationState,
     InvestigationStatus,
+    MapDriftCheck,
     ReportIntervention,
     RequestApproval,
     StaffRole,
@@ -51,11 +53,17 @@ async def list_investigations(
     status: Annotated[list[InvestigationStatus] | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    cursor: Annotated[str | None, Query(max_length=4096)] = None,
 ) -> InvestigationPage:
-    """Newest first. ``status`` may repeat; ``q`` searches the report text and the id."""
+    """Newest first with a stable keyset; sealed reports match by ID only."""
     queries: ConsoleQueries = request.app.state.console
-    return await queries.list_investigations(statuses=status or [], q=q, limit=limit, offset=offset)
+    return await queries.list_investigations(
+        statuses=status or [],
+        q=q,
+        limit=limit,
+        cursor=cursor,
+        codec=request.app.state.cursor_codec,
+    )
 
 
 @router.post("", status_code=201, dependencies=[Operator])
@@ -80,6 +88,18 @@ async def submit_answer(
 @router.post("/{inv_id}/reveal", dependencies=[Operator])
 async def reveal_ground_truth(inv_id: str, svc: Svc) -> InvestigationState:
     return await svc.reveal(inv_id)
+
+
+@router.get("/{inv_id}/forecast", dependencies=[Depends(require_staff())])
+async def forecast_investigation(inv_id: str, svc: Svc) -> InvestigationForecast:
+    """An estimate only: computed on a private copy and never changes the investigation."""
+    return await svc.forecast(inv_id)
+
+
+@router.get("/{inv_id}/map-drift", dependencies=[Depends(require_staff())])
+async def map_drift_check(inv_id: str, svc: Svc) -> MapDriftCheck:
+    """A documentation suggestion only: it never changes the model or the investigation."""
+    return await svc.map_drift(inv_id)
 
 
 @router.get("/{inv_id}/events")

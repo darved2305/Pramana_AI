@@ -9,17 +9,20 @@ import { core } from "@/lib/api/core";
 import { ApiError } from "@/lib/api/http";
 import type { ListQuery } from "@/lib/api/core";
 import type {
+  CursorPage,
   DirectoryParticipant,
   EvaluationReport,
   EvaluationReportSummary,
   EventEnvelope,
   InvestigationPage,
+  InvestigationSummary,
   InvestigationState,
   PackSummary,
   SitePack,
   VoiceStatus,
 } from "@/lib/api/types";
 import { useHydrated, usePrefs, usePreviewMode } from "@/lib/store/local";
+import { useInvestigationScope, type InvestigationScope } from "@/lib/data/scope";
 
 export type Load<T> =
   | { status: "loading"; data?: undefined; error?: undefined }
@@ -27,6 +30,102 @@ export type Load<T> =
   | { status: "error"; data?: undefined; error: unknown };
 
 export type Source = "live" | "preview";
+
+type CursorState<T> = {
+  key: string;
+  pages: number;
+  load: Load<CursorPage<T>>;
+  loadingMore: boolean;
+  moreError?: unknown;
+};
+
+export type CursorList<T> = Load<CursorPage<T>> & {
+  /** Fetch the next bounded page. Only ever called by an explicit action, never in a loop. */
+  loadMore: () => void;
+  loadingMore: boolean;
+  moreError?: unknown;
+  /** How many pages are on screen. */
+  pages: number;
+  /** Fetch the first page again. Data on screen stays until the new page arrives. */
+  reload: () => void;
+};
+
+/** Cursor-backed collection. It only requests another bounded page after the person asks. */
+export function useCursorList<T>(
+  key: string | null,
+  fetchPage: (cursor: string | undefined, signal: AbortSignal) => Promise<CursorPage<T>>,
+): CursorList<T> {
+  const [result, setResult] = useState<CursorState<T> | null>(null);
+  const [tick, setTick] = useState(0);
+  const fetchRef = useRef(fetchPage);
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    fetchRef.current = fetchPage;
+  });
+  useEffect(() => {
+    if (key === null) return;
+    requestRef.current?.abort();
+    const ctrl = new AbortController();
+    requestRef.current = ctrl;
+    fetchRef
+      .current(undefined, ctrl.signal)
+      .then((data) => {
+        if (!ctrl.signal.aborted) setResult({ key, pages: 1, load: { status: "ready", data }, loadingMore: false });
+      })
+      .catch((error) => {
+        if (!ctrl.signal.aborted && (error as Error).name !== "AbortError") {
+          setResult({ key, pages: 0, load: { status: "error", error }, loadingMore: false });
+        }
+      });
+    return () => ctrl.abort();
+  }, [key, tick]);
+  const current = key !== null && result?.key === key ? result : null;
+  const loadMore = useCallback(() => {
+    if (!current || current.load.status !== "ready" || current.loadingMore) return;
+    const cursor = current.load.data.next_cursor;
+    if (!cursor) return;
+    const ctrl = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = ctrl;
+    setResult({ ...current, loadingMore: true, moreError: undefined });
+    fetchRef
+      .current(cursor, ctrl.signal)
+      .then((next) => {
+        if (ctrl.signal.aborted) return;
+        setResult((now) => {
+          if (!now || now.key !== current.key || now.load.status !== "ready") return now;
+          return {
+            ...now,
+            pages: now.pages + 1,
+            load: {
+              status: "ready",
+              data: {
+                items: [...now.load.data.items, ...next.items],
+                limit: now.load.data.limit,
+                next_cursor: next.next_cursor,
+              },
+            },
+            loadingMore: false,
+          };
+        });
+      })
+      .catch((error) => {
+        if (!ctrl.signal.aborted && (error as Error).name !== "AbortError") {
+          setResult((now) => (now?.key === current.key ? { ...now, loadingMore: false, moreError: error } : now));
+        }
+      });
+  }, [current]);
+  const reload = useCallback(() => setTick((value) => value + 1), []);
+  const load: Load<CursorPage<T>> = current?.load ?? { status: "loading" };
+  return {
+    ...load,
+    loadMore,
+    loadingMore: current?.loadingMore ?? false,
+    moreError: current?.moreError,
+    pages: current?.pages ?? 0,
+    reload,
+  };
+}
 
 async function loadFixtures() {
   return import("@/lib/preview/fixtures");
@@ -113,7 +212,7 @@ export interface EventFeedSource {
   ): () => void;
 }
 
-export function pollingSource(pollMs: number, token?: string): EventFeedSource {
+export function pollingSource(pollMs: number, token?: string, scope?: InvestigationScope): EventFeedSource {
   return {
     subscribe(id, afterSeq, onEvents) {
       let alive = true;
@@ -121,7 +220,7 @@ export function pollingSource(pollMs: number, token?: string): EventFeedSource {
       const ctrl = new AbortController();
       const tick = async () => {
         try {
-          const batch = await core.events(id, afterSeq(), ctrl.signal, token);
+          const batch = await (scope ? scope.events(id, afterSeq(), ctrl.signal, token) : core.events(id, afterSeq(), ctrl.signal, token));
           if (!alive) return;
           if (batch.length) onEvents(batch);
         } catch (e) {
@@ -151,7 +250,7 @@ export function pollingSource(pollMs: number, token?: string): EventFeedSource {
  * delivers nothing, without any error. If `ready` has not arrived within `readyMs`, the stream
  * is treated as unusable and polling takes over.
  */
-export function streamSource(fallback: EventFeedSource, flushMs = 60, readyMs = 5000): EventFeedSource {
+export function streamSource(fallback: EventFeedSource, flushMs = 60, readyMs = 5000, apiRoot = "/v1"): EventFeedSource {
   return {
     subscribe(id, afterSeq, onEvents, onReset) {
       if (typeof window === "undefined" || typeof window.EventSource === "undefined") {
@@ -179,7 +278,7 @@ export function streamSource(fallback: EventFeedSource, flushMs = 60, readyMs = 
         if (!stopped && !stopFallback) stopFallback = fallback.subscribe(id, afterSeq, onEvents, onReset);
       };
       const open = () => {
-        es = new window.EventSource(`/api/core/v1/investigations/${encodeURIComponent(id)}/stream?after_seq=${afterSeq()}`);
+        es = new window.EventSource(`/api/core${apiRoot}/investigations/${encodeURIComponent(id)}/stream?after_seq=${afterSeq()}`);
         if (readyTimer) clearTimeout(readyTimer);
         readyTimer = setTimeout(toPolling, readyMs);
         es.onmessage = (m) => {
@@ -225,6 +324,7 @@ export function streamSource(fallback: EventFeedSource, flushMs = 60, readyMs = 
 
 /** Callers should key their component by `id`, so switching investigations starts fresh. */
 export function useInvestigation(id: string, source?: EventFeedSource): InvestigationFeed {
+  const scope = useInvestigationScope();
   const preview = usePreviewMode();
   const { pollMs } = usePrefs();
   const [state, setState] = useState<InvestigationState>();
@@ -240,7 +340,7 @@ export function useInvestigation(id: string, source?: EventFeedSource): Investig
     if (isPreview) return;
     const gen = genRef.current;
     try {
-      const s = await core.getInvestigation(id);
+      const s = await scope.getInvestigation(id);
       if (gen !== genRef.current) return;
       setState(s);
       setStatus("ready");
@@ -250,7 +350,7 @@ export function useInvestigation(id: string, source?: EventFeedSource): Investig
       setError(e);
       setStatus("error");
     }
-  }, [id, isPreview]);
+  }, [id, isPreview, scope]);
 
   // Initial load.
   useEffect(() => {
@@ -289,7 +389,10 @@ export function useInvestigation(id: string, source?: EventFeedSource): Investig
   const live = !isPreview && status === "ready" && !settled;
   // Pushed over server-sent events, with polling as the fallback. Callers passing their own
   // source should memoise it.
-  const feedSource = useMemo(() => source ?? streamSource(pollingSource(pollMs)), [source, pollMs]);
+  const feedSource = useMemo(
+    () => source ?? streamSource(pollingSource(pollMs, undefined, scope), 60, 5000, scope.apiRoot),
+    [source, pollMs, scope],
+  );
   useEffect(() => {
     if (!live) return;
     return feedSource.subscribe(
@@ -327,6 +430,7 @@ export function useInvestigation(id: string, source?: EventFeedSource): Investig
 
 /** Full event log, for replay. */
 export function useEventLog(id: string): Load<EventEnvelope[]> & { source: Source } {
+  const scope = useInvestigationScope();
   const preview = usePreviewMode();
   const key = `${id}|${preview}`;
   const [result, setResult] = useState<{ key: string; load: Load<EventEnvelope[]> } | null>(null);
@@ -348,7 +452,7 @@ export function useEventLog(id: string): Load<EventEnvelope[]> & { source: Sourc
         const all: EventEnvelope[] = [];
         let after = 0;
         for (let i = 0; i < 50; i++) {
-          const batch = await core.events(id, after, ctrl.signal);
+          const batch = await scope.events(id, after, ctrl.signal);
           if (!batch.length) break;
           all.push(...batch);
           after = batch[batch.length - 1].seq;
@@ -362,7 +466,7 @@ export function useEventLog(id: string): Load<EventEnvelope[]> & { source: Sourc
       alive = false;
       ctrl.abort();
     };
-  }, [id, preview, hydrated]);
+  }, [id, preview, hydrated, scope]);
   const state: Load<EventEnvelope[]> = result?.key === key ? result.load : { status: "loading" };
   return { ...state, source: preview ? "preview" : "live" };
 }
@@ -382,7 +486,7 @@ export function useVoiceStatus(): Load<VoiceStatus> {
 
 /* ---------- generic loader ---------- */
 
-function useLoad<T>(key: string | null, fn: (signal: AbortSignal) => Promise<T>): Load<T> & { reload: () => void } {
+export function useLoad<T>(key: string | null, fn: (signal: AbortSignal) => Promise<T>): Load<T> & { reload: () => void } {
   const [result, setResult] = useState<{ key: string; load: Load<T> } | null>(null);
   const [tick, setTick] = useState(0);
   const fnRef = useRef(fn);
@@ -409,18 +513,18 @@ function useLoad<T>(key: string | null, fn: (signal: AbortSignal) => Promise<T>)
 
 /* ---------- console lists ---------- */
 
-export function useInvestigationList(q: ListQuery): Load<InvestigationPage> & { reload: () => void; source: Source } {
+export function useInvestigationList(q: ListQuery): CursorList<InvestigationSummary> & { source: Source } {
+  const scope = useInvestigationScope();
   const preview = usePreviewMode();
   const hydrated = useHydrated();
-  const key = hydrated ? JSON.stringify({ q, preview }) : null;
-  const load = useLoad<InvestigationPage>(key, async (signal) => {
-    if (!preview) return core.listInvestigations(q, signal);
+  const key = hydrated ? JSON.stringify({ q, preview, root: scope.apiRoot }) : null;
+  const load = useCursorList<InvestigationSummary>(key, async (cursor, signal): Promise<InvestigationPage> => {
+    if (!preview) return scope.listInvestigations({ ...q, cursor }, signal);
     const f = await loadFixtures();
     const s = f.previewInvestigation;
     return {
-      total: 1,
       limit: q.limit ?? 25,
-      offset: 0,
+      next_cursor: null,
       items: [
         {
           id: s.id,
@@ -478,3 +582,17 @@ export function useEvaluationReports(enabled: boolean): Load<EvaluationReportSum
 export function useEvaluationReport(runId: string | null): Load<EvaluationReport> & { reload: () => void } {
   return useLoad<EvaluationReport>(runId, (signal) => core.evaluationReport(runId as string, signal));
 }
+
+/** The map of the site an investigation ran on (its pinned model version in a workspace). */
+export function useInvestigationPack(state: InvestigationState | undefined): Load<SitePack> & { source: Source } {
+  const scope = useInvestigationScope();
+  const preview = usePreviewMode();
+  const hydrated = useHydrated();
+  const key = state && hydrated ? `${scope.apiRoot}|${state.site_model_id ?? state.pack_id}|${preview}` : null;
+  const load = useLoad<SitePack>(key, async (signal) => {
+    if (preview) return (await loadFixtures()).previewPack;
+    return scope.sitePack(state as InvestigationState, signal);
+  });
+  return { ...load, source: preview ? "preview" : "live" };
+}
+

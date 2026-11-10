@@ -16,7 +16,7 @@ from typing import Any
 
 import yaml
 from pydantic import ValidationError
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select, tuple_
 
 from pramana_contracts import (
     DirectoryParticipant,
@@ -32,14 +32,12 @@ from pramana_contracts import (
 from pramana_domain import DomainPack, load_pack
 from pramana_domain.pack import default_packs_dir
 
-from .db import Database, DirectoryParticipantRow, InvestigationRow
+from .cursors import CursorCodec, like_escape
+from .db import Database, DirectoryParticipantRow, InvestigationRow, current_org
 from .errors import ApiError, not_found
+from .vault import ERASED_REPORT, SEALED, PersonVault
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-
-
-def _like_escape(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _entry(row: DirectoryParticipantRow) -> DirectoryParticipant:
@@ -56,6 +54,7 @@ class ConsoleQueries:
     db: Database
     packs_dir: Path
     reports_dir: Path
+    vault: PersonVault | None = None
 
     # -- packs -------------------------------------------------------------------------------
 
@@ -83,6 +82,9 @@ class ConsoleQueries:
     def _check_location(pack: DomainPack, spec: ParticipantSpec) -> None:
         if spec.location_id not in pack.location_by_id:
             raise ApiError(422, "UNKNOWN_LOCATION", f"unknown location {spec.location_id}")
+        unknown = sorted(set(map(str, spec.roles)) - set(pack.role_catalogue))
+        if unknown:
+            raise ApiError(422, "UNKNOWN_ROLE", f"this site has no role {unknown[0]}")
 
     async def list_participants(self, pack_id: str | None) -> list[DirectoryParticipant]:
         stmt = select(DirectoryParticipantRow).order_by(
@@ -151,38 +153,58 @@ class ConsoleQueries:
         statuses: list[InvestigationStatus],
         q: str | None,
         limit: int,
-        offset: int,
+        cursor: str | None,
+        codec: CursorCodec,
     ) -> InvestigationPage:
         report_text = InvestigationRow.request["report"]["text"].astext
         conds: list[Any] = []
+        org = current_org.get()
+        org_ref = str(org) if org is not None else "legacy"
+        if org is not None:
+            conds.append(InvestigationRow.org_id == org)
         if statuses:
             conds.append(InvestigationRow.status.in_([s.value for s in statuses]))
-        if q:
-            pattern = f"%{_like_escape(q.strip())}%"
+        needle = q.strip() if q else ""
+        if needle:
+            pattern = f"%{like_escape(needle)}%"
             conds.append(
                 or_(
-                    report_text.ilike(pattern, escape="\\"),
+                    (report_text != SEALED) & report_text.ilike(pattern, escape="\\"),
                     InvestigationRow.id.ilike(pattern, escape="\\"),
                 )
             )
+        filters = {"status": sorted(s.value for s in statuses), "q": needle}
+        sort = codec.decode(cursor, scope="investigations", org_id=org_ref, filters=filters)
+        if sort is not None:
+            try:
+                after_created = datetime.fromisoformat(str(sort[0]))
+            except ValueError as exc:
+                raise ValueError("validated investigation cursor had an invalid timestamp") from exc
+            after_id = str(sort[1])
+            conds.append(
+                tuple_(InvestigationRow.created_at, InvestigationRow.id)
+                < tuple_(after_created, after_id)
+            )
         async with self.db.read() as session:
-            total = (
-                await session.execute(
-                    select(func.count()).select_from(InvestigationRow).where(*conds)
-                )
-            ).scalar_one()
             rows = (
                 (
                     await session.execute(
                         select(InvestigationRow)
                         .where(*conds)
                         .order_by(InvestigationRow.created_at.desc(), InvestigationRow.id.desc())
-                        .limit(limit)
-                        .offset(offset)
+                        .limit(limit + 1)
                     )
                 )
                 .scalars()
                 .all()
+            )
+            has_more = len(rows) > limit
+            rows = rows[:limit]
+            sealed = [r.id for r in rows if r.request["report"]["text"] == SEALED]
+            texts = (
+                await self.vault.texts(session, org, sealed)
+                if self.vault is not None and org is not None
+                else {}
             )
         items = [
             InvestigationSummary(
@@ -191,7 +213,13 @@ class ConsoleQueries:
                 status=InvestigationStatus(r.status),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
-                report_text=r.request["report"]["text"],
+                report_text=(
+                    r.request["report"]["text"]
+                    if r.request["report"]["text"] != SEALED
+                    else texts.get(
+                        (r.id, "report", r.request["report"]["reporter_id"]), ERASED_REPORT
+                    )
+                ),
                 reporter_id=r.request["report"]["reporter_id"],
                 participant_count=len(r.request.get("participants", [])),
                 decision_class=(r.outcome or {}).get("decision_class"),
@@ -199,7 +227,17 @@ class ConsoleQueries:
             )
             for r in rows
         ]
-        return InvestigationPage(items=items, total=int(total), limit=limit, offset=offset)
+        next_cursor = (
+            codec.encode(
+                scope="investigations",
+                org_id=org_ref,
+                filters=filters,
+                sort=[rows[-1].created_at.isoformat(), rows[-1].id],
+            )
+            if has_more and rows
+            else None
+        )
+        return InvestigationPage(items=items, limit=limit, next_cursor=next_cursor)
 
     # -- evaluation reports --------------------------------------------------------------------
 
@@ -265,8 +303,13 @@ class ConsoleQueries:
         )
 
 
-def make_queries(db: Database, reports_dir: str) -> ConsoleQueries:
+def make_queries(
+    db: Database, reports_dir: str, vault: PersonVault | None = None
+) -> ConsoleQueries:
     rd = Path(reports_dir)
     return ConsoleQueries(
-        db=db, packs_dir=default_packs_dir(), reports_dir=rd if rd.is_absolute() else REPO_ROOT / rd
+        db=db,
+        packs_dir=default_packs_dir(),
+        reports_dir=rd if rd.is_absolute() else REPO_ROOT / rd,
+        vault=vault,
     )

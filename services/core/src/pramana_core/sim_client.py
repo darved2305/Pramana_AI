@@ -18,6 +18,7 @@ from pramana_contracts import (
     ScenarioCreated,
 )
 
+from .cloud_run import CloudRunIdentityToken
 from .errors import ApiError
 
 
@@ -28,7 +29,12 @@ class SimClient:
         operator_key: str,
         timeout_s: float,
         transport: httpx.AsyncBaseTransport | None = None,
+        service_auth: bool = False,
+        identity_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        self._identity = (
+            CloudRunIdentityToken(base_url, transport=identity_transport) if service_auth else None
+        )
         self._http = httpx.AsyncClient(
             base_url=base_url,
             headers={"X-Operator-Key": operator_key},
@@ -38,15 +44,20 @@ class SimClient:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+        if self._identity is not None:
+            await self._identity.aclose()
+
+    async def _service_headers(self) -> dict[str, str]:
+        return await self._identity.header() if self._identity is not None else {}
 
     async def _post(self, path: str, body: BaseModel | None = None) -> httpx.Response:
         try:
             resp = await self._http.post(
                 path,
                 content=body.model_dump_json() if body else None,
-                headers={"content-type": "application/json"},
+                headers={"content-type": "application/json", **await self._service_headers()},
             )
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, RuntimeError) as exc:
             raise ApiError(
                 503, "SIM_UNAVAILABLE", f"simulator unreachable: {type(exc).__name__}"
             ) from exc
@@ -75,7 +86,7 @@ class SimClient:
 
     async def health(self) -> bool:
         try:
-            resp = await self._http.get("/health")
-        except httpx.HTTPError:
+            resp = await self._http.get("/health", headers=await self._service_headers())
+        except (httpx.HTTPError, RuntimeError):
             return False
         return resp.status_code == 200

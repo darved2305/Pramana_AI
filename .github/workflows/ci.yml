@@ -35,9 +35,16 @@ jobs:
         run: |
           uv run python -m pramana_contracts.export --check
           uv run python -m pramana_core.openapi_export --check
+      - name: Runtime database role (not a superuser, so row-level security applies; ADR 0015)
+        run: >-
+          psql -h localhost -p 5433 -U pramana -d pramana_test -c
+          "create role pramana_app login nosuperuser nobypassrls nocreatedb nocreaterole"
       - name: Tests (PostgreSQL, simulator in-process, Gnani protocol emulation)
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://pramana@localhost:5433/pramana_test
+          PRAMANA_E2E_DATABASE_URL: postgresql+asyncpg://pramana@localhost:5433/pramana_e2e
+          PRAMANA_DB_NAMES: pramana_test,pramana_e2e
+          PRAMANA_REQUIRE_APP_ROLE: "1"
         run: uv run pytest
 
   web:
@@ -54,7 +61,7 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - name: Types, lint and copy rules
-        run: npm run typecheck && npm run lint && npm run check:copy && npm run check:worklet
+        run: npm run typecheck && npm run lint && npm run check:copy && npm run check:worklet && npm run check:e2e-safety
       - name: API types match the core OpenAPI spec
         run: npm run gen:api && git diff --exit-code -- src/lib/api/schema.gen.ts
       - name: Build
@@ -97,6 +104,9 @@ jobs:
       - run: uv sync --frozen
       - run: npm ci
       - name: Playwright (real core, simulator and PostgreSQL)
+        env:
+          E2E_DATABASE: pramana_web_e2e
+          PRAMANA_DB_NAMES: pramana_web_e2e
         run: npm run test:e2e:real
       - name: Browser failure evidence
         if: failure()
@@ -105,3 +115,43 @@ jobs:
           name: browser-real-failures
           path: apps/web/test-results
           retention-days: 7
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Python image (core, simulator, migrations)
+        run: docker build -t pramana-py:ci .
+      - name: Python image starts and loads the sandbox pack
+        run: docker run --rm pramana-py:ci python -c "from pramana_domain import load_pack; print(load_pack('campus_block_c').version)"
+      - name: Web image (Next.js standalone)
+        run: docker build -t pramana-web:ci apps/web
+      - name: Web image reads its upstreams at runtime
+        run: |
+          docker run -d --name web -p 3000:3000 -e PRAMANA_CORE_URL=http://127.0.0.1:9 pramana-web:ci
+          for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:3000/ && break; sleep 1; done
+          curl -sf -o /dev/null http://127.0.0.1:3000/
+          docker logs web | tail -5
+
+  infra:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/gcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+      - name: Budget deploy plan stays synthetic without cloud credentials
+        run: |
+          uv sync --frozen
+          uv run python scripts/deploy_gcp_starter.py --dry-run
+        working-directory: .

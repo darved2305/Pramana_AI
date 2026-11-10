@@ -12,9 +12,9 @@ from pathlib import Path
 
 import httpx
 import pytest
-from e2e.harness import DB_URL, Services
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from e2e.harness import Services, e2e_database_url
 from pramana_contracts import StaffRole
 from pramana_core.auth.service import AuthService, LoginThrottle
 from pramana_core.db import Database
@@ -24,7 +24,7 @@ PASSWORD = "demo rehearsal approver password"
 
 
 async def _create_approver(email: str) -> str:
-    db = Database(create_async_engine(DB_URL))
+    db = Database(create_async_engine(e2e_database_url()))
     try:
         user = await AuthService(db, 3600, LoginThrottle(5, 60)).create_user(
             email,

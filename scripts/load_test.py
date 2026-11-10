@@ -41,6 +41,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import db_guard  # noqa: E402
 import dev_db  # noqa: E402
 import gnani_emulator  # noqa: E402
 
@@ -113,6 +114,8 @@ def make_clips(directory: Path) -> None:
 
 
 def reset_database() -> str:
+    # The load test downgrades this database to base: it must be listed in PRAMANA_DB_NAMES.
+    db_guard.require_listed_database(DATABASE)
     dev_db.run(
         dev_db.pg_bin("createdb"),
         "-h",

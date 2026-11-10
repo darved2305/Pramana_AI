@@ -3,7 +3,25 @@ name = "pramana-core"
 version = "0.1.0"
 description = "Pramana core service: investigations API, actor runtime, voice gateway"
 requires-python = ">=3.11"
-dependencies = ["pramana-contracts", "pramana-domain", "pramana-engine", "fastapi>=0.115", "uvicorn[standard]>=0.32", "pydantic-settings>=2.6", "sqlalchemy[asyncio]>=2.0.36", "asyncpg>=0.30", "alembic>=1.14", "structlog>=24.4", "httpx>=0.27", "websockets>=14,<16", "cryptography>=43", "python-multipart>=0.0.12", "anthropic>=0.40"]
+dependencies = [
+    "pramana-contracts",
+    "pramana-domain",
+    "pramana-engine",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "structlog>=24.4",
+    "httpx>=0.27",
+    "websockets>=14,<16",
+    "cryptography>=43",
+    "python-multipart>=0.0.12",
+    "anthropic>=0.40",
+    "joserfc>=1.8.0",
+    "dnspython>=2.6,<3",
+]
 
 [build-system]
 requires = ["hatchling>=1.25"]

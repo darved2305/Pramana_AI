@@ -68,7 +68,8 @@ test("S2: the real console explains why both students can be right", async ({ pa
   await expect(panel.getByTestId("disagreement").last()).toContainText("Both can be right");
   await expect(panel).toContainText("room 205 is also covered by Access point 2B");
   await expect(page.getByRole("button", { name: "Propose repair", exact: true })).toHaveCount(0);
-  await expect(page.locator("[aria-labelledby=appr-title]")).toContainText("breaker resets only");
+  // The campus model has no on-site repair for a dead access point: nothing is offered.
+  await expect(page.locator("[aria-labelledby=appr-title]")).toContainText("no on-site repair for this decision");
   await page.screenshot({ path: info.outputPath("S2-console.png"), fullPage: true });
   const replay = await api<{ identical: boolean }>(request, "GET", `/v1/investigations/${state.id}/replay`);
   expect(replay.identical).toBe(true);

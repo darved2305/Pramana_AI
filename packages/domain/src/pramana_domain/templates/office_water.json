@@ -1,0 +1,156 @@
+{
+  "id": "office_water",
+  "title": "Office water supply",
+  "kind": "office",
+  "summary": "Mains and city water, a pump breaker, two pumps and floor valves.",
+  "description": {
+    "id": "office_water",
+    "title": "Office water supply",
+    "roles": [
+      {
+        "id": "staff",
+        "skill": "lay",
+        "label": "Office staff"
+      },
+      {
+        "id": "guard",
+        "skill": "access",
+        "label": "Security guard"
+      },
+      {
+        "id": "plumber",
+        "skill": "technician",
+        "label": "Plumber"
+      },
+      {
+        "id": "electrician",
+        "skill": "technician",
+        "label": "Electrician"
+      }
+    ],
+    "places": [
+      {
+        "id": "LOBBY",
+        "name": "the lobby",
+        "floor": 0
+      },
+      {
+        "id": "PUMP_ROOM",
+        "name": {
+          "en": "the pump room",
+          "hi": "पंप रूम",
+          "mr": "पंप रूम"
+        },
+        "floor": 0,
+        "kind": "plant_room",
+        "restricted": true,
+        "access": [
+          "guard",
+          "plumber",
+          "electrician"
+        ]
+      },
+      {
+        "id": "F1_WASHROOM",
+        "name": "the first-floor washroom",
+        "floor": 1
+      },
+      {
+        "id": "F2_WASHROOM",
+        "name": "the second-floor washroom",
+        "floor": 2
+      }
+    ],
+    "equipment": [
+      {
+        "id": "GRID",
+        "type": "utility_supply",
+        "name": "mains power",
+        "at": "PUMP_ROOM"
+      },
+      {
+        "id": "PUMP_MCB",
+        "type": "breaker",
+        "name": "the pump breaker",
+        "at": "PUMP_ROOM",
+        "needs": [
+          "GRID"
+        ]
+      },
+      {
+        "id": "CITY",
+        "type": "utility_supply",
+        "name": "city water",
+        "at": "PUMP_ROOM"
+      },
+      {
+        "id": "PUMP_A",
+        "type": "pump",
+        "name": "pump A",
+        "at": "PUMP_ROOM",
+        "needs": [
+          "PUMP_MCB",
+          "CITY"
+        ]
+      },
+      {
+        "id": "PUMP_B",
+        "type": "pump",
+        "name": "pump B",
+        "at": "PUMP_ROOM",
+        "needs": [
+          "PUMP_MCB",
+          "CITY"
+        ]
+      },
+      {
+        "id": "VALVE_F1",
+        "type": "valve",
+        "name": "the floor 1 valve",
+        "at": "PUMP_ROOM",
+        "needs": [
+          {
+            "any_of": [
+              "PUMP_A",
+              "PUMP_B"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "VALVE_F2",
+        "type": "valve",
+        "name": "the floor 2 valve",
+        "at": "PUMP_ROOM",
+        "needs": [
+          {
+            "any_of": [
+              "PUMP_A",
+              "PUMP_B"
+            ]
+          }
+        ]
+      }
+    ],
+    "service_points": [
+      {
+        "id": "tap_flows",
+        "label": "Water comes from the tap",
+        "outcomes": [
+          "flowing",
+          "dry"
+        ],
+        "question": {
+          "en": "In {place}, please open a tap. Is water coming out, or is it dry?",
+          "hi-en": "{place} mein ek tap kholiye. Paani aa raha hai, ya sukha hai?",
+          "hi": "{place} में एक नल खोलिए। पानी आ रहा है, या सूखा है?",
+          "mr": "{place} मध्ये एक नळ उघडा. पाणी येतंय, की कोरडा आहे?"
+        },
+        "served_by": {
+          "F1_WASHROOM": "VALVE_F1",
+          "F2_WASHROOM": "VALVE_F2"
+        }
+      }
+    ]
+  }
+}

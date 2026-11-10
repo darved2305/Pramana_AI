@@ -7,7 +7,7 @@ investigation has closed.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -30,11 +30,19 @@ class SimParticipant(StrictModel):
     roles: list[str] = Field(min_length=1)
 
 
+class DocumentedModel(StrictModel):
+    """Documented physical layout supplied by the core, never the simulator's hidden state."""
+
+    spec: dict[str, Any]
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class CreateScenario(StrictModel):
     pack_id: Identifier
     seed: int = Field(ge=0, le=2**31 - 1)
     fault: Literal["random"] | FaultSpec = "random"
     participants: list[SimParticipant] = Field(min_length=1, max_length=12)
+    documented_model: DocumentedModel | None = None
 
 
 class ScenarioCreated(StrictModel):

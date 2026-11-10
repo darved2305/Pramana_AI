@@ -7,6 +7,7 @@ audio, transcripts and secrets are never logged by default.
 from __future__ import annotations
 
 import logging
+import re
 import sys
 import time
 import uuid
@@ -19,6 +20,11 @@ from starlette.responses import Response
 
 REQUEST_ID_HEADER = "X-Request-ID"
 log = structlog.get_logger("pramana")
+
+
+def _logged_path(path: str) -> str:
+    """Consent secrets travel in one-time link paths and must never enter request logs."""
+    return re.sub(r"^(/v1/consent-links/)[^/]+", r"\1[redacted]", path)
 
 
 def configure_logging(level: str = "INFO", json: bool = True) -> None:
@@ -56,13 +62,15 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
-            log.exception("request_failed", method=request.method, path=request.url.path)
+            log.exception(
+                "request_failed", method=request.method, path=_logged_path(request.url.path)
+            )
             raise
         response.headers[REQUEST_ID_HEADER] = rid
         log.info(
             "request",
             method=request.method,
-            path=request.url.path,
+            path=_logged_path(request.url.path),
             status=response.status_code,
             ms=round((time.perf_counter() - start) * 1000, 1),
         )

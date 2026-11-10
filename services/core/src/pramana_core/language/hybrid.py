@@ -13,7 +13,7 @@ stands. A spoken turn is therefore never blocked by a free-tier provider.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from pramana_contracts import UNKNOWN_OUTCOME, Directness, Extraction, Hedge
 
@@ -41,9 +41,14 @@ class HybridExtractor:
         self.llm = llm
 
     async def extract(
-        self, text: str, outcomes: Sequence[str], *, question: str | None = None
+        self,
+        text: str,
+        outcomes: Sequence[str],
+        *,
+        question: str | None = None,
+        words: Mapping[str, Sequence[str]] | None = None,
     ) -> Extraction:
-        ruled = self.rules.extract_sync(text, outcomes, question=question)
+        ruled = self.rules.extract_sync(text, outcomes, question=question, words=words)
         if (
             self.llm is None
             or ruled.outcome != UNKNOWN_OUTCOME

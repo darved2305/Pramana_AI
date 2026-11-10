@@ -8,6 +8,7 @@ export interface JoinPayload {
   p: string; // participant id
   s: string; // scenario id
   t: string; // participant token
+  o?: string; // workspace, for links issued inside one
 }
 
 export function encodeJoin(p: JoinPayload): string {
@@ -21,7 +22,7 @@ export function decodeJoin(seg: string): JoinPayload | null {
     const b64 = seg.replace(/-/g, "+").replace(/_/g, "/");
     const json = decodeURIComponent(escape(atob(b64 + "===".slice((b64.length + 3) % 4))));
     const v = JSON.parse(json);
-    if (typeof v?.i === "string" && typeof v?.p === "string" && typeof v?.s === "string" && typeof v?.t === "string") return v;
+    if (typeof v?.i === "string" && typeof v?.p === "string" && typeof v?.s === "string" && typeof v?.t === "string" && (v.o === undefined || typeof v.o === "string")) return v;
     return null;
   } catch {
     return null;

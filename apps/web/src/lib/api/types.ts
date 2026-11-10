@@ -6,6 +6,12 @@ import type { components } from "./schema.gen";
 
 type S = components["schemas"];
 
+export interface CursorPage<T> {
+  items: T[];
+  limit: number;
+  next_cursor: string | null;
+}
+
 export type InvestigationState = S["InvestigationState"];
 export type InvestigationStatus = S["InvestigationStatus"];
 export type BeliefSnapshot = S["BeliefSnapshot"];
@@ -22,7 +28,8 @@ export type Approval = S["Approval"];
 export type ApprovalStatus = S["ApprovalStatus"];
 export type ParticipantSpec = S["ParticipantSpec"];
 export type LanguageProfile = S["LanguageProfile"];
-export type Role = S["Role"];
+/** A role id from the site model's own catalogue (a plumber, a nurse, a guard). */
+export type Role = ParticipantSpec["roles"][number];
 export type Skill = S["Skill"];
 export type Report = S["Report"];
 export type EventEnvelope = S["EventEnvelope"];
@@ -33,6 +40,57 @@ export type Extraction = S["Extraction"];
 export type SttResult = S["SttResult"];
 export type CapabilityGrant = S["CapabilityGrant"];
 export type CreateInvestigation = S["CreateInvestigation"];
+export type CreateSiteInvestigation = S["CreateSiteInvestigation"];
+export type SiteSummary = S["SiteSummary"];
+export type CurrentAccount = S["CurrentAccount"];
+export type OrganizationSummary = S["OrganizationSummary"];
+export type OrganizationDeletion = S["OrganizationDeletion"];
+export type OrganizationRole = OrganizationSummary["roles"][number];
+export type OnboardingState = S["OnboardingState"];
+export type OnboardingPatch = S["OnboardingPatch"];
+export type OnboardingAnswers = OnboardingState["answers"];
+export type OnboardingStep = OnboardingState["step"];
+export type CreateOrganization = S["CreateOrganization"];
+export type DeleteOrganization = S["DeleteOrganization"];
+export type OrganizationCreated = S["OrganizationCreated"];
+export type AccountPreferences = CurrentAccount["preferences"];
+export type SiteModelSummary = S["SiteModelSummary"];
+export type SiteModelDraft = S["SiteModelDraft"];
+export type SaveDraft = S["SaveDraft"];
+export type ModelHealth = S["ModelHealth"];
+export type EquipmentType = S["EquipmentTypeView"];
+export type SiteTemplate = S["SiteTemplateView"];
+export type WorkspaceHome = S["WorkspaceHome"];
+export type HomeModule = S["HomeModule"];
+export type HomeSite = S["HomeSite"];
+export type HomeInvestigation = S["HomeInvestigation"];
+export type SitePerson = S["SitePerson"];
+export type ConsentRecord = S["ConsentRecord"];
+export type ConsentRequestDelivery = S["ConsentRequestDelivery"];
+export type ConsentRequestCreated = S["ConsentRequestCreated"];
+export type ConsentLinkView = S["ConsentLinkView"];
+export type ConsentResponseView = S["ConsentResponseView"];
+export type QuietHours = S["QuietHours"];
+export type SitePersonPatch = S["SitePersonPatch"];
+export type QuestioningAvailability = S["QuestioningAvailability"];
+export type QuietHoursOverrideView = S["QuietHoursOverrideView"];
+export type InvestigationForecast = S["InvestigationForecast"];
+export type MapDriftCheck = S["MapDriftCheck"];
+export type RecordConsent = S["RecordConsent"];
+export type PersonTrackRecord = S["PersonTrackRecord"];
+export type WorkspaceMember = S["WorkspaceMember"];
+export type InvitationView = S["InvitationView"];
+export type InvitationCreated = S["InvitationCreated"];
+export type InvitationAccepted = S["InvitationAccepted"];
+export type CreateInvitation = S["CreateInvitation"];
+export type CreateDomain = S["CreateDomain"];
+export type OrganizationDomain = S["OrganizationDomain"];
+export type UpdateDomainPolicy = S["UpdateDomainPolicy"];
+export type JoinRequestCreated = S["JoinRequestCreated"];
+export type JoinRequestDecision = S["JoinRequestDecision"];
+export type JoinRequestView = S["JoinRequestView"];
+export type PreferencesPatch = S["PreferencesPatch"];
+export type SiteModelDocument = S["SiteModelDocument"];
 export type SubmitAnswer = S["SubmitAnswer"];
 export type GroundTruthComparison = S["GroundTruthComparison"];
 export type Hedge = S["Hedge"];
@@ -63,6 +121,13 @@ export interface SitePack {
   probes: PackProbe[];
   decision_classes: { id: string; label: string }[];
   walking_roles: Role[];
+  /** The site's own role catalogue (a plumber, a nurse). Older cores omit it. */
+  roles?: PackRole[];
+}
+export interface PackRole {
+  id: Role;
+  label: string;
+  skill: Skill;
 }
 export interface PackLocation {
   id: string;

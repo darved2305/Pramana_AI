@@ -35,7 +35,7 @@ export interface ListQuery {
   status?: InvestigationStatus[];
   q?: string;
   limit?: number;
-  offset?: number;
+  cursor?: string;
 }
 
 function listParams(q: ListQuery): string {
@@ -43,7 +43,7 @@ function listParams(q: ListQuery): string {
   q.status?.forEach((s) => p.append("status", s));
   if (q.q?.trim()) p.set("q", q.q.trim());
   if (q.limit) p.set("limit", String(q.limit));
-  if (q.offset) p.set("offset", String(q.offset));
+  if (q.cursor) p.set("cursor", q.cursor);
   const s = p.toString();
   return s ? `?${s}` : "";
 }

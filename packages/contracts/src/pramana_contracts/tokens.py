@@ -45,6 +45,7 @@ class ParticipantClaims:
     aud: str
     exp: int
     jti: str
+    org: str | None = None
 
 
 def _b64e(raw: bytes) -> str:
@@ -75,6 +76,7 @@ def mint(
     aud: str = "sim",
     ttl_s: int = PARTICIPANT_TTL_S,
     now: float | None = None,
+    organization_id: str | None = None,
 ) -> str:
     if ttl_s > PARTICIPANT_TTL_S:
         raise ValueError(f"participant tokens live at most {PARTICIPANT_TTL_S} s")
@@ -86,6 +88,8 @@ def mint(
         "exp": int((now if now is not None else time.time()) + ttl_s),
         "jti": secrets.token_hex(8),
     }
+    if organization_id is not None:
+        claims["org"] = organization_id
     return _sign(key, claims)
 
 
@@ -111,12 +115,16 @@ def verify(
     if data.get("typ", "participant") != "participant":
         raise TokenError("not a participant token")
     try:
+        org = data.get("org")
+        if org is not None and (not isinstance(org, str) or not 1 <= len(org) <= 64):
+            raise ValueError("invalid organization claim")
         claims = ParticipantClaims(
             sub=str(data["sub"]),
             scn=str(data["scn"]),
             aud=str(data["aud"]),
             exp=int(str(data["exp"])),
             jti=str(data["jti"]),
+            org=org,
         )
     except (ValueError, KeyError, TypeError) as exc:
         raise TokenError("invalid token") from exc

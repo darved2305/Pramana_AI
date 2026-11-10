@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True
+    )
 
-    mode: Literal["dev", "test", "demo"] = Field(default="dev", alias="PRAMANA_MODE")
+    mode: Literal["dev", "test", "demo", "production"] = Field(default="dev", alias="PRAMANA_MODE")
+    local_production_test: bool = Field(default=False, alias="PRAMANA_LOCAL_PRODUCTION_TEST")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_json: bool = Field(default=True, alias="LOG_JSON")
 
@@ -26,10 +30,15 @@ class Settings(BaseSettings):
     sim_url: str = Field(default="http://127.0.0.1:8100", alias="SIM_URL")
     sim_public_url: str | None = Field(default=None, alias="SIM_PUBLIC_URL")
     """Simulator URL as reachable from participants' browsers (defaults to ``sim_url``)."""
+    sim_serverless_auth: bool = Field(default=False, alias="SIM_SERVERLESS_AUTH")
+    """Attach a Cloud Run service identity token when the private simulator is invoked."""
     sim_operator_key: SecretStr = Field(alias="SIM_OPERATOR_KEY")
     sim_timeout_s: float = Field(default=5.0, gt=0, alias="SIM_TIMEOUT_S")
     participant_signing_key: SecretStr = Field(alias="PARTICIPANT_SIGNING_KEY")
     """Ed25519 private key (base64url, raw 32 bytes). The simulator gets the public half."""
+
+    pii_master_key: SecretStr | None = Field(default=None, alias="PRAMANA_PII_KEY")
+    """Wraps per-person data keys (base64url, 32 bytes). Required in production."""
 
     gnani_api_key: SecretStr | None = Field(default=None, alias="GNANI_API_KEY")
     gnani_base_url: str = Field(default="https://api.vachana.ai", alias="GNANI_BASE_URL")
@@ -74,19 +83,112 @@ class Settings(BaseSettings):
     automation_key: SecretStr | None = Field(default=None, alias="CORE_AUTOMATION_KEY")
     """Shared secret for scripts and bots (``X-Automation-Key``): acts as operator and approver.
     Never sent to the browser."""
-    session_ttl_s: int = Field(default=12 * 3600, ge=60, le=7 * 24 * 3600, alias="SESSION_TTL_S")
+    gmail_address: str | None = Field(default=None, alias="GMAIL_ADDRESS")
+    gmail_app_password: SecretStr | None = Field(default=None, alias="GMAIL_APP_PASSWORD")
+    public_web_url: str | None = Field(default=None, alias="PUBLIC_WEB_URL")
+    """The address people open the console at. Invitation emails need it for their link."""
+    oidc_issuer: str = Field(default="https://accounts.google.com", alias="OIDC_ISSUER")
+    oidc_discovery_url: str = Field(
+        default="https://accounts.google.com/.well-known/openid-configuration",
+        alias="OIDC_DISCOVERY_URL",
+    )
+    google_oauth_client_id: str = Field(default="", alias="GOOGLE_OAUTH_CLIENT_ID")
+    google_oauth_client_secret: SecretStr | None = Field(
+        default=None, alias="GOOGLE_OAUTH_CLIENT_SECRET"
+    )
+    oidc_redirect_url: str = Field(
+        default="http://localhost:3102/api/core/v1/auth/google/callback", alias="OIDC_REDIRECT_URL"
+    )
+    session_ttl_s: int = Field(default=12 * 3600, ge=60, le=12 * 3600, alias="SESSION_TTL_S")
+    session_idle_ttl_s: int = Field(default=3600, ge=60, le=3600, alias="SESSION_IDLE_TTL_S")
     session_cookie_secure: bool | None = Field(default=None, alias="SESSION_COOKIE_SECURE")
-    """Mark the session cookie ``Secure``. Unset means: only in ``PRAMANA_MODE=demo`` (HTTPS)."""
+    """Mark cookies ``Secure`` in demo and production. Production cannot turn this off."""
     login_max_failures: int = Field(default=5, ge=1, le=100, alias="LOGIN_MAX_FAILURES")
     login_lockout_s: float = Field(default=300.0, gt=0, alias="LOGIN_LOCKOUT_S")
     eval_reports_dir: str = Field(default="eval/reports", alias="EVAL_REPORTS_DIR")
 
     @field_validator(
-        "gnani_api_key", "gemini_api_key", "groq_api_key", "automation_key", mode="before"
+        "gnani_api_key",
+        "gemini_api_key",
+        "groq_api_key",
+        "automation_key",
+        "google_oauth_client_secret",
+        mode="before",
     )
     @classmethod
     def _empty_is_none(cls, v: object) -> object:
         return None if v in ("", None) else v
+
+    @model_validator(mode="after")
+    def _production_auth(self) -> Self:
+        if self.mode == "production":
+            if self.pii_master_key is None:
+                raise ValueError("production requires PRAMANA_PII_KEY")
+            if self.local_production_test:
+                issuer = urlsplit(self.oidc_issuer)
+                discovery = urlsplit(self.oidc_discovery_url)
+                database_host = urlsplit(self.database_url).hostname
+                sim_host = urlsplit(self.sim_url).hostname
+                redirect = urlsplit(self.oidc_redirect_url)
+                if (
+                    issuer.scheme != "http"
+                    or issuer.hostname not in {"localhost", "127.0.0.1"}
+                    or issuer.port is None
+                    or discovery.scheme != "http"
+                    or discovery.hostname not in {"host.docker.internal", "mock-oidc"}
+                    or discovery.port != issuer.port
+                    or discovery.path != "/.well-known/openid-configuration"
+                    or database_host not in {"host.docker.internal", "localhost", "postgres"}
+                    or sim_host not in {"sim", "pramana-smoke-sim"}
+                    or redirect.scheme != "http"
+                    or redirect.hostname != "localhost"
+                    or redirect.path != "/api/core/v1/auth/google/callback"
+                    or self.sim_serverless_auth
+                ):
+                    raise ValueError(
+                        "local production test settings are restricted to the Docker harness"
+                    )
+            elif self.oidc_issuer != "https://accounts.google.com" or self.oidc_discovery_url != (
+                "https://accounts.google.com/.well-known/openid-configuration"
+            ):
+                raise ValueError("production requires the Google issuer and discovery URL")
+            if self.automation_key is not None:
+                raise ValueError("CORE_AUTOMATION_KEY is forbidden in production")
+            if self.auth_required is False or self.session_cookie_secure is False:
+                raise ValueError("production requires authentication and Secure cookies")
+            database = urlsplit(self.database_url)
+            if (
+                database.scheme not in {"postgres", "postgresql", "postgresql+asyncpg"}
+                or not database.hostname
+                or (
+                    database.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+                    and not self.local_production_test
+                )
+            ):
+                raise ValueError("production requires an explicit remote PostgreSQL DATABASE_URL")
+            simulator = urlsplit(self.sim_url)
+            if (
+                simulator.scheme not in {"http", "https"}
+                or not simulator.hostname
+                or (
+                    simulator.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+                    and not self.local_production_test
+                )
+            ):
+                raise ValueError("production requires an explicit remote SIM_URL")
+            redirect = urlsplit(self.oidc_redirect_url)
+            if (
+                (redirect.scheme != "https" and not self.local_production_test)
+                or not redirect.hostname
+                or redirect.username
+                or redirect.password
+                or redirect.query
+                or redirect.fragment
+            ):
+                raise ValueError(
+                    "production requires an HTTPS OIDC_REDIRECT_URL without query or fragment"
+                )
+        return self
 
     @property
     def enforce_auth(self) -> bool:
@@ -95,14 +197,34 @@ class Settings(BaseSettings):
     @property
     def secure_cookies(self) -> bool:
         return (
-            self.mode == "demo"
+            self.mode in {"demo", "production"}
             if self.session_cookie_secure is None
             else self.session_cookie_secure
         )
 
     @property
+    def session_cookie_name(self) -> str:
+        return "__Host-pramana_session" if self.secure_cookies else "pramana_session"
+
+    @property
+    def auth_flow_cookie_name(self) -> str:
+        return "__Host-pramana_auth" if self.secure_cookies else "pramana_auth"
+
+    @property
     def browser_sim_url(self) -> str:
         return self.sim_public_url or self.sim_url
+
+    @property
+    def invitation_link_base(self) -> str | None:
+        """Where emailed links point, or None when emailing them is not set up. Production
+        needs HTTPS, so a link with a secret in it is never mailed for plain HTTP."""
+        if not (self.gmail_address and self.gmail_app_password and self.public_web_url):
+            return None
+        parts = urlsplit(self.public_web_url)
+        allowed = ("https",) if self.mode == "production" else ("https", "http")
+        if parts.scheme not in allowed or not parts.hostname:
+            return None
+        return self.public_web_url.rstrip("/")
 
 
 @lru_cache(maxsize=1)

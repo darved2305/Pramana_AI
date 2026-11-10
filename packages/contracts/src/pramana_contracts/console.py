@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import Field
 
-from .common import Identifier, Role, Skill, StrictModel
+from .common import CursorPage, Identifier, Role, Skill, StrictModel
 from .investigation import InvestigationStatus
 from .participants import LanguageProfile, ParticipantSpec
 
@@ -36,6 +36,20 @@ class AuthSession(StrictModel):
     expires_at: datetime
     method: str = "session"
     """``session`` (browser cookie) or ``automation`` (scripts holding the automation key)."""
+    email_verified: bool = False
+
+
+class SessionDevice(StrictModel):
+    """An opaque device reference, never the browser's session token."""
+
+    id: str
+    current: bool
+    auth_method: str
+    created_at: datetime
+    last_seen_at: datetime
+    idle_expires_at: datetime
+    absolute_expires_at: datetime
+    user_agent: str | None = None
 
 
 class DirectoryParticipant(StrictModel):
@@ -72,11 +86,8 @@ class InvestigationSummary(StrictModel):
     decision_probability: float | None = None
 
 
-class InvestigationPage(StrictModel):
-    items: list[InvestigationSummary]
-    total: int
-    limit: int
-    offset: int
+class InvestigationPage(CursorPage[InvestigationSummary]):
+    pass
 
 
 class PackSummary(StrictModel):

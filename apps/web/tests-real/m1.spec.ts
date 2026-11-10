@@ -74,7 +74,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   await page.getByText("These people have agreed to be contacted").click();
   await expect(page.getByRole("checkbox", { name: /agreed to be contacted/ })).toBeChecked();
   await page.getByRole("button", { name: "Start investigation" }).click();
-  await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9a-f]+$/);
+  await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9A-HJKMNP-TV-Z]{26}$/);
   const invId = page.url().split("/").pop() as string;
 
   // 2. Personal links from the console.
@@ -122,7 +122,8 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   // 4. The operator proposes the repair.
   await page.getByRole("button", { name: "Propose repair", exact: true }).click();
   const propose = page.getByRole("dialog", { name: "Propose a repair" });
-  await propose.getByLabel("Breaker").fill("CB_C2_7");
+  // The model's options: this decision covers two breakers, so the operator picks the one found.
+  await propose.getByLabel("Repair").selectOption({ label: "Reset a tripped breaker: Breaker C2-7 (IDF-2 rack) at distribution board DB-C2" });
   await propose.getByRole("button", { name: "Send for approval" }).click();
   await expect(page.getByText("Awaiting approval").first()).toBeVisible();
   // The operator cannot approve their own request.

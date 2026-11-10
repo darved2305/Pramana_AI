@@ -56,14 +56,14 @@ from .media import (
 )
 
 CONSENT_TEXT: dict[str, str] = {
-    "en": "Hello, this is Pramana, helping fix a Wi-Fi and power problem in your building. "
+    "en": "Hello, this is Pramana, helping work out a problem where you are. "
     "Is it OK to ask you two or three quick questions? You can say no.",
-    "hi": "नमस्ते, मैं प्रमाण हूँ, आपकी बिल्डिंग में वाई-फ़ाई और बिजली की समस्या ठीक करने में "
+    "hi": "नमस्ते, मैं प्रमाण हूँ, आपकी जगह की एक समस्या समझने में "
     "मदद कर रहा हूँ। क्या मैं आपसे दो-तीन छोटे सवाल पूछ सकता हूँ? आप मना कर सकते हैं।",
-    "hi-en": "Namaste, main Pramana hoon, building ki WiFi aur power problem theek karne mein "
+    "hi-en": "Namaste, main Pramana hoon, aapki jagah ki ek problem samajhne mein "
     "madad kar raha hoon. Kya main aapse do-teen chhote sawaal pooch sakta hoon? Aap mana "
     "kar sakte hain.",
-    "mr": "नमस्कार, मी प्रमाण, तुमच्या इमारतीतील वाय-फाय आणि वीजेची अडचण सोडवायला मदत करतोय. "
+    "mr": "नमस्कार, मी प्रमाण, तुमच्या ठिकाणची एक अडचण समजून घ्यायला मदत करतोय. "
     "मी तुम्हाला दोन-तीन छोटे प्रश्न विचारू का? तुम्ही नाही म्हणू शकता.",
 }
 """The consent line from PRODUCT.md ("Is it OK to ask you two quick questions? You can say no.")."""
@@ -87,8 +87,11 @@ class ParticipantCall:
         broadcaster: EventBroadcaster,
         active: ActiveSessions,
         max_s: float,
+        *,
+        organization: str | None = None,
     ) -> None:
         self.ws, self.inv_id, self.participant_id = ws, inv_id, participant_id
+        self.organization = organization
         self.svc, self.gnani, self.cache = svc, gnani, cache
         self.broadcaster, self.active, self.max_s = broadcaster, active, max_s
         self.call = CallSession(
@@ -129,6 +132,8 @@ class ParticipantCall:
                 claims = self.svc.verify_participant_token(str(start.get("token", "")))
             except TokenError as exc:
                 raise MediaClosedError(4401) from exc
+            if self.organization is not None and claims.org != self.organization:
+                raise MediaClosedError(4403)  # a link from another workspace
             if claims.sub != self.participant_id:
                 await self._fail(ApiError(403, "WRONG_PARTICIPANT", "token is for someone else"))
             state = await self.svc.get(self.inv_id)

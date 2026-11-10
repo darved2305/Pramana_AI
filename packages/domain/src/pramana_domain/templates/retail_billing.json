@@ -1,0 +1,119 @@
+{
+  "id": "retail_billing",
+  "title": "Retail branch billing",
+  "kind": "retail",
+  "summary": "Card payments at the tills: power, the IT breaker, router, internet line and terminals.",
+  "description": {
+    "id": "retail_billing",
+    "title": "Retail branch billing",
+    "roles": [
+      {
+        "id": "cashier",
+        "skill": "lay",
+        "label": "Cashier"
+      },
+      {
+        "id": "manager",
+        "skill": "access",
+        "label": "Store manager"
+      },
+      {
+        "id": "it_vendor",
+        "skill": "technician",
+        "label": "IT vendor"
+      },
+      {
+        "id": "electrician",
+        "skill": "technician",
+        "label": "Electrician"
+      }
+    ],
+    "places": [
+      {
+        "id": "TILLS",
+        "name": "the billing counter"
+      },
+      {
+        "id": "BACK_OFFICE",
+        "name": "the back office",
+        "restricted": true,
+        "access": [
+          "manager",
+          "it_vendor",
+          "electrician"
+        ]
+      }
+    ],
+    "equipment": [
+      {
+        "id": "MAINS",
+        "type": "utility_supply",
+        "name": "mains power",
+        "at": "BACK_OFFICE"
+      },
+      {
+        "id": "MCB_IT",
+        "type": "breaker",
+        "name": "the IT breaker",
+        "at": "BACK_OFFICE",
+        "needs": [
+          "MAINS"
+        ]
+      },
+      {
+        "id": "ISP",
+        "type": "utility_supply",
+        "name": "the internet line",
+        "at": "BACK_OFFICE"
+      },
+      {
+        "id": "ROUTER",
+        "type": "network_device",
+        "name": "the router",
+        "at": "BACK_OFFICE",
+        "needs": [
+          "MCB_IT"
+        ]
+      },
+      {
+        "id": "POS_1",
+        "type": "terminal",
+        "name": "till 1",
+        "at": "TILLS",
+        "needs": [
+          "MCB_IT"
+        ]
+      },
+      {
+        "id": "PAYMENTS",
+        "type": "server",
+        "name": "card payments",
+        "at": "BACK_OFFICE",
+        "needs": [
+          "ROUTER",
+          "ISP",
+          "POS_1"
+        ]
+      }
+    ],
+    "service_points": [
+      {
+        "id": "card_payment",
+        "label": "A card payment goes through",
+        "outcomes": [
+          "approved",
+          "failing"
+        ],
+        "question": {
+          "en": "At {place}, please try a one-rupee test payment. Is it approved, or failing?",
+          "hi-en": "{place} pe ek rupaye ka test payment kijiye. Approve hua, ya fail ho raha hai?",
+          "hi": "{place} पर एक रुपये का टेस्ट पेमेंट कीजिए। मंज़ूर हुआ, या फ़ेल हो रहा है?",
+          "mr": "{place} वर एक रुपयाचं टेस्ट पेमेंट करा. मंजूर झालं, की फेल होतंय?"
+        },
+        "served_by": {
+          "TILLS": "PAYMENTS"
+        }
+      }
+    ]
+  }
+}

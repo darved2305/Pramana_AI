@@ -34,7 +34,7 @@ test.describe("landing", () => {
       await page.goto(path);
       await page.waitForLoadState("networkidle");
       const text = await page.evaluate(() => document.body.innerText + [...document.querySelectorAll("[aria-label],[placeholder],[title]")].map((e) => e.getAttribute("aria-label") + " " + e.getAttribute("placeholder") + " " + e.getAttribute("title")).join(" "));
-      expect(text.includes("—"), `em dash on ${path}`).toBe(false);
+      expect(text.includes(String.fromCharCode(0x2014)), `em dash on ${path}`).toBe(false);
     }
   });
 
@@ -208,9 +208,9 @@ test.describe("live console without a backend", () => {
   test("shows a truthful unreachable state", async ({ page }) => {
     await page.route("**/api/core/**", (r) => r.abort());
     await page.goto("/app/investigations/inv_missing");
-    await expect(page.getByText("Core not reachable")).toBeVisible();
+    await expect(page.getByText("Connection problem", { exact: true })).toBeVisible();
     await page.goto("/app");
-    await expect(page.getByRole("complementary").getByText("Core offline")).toBeVisible();
+    await expect(page.getByRole("complementary").getByText("Offline", { exact: true })).toBeVisible();
   });
 
   test("lists nothing it does not have", async ({ page }) => {
@@ -222,7 +222,7 @@ test.describe("live console without a backend", () => {
   test("an unreachable core is shown, not an empty list", async ({ page }) => {
     await page.route("**/api/core/**", (r) => r.abort());
     await page.goto("/app/investigations");
-    await expect(page.getByText("Core not reachable")).toBeVisible();
+    await expect(page.getByText("Connection problem", { exact: true })).toBeVisible();
     await expect(page.getByText("No investigations yet")).toHaveCount(0);
   });
 

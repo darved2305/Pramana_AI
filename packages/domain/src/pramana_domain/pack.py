@@ -13,18 +13,23 @@ import os
 from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal, get_args
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
 
-from pramana_contracts import Role, TemplateLanguage
+from pramana_contracts import TemplateLanguage
+
+from .rules import TARGET, PhysicsKind, Requirement, RequirementSpec, Rule
 
 NO_FAULT = "NO_FAULT"
 OPEN_WORLD = "OPEN_WORLD"
 ANY_ROLE = "any"
 
-ComponentKind = Literal[
+Slug = Annotated[StrictStr, Field(pattern=r"^[a-z][a-z0-9_]{0,47}$")]
+"""A lower-case identifier chosen by the site author: a role, a component or place kind."""
+
+NETWORK_COMPONENT_KINDS = Literal[
     "feed",
     "breaker",
     "light",
@@ -38,7 +43,9 @@ ComponentKind = Literal[
     "switch",
     "ap",
 ]
-ObservableKind = Literal[
+ComponentKind = Slug
+NETWORK_LOCATION_KINDS = frozenset({"room", "corridor", "closet", "desk", "panel"})
+NetworkObservableKind = Literal[
     "internet_works",
     "wifi_status",
     "web_by_ip",
@@ -49,7 +56,10 @@ ObservableKind = Literal[
     "fibre_led",
     "breaker",
 ]
+ObservableKind = NetworkObservableKind | Literal["rule"]
+"""``rule``: the outcome comes from the probe's own ``rules`` (dependency sites)."""
 ProbeClass = Literal["device", "visual", "panel"]
+Skill = Literal["lay", "access", "technician"]
 
 # Outcome vocabulary each observable kind can produce (physics.py implements the mapping).
 KIND_OUTCOMES: dict[str, frozenset[str]] = {
@@ -73,6 +83,8 @@ TARGET_KINDS: dict[str, frozenset[str]] = {
     "breaker": frozenset({"breaker"}),
 }
 DEVICE_KINDS = frozenset({"internet_works", "wifi_status", "web_by_ip"})
+NETWORK_KINDS = frozenset(KIND_OUTCOMES)
+NETWORK_FIELDS = ("powered_by", "poe_from", "uplink", "hosted_on", "upstream")
 
 
 class PackModel(BaseModel):
@@ -94,13 +106,33 @@ class LocalizedText(PackModel):
         return str(getattr(self, lang))
 
 
+class RoleDef(PackModel):
+    """One entry of a site's role catalogue (a nurse, a plumber, a guard)."""
+
+    id: Slug
+    skill: Skill
+    """How reliable the role is assumed to be at each kind of check, and what it may do."""
+    label: StrictStr
+
+
+BUILTIN_ROLES: tuple[RoleDef, ...] = (
+    RoleDef(id="student", skill="lay", label="Student"),
+    RoleDef(id="guard", skill="access", label="Security guard"),
+    RoleDef(id="electrician", skill="technician", label="Electrician"),
+    RoleDef(id="it_tech", skill="technician", label="IT technician"),
+    RoleDef(id="housekeeping", skill="access", label="Housekeeping"),
+)
+"""The catalogue of site models written before catalogues existed."""
+
+
 class Location(PackModel):
     id: StrictStr
     floor: int
-    kind: Literal["room", "corridor", "closet", "desk", "panel"]
+    kind: Slug
+    """Network sites use room, corridor, closet, desk or panel; dependency sites choose."""
     label: LocalizedText
     restricted: bool = False
-    access_roles: list[Role] = Field(default_factory=list)
+    access_roles: list[Slug] = Field(default_factory=list)
     wifi_coverage: list[StrictStr] = Field(default_factory=list)
     """Access points whose signal reaches this location, strongest first."""
 
@@ -109,6 +141,8 @@ class FailureMode(PackModel):
     id: StrictStr
     prior: float = Field(gt=0, lt=1)
     label: StrictStr
+    local: bool = False
+    """Dependency sites: the fault breaks only this component, never what depends on it."""
 
 
 class Component(PackModel):
@@ -121,7 +155,16 @@ class Component(PackModel):
     uplink: StrictStr | None = None
     hosted_on: StrictStr | None = None
     upstream: StrictStr | None = None
+    requires: list[RequirementSpec] = Field(default_factory=list)
+    """Dependency sites: every entry must be alive (``any_of``: at least one member)."""
     failure_modes: list[FailureMode] = Field(default_factory=list)
+
+    def dependencies(self) -> list[str]:
+        """Every component this one depends on, in either kind of physics."""
+        refs = [r for r in (getattr(self, f) for f in NETWORK_FIELDS) if r is not None]
+        for req in self.requires:
+            refs.extend(req.any_of if isinstance(req, Requirement) else [req])
+        return refs
 
 
 class ProbeBinding(PackModel):
@@ -139,6 +182,17 @@ class Probe(PackModel):
     exec_s: float = Field(gt=0)
     observes: list[ProbeBinding] = Field(min_length=1)
     templates: dict[TemplateLanguage, StrictStr]
+    rules: list[Rule] = Field(default_factory=list)
+    """``rule`` probes: the first rule whose condition holds gives the outcome."""
+    default: StrictStr | None = None
+    """``rule`` probes: the outcome when no rule holds."""
+    outcome_words: dict[StrictStr, list[StrictStr]] = Field(default_factory=dict)
+    """Other ways people at this site say each outcome ("no water" for "dry")."""
+
+    @property
+    def is_device(self) -> bool:
+        """Asked about the person's own phone wherever they are, not about a place."""
+        return self.kind in DEVICE_KINDS
 
     @field_validator("templates")
     @classmethod
@@ -163,7 +217,7 @@ class Action(PackModel):
     target_kind: ComponentKind
     fixes: StrictStr
     """The failure mode this action clears on its target."""
-    roles: list[Role] = Field(min_length=1)
+    roles: list[Slug] = Field(min_length=1)
     at_target_location: bool = True
     risk: Literal["low", "medium", "high"]
     reversible: bool
@@ -209,9 +263,14 @@ class DomainPack(PackModel):
     pack: StrictStr
     version: StrictStr
     title: StrictStr
+    physics: PhysicsKind = "building_network"
+    """``building_network``: the built-in power and Wi-Fi physics. ``dependency``: any system,
+    described by ``requires`` and probe ``rules`` (rules.py)."""
+    roles: list[RoleDef] | None = None
+    """The site's role catalogue. Omitted: the built-in hostel roles."""
     locations: list[Location]
     walks: list[tuple[StrictStr, StrictStr, int]]
-    walking_roles: list[Role]
+    walking_roles: list[Slug]
     components: list[Component]
     no_fault_prior: float = Field(gt=0, lt=1)
     open_world_prior: float = Field(gt=0, lt=1)
@@ -223,6 +282,10 @@ class DomainPack(PackModel):
     presence_tokens: list[PresenceToken] = Field(default_factory=list)
 
     # -- indices ---------------------------------------------------------------------------
+
+    @cached_property
+    def role_catalogue(self) -> dict[str, RoleDef]:
+        return {r.id: r for r in (self.roles if self.roles is not None else BUILTIN_ROLES)}
 
     @cached_property
     def location_by_id(self) -> dict[str, Location]:
@@ -288,13 +351,28 @@ class DomainPack(PackModel):
         _unique("component", [c.id for c in self.components], errors)
         _unique("probe", [p.id for p in self.probes], errors)
         _unique("decision class", [d.id for d in self.decision_classes], errors)
+        network = self.physics == "building_network"
+        if self.roles is not None:
+            _unique("role", [r.id for r in self.roles], errors)
+        known_roles = set(self.role_catalogue)
 
+        def check_roles(where: str, roles: Iterable[str], allow_any: bool = False) -> None:
+            for role in roles:
+                if not (allow_any and role == ANY_ROLE) and role not in known_roles:
+                    errors.append(f"{where}: unknown role {role!r}")
+
+        check_roles("walking_roles", self.walking_roles)
         for loc in self.locations:
+            if network and loc.kind not in NETWORK_LOCATION_KINDS:
+                errors.append(f"location {loc.id}: kind {loc.kind!r} needs physics: dependency")
+            if not network and loc.wifi_coverage:
+                errors.append(f"location {loc.id}: wifi_coverage is network physics only")
             for ap in loc.wifi_coverage:
                 if comps.get(ap) is None or comps[ap].kind != "ap":
                     errors.append(f"location {loc.id}: wifi_coverage {ap!r} is not an access point")
             if loc.restricted and not loc.access_roles:
                 errors.append(f"location {loc.id}: restricted but no access_roles")
+            check_roles(f"location {loc.id}", loc.access_roles)
         _unique("presence token", [t.id for t in self.presence_tokens], errors)
         _unique("presence token place", [t.at for t in self.presence_tokens], errors)
         for t in self.presence_tokens:
@@ -321,11 +399,24 @@ class DomainPack(PackModel):
             "dns": "hosted_on",
         }
         for c in self.components:
-            for field in ("powered_by", "poe_from", "uplink", "hosted_on", "upstream"):
+            for field in NETWORK_FIELDS:
                 ref = getattr(c, field)
-                if ref is not None and ref not in comps:
+                if ref is not None and not network:
+                    errors.append(f"component {c.id} uses {field}; dependency sites use requires")
+                elif ref is not None and ref not in comps:
                     errors.append(f"component {c.id}: {field} {ref!r} does not exist")
-            need = expected_parent.get(c.kind)
+            if network:
+                if c.kind not in get_args(NETWORK_COMPONENT_KINDS):
+                    errors.append(f"component {c.id}: kind {c.kind!r} needs physics: dependency")
+                if c.requires:
+                    errors.append(f"component {c.id}: requires needs physics: dependency")
+                if any(m.local for m in c.failure_modes):
+                    errors.append(f"component {c.id}: local failure modes need physics: dependency")
+            for req in c.requires:
+                for ref in req.any_of if isinstance(req, Requirement) else [req]:
+                    if ref not in comps:
+                        errors.append(f"component {c.id}: requires {ref!r} does not exist")
+            need = expected_parent.get(c.kind) if network else None
             if need and getattr(c, need) is None:
                 errors.append(f"component {c.id} ({c.kind}) needs {need}")
             if c.poe_from and c.poe_from in comps and comps[c.poe_from].kind != "switch":
@@ -337,16 +428,21 @@ class DomainPack(PackModel):
             errors.extend(_cycles(comps))
 
         for p in self.probes:
-            allowed = KIND_OUTCOMES[p.kind]
-            if set(p.outcomes) != allowed:
-                errors.append(f"probe {p.id}: outcomes {p.outcomes} must equal {sorted(allowed)}")
-            for role in p.roles:
-                if role != ANY_ROLE and role not in {r.value for r in Role}:
-                    errors.append(f"probe {p.id}: unknown role {role!r}")
+            check_roles(f"probe {p.id}", p.roles, allow_any=True)
             _unique(f"binding of probe {p.id}", [b.at for b in p.observes], errors)
+            _unique(f"outcome of probe {p.id}", p.outcomes, errors)
             for b in p.observes:
                 if b.at not in locs:
                     errors.append(f"probe {p.id}: unknown location {b.at!r}")
+            if p.kind == "rule" or not network:
+                errors.extend(self._rule_probe_errors(p, network))
+                continue
+            if p.rules or p.default is not None:
+                errors.append(f"probe {p.id}: rules need kind: rule")
+            allowed = KIND_OUTCOMES[p.kind]
+            if set(p.outcomes) != allowed:
+                errors.append(f"probe {p.id}: outcomes {p.outcomes} must equal {sorted(allowed)}")
+            for b in p.observes:
                 if p.kind in TARGET_KINDS:
                     target = comps.get(b.target or "")
                     if target is None or target.kind not in TARGET_KINDS[p.kind]:
@@ -372,6 +468,7 @@ class DomainPack(PackModel):
         decision_ids = {d.id for d in self.decision_classes}
         _unique("action", [a.id for a in self.actions], errors)
         for act in self.actions:
+            check_roles(f"action {act.id}", act.roles)
             targets = [c for c in self.components if c.kind == act.target_kind]
             if not any(act.fixes in {m.id for m in c.failure_modes} for c in targets):
                 errors.append(f"action {act.id}: no {act.target_kind} can fail as {act.fixes!r}")
@@ -384,6 +481,58 @@ class DomainPack(PackModel):
         if errors:
             raise ValueError("invalid domain pack:\n  - " + "\n  - ".join(errors))
         return self
+
+    def _rule_probe_errors(self, p: Probe, network: bool) -> list[str]:
+        if network:
+            return [f"probe {p.id}: rule probes need physics: dependency"]
+        if p.kind != "rule":
+            return [f"probe {p.id}: dependency sites use kind: rule, not {p.kind!r}"]
+        if not p.rules or p.default is None:
+            return [f"probe {p.id}: a rule probe needs rules and a default"]
+        errors: list[str] = []
+        produced = [r.outcome for r in p.rules] + [p.default]
+        for outcome in dict.fromkeys(produced):
+            if outcome not in p.outcomes:
+                errors.append(f"probe {p.id}: outcome {outcome!r} is not in outcomes")
+        for outcome in p.outcomes:
+            if outcome not in produced:
+                errors.append(f"probe {p.id}: never produces {outcome!r}")
+        refs = [ref for rule in p.rules for ref in rule.when.references()]
+        uses_target = any(_is_target(ref) for _, ref in refs)
+        targets: list[str | None] = []
+        for b in p.observes:
+            if b.target is not None and b.target not in self.component_by_id:
+                errors.append(f"probe {p.id}@{b.at}: target {b.target!r} does not exist")
+            elif uses_target and b.target is None:
+                errors.append(f"probe {p.id}@{b.at} uses $target but has no target")
+            else:
+                targets.append(b.target)
+        for target in dict.fromkeys(targets if uses_target else [None]):
+            for op, ref in refs:
+                errors.extend(self._reference_errors(p.id, op, _resolve(ref, target)))
+        return errors
+
+    def _reference_errors(self, probe_id: str, op: str, ref: str) -> list[str]:
+        if op == "fault":
+            cid, _, mode = ref.rpartition(".")
+        else:
+            cid, mode = ref, None
+        comp = self.component_by_id.get(cid)
+        if comp is None:
+            return [f"probe {probe_id}: {op} {cid!r} is not a component"]
+        if mode is not None and mode not in {m.id for m in comp.failure_modes}:
+            return [f"probe {probe_id}: {cid} has no failure mode {mode!r}"]
+        return []
+
+
+def _is_target(ref: str) -> bool:
+    return ref == TARGET or ref.startswith(TARGET + ".")
+
+
+def _resolve(ref: str, target: str | None) -> str:
+    if target is not None and _is_target(ref):
+        return target + ref[len(TARGET) :]
+    return ref
 
 
 def _unique(what: str, ids: list[str], errors: list[str]) -> None:
@@ -406,10 +555,8 @@ def _cycles(comps: dict[str, Component]) -> list[str]:
             errors.append("dependency cycle: " + " -> ".join([*path, cid]))
             return
         state[cid] = 1
-        c = comps[cid]
-        for ref in (c.powered_by, c.poe_from, c.uplink, c.hosted_on, c.upstream):
-            if ref is not None:
-                visit(ref, [*path, cid])
+        for ref in comps[cid].dependencies():
+            visit(ref, [*path, cid])
         state[cid] = 2
 
     for cid in comps:

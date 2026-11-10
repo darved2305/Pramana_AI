@@ -97,7 +97,7 @@ class ParticipantState:
 
     @property
     def roles(self) -> set[str]:
-        return {r.value for r in self.spec.roles}
+        return {str(r) for r in self.spec.roles}
 
 
 @dataclass(frozen=True)
@@ -146,6 +146,8 @@ class _Belief:
     """[P] normalised posterior weight of each path."""
     mean_reliability: dict[Group, FloatArray]
     """Per group with evidence: [P] posterior mean reliability under each path."""
+    log_marginal: float = 0.0
+    """Log probability of the evidence under this model. For comparing maps; not used to decide."""
 
 
 @dataclass
@@ -289,8 +291,13 @@ class Engine:
             total += lse
             rbar[g] = nodes @ np.exp(a - lse)
         w = np.exp(total - float(np.max(total)))
-        self._belief_cache = _Belief(w / w.sum(), rbar)
+        marginal = float(np.max(total)) + float(np.log(w.sum()))
+        self._belief_cache = _Belief(w / w.sum(), rbar, marginal)
         return self._belief_cache
+
+    def log_marginal(self) -> float:
+        """How well this model explains the evidence so far (log scale)."""
+        return self._belief().log_marginal
 
     def _changed(self) -> None:
         self._belief_cache = None
@@ -698,7 +705,7 @@ class Engine:
                 elif loc_id != ps.location_id or unsure:
                     if probe.kind in DEVICE_KINDS:
                         reasons.append("phone checks are only asked where the person is")
-                    elif not set(ps.roles) & {r.value for r in pack.walking_roles}:
+                    elif not set(ps.roles) & {str(r) for r in pack.walking_roles}:
                         reasons.append("not asked to walk")
                     else:
                         walks = [
@@ -710,7 +717,7 @@ class Engine:
                         else:
                             walk = max(int(w or 0) for w in walks)
                             move = True
-                if loc.restricted and not set(ps.roles) & {r.value for r in loc.access_roles}:
+                if loc.restricted and not set(ps.roles) & {str(r) for r in loc.access_roles}:
                     reasons.append(f"no access to {loc_id}")
                 if (pid, probe_id, loc_id) in answered_keys:
                     reasons.append("already answered")

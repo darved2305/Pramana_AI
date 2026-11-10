@@ -1,5 +1,6 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
+import { selectE2EDatabase } from "./scripts/e2e-database-safety.mjs";
 
 /**
  * End-to-end tests against a REAL simulator, core and PostgreSQL test database. Nothing is
@@ -9,6 +10,7 @@ import { defineConfig, devices } from "@playwright/test";
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 3022);
 const CORE_PORT = Number(process.env.E2E_CORE_PORT ?? 8020);
 const SIM_PORT = Number(process.env.E2E_SIM_PORT ?? 8120);
+const OIDC_PORT = Number(process.env.E2E_OIDC_PORT ?? 8420);
 
 // Workers re-evaluate this file; keys are generated once in the main process and inherited.
 if (!process.env.E2E_SIGNING_KEY) {
@@ -19,12 +21,23 @@ if (!process.env.E2E_SIGNING_KEY) {
   process.env.E2E_AUTOMATION_KEY = randomBytes(18).toString("base64url");
   process.env.E2E_PASSWORD = randomBytes(12).toString("base64url");
 }
-const DATABASE = process.env.E2E_DATABASE ?? "pramana_web_e2e";
+const DATABASE = selectE2EDatabase(process.env);
 process.env.E2E_DATABASE = DATABASE;
 process.env.E2E_CORE_URL = `http://127.0.0.1:${CORE_PORT}`;
 process.env.E2E_SIM_URL = `http://127.0.0.1:${SIM_PORT}`;
 
-const shared = { E2E_DATABASE: DATABASE, E2E_CORE_PORT: String(CORE_PORT), E2E_SIM_PORT: String(SIM_PORT) };
+const shared = {
+  E2E_DATABASE: DATABASE,
+  PRAMANA_DB_NAMES: process.env.PRAMANA_DB_NAMES!,
+  E2E_CORE_PORT: String(CORE_PORT),
+  E2E_SIM_PORT: String(SIM_PORT),
+};
+
+// Local runs use Playwright's own Chromium in a throwaway profile. The installed Google Chrome can
+// pass the password fields these tests type (some deliberately wrong) to Windows sign-in, which
+// locked the Windows account on a shared laptop. CI keeps the installed Chrome; set
+// PW_CHANNEL=chrome to use it locally on purpose.
+const CHANNEL = process.env.PW_CHANNEL ?? (process.env.CI ? "chrome" : undefined);
 
 export default defineConfig({
   testDir: "./tests-real",
@@ -37,12 +50,18 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: `http://localhost:${WEB_PORT}`,
-    channel: "chrome",
+    channel: CHANNEL,
     trace: "retain-on-failure",
     ...devices["Desktop Chrome"],
     viewport: { width: 1440, height: 900 },
   },
   webServer: [
+    {
+      command: `uv run python ../../scripts/mock_oidc.py --port ${OIDC_PORT} --client-id pramana-e2e`,
+      url: `http://127.0.0.1:${OIDC_PORT}/.well-known/openid-configuration`,
+      timeout: 120_000,
+      reuseExistingServer: false,
+    },
     {
       command: "uv run python tests-real/backend.py sim",
       url: `http://127.0.0.1:${SIM_PORT}/health`,
@@ -73,8 +92,15 @@ export default defineConfig({
         CORE_AUTOMATION_KEY: process.env.E2E_AUTOMATION_KEY as string,
         E2E_PASSWORD: process.env.E2E_PASSWORD as string,
         GNANI_API_KEY: "",
+        GMAIL_ADDRESS: "",
+        GMAIL_APP_PASSWORD: "",
         LLM_EXTRACTOR_PROVIDER: "none",
         EVAL_REPORTS_DIR: "apps/web/tests-real/fixtures/reports",
+        OIDC_ISSUER: `http://localhost:${OIDC_PORT}`,
+        OIDC_DISCOVERY_URL: `http://localhost:${OIDC_PORT}/.well-known/openid-configuration`,
+        GOOGLE_OAUTH_CLIENT_ID: "pramana-e2e",
+        GOOGLE_OAUTH_CLIENT_SECRET: "local-only",
+        OIDC_REDIRECT_URL: `http://localhost:${WEB_PORT}/api/core/v1/auth/google/callback`,
       },
     },
     {

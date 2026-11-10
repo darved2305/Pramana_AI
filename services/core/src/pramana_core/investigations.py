@@ -16,7 +16,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import secrets
+import uuid
 import weakref
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
@@ -24,7 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pramana_contracts import (
@@ -39,14 +41,18 @@ from pramana_contracts import (
     CapabilityGrant,
     CreateInvestigation,
     CreateScenario,
+    CreateSiteInvestigation,
     Directness,
     DisagreementView,
+    DocumentedModel,
     EventEnvelope,
     Extraction,
     GroundTruthComparison,
     Hedge,
+    InvestigationForecast,
     InvestigationState,
     InvestigationStatus,
+    MapDriftCheck,
     Modality,
     Observation,
     ObservationState,
@@ -57,7 +63,12 @@ from pramana_contracts import (
     PresenceCheckView,
     ProbeAction,
     Question,
+    QuestioningAvailability,
     QuestionStatus,
+    QuietHours,
+    QuietHoursOverrideRequest,
+    QuietHoursOverrideView,
+    RepairOption,
     Report,
     ReportIntervention,
     RequestApproval,
@@ -74,6 +85,7 @@ from pramana_contracts.tokens import (
 )
 from pramana_contracts.tokens import verify as verify_token
 from pramana_domain import NO_FAULT, DomainPack, load_pack
+from pramana_domain.spec_storage import spec_digest
 from pramana_engine import (
     MODEL_VERSION,
     MULTIPLE_FAULTS,
@@ -86,14 +98,19 @@ from pramana_engine import (
     compile_pack,
     schedule,
 )
+from pramana_engine import forecast as run_forecast
+from pramana_engine import map_drift as run_map_drift
 
+from . import ids
 from .db import (
     ApprovalRow,
+    AuditLogRow,
     Database,
     EventRow,
     InvestigationRow,
     ObservationRow,
     QuestionRow,
+    current_org,
 )
 from .errors import ApiError, not_found
 from .language.explain import disagreement_view
@@ -102,7 +119,11 @@ from .language.intake import INTAKE_PROBE, parse_report
 from .language.presence import read_code
 from .language.realize import CONFIRM_PREFIX, realize, realize_challenge
 from .observability import log
+from .people import ConsentRow, SitePersonRow
+from .questioning import AvailabilityDecision, decide_availability
 from .sim_client import SimClient
+from .site_models import PinnedModel, StoredModels
+from .vault import ERASED_NAME, ERASED_REPORT, SEALED, PersonRef, PersonVault
 
 
 @dataclass(frozen=True)
@@ -129,6 +150,22 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _waits_for_people(availability: QuestioningAvailability | None, plan: PlanDecision) -> bool:
+    """A live case with nobody to ask waits when people could still become askable.
+
+    Conclusions the evidence already supports (a confident decision, an open-world abstention,
+    a verification) go ahead. Only the planner's "nobody available can observe anything more"
+    ending waits, and only while someone is held back by missing consent or quiet hours rather
+    than by the roster or their own refusal."""
+    return (
+        availability is not None
+        and availability.eligible_count == 0
+        and availability.no_consent_count + availability.quiet_hours_count > 0
+        and plan.kind in (PlanKind.DECIDE, PlanKind.ABSTAIN)
+        and plan.rule == "no_feasible_action"
+    )
+
+
 def _id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(6)}"
 
@@ -138,6 +175,76 @@ def _not_pending(status: str) -> str:
         QuestionStatus.WITHDRAWN.value: "question was withdrawn: another answer made it pointless",
         QuestionStatus.CANCELLED.value: "question was cancelled",
     }.get(status, "question already answered")
+
+
+_TOKEN = re.compile("\u27e6([^\u27e7]+)\u27e7")
+
+
+def person_token(person_id: str) -> str:
+    """Stands for a person in stored text; the name is filled in only when it is read."""
+    return f"\u27e6{person_id}\u27e7"
+
+
+def named(
+    payload: dict[str, Any], inv_id: str, texts: dict[tuple[str, str, str], str]
+) -> dict[str, Any]:
+    """The payload with people's names put back, or "Erased person" if their key is gone."""
+
+    def swap(match: re.Match[str]) -> str:
+        return texts.get((inv_id, "name", match.group(1)), ERASED_NAME)
+
+    loaded: dict[str, Any] = json.loads(_TOKEN.sub(swap, json.dumps(payload, ensure_ascii=False)))
+    return loaded
+
+
+def tokenized_names(payload: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
+    """Replace participant names in user-facing text with stable person tokens."""
+    text_fields = {"explanation", "message", "reason", "reasons", "summary", "text"}
+    replacements = sorted(names.items(), key=lambda item: (-len(item[1]), item[0]))
+
+    def visit(value: Any, *, is_text: bool = False) -> Any:
+        if isinstance(value, dict):
+            return {key: visit(item, is_text=key in text_fields) for key, item in value.items()}
+        if isinstance(value, list):
+            return [visit(item, is_text=is_text) for item in value]
+        if is_text and isinstance(value, str):
+            for person_id, name in replacements:
+                if name:
+                    value = re.sub(
+                        rf"(?<![\w]){re.escape(name)}(?![\w])",
+                        person_token(person_id),
+                        value,
+                    )
+        return value
+
+    return cast(dict[str, Any], visit(payload))
+
+
+def _real_people(
+    people: list[ParticipantSpec], inv_id: str, texts: dict[tuple[str, str, str], str]
+) -> list[ParticipantSpec]:
+    return [
+        p.model_copy(update={"display_name": texts.get((inv_id, "name", p.id), ERASED_NAME)})
+        if p.display_name == SEALED
+        else p
+        for p in people
+    ]
+
+
+def _real_report(report: Report, inv_id: str, texts: dict[tuple[str, str, str], str]) -> Report:
+    if report.text != SEALED:
+        return report
+    text = texts.get((inv_id, "report", report.reporter_id), ERASED_REPORT)
+    return report.model_copy(update={"text": text})
+
+
+def _real_observation(
+    obs: Observation, inv_id: str, texts: dict[tuple[str, str, str], str]
+) -> Observation:
+    if obs.transcript is not None:
+        return obs
+    text = texts.get((inv_id, "transcript", obs.id))
+    return obs if text is None else obs.model_copy(update={"transcript": text})
 
 
 class InvestigationService:
@@ -150,23 +257,32 @@ class InvestigationService:
         extractor: Extractor,
         signing_key_b64: str,
         engine_config: EngineConfig | None = None,
+        vault: PersonVault | None = None,
         browser_sim_url: str = "http://127.0.0.1:8100",
+        require_saved_models: bool = False,
     ) -> None:
         self.browser_sim_url = browser_sim_url
         self.db = db
+        self.vault = vault
         self.sim = sim
         self.extractor = extractor
         self._signing_key = private_key_from_b64(signing_key_b64)
         self._engine_config = engine_config or EngineConfig()
         self._models: dict[str, CompiledModel] = {}
+        self.site_models = StoredModels(db)
+        self.require_saved_models = require_saved_models
         # Active callers hold strong references to their lock. Once nobody is using an
         # investigation, its lock can be collected instead of accumulating for process life.
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._cache: OrderedDict[str, tuple[int, Engine]] = OrderedDict()
+        self._forecasts: OrderedDict[str, tuple[int, InvestigationForecast]] = OrderedDict()
+        self._drift_checks: OrderedDict[str, tuple[int, MapDriftCheck]] = OrderedDict()
 
     # -- helpers ---------------------------------------------------------------------------------
 
     def model(self, pack_id: str) -> CompiledModel:
+        if self.require_saved_models:
+            raise not_found("saved site model")
         if pack_id not in self._models:
             try:
                 self._models[pack_id] = compile_pack(load_pack(pack_id))
@@ -177,6 +293,17 @@ class InvestigationService:
     def pack(self, pack_id: str) -> DomainPack:
         return self.model(pack_id).pack
 
+    def _model_for(self, row: InvestigationRow) -> CompiledModel:
+        pinned = inspect(row).info.get("pinned_model")
+        if isinstance(pinned, PinnedModel):
+            return pinned.compiled
+        if row.site_model_id is not None or self.require_saved_models:
+            raise not_found("site model")
+        return self.model(row.pack_id)
+
+    def _pack_for(self, row: InvestigationRow) -> DomainPack:
+        return self._model_for(row).pack
+
     def _lock(self, inv_id: str) -> asyncio.Lock:
         return self._locks.setdefault(inv_id, asyncio.Lock())
 
@@ -185,6 +312,17 @@ class InvestigationService:
         self._cache[inv_id] = (version, engine)
         while len(self._cache) > self.ENGINE_CACHE_MAX:
             self._cache.popitem(last=False)
+
+    def _sealing(self, site_id: uuid.UUID | None) -> PersonVault | None:
+        """The vault, for investigations on a saved site. Legacy synthetic runs stay as they are."""
+        return self.vault if site_id is not None else None
+
+    async def _texts(
+        self, session: AsyncSession, row: InvestigationRow
+    ) -> dict[tuple[str, str, str], str]:
+        if self.vault is None or row.site_id is None:
+            return {}
+        return await self.vault.texts(session, row.org_id, [row.id])
 
     @staticmethod
     def _event(
@@ -207,10 +345,23 @@ class InvestigationService:
 
     async def _load_row(self, session: AsyncSession, inv_id: str, lock: bool) -> InvestigationRow:
         stmt = select(InvestigationRow).where(InvestigationRow.id == inv_id)
+        org = current_org.get()
+        if org is not None:
+            stmt = stmt.where(InvestigationRow.org_id == org)
+        elif self.require_saved_models:
+            raise not_found("investigation")
         if lock:
             stmt = stmt.with_for_update()
         row = (await session.execute(stmt)).scalar_one_or_none()
         if row is None:
+            raise not_found("investigation")
+        if row.site_id is not None and row.site_model_id is not None:
+            if org is None:
+                raise not_found("investigation")
+            inspect(row).info["pinned_model"] = await self.site_models.load(
+                row.site_id, row.site_model_id
+            )
+        elif self.require_saved_models or org is not None:
             raise not_found("investigation")
         return row
 
@@ -226,7 +377,11 @@ class InvestigationService:
     async def _rebuild(self, session: AsyncSession, row: InvestigationRow) -> tuple[Engine, int]:
         """A fresh engine built only from the event log; also returns how many events it read."""
         req = self._request(row)
-        engine = Engine(self.model(row.pack_id), list(req.participants), self._engine_config)
+        texts = await self._texts(session, row)
+        participants = (
+            _real_people(req.participants, row.id, texts) if row.site_id else req.participants
+        )
+        engine = Engine(self._model_for(row), participants, self._engine_config)
         events = await session.execute(
             select(EventRow.type, EventRow.payload)
             .where(EventRow.investigation_id == row.id)
@@ -251,6 +406,20 @@ class InvestigationService:
                 )
             elif type_ == "ParticipantUnavailable":
                 engine.set_available(payload["participant_id"], False)
+            elif type_ == "QuestioningAvailabilityEvaluated":
+                for participant in payload.get("participants", []):
+                    engine.set_available(
+                        participant["participant_id"], bool(participant["available"])
+                    )
+            elif type_ == "QuestionCancelled" and "location_id" in payload:
+                engine.question_withdrawn(
+                    ProbeAction(
+                        participant_id=payload["participant_id"],
+                        probe_id=payload["probe_id"],
+                        location_id=payload["location_id"],
+                        requires_move=bool(payload["requires_move"]),
+                    )
+                )
             elif type_ == "QuestionWithdrawn" and "location_id" in payload:
                 # Logs written before withdrawals carried the place replay as they ran then.
                 engine.question_withdrawn(
@@ -284,7 +453,7 @@ class InvestigationService:
                 )
         return engine, len(rows)
 
-    def _record_observation(
+    async def _record_observation(
         self,
         session: AsyncSession,
         inv_id: str,
@@ -295,6 +464,7 @@ class InvestigationService:
         question_id: str | None,
         modality: str,
         transcript: str | None,
+        site_id: uuid.UUID | None = None,
     ) -> tuple[Observation, ObserveResult]:
         try:
             result = engine.observe(ev)
@@ -318,7 +488,23 @@ class InvestigationService:
             else ObservationState.DISCARDED,
             committed_at=_now(),
         )
-        session.add(ObservationRow(investigation_id=inv_id, **obs.model_dump()))
+        vault = self._sealing(site_id)
+        stored_obs = obs.model_dump()
+        extraction_stored = extraction
+        if vault is not None and site_id is not None:
+            # Words stay out of the row and the log; only the person's key can read them.
+            stored_obs["transcript"] = None
+            extraction_stored = extraction.model_copy(update={"evidence": []})
+        session.add(ObservationRow(investigation_id=inv_id, **stored_obs))
+        if vault is not None and site_id is not None and transcript:
+            await vault.keep(
+                session,
+                self._person(site_id, ev.participant_id),
+                investigation_id=inv_id,
+                kind="transcript",
+                item=obs.id,
+                text=transcript,
+            )
         self._event(
             session,
             inv_id,
@@ -339,7 +525,7 @@ class InvestigationService:
                 "superseded_previous": result.superseded,
                 "contradiction": result.contradiction,
                 "surprise_bits": result.surprise_bits,
-                "extraction": extraction.model_dump(mode="json"),
+                "extraction": extraction_stored.model_dump(mode="json"),
                 "decision_critical": result.decision_critical,
                 "multiple_faults_suspected": result.multiple_faults_suspected,
             },
@@ -360,7 +546,11 @@ class InvestigationService:
             )
         if result.disagreements:
             row_pack = engine.model.pack
-            names = {p.spec.id: p.spec.display_name for p in engine.participants.values()}
+            names = (
+                {p.spec.id: person_token(p.spec.id) for p in engine.participants.values()}
+                if vault is not None
+                else {p.spec.id: p.spec.display_name for p in engine.participants.values()}
+            )
             for d in result.disagreements:
                 view = disagreement_view(row_pack, names, d, obs.id)
                 self._event(session, inv_id, "DisagreementExplained", view.model_dump(mode="json"))
@@ -393,7 +583,7 @@ class InvestigationService:
         req = self._request(row)
         person = next(p for p in req.participants if p.id == action.participant_id)
         lang = person.languages.template_language
-        text = realize(self.pack(row.pack_id), action, lang)
+        text = realize(self._pack_for(row), action, lang)
         qid = _id("q")
         session.add(
             QuestionRow(
@@ -425,10 +615,133 @@ class InvestigationService:
             }
         self._event(session, row.id, "QuestionAsked", payload)
 
+    async def _evaluate_questioning_availability(
+        self, session: AsyncSession, row: InvestigationRow, engine: Engine
+    ) -> tuple[QuestioningAvailability | None, dict[str, AvailabilityDecision]]:
+        """Read live consent and quiet hours, then record only replay-safe decisions."""
+        if row.site_id is None or bool(row.request.get("practice", True)):
+            # Practice and sandbox participants are synthetic. No contact is made and their
+            # simulated answers must remain available without a human consent record.
+            return None, {}
+        requested = self._request(row).participants
+        participant_ids = [person.id for person in requested]
+        site_people = list(
+            (
+                await session.scalars(
+                    select(SitePersonRow).where(
+                        SitePersonRow.org_id == row.org_id,
+                        SitePersonRow.site_id == row.site_id,
+                        SitePersonRow.id.in_(participant_ids),
+                    )
+                )
+            ).all()
+        )
+        people_by_id = {person.id: person for person in site_people}
+        consented = set(
+            (
+                await session.scalars(
+                    select(ConsentRow.person_id).where(
+                        ConsentRow.org_id == row.org_id,
+                        ConsentRow.site_id == row.site_id,
+                        ConsentRow.person_id.in_(participant_ids),
+                        ConsentRow.purpose == "contact_for_investigations",
+                        ConsentRow.channel == "web",
+                        ConsentRow.decision == "granted",
+                        ConsentRow.withdrawn_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        override = await session.scalar(
+            select(EventRow.seq)
+            .where(
+                EventRow.investigation_id == row.id,
+                EventRow.type == "QuietHoursOverridden",
+            )
+            .limit(1)
+        )
+        prior_events = (
+            await session.execute(
+                select(EventRow.type, EventRow.payload)
+                .where(
+                    EventRow.investigation_id == row.id,
+                    EventRow.type.in_(("ConsentRecorded", "ParticipantUnavailable")),
+                )
+                .order_by(EventRow.seq)
+            )
+        ).all()
+        declined = {
+            str(payload["participant_id"])
+            for type_, payload in prior_events
+            if (type_ == "ConsentRecorded" and payload.get("consented") is False)
+            or (type_ == "ParticipantUnavailable" and payload.get("reason") == "asked to stop")
+        }
+        at = _now()
+        decisions: dict[str, AvailabilityDecision] = {}
+        for participant in requested:
+            person = people_by_id.get(participant.id)
+            hours = (
+                QuietHours(
+                    enabled=person.quiet_hours_enabled,
+                    start=person.quiet_hours_start,
+                    end=person.quiet_hours_end,
+                    timezone=person.quiet_hours_timezone,
+                )
+                if person is not None
+                else QuietHours()
+            )
+            decision = decide_availability(
+                listed_available=participant.available,
+                has_web_contact_consent=participant.id in consented,
+                quiet_hours=hours,
+                at=at,
+                quiet_hours_overridden=override is not None,
+                declined_in_investigation=participant.id in declined,
+            )
+            decisions[participant.id] = decision
+            engine.set_available(participant.id, decision.available)
+        eligible = sum(decision.available for decision in decisions.values())
+        no_consent = sum(decision.reason == "no_consent" for decision in decisions.values())
+        quiet = sum(decision.reason == "quiet_hours" for decision in decisions.values())
+        unavailable = len(decisions) - eligible - no_consent - quiet
+        self._event(
+            session,
+            row.id,
+            "QuestioningAvailabilityEvaluated",
+            {
+                "evaluated_at": at.isoformat(),
+                "eligible_count": eligible,
+                "no_consent_count": no_consent,
+                "quiet_hours_count": quiet,
+                "unavailable_count": unavailable,
+                "participants": [
+                    {
+                        "participant_id": participant_id,
+                        "available": decision.available,
+                        "reason": decision.reason,
+                    }
+                    for participant_id, decision in sorted(decisions.items())
+                ],
+            },
+        )
+        return (
+            QuestioningAvailability(
+                evaluated_at=at,
+                eligible_count=eligible,
+                no_consent_count=no_consent,
+                quiet_hours_count=quiet,
+                unavailable_count=unavailable,
+            ),
+            decisions,
+        )
+
     async def _schedule(self, session: AsyncSession, row: InvestigationRow, engine: Engine) -> None:
         """After any change of belief: withdraw questions that stopped mattering, then ask or
         conclude (``pramana_engine.schedule``, docs/adr/0011). With one call at a time this is
         exactly the sequential planner."""
+        availability, decisions = await self._evaluate_questioning_availability(
+            session, row, engine
+        )
         limit = int(row.request.get("max_parallel_calls", 1))
         pending = list(
             (
@@ -444,6 +757,35 @@ class InvestigationService:
             .scalars()
             .all()
         )
+        if availability is not None:
+            remaining: list[QuestionRow] = []
+            for question in pending:
+                decision = decisions.get(question.participant_id)
+                if decision is None or decision.available:
+                    remaining.append(question)
+                    continue
+                question.status = QuestionStatus.CANCELLED.value
+                action = ProbeAction(
+                    participant_id=question.participant_id,
+                    probe_id=question.probe_id,
+                    location_id=question.location_id,
+                    requires_move=question.requires_move,
+                )
+                engine.question_withdrawn(action)
+                self._event(
+                    session,
+                    row.id,
+                    "QuestionCancelled",
+                    {
+                        "question_id": question.id,
+                        "participant_id": question.participant_id,
+                        "probe_id": question.probe_id,
+                        "location_id": question.location_id,
+                        "requires_move": question.requires_move,
+                        "reason": decision.reason,
+                    },
+                )
+            pending = remaining
         actions = [
             ProbeAction(
                 participant_id=q.participant_id,
@@ -474,18 +816,62 @@ class InvestigationService:
                 },
             )
         if step.plan is not None:
-            self._apply_plan(session, row, engine, step.plan)
+            self._apply_plan_or_wait(session, row, engine, step.plan, availability)
         else:
             self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
         for extra in step.ask:
             self._ask(session, row, engine, extra.action, parallel=extra)
 
+    def _apply_plan_or_wait(
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        plan: PlanDecision,
+        availability: QuestioningAvailability | None,
+    ) -> None:
+        if not _waits_for_people(availability, plan):
+            self._apply_plan(session, row, engine, plan, availability)
+            return
+        # Nobody can be asked only because consent is missing or it is quiet time. Do not
+        # conclude from what is known so far: record the plan as computed, keep the case open,
+        # and let a new consent, an override or a later check resume it.
+        assert availability is not None
+        self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
+        self._event(session, row.id, "PlanComputed", plan.model_dump(mode="json"))
+        self._event(
+            session,
+            row.id,
+            "QuestioningPaused",
+            {
+                "no_consent_count": availability.no_consent_count,
+                "quiet_hours_count": availability.quiet_hours_count,
+            },
+        )
+        row.status = (
+            InvestigationStatus.VERIFYING
+            if engine.snapshot().repair is not None
+            else InvestigationStatus.INVESTIGATING
+        ).value
+
     def _apply_plan(
-        self, session: AsyncSession, row: InvestigationRow, engine: Engine, plan: PlanDecision
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        plan: PlanDecision,
+        availability: QuestioningAvailability | None,
     ) -> None:
         """Record the plan; ask the next question or conclude."""
         self._event(session, row.id, "BeliefUpdated", engine.snapshot().model_dump(mode="json"))
-        self._event(session, row.id, "PlanComputed", plan.model_dump(mode="json"))
+        payload = plan.model_dump(mode="json")
+        if row.site_id is not None:
+            names = {
+                person.spec.id: person.spec.display_name for person in engine.participants.values()
+            }
+            payload = tokenized_names(payload, names)
+        self._event(session, row.id, "PlanComputed", payload)
+        stored_reason = str(payload["reason"])
         if plan.kind == PlanKind.ASK:
             assert plan.action is not None
             self._ask(session, row, engine, plan.action)
@@ -504,15 +890,15 @@ class InvestigationService:
                 "kind": plan.kind.value,
                 "rule": plan.rule,
                 "fixed_probability": plan.decision_probability,
-                "reason": plan.reason,
+                "reason": stored_reason,
             }
             row.outcome = {**(row.outcome or {}), "verification": verdict}
             self._event(session, row.id, "VerificationResult", verdict)
             if plan.rule == "verification_failed":
                 # The repair did not resolve it: reopen with the alternatives promoted.
                 engine.reopen()
-                self._event(session, row.id, "Reopened", {"reason": plan.reason})
-                self._apply_plan(session, row, engine, engine.plan())
+                self._event(session, row.id, "Reopened", {"reason": stored_reason})
+                self._apply_plan_or_wait(session, row, engine, engine.plan(), availability)
             return
         decided = plan.kind == PlanKind.DECIDE
         row.status = (
@@ -524,7 +910,7 @@ class InvestigationService:
             "decision_probability": plan.decision_probability,
             "rule": plan.rule,
             "moderate_confidence": plan.moderate_confidence,
-            "reason": plan.reason,
+            "reason": stored_reason,
         }
         self._event(session, row.id, "DecisionReached" if decided else "Abstained", row.outcome)
 
@@ -551,7 +937,12 @@ class InvestigationService:
             return False
         if not alt:
             return False
-        heard = await self.extractor.extract(alt, outcomes, question=q.text)
+        heard = await self.extractor.extract(
+            alt,
+            outcomes,
+            question=q.text,
+            words=engine.model.pack.probe_by_id[q.probe_id].outcome_words,
+        )
         if heard.outcome != extraction.outcome or heard.injection_suspected:
             log.info(
                 "second_decode_disagrees",
@@ -590,7 +981,7 @@ class InvestigationService:
         """Ask the same person to read the presence token at the place they reported from."""
         engine.set_presence(asked.participant_id, asked.location_id, "pending")
         lang = cast(TemplateLanguage, asked.language)
-        text = realize_challenge(self.pack(row.pack_id), token_id, asked.location_id, lang)
+        text = realize_challenge(self._pack_for(row), token_id, asked.location_id, lang)
         qid = _id("q")
         session.add(
             QuestionRow(
@@ -788,56 +1179,110 @@ class InvestigationService:
 
     # -- commands --------------------------------------------------------------------------------
 
-    async def create(self, req: CreateInvestigation) -> InvestigationState:
-        pack = self.pack(req.pack_id)
+    async def create(
+        self, req: CreateInvestigation | CreateSiteInvestigation
+    ) -> InvestigationState:
+        pinned: PinnedModel | None = None
+        if isinstance(req, CreateSiteInvestigation):
+            try:
+                site_id = ids.decode("site", req.site_id)
+            except ValueError as exc:
+                raise not_found("site") from exc
+            pinned = await self.site_models.pin(site_id, practice=req.practice)
+            model = pinned.compiled
+            documented = DocumentedModel(
+                spec=pinned.documented_spec, sha256=pinned.spec_sha256.hex()
+            )
+        else:
+            if self.require_saved_models:
+                raise ApiError(422, "SITE_REQUIRED", "choose a saved site for this investigation")
+            model = self.model(req.pack_id)
+            spec = model.pack.model_dump(mode="json")
+            documented = DocumentedModel(spec=spec, sha256=spec_digest(spec).hex())
+        pack = model.pack
         for p in req.participants:
             if p.location_id not in pack.location_by_id:
                 raise ApiError(
                     422, "UNKNOWN_LOCATION", f"participant {p.id}: unknown location {p.location_id}"
                 )
+            unknown = sorted(set(map(str, p.roles)) - set(pack.role_catalogue))
+            if unknown:
+                raise ApiError(
+                    422, "UNKNOWN_ROLE", f"participant {p.id}: this site has no role {unknown[0]}"
+                )
         scenario = await self.sim.create_scenario(
             CreateScenario(
-                pack_id=req.pack_id,
+                pack_id=pack.pack,
+                documented_model=documented,
                 seed=req.scenario.seed,
                 fault=req.scenario.fault,
                 participants=[
                     SimParticipant(
-                        id=p.id, location_id=p.location_id, roles=[r.value for r in p.roles]
+                        id=p.id, location_id=p.location_id, roles=[str(r) for r in p.roles]
                     )
                     for p in req.participants
                 ],
             )
         )
-        inv_id = _id("inv")
+        inv_id = ids.new("inv")[1]
         # The requested fault (if any) is NOT stored by the core: only the simulator keeps it.
         stored = req.model_dump(mode="json")
         stored["scenario"] = {"seed": req.scenario.seed, "fault": "sealed"}
+        # Everything is simulated today: the shared sandbox, the legacy pack path and
+        # practice runs on a site's own model. Live runs will store False here.
+        vault = self._sealing(pinned.site_id if pinned else None)
+        if vault is not None:
+            for person in stored["participants"]:
+                person["display_name"] = SEALED
+            stored["report"]["text"] = SEALED
+        stored["practice"] = (
+            pinned is None or pinned.sandbox or bool(getattr(req, "practice", False))
+        )
         row = InvestigationRow(
             id=inv_id,
-            pack_id=req.pack_id,
+            pack_id=pack.pack,
+            site_id=pinned.site_id if pinned else None,
+            site_model_id=pinned.model_id if pinned else None,
             status=InvestigationStatus.INVESTIGATING.value,
             scenario_id=scenario.scenario_id,
             commitment=scenario.commitment,
             request=stored,
             version=0,
         )
-        engine = Engine(self.model(req.pack_id), list(req.participants), self._engine_config)
+        if pinned:
+            org = current_org.get()
+            if org is None:
+                raise not_found("organization")
+            row.org_id = org
+            inspect(row).info["pinned_model"] = pinned
+        engine = Engine(model, list(req.participants), self._engine_config)
         async with self._lock(inv_id), self.db.transaction() as session:
             session.add(row)
             await session.flush()
+            if vault is not None and pinned is not None:
+                await self._keep_request(session, vault, row, pinned.site_id, req)
             self._event(
                 session,
                 inv_id,
                 "InvestigationCreated",
                 {
-                    "pack_id": req.pack_id,
+                    "pack_id": pack.pack,
+                    **(
+                        {
+                            "site_id": ids.encode("site", pinned.site_id),
+                            "site_model_id": ids.encode("model", pinned.model_id),
+                            "model_sha256": pinned.spec_sha256.hex(),
+                        }
+                        if pinned
+                        else {}
+                    ),
                     "scenario_id": scenario.scenario_id,
                     "commitment": scenario.commitment,
                     "participants": stored["participants"],
                     "engine_model_version": MODEL_VERSION,
                 },
             )
-            self._event(session, inv_id, "ReportReceived", req.report.model_dump(mode="json"))
+            self._event(session, inv_id, "ReportReceived", stored["report"])
             await self._intake(session, row, engine, req)
             await self._schedule(session, row, engine)
             row.version = 1
@@ -845,13 +1290,185 @@ class InvestigationService:
         log.info("investigation_created", investigation_id=inv_id, status=row.status)
         return await self.get(inv_id)
 
+    async def recheck_availability(self, inv_id: str) -> InvestigationState:
+        """Re-run the logged live eligibility check after a quiet-hours window may have ended."""
+        async with self._lock(inv_id):
+            try:
+                async with self.db.transaction() as session:
+                    row = await self._load_row(session, inv_id, lock=True)
+                    if row.site_id is None or bool(row.request.get("practice", True)):
+                        raise ApiError(
+                            409,
+                            "AVAILABILITY_CHECK_NOT_NEEDED",
+                            "simulated practice participants do not use live availability checks",
+                        )
+                    if row.status not in {status.value for status in ANSWERABLE_STATUSES}:
+                        raise ApiError(
+                            409,
+                            "INVESTIGATION_NOT_ACTIVE",
+                            f"investigation is {row.status}",
+                        )
+                    engine = await self._engine(session, row)
+                    await self._schedule(session, row, engine)
+                    row.version += 1
+                    version = row.version
+            except BaseException:
+                self._cache.pop(inv_id, None)
+                raise
+            self._cache_engine(inv_id, version, engine)
+        return await self.get(inv_id)
+
+    async def override_quiet_hours(
+        self, inv_id: str, body: QuietHoursOverrideRequest, actor_id: str
+    ) -> InvestigationState:
+        """Record an owner/admin emergency override for this investigation only."""
+        async with self._lock(inv_id):
+            try:
+                async with self.db.transaction() as session:
+                    row = await self._load_row(session, inv_id, lock=True)
+                    if row.site_id is None or bool(row.request.get("practice", True)):
+                        raise ApiError(
+                            409,
+                            "QUIET_HOURS_NOT_APPLICABLE",
+                            "quiet hours apply only to a live investigation",
+                        )
+                    if row.status not in {status.value for status in ANSWERABLE_STATUSES}:
+                        raise ApiError(
+                            409,
+                            "INVESTIGATION_NOT_ACTIVE",
+                            f"investigation is {row.status}",
+                        )
+                    existing = await session.scalar(
+                        select(EventRow.seq)
+                        .where(
+                            EventRow.investigation_id == inv_id,
+                            EventRow.type == "QuietHoursOverridden",
+                        )
+                        .limit(1)
+                    )
+                    if existing is not None:
+                        raise ApiError(
+                            409,
+                            "QUIET_HOURS_ALREADY_OVERRIDDEN",
+                            "quiet hours have already been overridden for this investigation",
+                        )
+                    now = _now()
+                    payload = {
+                        "reason": body.reason,
+                        "actor_id": actor_id,
+                        "created_at": now.isoformat(),
+                    }
+                    self._event(session, inv_id, "QuietHoursOverridden", payload)
+                    session.add(
+                        AuditLogRow(
+                            id=ids.uuid7(),
+                            org_id=row.org_id,
+                            actor_kind="user",
+                            actor_id=actor_id,
+                            action="quiet_hours.override",
+                            target_kind="investigation",
+                            target_id=inv_id,
+                            details={
+                                "site_id": ids.encode("site", row.site_id),
+                                "reason": body.reason,
+                            },
+                        )
+                    )
+                    engine = await self._engine(session, row)
+                    await self._schedule(session, row, engine)
+                    row.version += 1
+                    version = row.version
+            except BaseException:
+                self._cache.pop(inv_id, None)
+                raise
+            self._cache_engine(inv_id, version, engine)
+        return await self.get(inv_id)
+
+    async def consent_state_changed(self, site_id: uuid.UUID, person_id: str) -> None:
+        """Cancel an in-flight question or plan again after a person's consent changes."""
+        org_id = current_org.get()
+        if org_id is None:
+            raise not_found("investigation")
+        async with self.db.read() as session:
+            inv_ids = list(
+                (
+                    await session.scalars(
+                        select(InvestigationRow.id).where(
+                            InvestigationRow.org_id == org_id,
+                            InvestigationRow.site_id == site_id,
+                            InvestigationRow.status.in_(
+                                [status.value for status in ANSWERABLE_STATUSES]
+                            ),
+                        )
+                    )
+                ).all()
+            )
+        for inv_id in inv_ids:
+            async with self._lock(inv_id):
+                try:
+                    async with self.db.transaction() as session:
+                        row = await self._load_row(session, inv_id, lock=True)
+                        if row.request.get("practice", True) or row.status not in {
+                            status.value for status in ANSWERABLE_STATUSES
+                        }:
+                            continue
+                        if person_id not in {
+                            person.id for person in self._request(row).participants
+                        }:
+                            continue
+                        engine = await self._engine(session, row)
+                        await self._schedule(session, row, engine)
+                        row.version += 1
+                        version = row.version
+                except BaseException:
+                    self._cache.pop(inv_id, None)
+                    raise
+                self._cache_engine(inv_id, version, engine)
+
+    @staticmethod
+    def _person(site_id: uuid.UUID, person_id: str) -> PersonRef:
+        org = current_org.get()
+        if org is None:
+            raise not_found("organization")
+        return PersonRef(org, site_id, person_id)
+
+    async def _keep_request(
+        self,
+        session: AsyncSession,
+        vault: PersonVault,
+        row: InvestigationRow,
+        site_id: uuid.UUID,
+        req: CreateInvestigation | CreateSiteInvestigation,
+    ) -> None:
+        for person in req.participants:
+            await vault.keep(
+                session,
+                self._person(site_id, person.id),
+                investigation_id=row.id,
+                kind="name",
+                item=person.id,
+                text=person.display_name,
+            )
+        await vault.keep(
+            session,
+            self._person(site_id, req.report.reporter_id),
+            investigation_id=row.id,
+            kind="report",
+            item=req.report.reporter_id,
+            text=req.report.text,
+        )
+
     async def _intake(
-        self, session: AsyncSession, row: InvestigationRow, engine: Engine, req: CreateInvestigation
+        self,
+        session: AsyncSession,
+        row: InvestigationRow,
+        engine: Engine,
+        req: CreateInvestigation | CreateSiteInvestigation,
     ) -> None:
         """Map the report to evidence only when it explicitly answers the intake probe."""
         reporter = next(p for p in req.participants if p.id == req.report.reporter_id)
         parsed = await parse_report(
-            req.report.text, self.pack(req.pack_id), reporter.location_id, self.extractor
+            req.report.text, engine.model.pack, reporter.location_id, self.extractor
         )
         # Hints (floors, rooms, symptoms) are shown, never used as evidence.
         self._event(session, row.id, "IntakeParsed", parsed.hints())
@@ -859,7 +1476,12 @@ class InvestigationService:
         if extraction is None:
             return
         if extraction.outcome == UNKNOWN_OUTCOME:
-            self._event(session, row.id, "IntakeUnmapped", extraction.model_dump(mode="json"))
+            unmapped = (
+                extraction.model_copy(update={"evidence": []})
+                if self._sealing(row.site_id) is not None
+                else extraction
+            )
+            self._event(session, row.id, "IntakeUnmapped", unmapped.model_dump(mode="json"))
             return
         ev = Evidence(
             reporter.id,
@@ -869,7 +1491,7 @@ class InvestigationService:
             extraction.hedge,
             extraction.directness,
         )
-        _ = self._record_observation(
+        _ = await self._record_observation(
             session,
             row.id,
             engine,
@@ -878,6 +1500,7 @@ class InvestigationService:
             question_id=None,
             modality="text",
             transcript=req.report.text,
+            site_id=row.site_id,
         )
 
     async def answer(
@@ -916,7 +1539,7 @@ class InvestigationService:
                             "question was addressed to another participant",
                         )
                     engine = await self._engine(session, row)
-                    outcomes = list(self.model(row.pack_id).outcomes[q.probe_id])
+                    outcomes = list(self._model_for(row).outcomes[q.probe_id])
                     if q.kind == "challenge":
                         if ans.text is None:
                             raise ApiError(
@@ -932,7 +1555,10 @@ class InvestigationService:
                         )
                     elif ans.text is not None:
                         extraction = await self.extractor.extract(
-                            ans.text, outcomes, question=q.text
+                            ans.text,
+                            outcomes,
+                            question=q.text,
+                            words=self._model_for(row).pack.probe_by_id[q.probe_id].outcome_words,
                         )
                     else:
                         if ans.outcome not in (*outcomes, UNKNOWN_OUTCOME):
@@ -968,7 +1594,7 @@ class InvestigationService:
                         version = row.version
                         continue_planning = False
                     else:
-                        obs, observed = self._record_observation(
+                        obs, observed = await self._record_observation(
                             session,
                             inv_id,
                             engine,
@@ -977,6 +1603,7 @@ class InvestigationService:
                             question_id=q.id,
                             modality=ans.modality.value,
                             transcript=ans.text,
+                            site_id=row.site_id,
                         )
                         await self._supersede(session, inv_id, obs)
                         continue_planning = True
@@ -1049,7 +1676,7 @@ class InvestigationService:
             else:
                 await self.sim.close(row.scenario_id)
                 reveal = await self.sim.reveal(row.scenario_id)
-                pack = self.pack(row.pack_id)
+                pack = self._pack_for(row)
                 true_hyps = [f"{f.component_id}.{f.mode}" for f in reveal.fault_spec.faults]
                 true_set = {pack.decision_of.get(h, "UNMODELLED") for h in true_hyps or [NO_FAULT]}
                 if len(true_set) > 1:
@@ -1106,7 +1733,28 @@ class InvestigationService:
                     .limit(1)
                 )
             ).scalar_one()
-            plan = PlanDecision.model_validate(plan_payload)
+            texts = await self._texts(session, row)
+            plan = PlanDecision.model_validate(
+                named(plan_payload, inv_id, texts) if row.site_id else plan_payload
+            )
+            availability_payload = await session.scalar(
+                select(EventRow.payload)
+                .where(
+                    EventRow.investigation_id == inv_id,
+                    EventRow.type == "QuestioningAvailabilityEvaluated",
+                )
+                .order_by(EventRow.seq.desc())
+                .limit(1)
+            )
+            override_payload = await session.scalar(
+                select(EventRow.payload)
+                .where(
+                    EventRow.investigation_id == inv_id,
+                    EventRow.type == "QuietHoursOverridden",
+                )
+                .order_by(EventRow.seq.desc())
+                .limit(1)
+            )
             req = self._request(row)
             questions = (
                 (
@@ -1170,8 +1818,12 @@ class InvestigationService:
                     update={"status": "passed" if payload["passed"] else "failed"}
                 )
             elif type_ == "DisagreementExplained":
-                disagreements.append(DisagreementView.model_validate(payload))
-        model = self.model(row.pack_id)
+                disagreements.append(
+                    DisagreementView.model_validate(
+                        named(payload, inv_id, texts) if texts or row.site_id else payload
+                    )
+                )
+        model = self._model_for(row)
         waiting = [
             self._question_view(model, q)
             for q in questions
@@ -1180,10 +1832,15 @@ class InvestigationService:
         return InvestigationState(
             id=row.id,
             pack_id=row.pack_id,
+            site_id=ids.encode("site", row.site_id) if row.site_id else None,
+            site_model_id=ids.encode("model", row.site_model_id) if row.site_model_id else None,
+            model_sha256=inspect(row).info["pinned_model"].spec_sha256.hex()
+            if row.site_model_id
+            else None,
             status=InvestigationStatus(row.status),
             created_at=row.created_at,
-            report=req.report,
-            participants=req.participants,
+            report=_real_report(req.report, row.id, texts),
+            participants=_real_people(req.participants, row.id, texts),
             sealed_commitment=row.commitment,
             belief=snapshot,
             plan=plan,
@@ -1193,16 +1850,78 @@ class InvestigationService:
             presence_checks_enabled=bool(row.request.get("presence_checks", False)),
             presence_checks=list(checks.values()),
             disagreements=disagreements,
+            practice=bool(row.request.get("practice", True)),
+            repair_options=self._repair_options(model.pack, row, req.participants),
             observations=[
-                Observation.model_validate({c: getattr(o, c) for c in Observation.model_fields})
+                _real_observation(
+                    Observation.model_validate(
+                        {c: getattr(o, c) for c in Observation.model_fields}
+                    ),
+                    row.id,
+                    texts,
+                )
                 for o in observations
             ],
             questions_asked=len(questions),
-            approvals=[self._approval_view(row.pack_id, a) for a in approvals],
+            approvals=[self._approval_view(model.pack, a) for a in approvals],
             ground_truth=None
             if row.ground_truth is None
             else GroundTruthComparison.model_validate(row.ground_truth),
+            questioning_availability=None
+            if availability_payload is None
+            else QuestioningAvailability.model_validate(
+                {
+                    key: availability_payload[key]
+                    for key in (
+                        "evaluated_at",
+                        "eligible_count",
+                        "no_consent_count",
+                        "quiet_hours_count",
+                        "unavailable_count",
+                    )
+                }
+            ),
+            quiet_hours_override=None
+            if override_payload is None
+            else QuietHoursOverrideView.model_validate(override_payload),
         )
+
+    @staticmethod
+    def _repair_options(
+        pack: DomainPack, row: InvestigationRow, people: list[ParticipantSpec]
+    ) -> list[RepairOption]:
+        """Repairs the site's model allows for the current decision, per specific target."""
+        decision = (row.outcome or {}).get("decision_class")
+        if row.status != InvestigationStatus.DECIDED.value or not decision:
+            return []
+        hypotheses = next((d.hypotheses for d in pack.decision_classes if d.id == decision), [])
+        options: list[RepairOption] = []
+        for act in pack.actions:
+            if decision not in act.decision_classes:
+                continue
+            allowed = {str(r) for r in act.roles}
+            for hid in hypotheses:
+                cid, _, mode = hid.rpartition(".")
+                comp = pack.component_by_id.get(cid)
+                if comp is None or comp.kind != act.target_kind or mode != act.fixes:
+                    continue
+                place = pack.location_by_id.get(comp.location) if comp.location else None
+                options.append(
+                    RepairOption(
+                        action=act.id,
+                        action_label=act.label,
+                        target=comp.id,
+                        target_label=comp.label,
+                        place=place.label.en if place else None,
+                        risk=act.risk,
+                        reversible=act.reversible,
+                        participant_ids=[
+                            p.id for p in people if allowed & {str(r) for r in p.roles}
+                        ],
+                        roles=sorted(allowed),
+                    )
+                )
+        return options
 
     @staticmethod
     def _question_view(model: CompiledModel, q: QuestionRow) -> Question:
@@ -1224,9 +1943,46 @@ class InvestigationService:
             else "probe",
         )
 
+    async def forecast(self, inv_id: str) -> InvestigationForecast:
+        """Advisory estimate. Built on a private engine rebuilt from the log, which is thrown
+        away afterwards: nothing is written and the investigation's own engine is not touched."""
+        async with self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+            version = row.version
+            cached = self._forecasts.get(inv_id)
+            if cached is not None and cached[0] == version:
+                return cached[1]
+            engine, _ = await self._rebuild(session, row)
+        result = InvestigationForecast.model_validate(
+            (await asyncio.to_thread(run_forecast, engine, f"{inv_id}:{version}")).as_dict()
+        )
+        self._forecasts.pop(inv_id, None)
+        self._forecasts[inv_id] = (version, result)
+        while len(self._forecasts) > self.ENGINE_CACHE_MAX:
+            self._forecasts.popitem(last=False)
+        return result
+
+    async def map_drift(self, inv_id: str) -> MapDriftCheck:
+        """Advisory: same isolation as the forecast. Cached until the investigation moves on."""
+        async with self.db.read() as session:
+            row = await self._load_row(session, inv_id, lock=False)
+            version = row.version
+            cached = self._drift_checks.get(inv_id)
+            if cached is not None and cached[0] == version:
+                return cached[1]
+            engine, _ = await self._rebuild(session, row)
+        result = MapDriftCheck.model_validate(
+            (await asyncio.to_thread(run_map_drift, engine)).as_dict()
+        )
+        self._drift_checks.pop(inv_id, None)
+        self._drift_checks[inv_id] = (version, result)
+        while len(self._drift_checks) > self.ENGINE_CACHE_MAX:
+            self._drift_checks.popitem(last=False)
+        return result
+
     async def events(self, inv_id: str, after_seq: int, limit: int) -> list[EventEnvelope]:
         async with self.db.read() as session:
-            await self._load_row(session, inv_id, lock=False)
+            row = await self._load_row(session, inv_id, lock=False)
             rows = (
                 (
                     await session.execute(
@@ -1239,12 +1995,24 @@ class InvestigationService:
                 .scalars()
                 .all()
             )
+            name_bearing = {
+                "DisagreementExplained",
+                "PlanComputed",
+                "VerificationResult",
+                "Reopened",
+                "DecisionReached",
+                "Abstained",
+            }
+            needs_names = any(r.type in name_bearing for r in rows)
+            texts = await self._texts(session, row) if needs_names else {}
         return [
             EventEnvelope(
                 seq=r.seq,
                 investigation_id=r.investigation_id,
                 type=r.type,
-                payload=r.payload,
+                payload=named(r.payload, inv_id, texts)
+                if r.type in name_bearing and row.site_id
+                else r.payload,
                 ts=r.ts,
             )
             for r in rows
@@ -1252,8 +2020,8 @@ class InvestigationService:
 
     # -- approvals, capabilities and repairs ------------------------------------------------------
 
-    def _approval_view(self, pack_id: str, a: ApprovalRow) -> Approval:
-        action = next(x for x in self.pack(pack_id).actions if x.id == a.action)
+    def _approval_view(self, pack: DomainPack, a: ApprovalRow) -> Approval:
+        action = next(x for x in pack.actions if x.id == a.action)
         return Approval(
             id=a.id,
             action=a.action,
@@ -1279,7 +2047,7 @@ class InvestigationService:
             row = await self._load_row(session, inv_id, lock=True)
             if row.status != InvestigationStatus.DECIDED.value:
                 raise ApiError(409, "NOT_DECIDED", "approval follows a decision")
-            pack = self.pack(row.pack_id)
+            pack = self._pack_for(row)
             decision = (row.outcome or {}).get("decision_class")
             action = next((a for a in pack.actions if a.id == req.action), None)
             target = pack.component_by_id.get(req.target)
@@ -1294,7 +2062,7 @@ class InvestigationService:
             )
             if person is None:
                 raise not_found("participant")
-            if not {r.value for r in person.roles} & {r.value for r in action.roles}:
+            if not {str(r) for r in person.roles} & {str(r) for r in action.roles}:
                 raise ApiError(403, "ROLE_NOT_PERMITTED", f"{action.id} needs another role")
             probability = (row.outcome or {}).get("decision_probability") or 0.0
             why = (row.outcome or {}).get("reason")
@@ -1414,7 +2182,7 @@ class InvestigationService:
                     issued["replaces"] = approval.capability_jti
                 approval.capability_jti = claims.jti
                 self._event(session, inv_id, "CapabilityIssued", issued)
-            pack = self.pack(row.pack_id)
+            pack = self._pack_for(row)
             action = next(a for a in pack.actions if a.id == approval.action)
             person = next(p for p in self._request(row).participants if p.id == participant_id)
             lang = person.languages.template_language
@@ -1480,7 +2248,10 @@ class InvestigationService:
                             "participant_id": report.participant_id,
                         },
                     )
-                    self._apply_plan(session, row, engine, engine.plan())
+                    availability, _ = await self._evaluate_questioning_availability(
+                        session, row, engine
+                    )
+                    self._apply_plan_or_wait(session, row, engine, engine.plan(), availability)
                     row.version += 1
                     version = row.version
             except BaseException:
@@ -1494,12 +2265,19 @@ class InvestigationService:
             row = await self._load_row(session, inv_id, lock=False)
         if participant_id not in {p.id for p in self._request(row).participants}:
             raise not_found("participant")
-        token = mint(self._signing_key, participant_id=participant_id, scenario_id=row.scenario_id)
+        org_id = ids.encode("org", row.org_id) if row.site_model_id else None
+        token = mint(
+            self._signing_key,
+            participant_id=participant_id,
+            scenario_id=row.scenario_id,
+            organization_id=org_id,
+        )
         return {
             "token": token,
             "scenario_id": row.scenario_id,
             "participant_id": participant_id,
             "sim_url": self.browser_sim_url,
+            **({"org_id": org_id} if org_id else {}),
         }
 
     async def pending_question(
@@ -1527,7 +2305,7 @@ class InvestigationService:
             language=person.languages.template_language,
             probe_id=q.probe_id,
             participant=person,
-            pack=self.pack(row.pack_id),
+            pack=self._pack_for(row),
             scenario_id=row.scenario_id,
             kind=q.kind,
         )

@@ -32,10 +32,33 @@ def test_health_and_readiness(core: TestClient) -> None:
     assert r.json()["checks"] == {
         "database": "ok",
         "simulator": "ok",
-        "packs": "ok",
+        "models": "ok",
         "gnani": "not configured",
     }
     assert "X-Request-ID" in r.headers
+
+
+def test_forecast_is_advisory_and_repeatable(core: TestClient) -> None:
+    state = create(core, fault="CB_C2_7.tripped")
+    inv = state["id"]
+    seal = core.get(f"/v1/investigations/{inv}/replay").json()
+    events = core.get(f"/v1/investigations/{inv}/events").json()
+
+    drift = core.get(f"/v1/investigations/{inv}/map-drift")
+    assert drift.status_code == 200, drift.text
+    assert drift.json()["status"] == "not_enough_evidence"
+    assert not drift.json()["findings"]
+
+    first = core.get(f"/v1/investigations/{inv}/forecast")
+    assert first.status_code == 200, first.text
+    again = core.get(f"/v1/investigations/{inv}/forecast")
+    assert again.json() == first.json()
+
+    # Nothing about the investigation moved: same events, same seal, same belief.
+    assert core.get(f"/v1/investigations/{inv}/events").json() == events
+    assert core.get(f"/v1/investigations/{inv}/replay").json() == seal
+    after = core.get(f"/v1/investigations/{inv}").json()
+    assert after["belief"] == state["belief"]
 
 
 def test_runtime_engine_and_lock_caches_stay_bounded(core: TestClient) -> None:

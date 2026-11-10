@@ -13,6 +13,7 @@ Three kinds of caller:
 
 import hmac
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Annotated
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -23,7 +24,7 @@ from starlette.requests import HTTPConnection
 from pramana_contracts import StaffRole
 from pramana_contracts.tokens import TokenError, private_key_from_b64, verify
 
-from ..db import InvestigationRow
+from ..db import InvestigationRow, current_org
 from ..errors import ApiError, not_found
 from ..settings import Settings
 from .service import AuthService, Principal
@@ -77,8 +78,11 @@ async def _identify(request: HTTPConnection) -> Principal:
             display_name=claims.sub,
             participant_id=claims.sub,
             scenario_id=claims.scn,
+            organization_id=claims.org,
+            token_id=claims.jti,
+            expires_at=datetime.fromtimestamp(claims.exp, UTC),
         )
-    token = request.cookies.get(SESSION_COOKIE)
+    token = request.cookies.get(cfg.session_cookie_name)
     if token:
         auth: AuthService = request.app.state.auth
         principal = await auth.resolve(token)
@@ -125,12 +129,12 @@ async def staff_on_socket(conn: HTTPConnection, *roles: StaffRole) -> Principal:
 
 
 async def _scenario_of(request: Request, inv_id: str) -> str:
+    stmt = select(InvestigationRow.scenario_id).where(InvestigationRow.id == inv_id)
+    org = current_org.get()
+    if org is not None:
+        stmt = stmt.where(InvestigationRow.org_id == org)
     async with request.app.state.db.read() as session:
-        sid = (
-            await session.execute(
-                select(InvestigationRow.scenario_id).where(InvestigationRow.id == inv_id)
-            )
-        ).scalar_one_or_none()
+        sid = await session.scalar(stmt)
     if sid is None:
         raise not_found("investigation")
     return str(sid)

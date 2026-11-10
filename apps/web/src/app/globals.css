@@ -158,6 +158,31 @@ body {
   padding: 21px 22px;
 }
 
+/* Filled counterpart of .btn-line for the one main action on a dark page. */
+.btn-cream {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 15px 22px;
+  border: 0.8px solid var(--cream);
+  border-radius: 999px;
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--cream);
+  color: var(--ink);
+  cursor: pointer;
+  transition: filter var(--dur) ease-out;
+}
+.btn-cream:hover {
+  filter: brightness(0.94);
+}
+
 .display-slab {
   font-family: var(--display-slab);
   font-weight: 300;

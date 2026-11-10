@@ -9,6 +9,10 @@ Built for the Great Indian AI Internship Challenge 2026 (Gnani AI). Product spec
 Engineering plan: `docs/PLAN.md`. Current status and evidence: `docs/engineering/STATUS_2026-11-07.md`.
 Next steps: `docs/engineering/HANDOFF.md`.
 
+The budget Cloud Run starter and its readiness checklist are documented in
+[`docs/engineering/DEPLOY_BUDGET_GCP.md`](docs/engineering/DEPLOY_BUDGET_GCP.md). It is separate from
+the larger `infra/gcp` reference and must use the approved Mumbai database before real data.
+
 ## What is real, what is simulated
 
 | Real | Simulated (and labelled as such) |
@@ -148,6 +152,11 @@ once" for parallel calls). Open each participant's link from **Participant links
 their "What you can see here (simulation)" card. Phones need HTTPS: see `docs/engineering/STAGING.md`.
 
 Checks:
+
+The Python suites reset their databases. `TEST_DATABASE_URL` and `PRAMANA_E2E_DATABASE_URL` must be
+set in `.env` (or the environment), and each database they name must be listed in
+`PRAMANA_DB_NAMES`. Otherwise the suites refuse to run rather than reset a database they do not own
+(see `scripts/db_guard.py`).
 
 ```bash
 uv run pytest                                   # all Python tests (PRAMANA_SKIP_E2E=1 skips the process-level ones)

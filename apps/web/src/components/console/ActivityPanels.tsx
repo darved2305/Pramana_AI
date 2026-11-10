@@ -1,12 +1,12 @@
 "use client";
 
+import { useInvestigationScope } from "@/lib/data/scope";
 import { useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { Avatar } from "@/components/app/Avatar";
 import { langLabel } from "@/components/app/ParticipantForm";
 import { Badge, Button, Card, CardHeader, Dialog, EmptyState, Field, Input, Notice, Select, Tabs, Tag } from "@/components/ui";
 import { IconAlert, IconMic, IconShield } from "@/components/ui/icons";
-import { core } from "@/lib/api/core";
 import { describeError } from "@/lib/api/http";
 import type { Contradiction } from "@/lib/data/derive";
 import { clock, locationLabel, outcomeWord, participantName, probeLabel } from "@/lib/data/derive";
@@ -14,6 +14,7 @@ import type { Approval, InvestigationState, Observation, Question, SitePack } fr
 import { outcomeTone } from "@/components/app/BuildingMap";
 import { hasRole } from "@/lib/api/auth";
 import { useCurrentUser } from "@/lib/data/session";
+import { useOptionalWorkspace } from "@/lib/org/context";
 
 /* ---------- Live conversation ---------- */
 
@@ -127,6 +128,7 @@ export function ConversationPanel({
 
 /** Lets the console record an answer someone gave by phone or in person. */
 function RecordAnswer({ state, question: q, onState }: { state: InvestigationState; question: Question; onState: (s: InvestigationState) => void }) {
+  const scope = useInvestigationScope();
   const [mode, setMode] = useState<"tap" | "text">("tap");
   const [text, setText] = useState("");
   const [outcome, setOutcome] = useState(q.outcomes[0] ?? "");
@@ -139,7 +141,7 @@ function RecordAnswer({ state, question: q, onState }: { state: InvestigationSta
     setBusy(true);
     setErr(null);
     try {
-      const r = await core.answer(state.id, {
+      const r = await scope.answer(state.id, {
         question_id: q.id,
         participant_id: q.action.participant_id,
         ...(mode === "tap" ? { outcome, modality: "tap" as const } : { text: text.trim(), modality: "text" as const }),
@@ -455,14 +457,15 @@ export function ApprovalPanel({
 }) {
   const approvals = state.approvals ?? [];
   const [requesting, setRequesting] = useState(false);
-  const breakerRepair = state.plan.decision_class === "DISPATCH_ELECTRICIAN_DB_C2" || state.plan.decision_class === "DISPATCH_ELECTRICIAN_MAIN";
-  const hasElectrician = state.participants.some((person) => person.roles.includes("electrician"));
-  const canRequest = state.status === "decided" && breakerRepair && hasElectrician && !readOnly;
+  // Repairs come from the site's own model: the actions that fix the decided cause.
+  const options = state.repair_options ?? [];
+  const doable = options.some((o) => o.participant_ids.length > 0);
+  const canRequest = state.status === "decided" && doable && !readOnly;
   let requestHint = "Repairs can be proposed once the investigation reaches a decision.";
   if (state.status === "decided") {
-    if (!breakerRepair) requestHint = "No repair action is available here for this diagnosis. The console supports breaker resets only.";
-    else if (!hasElectrician) requestHint = "No electrician is available in this investigation. A breaker reset requires an electrician participant.";
-    else requestHint = readOnly ? "An operator can propose a breaker reset for an approver to review." : "The investigation has decided. Propose a repair to send it for approval.";
+    if (!options.length) requestHint = "This site's model has no on-site repair for this decision. Follow the decision itself.";
+    else if (!doable) requestHint = `Nobody in this investigation may carry it out (needs ${options[0].roles.join(" or ")}).`;
+    else requestHint = readOnly ? "An operator can propose the repair for an approver to review." : "The investigation has decided. Propose a repair to send it for approval.";
   }
 
   return (
@@ -510,10 +513,16 @@ function ApprovalCard({
   readOnly: boolean;
   onState: (s: InvestigationState) => void;
 }) {
+  const scope = useInvestigationScope();
+  const workspace = useOptionalWorkspace();
   const me = useCurrentUser();
   const askedByMe = Boolean(me && a.requested_by && a.requested_by === me.userId);
   // Unknown user: the core decides. Whoever asked cannot decide (the core refuses it too).
-  const canApprove = me ? hasRole(me, "approver") && !askedByMe : true;
+  const canApprove = workspace
+    ? workspace.canApprove && !askedByMe
+    : me
+      ? hasRole(me, "approver") && !askedByMe
+      : true;
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"approve" | "deny" | null>(null);
@@ -523,7 +532,7 @@ function ApprovalCard({
     setErr(null);
     try {
       // The core records the signed-in approver; nothing about identity is sent from here.
-      onState(await core.decideApproval(state.id, a.id, { decision }));
+      onState(await scope.decideApproval(state.id, a.id, { decision }));
       setConfirm(null);
     } catch (e) {
       setErr(describeError(e));
@@ -625,9 +634,14 @@ function RequestApprovalDialog({
   state: InvestigationState;
   onState: (s: InvestigationState) => void;
 }) {
-  const electricians = state.participants.filter((p) => p.roles.includes("electrician"));
-  const [target, setTarget] = useState("");
-  const [pid, setPid] = useState(electricians[0]?.id ?? "");
+  const scope = useInvestigationScope();
+  // The core offers only repairs the site's own model allows for this decision.
+  const options = state.repair_options ?? [];
+  const [choice, setChoice] = useState(0);
+  const option = options[Math.min(choice, Math.max(options.length - 1, 0))];
+  const people = option ? state.participants.filter((p) => option.participant_ids.includes(p.id)) : [];
+  const [pid, setPid] = useState("");
+  const chosenPid = people.some((p) => p.id === pid) ? pid : (people[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -635,53 +649,72 @@ function RequestApprovalDialog({
       open={open}
       onClose={onClose}
       title="Propose a repair"
-      description="The core supports one repair today: resetting a tripped breaker, carried out by an electrician standing at the panel."
+      description="Only repairs this site's model allows for the current decision are offered. An approver who did not propose it must say yes before anything is done."
     >
-      <form
-        noValidate
-        className="flex flex-col gap-4"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (!/^[A-Z0-9_]+$/.test(target)) return setErr("Enter the breaker ID, for example CB_C2_7.");
-          if (!pid) return setErr("Choose who will carry it out.");
-          setBusy(true);
-          setErr(null);
-          try {
-            onState(await core.requestApproval(state.id, { action: "reset_breaker", target, participant_id: pid }));
-            onClose();
-          } catch (x) {
-            setErr(describeError(x));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <Field label="Breaker" hint="The component ID from the diagnosis.">
-          {(a) => <Input {...a} value={target} onChange={(e) => setTarget(e.target.value.toUpperCase())} placeholder="CB_C2_7" className="font-mono" />}
-        </Field>
-        <Field label="Carried out by">
-          {(a) =>
-            electricians.length ? (
-              <Select {...a} value={pid} onChange={(e) => setPid(e.target.value)}>
-                {electricians.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.display_name}
+      {options.length === 0 ? (
+        <p className="text-[14px] text-muted">
+          This site&apos;s model has no on-site repair for this decision. Follow the decision itself (for example, call the vendor or report the outage).
+        </p>
+      ) : (
+        <form
+          noValidate
+          className="flex flex-col gap-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!option || !chosenPid) return setErr("Choose who will carry it out.");
+            setBusy(true);
+            setErr(null);
+            try {
+              onState(await scope.requestApproval(state.id, { action: option.action, target: option.target, participant_id: chosenPid }));
+              onClose();
+            } catch (x) {
+              setErr(describeError(x));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <Field label="Repair">
+            {(a) => (
+              <Select {...a} value={choice} onChange={(e) => setChoice(Number(e.target.value))}>
+                {options.map((o, i) => (
+                  <option key={`${o.action}-${o.target}`} value={i}>
+                    {o.action_label}: {o.target_label}
+                    {o.place ? ` at ${o.place}` : ""}
                   </option>
                 ))}
               </Select>
-            ) : (
-              <p className="text-[13px] text-warn">No electrician is part of this investigation.</p>
-            )
-          }
-        </Field>
-        {err ? <p className="text-[13px] text-bad" role="alert">{err}</p> : null}
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={!electricians.length}>
-            Send for approval
-          </Button>
-        </div>
-      </form>
+            )}
+          </Field>
+          {option ? (
+            <p className="text-[13px] text-muted">
+              Risk {option.risk}, {option.reversible ? "reversible" : "not reversible"}. Carried out by: {option.roles.join(" or ")}.
+            </p>
+          ) : null}
+          <Field label="Carried out by">
+            {(a) =>
+              people.length ? (
+                <Select {...a} value={chosenPid} onChange={(e) => setPid(e.target.value)}>
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.display_name}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <p className="text-[13px] text-warn">Nobody in this investigation may carry it out (needs {option?.roles.join(" or ")}).</p>
+              )
+            }
+          </Field>
+          {err ? <p className="text-[13px] text-bad" role="alert">{err}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={busy} disabled={!people.length}>
+              Send for approval
+            </Button>
+          </div>
+        </form>
+      )}
     </Dialog>
   );
 }
