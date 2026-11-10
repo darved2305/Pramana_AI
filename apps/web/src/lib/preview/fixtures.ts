@@ -294,20 +294,31 @@ export const previewEvents: EventEnvelope[] = (() => {
     hyps.sort((a, b) => b.probability - a.probability);
     return { ...belief, hypotheses: hyps, open_world_probability: ow, observations_used: used };
   };
+  const recorded = (o: Observation) => ({
+    evidence: {
+      participant_id: o.participant_id,
+      probe_id: o.probe_id,
+      location_id: o.location_id,
+      outcome: o.outcome,
+      hedge: o.hedge,
+      directness: o.directness,
+      modality: o.modality,
+    },
+  });
   push(0, "InvestigationCreated", { pack_id: "campus_block_c", sealed_commitment: previewInvestigation.sealed_commitment });
   push(1, "ReportReceived", previewInvestigation.report as unknown as Record<string, unknown>);
   push(2, "BeliefUpdated", snap([["AP_3A.dead", 0.21], ["CB_C2_7.tripped", 0.17], ["SW_C2.dead", 0.14], ["NO_FAULT", 0.12]], 0.02, 0) as unknown as Record<string, unknown>);
   push(3, "QuestionAsked", { id: "q1", participant_id: "p_riya", probe_id: "wifi_status", location_id: "F3_R304" });
-  push(48, "ObservationRecorded", observations[0] as unknown as Record<string, unknown>);
+  push(48, "ObservationRecorded", recorded(observations[0]));
   push(49, "BeliefUpdated", snap([["CB_C2_7.tripped", 0.24], ["AP_3A.dead", 0.23], ["SW_C2.dead", 0.19], ["NO_FAULT", 0.02]], 0.018, 1) as unknown as Record<string, unknown>);
   push(50, "QuestionAsked", { id: "q2", participant_id: "p_mahesh", probe_id: "internet_works", location_id: "GUARD_DESK" });
-  push(131, "ObservationRecorded", observations[1] as unknown as Record<string, unknown>);
+  push(131, "ObservationRecorded", recorded(observations[1]));
   push(132, "BeliefUpdated", snap([["CB_C2_7.tripped", 0.31], ["SW_C2.dead", 0.25], ["AP_3A.dead", 0.17]], 0.016, 2) as unknown as Record<string, unknown>);
-  push(205, "ObservationRecorded", observations[2] as unknown as Record<string, unknown>);
+  push(205, "ObservationRecorded", recorded(observations[2]));
   push(206, "BeliefUpdated", snap([["CB_C2_7.tripped", 0.36], ["SW_C2.dead", 0.24], ["AP_3A.dead", 0.12], ["CB_C2_5.tripped", 0.05]], 0.015, 3) as unknown as Record<string, unknown>);
-  push(262, "ObservationRecorded", observations[3] as unknown as Record<string, unknown>);
+  push(262, "ObservationRecorded", recorded(observations[3]));
   push(263, "BeliefUpdated", belief as unknown as Record<string, unknown>);
-  push(330, "ObservationRecorded", observations[4] as unknown as Record<string, unknown>);
+  push(330, "ObservationRecorded", recorded(observations[4]));
   push(331, "ObservationConfirmed", { observation_id: "o1", agreed: false });
   push(351, "PlanComputed", plan as unknown as Record<string, unknown>);
   push(352, "QuestionAsked", pending as unknown as Record<string, unknown>);
