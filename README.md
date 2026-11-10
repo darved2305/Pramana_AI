@@ -1,5 +1,9 @@
 # Pramana: an AI that investigates what it cannot see
 
+[![CI](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-/actions/workflows/ci.yml)
+
+**Diagnose an outage by asking the people who can see it.**
+
 When a building's Wi-Fi or power fails without sensors, the useful evidence is with people already
 there: a student with a phone, a guard with keys, or a technician near a panel. Pramana asks those
 people what they can safely observe, combines conflicting answers, then recommends a next step or
@@ -17,17 +21,27 @@ Hinglish voice. These are the versions in the code and dated integration evidenc
 start uses no Gnani key. Dated Gnani rehearsals used synthetic participants, except for one
 documented mixed run with a team member on a phone; they do not establish speech accuracy or latency.
 
-Current documentation status: [Nov 10 doc and evidence closeout](docs/engineering/STATUS_2026-11-10.md).
-The production status report is dated Nov 10 in its header
-([production evidence](docs/engineering/STATUS_PRODUCTION_2026-11-09.md)); its filename retains the
-Nov 9 label. The [Nov 8 operational handoff](docs/engineering/HANDOFF.md) is historical. Start with
-the [product spec](docs/PRODUCT.md), [evaluation and caveats](docs/EVALUATION.md), or
-[artifact index](docs/engineering/ARTIFACT_INDEX.md).
+Start with [Run it](#run-it), the [judge path](#judge-path),
+[architecture](#architecture-at-a-glance), or [results and limits](#results-so-far-simulated-building-logic-mode).
+
+| Looking for | Start here |
+|---|---|
+| A working local demo, without paid API keys | [Quick start](#run-it), then the [judge path](#judge-path) |
+| What the recording demonstrates | [Demo and recording evidence](docs/DEMO.md) |
+| How Gnani is integrated and which runs used it live | [Integration](docs/engineering/GNANI_INTEGRATION.md) and [voice provenance](docs/engineering/VOICE_PROVENANCE.md) |
+| Benchmark definitions, source reports and limitations | [Evaluation](docs/EVALUATION.md) |
+| Product behaviour and engineering decisions | [Product spec](docs/PRODUCT.md) and [ADRs](docs/adr) |
+| Submission status and remaining steps | [Submission closeout](docs/SUBMISSION_CLOSEOUT.md) |
+
+**Demo status, November 10:** the local practice flow is reproducible. The final submission video
+is being edited; its public link will be added when the cut is final. The recorded base footage
+uses a simulated building and the Gnani protocol emulator with synthetic audio. Historical live
+Gnani runs are documented separately; emulator footage does not show live speech recognition.
 
 ## Judge path
 
-1. **Watch:** no selected public recording is documented in this repository. External posting status
-   is unknown. The [demo runbook](docs/DEMO.md) has the shot list and the
+1. **Watch:** the final video is in production. Until its public link is available, use the
+   [demo runbook](docs/DEMO.md), its shot list, and the
    [Nov 10 local rehearsal timeline](eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt).
 2. **Run:** follow the prerequisites in [Run it](#run-it), then start the local app with
    `uv run python scripts/dev.py --demo`.
@@ -241,7 +255,9 @@ Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), Node 20+, and a native 
 (Docker is not needed).
 
 ```bash
-uv sync
+git clone https://github.com/darved2305/Pramana-AI-ggw_gnani-hackathon-.git
+cd Pramana-AI-ggw_gnani-hackathon-
+uv sync --locked
 uv run python scripts/dev_env.py
 cd apps/web && npm ci && cd ../..
 uv run python scripts/dev.py --demo
@@ -264,17 +280,23 @@ accounts, first run the supervisor once so migrations finish, then run
 `uv run python -m pramana_core.auth.bootstrap --email you@example.com --name You --roles operator`.
 The command prompts for a local password.
 
-Start the stack with the project Python directly on Windows. `uv run` can report its own
-Ctrl-Break status `0xC000013A` after the services have stopped:
+On Windows PowerShell, use these setup commands after cloning and entering the repository.
+Start the stack with the project Python directly: `uv run` can report its own Ctrl-Break
+status `0xC000013A` after the services have stopped.
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\dev.py --web --core-port 8010 --sim-port 8110
+uv sync --locked
+.\.venv\Scripts\python.exe scripts\dev_env.py
+Push-Location apps/web
+npm.cmd ci
+Pop-Location
+.\.venv\Scripts\python.exe scripts\dev.py --demo
 ```
 
-On macOS or Linux, use:
+To use different local ports with the same practice demo:
 
 ```bash
-uv run python scripts/dev.py --web
+uv run python scripts/dev.py --demo --core-port 8010 --sim-port 8110 --web-port 3002
 ```
 
 Use `--core-port`, `--sim-port` and `--web-port` if a port is taken. With `make`: `make setup`,
@@ -292,12 +314,27 @@ set in `.env` (or the environment), and each database they name must be listed i
 (see `scripts/db_guard.py`).
 
 ```bash
-uv run pytest                                   # all Python tests (PRAMANA_SKIP_E2E=1 skips the process-level ones)
-uv run ruff check . && uv run mypy packages/contracts/src packages/domain/src packages/engine/src services/sim/src services/core/src && uv run lint-imports
-cd apps/web && npm run typecheck && npm run lint && npx playwright test && npm run test:e2e:real
-uv run python -m pramana_eval --n 300 --seed-start 10000 --out <dir>   # benchmark (logic mode)
-uv run python scripts/voice_bot_run.py --clips <dir> --parallel 3     # voice bots on live Gnani (spends a few rupees)
+uv run pytest
+uv run ruff check .
+uv run mypy packages/contracts/src packages/domain/src packages/engine/src services/sim/src services/core/src eval/src
+uv run lint-imports
 ```
+
+For browser checks, run `npm run typecheck`, `npm run lint`, `npx playwright test`, and
+`npm run test:e2e:real` from `apps/web`. Install the Playwright browser before its first run with
+`npx playwright install chromium`. These tests use a disposable browser profile; local runs use
+bundled Chromium. The regular product build has no UI test fixtures.
+
+To run a new logic-mode benchmark from the repository root:
+
+```bash
+uv run python -m pramana_eval --n 300 --seed-start 40000 --policies E,A,C,D,P3 --out .cache/my-benchmark
+```
+
+This reruns the public held-out seeds on your current code. It is a reproduction, not a new blind
+test; the original frozen revision and protocol are recorded in [the results](#results-so-far-simulated-building-logic-mode). Live voice
+checks are optional, use a server-side Gnani key, and spend provider credits; follow the
+[Gnani integration guide](docs/engineering/GNANI_INTEGRATION.md) separately from the free local demo.
 
 The API is described in `docs/engineering/API_GUIDE.md` and `services/core/openapi.json`.
 
@@ -320,12 +357,30 @@ docs/                product docs, docs/engineering, docs/adr
 
 - One simulated building (94 possible causes); real buildings are messier, and the open-world
   bucket only partly covers that.
-- Few real human testers so far. Three calls for ten minutes passed with Gnani emulated
-  (`eval/reports/load-2026-11-06/`); not yet repeated on live Gnani, and memory over longer runs
-  is not yet shown to be flat.
-- Staging is hosted from a laptop through Cloudflare Worker, VPC and Tunnel. Its public home
-  and readiness routes returned HTTP 502 on Nov 7; real-phone and reboot checks remain pending
-  (`docs/engineering/STAGING.md`). The quick-tunnel fallback carries no server-sent events, so
-  the console polls on that path.
+- Human validation is limited: the [voice provenance record](docs/engineering/VOICE_PROVENANCE.md)
+  documents one older mixed human/bot phone run, not a complete three-human validation set.
+- The [40-minute emulated-voice soak](eval/reports/load-2026-11-07/NOTES.md) completed 160/160
+  verified, correct, replay-identical investigations and passed its memory-growth gate for that
+  workload. It does not establish live Gnani capacity, speech quality, or multi-day stability.
+- The current stage uses Cloud Run in Mumbai, with a Singapore database restricted to synthetic
+  staging data. It is separate from the local demo; public user access and a real-site pilot are
+  not established. Its November 10 readiness check reported Gnani `not configured`. Current
+  deployment details are in [the runbook](docs/engineering/DEPLOY_BUDGET_GCP.md); older laptop and
+  Cloudflare notes in [STAGING.md](docs/engineering/STAGING.md) are historical.
+- Full two-fault resolution was 3/40 in the held-out benchmark. A repair can verify while a second
+  fault remains; see [evaluation limits](docs/EVALUATION.md). Verification is evidence about the
+  modeled repair, not a guarantee that every fault in a building is gone.
 - The extractor is rule lists plus an LLM fallback. The two new synthetic sets were written by AI
   models, not human participants, and are now tuned on. Native-speaker review remains pending.
+
+## Team and documentation
+
+Built by [Darshan](https://github.com/darved2305) and
+[Nikhil](https://github.com/nikhilpravinpise). The
+[contribution record](docs/SUBMISSION.md#individual-contributions) distinguishes the reviewed
+implementation history from confirmations still pending.
+
+For a deeper review, use the [artifact index](docs/engineering/ARTIFACT_INDEX.md),
+[November 10 evidence status](docs/engineering/STATUS_2026-11-10.md), and
+[production report](docs/engineering/STATUS_PRODUCTION_2026-11-09.md).
+The [November 8 handoff](docs/engineering/HANDOFF.md) records earlier operational work.

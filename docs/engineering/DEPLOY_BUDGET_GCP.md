@@ -31,6 +31,17 @@ gcloud, or send HTTP requests.
 
 ## Resource and monthly cost plan
 
+**November 10 judge-window exception:** issue 24 records a temporary warm core to avoid
+first-visit failures. A read-only check around 22:34 IST confirmed revision
+`pramana-core-00014-p5g` has `autoscaling.knative.dev/minScale=1`, receives 100% traffic,
+and retains the service maximum of two. The zero-minimum cost plan below describes normal
+operation, not this temporary setting. Issue 24 estimates approximately INR 35/day while warm;
+actual charges were not measured here. Keep it warm while judges may visit, then restore
+`--min-instances=0` and verify the setting. The existing INR 1,000 alert was also read and
+confirmed with 50%, 80% and 100% actual-spend thresholds. See
+[submission closeout](../SUBMISSION_CLOSEOUT.md) for the remaining sequence. No cloud settings
+were changed during these checks.
+
 All figures are planning estimates in INR. USD conversions use INR 84 per USD and do not replace
 the billing account's INR catalogue values. Applicable tax, egress, account-wide free-tier usage,
 actual image size, logs and backup storage change the result. Google documents Cloud Run's free
