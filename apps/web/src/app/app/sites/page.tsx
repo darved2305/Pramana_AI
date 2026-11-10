@@ -44,7 +44,7 @@ export default function SitesPage() {
       <PageHeader
         title="Sites"
         eyebrow={preview ? <PreviewBadge /> : undefined}
-        subtitle="The environment model an investigation reasons about: where things are, who may go where, and what can be checked in each place."
+        subtitle="The simulated environment model an investigation reasons about: where things are, who may go where, and what can be checked in each place."
         actions={
           <div className="w-[240px]">
             <label htmlFor="pack" className="sr-only">

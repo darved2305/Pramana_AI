@@ -147,13 +147,88 @@ def _pct(x: float) -> str:
 def test_readme_benchmark_numbers_match_the_generated_report() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     summary = json.loads(
-        (ROOT / "eval/reports/benchmark-2026-11-05/summary.json").read_text(encoding="utf-8")
+        (ROOT / "eval/reports/benchmark-2026-11-10-heldout/summary.json").read_text(
+            encoding="utf-8"
+        )
     )
     p = summary["policies"]
-    assert f"`eval/reports/benchmark-2026-11-05/`, {p['E_ours']['n']} scenarios" in readme
-    for key in ("E_ours", "A_checklist", "C_random", "D_greedy_entropy"):
-        assert _pct(p[key]["success_rate"]) in readme, key
-    assert f"abstains {p['E_ours']['abstention_recall'] * 100:.0f}% of the time" in readme
+    normalized = " ".join(readme.split())
+    assert "`eval/reports/benchmark-2026-11-10-heldout/summary.json`" in normalized
+    assert summary["git_sha"] in normalized
+    assert summary["protocol"]["frozen_code_commit"] in normalized
+    mix = summary["scenario_mix"]
+    assert (
+        f"The generated mix was {mix['single']} single, {mix['pair']} pair, "
+        f"{mix['no_fault']} no-fault and {mix['access_limited']} access-limited cases"
+    ) in normalized
+    ours = p["E_ours"]
+    first_useful = round(ours["pair_first_useful_action_rate"] * ours["pair_outcome_denominator"])
+    fully_resolved = round(ours["pair_full_resolution_rate"] * ours["pair_resolution_denominator"])
+    assert (
+        f"For E, {first_useful}/{ours['pair_outcome_denominator']} pair episodes "
+        "had a first useful action, "
+        f"while {fully_resolved}/{ours['pair_resolution_denominator']} reached full pair resolution"
+    ) in normalized
+    for key, policy in p.items():
+        if key in {"E_ours", "A_checklist", "C_random", "D_greedy_entropy", "E_parallel3"}:
+            assert (
+                f"| {key} | {_pct(policy['success_rate'])} | "
+                f"{_pct(policy['honest_success_rate'])} |" in normalized
+            ), key
+            pair_row = (
+                f"| {key} | {policy['pair_outcome_denominator']} | "
+                f"{_pct(policy['pair_first_useful_action_rate'])} | "
+                f"{_pct(policy['pair_full_resolution_rate'])} | "
+                f"{policy['pair_resolution_denominator']} |"
+            )
+            assert pair_row in normalized, key
+    for outcome, comparisons in summary["primary_tests"].items():
+        if outcome == "success_definition":
+            continue
+        for comparison, result in comparisons.items():
+            raw = "n/a" if result["p"] is None else f"{result['p']:.6g}"
+            adjusted = "n/a" if result["p_holm"] is None else f"{result['p_holm']:.6g}"
+            row = f"| {outcome} | {comparison} | {result['n']} | {raw} | {adjusted} |"
+            assert row in normalized
+
+
+def test_submission_benchmark_claims_match_the_heldout_artifact() -> None:
+    submission = " ".join((ROOT / "docs/SUBMISSION.md").read_text(encoding="utf-8").split())
+    summary = json.loads(
+        (ROOT / "eval/reports/benchmark-2026-11-10-heldout/summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "eval/reports/benchmark-2026-11-10-heldout/summary.json" in submission
+    assert summary["git_sha"] in submission
+    assert summary["protocol"]["frozen_code_commit"] in submission
+    ours = summary["policies"]["E_ours"]
+    first_useful = round(ours["pair_first_useful_action_rate"] * ours["pair_outcome_denominator"])
+    fully_resolved = round(ours["pair_full_resolution_rate"] * ours["pair_resolution_denominator"])
+    assert f"{first_useful}/{ours['pair_outcome_denominator']} pair episodes" in submission
+    assert (
+        f"{fully_resolved}/{ours['pair_resolution_denominator']} reached full resolution"
+        in submission
+    )
+    for key in ("E_ours", "A_checklist", "C_random", "D_greedy_entropy", "E_parallel3"):
+        policy = summary["policies"][key]
+        row = f"| {key} | {_pct(policy['success_rate'])} | {_pct(policy['honest_success_rate'])} |"
+        assert row in submission
+        pair_row = (
+            f"| {key} | {policy['pair_outcome_denominator']} | "
+            f"{_pct(policy['pair_first_useful_action_rate'])} | "
+            f"{_pct(policy['pair_full_resolution_rate'])} | "
+            f"{policy['pair_resolution_denominator']} |"
+        )
+        assert pair_row in submission
+    for outcome, comparisons in summary["primary_tests"].items():
+        if outcome == "success_definition":
+            continue
+        for comparison, result in comparisons.items():
+            raw = "n/a" if result["p"] is None else f"{result['p']:.6g}"
+            adjusted = "n/a" if result["p_holm"] is None else f"{result['p_holm']:.6g}"
+            row = f"| {outcome} | {comparison} | {result['n']} | {raw} | {adjusted} |"
+            assert row in submission
 
 
 @pytest.mark.parametrize(

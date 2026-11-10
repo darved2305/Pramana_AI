@@ -220,7 +220,7 @@ export default function OnboardingPage() {
       <ol className="mx-auto flex w-full max-w-[860px] flex-wrap gap-2 px-6" aria-label="Setup steps">
         {FLOW.map((f, i) => (
           <li key={f.id} aria-current={f.id === step ? "step" : undefined}
-            className={clsx("rounded-full px-3 py-1 text-[12px]", i < index ? "bg-cream/15 text-cream" : f.id === step ? "bg-cream text-ink" : "text-cream/45 shadow-[inset_0_0_0_0.8px_rgba(255,255,255,.2)]")}>
+            className={clsx("rounded-full px-3 py-1 text-[12px]", i < index ? "bg-cream/15 text-cream" : f.id === step ? "bg-cream text-ink" : "text-cream/70 shadow-[inset_0_0_0_0.8px_rgba(255,255,255,.2)]")}>
             {i + 1}. {f.label}
           </li>
         ))}

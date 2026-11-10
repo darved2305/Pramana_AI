@@ -26,6 +26,7 @@ import contextlib
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -37,8 +38,18 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 from typing import IO
+from urllib.parse import urlsplit
+
+from dotenv import dotenv_values
+
+from pramana_core.migrations import require_allowlisted_database
 
 ROOT = Path(__file__).resolve().parents[1]
+
+DEMO_ACCOUNTS = (
+    ("demo-operator@local.test", "Demo operator", "operator", "local-demo-operator-2026"),
+    ("demo-approver@local.test", "Demo approver", "approver", "local-demo-approver-2026"),
+)
 
 
 def _assign_kill_on_close_job(proc: subprocess.Popen[bytes]) -> int | None:
@@ -127,6 +138,9 @@ class Options:
     web: bool = False
     skip_db: bool = False
     timeout_s: float = 60.0
+    demo: bool = False
+    oidc_port: int = 8410
+    gnani_port: int = 8099
 
 
 def _port(value: str) -> int:
@@ -138,6 +152,9 @@ def _port(value: str) -> int:
 
 def parse_args(argv: Sequence[str] | None = None) -> Options:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--demo", action="store_true", help="start the local console with mock sign-in")
+    p.add_argument("--oidc-port", type=_port, default=8410)
+    p.add_argument("--gnani-port", type=_port, default=8099)
     p.add_argument("--web", action="store_true", help="also start the Next.js dev server")
     p.add_argument("--core-port", type=_port, default=8000)
     p.add_argument("--sim-port", type=_port, default=8100)
@@ -147,12 +164,25 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     )
     p.add_argument("--timeout", type=float, default=60.0, help="readiness timeout in seconds")
     a = p.parse_args(argv)
+    a.web = a.web or a.demo
     ports = [a.core_port, a.sim_port] + ([a.web_port] if a.web else [])
+    if a.demo:
+        ports.extend([a.oidc_port, a.gnani_port])
     if len(set(ports)) != len(ports):
         p.error(f"ports must differ: {ports}")
     if a.timeout <= 0:
         p.error("--timeout must be positive")
-    return Options(a.core_port, a.sim_port, a.web_port, a.web, a.skip_db, a.timeout)
+    return Options(
+        a.core_port,
+        a.sim_port,
+        a.web_port,
+        a.web,
+        a.skip_db,
+        a.timeout,
+        a.demo,
+        a.oidc_port,
+        a.gnani_port,
+    )
 
 
 def say(msg: str) -> None:
@@ -274,7 +304,23 @@ class Child:
 
 
 def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, str]:
-    env = dict(os.environ if base is None else base)
+    checkout_env = {k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None}
+    inherited = os.environ if base is None else base
+    for name in ("DATABASE_URL", "PRAMANA_DB_NAMES"):
+        selected = checkout_env.get(name, "").strip()
+        override = inherited.get(name, "").strip()
+        if not selected:
+            raise ValueError(f"{name} must be explicitly set in the checkout .env")
+        if override and override != selected:
+            raise ValueError(f"{name} in the process environment conflicts with the checkout .env")
+    env = dict(checkout_env)
+    env.update(inherited)
+    env["DATABASE_URL"] = checkout_env["DATABASE_URL"].strip()
+    env["PRAMANA_DB_NAMES"] = checkout_env["PRAMANA_DB_NAMES"].strip()
+    try:
+        require_allowlisted_database(env["DATABASE_URL"], env["PRAMANA_DB_NAMES"])
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
     env.update(
         CORE_PORT=str(opts.core_port),
         SIM_PORT=str(opts.sim_port),
@@ -283,6 +329,31 @@ def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, 
         PRAMANA_SIM_URL=f"http://127.0.0.1:{opts.sim_port}",
         PYTHONUNBUFFERED="1",
     )
+    if opts.demo:
+        database = urlsplit(env["DATABASE_URL"])
+        if not database.path.strip("/"):
+            raise ValueError("DATABASE_URL must include an explicit database name")
+        if database.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("demo requires a local database")
+        env.update(
+            PRAMANA_MODE="dev",
+            AUTH_REQUIRED="true",
+            SIM_DATABASE_URL="",
+            # Core keeps open investigations in PostgreSQL; retain their simulator scenarios too.
+            SIM_STATE_FILE=str(ROOT / ".cache" / "demo-sim" / "scenarios.json"),
+            SIM_SERVERLESS_AUTH="false",
+            OIDC_ISSUER=f"http://localhost:{opts.oidc_port}",
+            OIDC_DISCOVERY_URL=f"http://localhost:{opts.oidc_port}/.well-known/openid-configuration",
+            GNANI_API_KEY="local-emulator",
+            GNANI_BASE_URL=f"http://127.0.0.1:{opts.gnani_port}",
+            GNANI_PROTOCOL_EMULATOR="true",
+            GOOGLE_OAUTH_CLIENT_ID="pramana-local",
+            GOOGLE_OAUTH_CLIENT_SECRET="local-only",
+            OIDC_REDIRECT_URL=f"http://localhost:{opts.web_port}/api/core/v1/auth/google/callback",
+            LLM_EXTRACTOR_PROVIDER="none",
+            GMAIL_ADDRESS="",
+            GMAIL_APP_PASSWORD="",
+        )
     origins = [f"http://localhost:{opts.web_port}", "http://localhost:3000"]
     origin_json = "[" + ",".join(f'"{o}"' for o in origins) + "]"
     env.setdefault("CORS_ORIGINS", origin_json)
@@ -296,12 +367,35 @@ def children(opts: Options, env: dict[str, str]) -> list[Child]:
         Child("sim", [py, "-m", "pramana_sim"], env),
         Child("core", [py, "-m", "pramana_core"], env),
     ]
+    if opts.demo:
+        out.insert(
+            0,
+            Child(
+                "oidc",
+                [py, str(ROOT / "scripts" / "mock_oidc.py"), "--port", str(opts.oidc_port)],
+                env,
+            ),
+        )
+        out.insert(
+            1,
+            Child(
+                "gnani-emulator",
+                [
+                    py,
+                    str(ROOT / "scripts" / "gnani_emulator.py"),
+                    "--serve",
+                    "--port",
+                    str(opts.gnani_port),
+                ],
+                env,
+            ),
+        )
     if opts.web:
         npm = shutil.which("npm") or "npm"
         out.append(
             Child(
                 "web",
-                [npm, "run", "dev", "--", "-p", str(opts.web_port)],
+                [npm, "run", "dev:server", "--", "-p", str(opts.web_port)],
                 env,
                 cwd=ROOT / "apps" / "web",
             )
@@ -309,20 +403,77 @@ def children(opts: Options, env: dict[str, str]) -> list[Child]:
     return out
 
 
-def prepare(opts: Options) -> None:
+def _port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def busy_ports(opts: Options) -> list[tuple[str, int]]:
+    """Ports this run needs that another process already holds, with the service that needs them.
+
+    A busy port must stop the run: a health check would otherwise accept whatever answers there
+    (for example another checkout's demo) and report it as this run's own service.
+    """
+    needed = [("core", opts.core_port), ("sim", opts.sim_port)]
+    if opts.web:
+        needed.append(("web", opts.web_port))
+    if opts.demo:
+        needed += [("oidc", opts.oidc_port), ("gnani-emulator", opts.gnani_port)]
+    return [(name, port) for name, port in needed if not _port_free(port)]
+
+
+PORT_FLAGS = {
+    "core": "--core-port",
+    "sim": "--sim-port",
+    "web": "--web-port",
+    "oidc": "--oidc-port",
+    "gnani-emulator": "--gnani-port",
+}
+
+
+def prepare(opts: Options) -> dict[str, str]:
     if not (ROOT / ".env").exists():
         say("[dev] no .env found: generating one with fresh keys (scripts/dev_env.py)")
         subprocess.run([sys.executable, str(ROOT / "scripts" / "dev_env.py")], check=True)
+    env = service_env(opts)
     if opts.skip_db:
-        return
+        return env
     say("[dev] starting PostgreSQL")
-    subprocess.run([sys.executable, str(ROOT / "scripts" / "dev_db.py"), "start"], check=True)
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "dev_db.py"), "start"], check=True, env=env
+    )
     say("[dev] applying migrations")
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         cwd=ROOT / "services" / "core",
         check=True,
+        env=env,
     )
+    if opts.demo:
+        for email, name, role, password in DEMO_ACCOUNTS:
+            account_env = {**env, "PRAMANA_NEW_USER_PASSWORD": password}
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pramana_core.auth.bootstrap",
+                    "--email",
+                    email,
+                    "--name",
+                    name,
+                    "--roles",
+                    role,
+                    "--if-missing",
+                ],
+                cwd=ROOT,
+                check=True,
+                env=account_env,
+            )
+    return env
 
 
 def _interrupt(_signum: int, _frame: object) -> None:
@@ -336,11 +487,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), _interrupt)
     procs: list[Child] = []
+    busy = busy_ports(opts)
+    if busy:
+        for name, port in busy:
+            say(
+                f"[dev] port {port} for {name} is already in use. Stop the process that holds it"
+                f" or pass {PORT_FLAGS[name]} with a free port."
+            )
+        return 1
     try:
-        prepare(opts)
-        env = service_env(opts)
+        env = prepare(opts)
         procs = children(opts, env)
         checks = {
+            "oidc": f"http://127.0.0.1:{opts.oidc_port}/.well-known/openid-configuration",
+            "gnani-emulator": f"http://127.0.0.1:{opts.gnani_port}/stats",
             "sim": f"http://127.0.0.1:{opts.sim_port}/health",
             "core": f"http://127.0.0.1:{opts.core_port}/ready",
             "web": f"http://127.0.0.1:{opts.web_port}/",
@@ -361,6 +521,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             + (f"\n      web   http://localhost:{opts.web_port}" if opts.web else "")
             + "\n      Ctrl+C stops everything."
         )
+        if opts.demo:
+            say(
+                "[dev] Use the local mock sign-in for local@gmail.com, "
+                "then start a practice investigation."
+            )
         while all(c.alive() for c in procs):
             time.sleep(0.5)
         dead = [c.name for c in procs if not c.alive()]

@@ -21,7 +21,7 @@ export default function SettingsPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
-          <CardHeader title="Connection" subtitle="The console reaches the core and simulator through this app's own server." />
+          <CardHeader title="Connection" subtitle="Status of the services used by investigations." />
           <dl className="mt-3 divide-y divide-line">
             <KeyValue
               k="Core"
@@ -31,8 +31,6 @@ export default function SettingsPage() {
                 </Badge>
               }
             />
-            <KeyValue k="Core address" v={<span className="font-mono text-[12px]">{process.env.NEXT_PUBLIC_CORE_ADDRESS ?? "not set"} (PRAMANA_CORE_URL)</span>} />
-            <KeyValue k="Simulator address" v={<span className="font-mono text-[12px]">PRAMANA_SIM_URL (default 127.0.0.1:8100)</span>} />
             <KeyValue
               k="Voice"
               v={

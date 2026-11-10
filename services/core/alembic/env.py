@@ -5,22 +5,26 @@ from __future__ import annotations
 import asyncio
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pramana_core.db import Base
+from pramana_core.migrations import migration_database_url
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-DEFAULT_URL = "postgresql+asyncpg://pramana@localhost:5433/pramana"
-
 
 def _url() -> str:
-    return config.attributes.get("url") or os.environ.get("DATABASE_URL", DEFAULT_URL)
+    return migration_database_url(
+        config.attributes.get("url"),
+        os.environ.get("DATABASE_URL"),
+        Path(__file__).resolve().parents[3] / ".env",
+    )
 
 
 def _run(connection: Connection) -> None:

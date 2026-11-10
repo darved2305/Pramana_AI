@@ -25,6 +25,7 @@ from typing import Annotated, Literal, Self, TypeVar, cast
 
 import asyncpg
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import Field, SecretStr, model_validator
@@ -56,6 +57,7 @@ from pramana_contracts.tokens import (
 from pramana_domain import DomainPack, load_pack
 from pramana_domain.spec_storage import load_spec, spec_digest
 
+from .body_limit import BodyLimitMiddleware
 from .scenario import Scenario, ScenarioError, draw_fault
 
 _Result = TypeVar("_Result")
@@ -376,10 +378,32 @@ def create_app(settings: SimSettings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
 
+    app.add_middleware(
+        BodyLimitMiddleware, limit_for_path=lambda _: 4 * 1024 * 1024, cors_origins=cfg.cors_origins
+    )
+
+    def error_body(request: Request, code: str, message: str, **extra: object) -> dict[str, object]:
+        request_id = getattr(request.state, "request_id", None)
+        return {"error": {"code": code, "message": message, "request_id": request_id, **extra}}
+
     @app.exception_handler(ScenarioError)
-    async def _scenario_error(_: Request, exc: ScenarioError) -> JSONResponse:
+    async def _scenario_error(request: Request, exc: ScenarioError) -> JSONResponse:
+        return JSONResponse(error_body(request, exc.code, exc.message), status_code=exc.status)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
+        details = [
+            {"loc": list(item.get("loc", ())), "msg": item.get("msg", "")} for item in exc.errors()
+        ]
         return JSONResponse(
-            {"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status
+            error_body(request, "VALIDATION_ERROR", "request is invalid", details=details),
+            status_code=422,
+        )
+
+    @app.exception_handler(HTTPException)
+    async def _http(request: Request, exc: HTTPException) -> JSONResponse:
+        return JSONResponse(
+            error_body(request, "HTTP_ERROR", str(exc.detail)), status_code=exc.status_code
         )
 
     def operator(x_operator_key: Annotated[str | None, Header()] = None) -> None:

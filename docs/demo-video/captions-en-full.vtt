@@ -1,0 +1,131 @@
+WEBVTT
+
+NOTE Time-compressed playback at 1.17x; paced source actions are faster.
+
+1
+00:00:00.000 --> 00:00:06.000
+Time-compressed playback at 1.17x; paced source actions are faster.
+
+2
+00:00:07.349 --> 00:00:13.349
+A new operator signs in through the local mock.
+
+3
+00:00:27.623 --> 00:00:33.623
+The operator's simulated practice site is ready.
+
+4
+00:00:36.677 --> 00:00:42.677
+A separate account joins with the approver role.
+
+5
+00:00:50.404 --> 00:00:56.404
+Question 1: On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?
+
+6
+00:00:58.573 --> 00:00:59.301
+Facilities technician (simulated) answered from the simulated site card: connected.
+
+7
+00:00:59.301 --> 00:01:05.061
+Question 2: Please go to equipment room 1. When you get there: Look at the internet router. Is the light marked INTERNET green, red, or off?
+
+8
+00:01:05.061 --> 00:01:05.866
+Network technician (simulated) answered from the simulated site card: green.
+
+9
+00:01:05.866 --> 00:01:10.773
+Question 3: On your phone, does a normal website open? Please say yes or no.
+
+10
+00:01:10.773 --> 00:01:11.508
+Site staff (simulated) answered from the simulated site card: yes.
+
+11
+00:01:11.508 --> 00:01:16.349
+Question 4: On your phone, does a normal website open? Please say yes or no.
+
+12
+00:01:16.349 --> 00:01:17.074
+Facilities technician (simulated) answered from the simulated site card: yes.
+
+13
+00:01:17.074 --> 00:01:21.908
+Question 5: Look at the internet connection box. Is its status light green, red, or off?
+
+14
+00:01:21.908 --> 00:01:22.702
+Network technician (simulated) answered from the simulated site card: green.
+
+15
+00:01:22.702 --> 00:01:28.594
+Question 6: Please go to equipment room 2. When you get there: Look at the box with several network cables. Are its small lights green, orange, or off?
+
+16
+00:01:28.594 --> 00:01:29.473
+Site staff (simulated) answered from the simulated site card: off.
+
+17
+00:01:29.473 --> 00:01:34.746
+Question 7: Please go to the second-floor corridor. When you get there: Please look at the corridor nearby. Are its lights on or off?
+
+18
+00:01:34.746 --> 00:01:35.604
+Facilities technician (simulated) answered from the simulated site card: on.
+
+19
+00:01:35.604 --> 00:01:41.062
+Question 8: Please go to the second-floor corridor. When you get there: Look at the small device on the ceiling. Is its light on or off?
+
+20
+00:01:41.062 --> 00:01:41.803
+Network technician (simulated) answered from the simulated site card: off.
+
+21
+00:01:41.803 --> 00:01:46.158
+Question 9: Look at the small screen used to view security cameras. Is it on or off?
+
+22
+00:01:46.158 --> 00:01:46.947
+Site staff (simulated) answered from the simulated site card: off.
+
+23
+00:01:46.947 --> 00:01:52.188
+Question 10: Please go to equipment room 2. When you get there: Look at the small screen used to view security cameras. Is it on or off?
+
+24
+00:01:52.188 --> 00:01:52.973
+Facilities technician (simulated) answered from the simulated site card: off.
+
+25
+00:01:52.973 --> 00:01:58.973
+The investigation reached DISPATCH_ELECTRICIAN_DB_C2.
+
+26
+00:02:00.594 --> 00:02:04.280
+Approval requested for Reset a tripped breaker on CB_C2_7.
+
+27
+00:02:04.280 --> 00:02:10.280
+The separate approver approved the repair.
+
+28
+00:02:12.090 --> 00:02:13.223
+The approved participant reported the simulated repair.
+
+29
+00:02:13.223 --> 00:02:16.181
+Verification question: On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?
+
+30
+00:02:16.181 --> 00:02:22.181
+The investigation status is verified.
+
+31
+00:02:24.896 --> 00:02:28.306
+Reveal: CB_C2_7 tripped; commitment verified: true.
+
+32
+00:02:28.306 --> 00:02:30.000
+Replay identical across 56 events.

@@ -158,7 +158,11 @@ def test_first_question_goes_to_the_reporter_and_discriminates(
     assert plan.action is not None
     assert plan.action.participant_id == "p_riya"
     assert plan.action.probe_id == "wifi_status"
-    assert "bits about the decision" in plan.reason
+    assert "Ask Riya to check Wi-Fi status on the phone at room 304" in plan.reason
+    assert "narrow down the cause" in plan.reason
+    assert "bits/min" not in plan.reason
+    assert "wifi_status" not in plan.reason
+    assert "F3_R304" not in plan.reason
 
 
 def test_cheaper_equivalent_observation_wins(campus_model: CompiledModel) -> None:

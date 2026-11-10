@@ -7,6 +7,7 @@ import importlib.util
 import io
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -136,7 +137,22 @@ def test_http_ok_against_a_real_socket() -> None:
     assert not dev.http_ok(f"http://127.0.0.1:{port}/health", timeout_s=0.5)  # closed port
 
 
-def test_service_env_points_the_core_at_the_chosen_simulator() -> None:
+def use_checkout_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A checkout .env that selects a database, so tests never depend on the developer's own."""
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://local/selected"
+        + chr(10)
+        + "PRAMANA_DB_NAMES=selected"
+        + chr(10),
+        encoding="utf-8",
+    )
+
+
+def test_service_env_points_the_core_at_the_chosen_simulator(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    use_checkout_env(monkeypatch, tmp_path)
     env = dev.service_env(dev.parse_args(["--core-port", "8030", "--sim-port", "8130"]), {})
     assert env["SIM_URL"] == "http://127.0.0.1:8130"
     assert env["CORE_PORT"] == "8030"
@@ -145,7 +161,10 @@ def test_service_env_points_the_core_at_the_chosen_simulator() -> None:
     assert "http://localhost:3002" in env["CORS_ORIGINS"]
 
 
-def test_service_env_keeps_explicit_cors_settings() -> None:
+def test_service_env_keeps_explicit_cors_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    use_checkout_env(monkeypatch, tmp_path)
     env = dev.service_env(dev.parse_args([]), {"CORS_ORIGINS": '["https://x"]'})
     assert env["CORS_ORIGINS"] == '["https://x"]'
 
@@ -159,7 +178,9 @@ def test_main_returns_success_when_interrupted_during_setup(
     monkeypatch.setattr(dev.signal, "signal", lambda *_: None)
     monkeypatch.setattr(dev, "prepare", interrupted)
 
-    assert dev.main([]) == 0
+    # Free ports of its own: the default ports may be held by another checkout's stack.
+    argv = ["--core-port", str(_free_port()), "--sim-port", str(_free_port())]
+    assert dev.main(argv) == 0
 
 
 def test_web_child_only_with_flag() -> None:
@@ -261,3 +282,119 @@ def test_output_the_console_cannot_encode_never_freezes_a_child() -> None:
     written = out.buffer.getvalue()  # type: ignore[attr-defined]
     assert written.count(b"Next.js ready") == 4000
     assert b"? Next.js" in written  # the unencodable character was replaced, not fatal
+
+
+def test_service_env_loads_selected_database_from_checkout(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://local/selected\nPRAMANA_DB_NAMES=selected\n",
+        encoding="utf-8",
+    )
+    assert dev.service_env(dev.Options(), {})["DATABASE_URL"].endswith("/selected")
+
+
+def test_service_env_requires_database(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match="DATABASE_URL"):
+        dev.service_env(dev.Options(), {})
+
+
+def test_service_env_refuses_a_process_database_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://local/selected\nPRAMANA_DB_NAMES=selected\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="DATABASE_URL in the process environment conflicts"):
+        dev.service_env(dev.Options(), {"DATABASE_URL": "postgresql+asyncpg://local/other"})
+
+
+def test_service_env_refuses_a_database_outside_the_checkout_allowlist(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://local/other\nPRAMANA_DB_NAMES=selected\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="not listed in PRAMANA_DB_NAMES"):
+        dev.service_env(dev.Options(), {})
+
+
+def test_demo_uses_local_mock_identity_and_emulator(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://localhost/safe\nPRAMANA_DB_NAMES=safe\n",
+        encoding="utf-8",
+    )
+    opts = dev.parse_args(["--demo"])
+    env = dev.service_env(opts, {})
+    assert opts.web
+    assert env["OIDC_ISSUER"] == "http://localhost:8410"
+    assert env["GNANI_API_KEY"] == "local-emulator"
+    assert env["GNANI_BASE_URL"] == "http://127.0.0.1:8099"
+    assert env["SIM_STATE_FILE"] == str(tmp_path / ".cache" / "demo-sim" / "scenarios.json")
+    assert [child.name for child in dev.children(opts, env)] == [
+        "oidc",
+        "gnani-emulator",
+        "sim",
+        "core",
+        "web",
+    ]
+
+
+def test_demo_rejects_a_remote_database(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://remote.example/db\nPRAMANA_DB_NAMES=db\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="local database"):
+        dev.service_env(dev.parse_args(["--demo"]), {})
+
+
+def test_demo_rejects_a_database_url_without_a_name(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://localhost\nPRAMANA_DB_NAMES=safe\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="database name"):
+        dev.service_env(dev.parse_args(["--demo"]), {})
+
+
+def _listening_port() -> tuple[socket.socket, int]:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    return listener, listener.getsockname()[1]
+
+
+def test_a_port_held_by_another_process_is_reported_before_any_start() -> None:
+    listener, port = _listening_port()
+    with listener:
+        opts = dev.parse_args(["--core-port", str(port), "--sim-port", str(_free_port())])
+        assert dev.busy_ports(opts) == [("core", port)]
+
+
+def test_demo_refuses_to_start_on_a_busy_port_before_touching_the_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Another checkout's demo (or any server) on the default port would answer the health check
+    # and this script would report that foreign stack as its own. Refuse before any database work.
+    def fail_if_prepared(_opts: object) -> dict[str, str]:
+        raise AssertionError("prepare must not run when a port is busy")
+
+    monkeypatch.setattr(dev, "prepare", fail_if_prepared)
+    listener, port = _listening_port()
+    out = io.StringIO()
+    with listener, contextlib.redirect_stdout(out):
+        assert dev.main(["--demo", "--core-port", str(port), "--sim-port", str(_free_port())]) == 1
+    assert f"port {port} for core is already in use" in out.getvalue()
+    assert "--core-port" in out.getvalue()
+
+
+def _free_port() -> int:
+    probe, port = _listening_port()
+    probe.close()
+    return port

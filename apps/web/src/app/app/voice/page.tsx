@@ -61,7 +61,7 @@ export default function VoicePage() {
 }
 
 function ProviderCard({ status }: { status: VoiceStatus }) {
-  const live = status.provider === "gnani";
+  const live = status.provider === "gnani" && !status.protocol_emulator;
   return (
     <Card className="p-5" aria-label="Provider">
       <CardHeader title="Provider" subtitle="Which speech service Pramana actually calls." />
@@ -70,17 +70,24 @@ function ProviderCard({ status }: { status: VoiceStatus }) {
             k="Service"
             v={
               <Badge tone={!status.configured ? "muted" : live ? "ok" : "warn"} dot>
-                {!status.configured ? "Voice off (no key)" : live ? "Live Gnani" : "Not Gnani (emulator?)"}
+                {!status.configured ? "Voice off (no key)" : status.protocol_emulator ? "Gnani protocol emulator - synthetic audio" : live ? "Live Gnani" : "Other provider"}
               </Badge>
             }
           />
           <KeyValue k="Host" v={<span className="font-mono text-[12px]">{status.provider_host ?? "unknown"}</span>} />
-          <KeyValue k="Key" v={<Badge tone={status.configured ? "ok" : "warn"}>{status.configured ? "Configured on the server" : "Not configured"}</Badge>} />
+          <KeyValue
+            k="Key"
+            v={
+              <Badge tone={status.protocol_emulator ? "warn" : status.configured ? "ok" : "warn"}>
+                {status.protocol_emulator ? "Local emulator key" : status.configured ? "Configured on the server" : "Not configured"}
+              </Badge>
+            }
+          />
           <KeyValue k="Models" v={<span className="text-[13px]">{[status.stt_model, ...(status.tts_models ?? [])].filter(Boolean).join(", ")}</span>} />
         </dl>
         {status.configured && !live ? (
-          <Notice tone="warn" className="mt-4" title="Label runs as emulated">
-            Voice on this core is not Gnani. Any rehearsal or recording made now must say so.
+          <Notice tone="warn" className="mt-4" title={status.protocol_emulator ? "Synthetic voice demo" : "Non-Gnani provider"}>
+            {status.protocol_emulator ? "This uses synthetic audio and transcripts. It demonstrates the Gnani protocol only, not Gnani recognition or voice quality." : "This core is not configured to call Gnani."}
           </Notice>
         ) : null}
       </Card>

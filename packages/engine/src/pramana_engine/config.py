@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Literal
 
 from pramana_contracts import Hedge, Skill
@@ -103,5 +104,9 @@ class EngineConfig:
                 raise ValueError(f"reliability {key} must be in (0.5, 1)")
         if self.parallel_min_bits < 0 or self.withdraw_bits < 0:
             raise ValueError("require parallel_min_bits >= 0 and withdraw_bits >= 0")
-        if self.reliability_concentration <= 0 or self.quadrature_nodes < 1:
+        if (
+            not isfinite(self.reliability_concentration)
+            or self.reliability_concentration <= 0
+            or self.quadrature_nodes < 1
+        ):
             raise ValueError("require reliability_concentration > 0 and quadrature_nodes >= 1")

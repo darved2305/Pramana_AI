@@ -25,7 +25,7 @@ export default function ReplayPage() {
       <PageHeader
         title="Replay"
         eyebrow={log.source === "preview" ? <PreviewBadge /> : undefined}
-        subtitle="Step through the investigation's event log and watch the belief change with each piece of evidence."
+        subtitle="Step through the simulated investigation's event log and watch the belief change with each piece of evidence."
       />
       {log.status === "loading" ? (
         <Skeleton className="h-[420px] rounded-[16px]" />
@@ -221,21 +221,23 @@ function Player({ events }: { events: EventEnvelope[] }) {
 
 function EventBody({ ev }: { ev: EventEnvelope }) {
   const p = ev.payload as Record<string, unknown>;
-  if (ev.type === "ObservationRecorded")
+  if (ev.type === "ObservationRecorded") {
+    const evidence = (p.evidence && typeof p.evidence === "object" ? p.evidence : p) as Record<string, unknown>;
     return (
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[14px]">
-        <Tag>{String(p.participant_id)}</Tag>
-        <span className="text-fg-2">{String(p.probe_id).replace(/_/g, " ")}</span>
-        <Badge tone="info">{outcomeWord(String(p.outcome))}</Badge>
+        <Tag>{String(evidence.participant_id)}</Tag>
+        <span className="text-fg-2">{String(evidence.probe_id).replace(/_/g, " ")}</span>
+        <Badge tone="info">{outcomeWord(String(evidence.outcome))}</Badge>
         {p.transcript ? <p className="mt-1 w-full text-[13px] italic text-muted">&ldquo;{String(p.transcript)}&rdquo;</p> : null}
       </div>
     );
+  }
   if (ev.type === "ReportReceived") return <p className="mt-3 text-[15px]">&ldquo;{String(p.text)}&rdquo;</p>;
   if (ev.type === "PlanComputed" && typeof p.reason === "string") return <p className="mt-3 text-[14px] leading-relaxed text-fg-2">{p.reason}</p>;
   if (ev.type === "QuestionAsked" && typeof p.text === "string") return <p className="mt-3 text-[15px]">{p.text}</p>;
   if (ev.type === "BeliefUpdated") return <p className="mt-3 text-[14px] text-fg-2">The belief on the left now reflects this update.</p>;
   return (
-    <pre className="scroll-thin mt-3 max-h-[180px] overflow-auto rounded-[10px] bg-black/30 p-3 font-mono text-[11px] text-fg-2">
+    <pre tabIndex={0} role="region" aria-label="Event details" className="scroll-thin mt-3 max-h-[180px] overflow-auto rounded-[10px] bg-black/30 p-3 font-mono text-[11px] text-fg-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
       {JSON.stringify(p, null, 2)}
     </pre>
   );

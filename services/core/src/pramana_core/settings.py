@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .migrations import require_database_name
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -20,9 +22,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_json: bool = Field(default=True, alias="LOG_JSON")
 
-    database_url: str = Field(
-        default="postgresql+asyncpg://pramana@localhost:5433/pramana", alias="DATABASE_URL"
-    )
+    database_url: str = Field(min_length=1, alias="DATABASE_URL")
     db_pool_size: int = Field(default=5, ge=1, le=50, alias="DB_POOL_SIZE")
     db_max_overflow: int = Field(default=5, ge=0, le=50, alias="DB_MAX_OVERFLOW")
     db_pool_timeout_s: float = Field(default=5.0, gt=0, alias="DB_POOL_TIMEOUT_S")
@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     gnani_api_key: SecretStr | None = Field(default=None, alias="GNANI_API_KEY")
     gnani_base_url: str = Field(default="https://api.vachana.ai", alias="GNANI_BASE_URL")
+    gnani_protocol_emulator: bool = Field(default=False, alias="GNANI_PROTOCOL_EMULATOR")
     gnani_timeout_s: float = Field(default=15.0, gt=0, alias="GNANI_TIMEOUT_S")
     gnani_rest_max_inflight: int = Field(default=1, ge=1, le=16, alias="GNANI_REST_MAX_INFLIGHT")
     """Simultaneous REST calls. Gnani's documented 429 says one active request at a time."""
@@ -107,7 +108,16 @@ class Settings(BaseSettings):
     login_lockout_s: float = Field(default=300.0, gt=0, alias="LOGIN_LOCKOUT_S")
     eval_reports_dir: str = Field(default="eval/reports", alias="EVAL_REPORTS_DIR")
 
+    @field_validator("database_url")
+    @classmethod
+    def _database_not_blank(cls, value: str) -> str:
+        try:
+            return require_database_name(value)
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
+
     @field_validator(
+        "pii_master_key",
         "gnani_api_key",
         "gemini_api_key",
         "groq_api_key",

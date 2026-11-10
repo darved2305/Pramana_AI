@@ -2,7 +2,17 @@
  * Pure functions that derive views from API data. Nothing here invents numbers: every
  * output is a regrouping of values the core returned.
  */
-import type { EventEnvelope, InvestigationState, InvestigationStatus, JoinRequestView, Observation, SitePack } from "@/lib/api/types";
+import type {
+  BeliefSnapshot,
+  EventEnvelope,
+  InvestigationState,
+  InvestigationStatus,
+  JoinRequestView,
+  Observation,
+  PlanDecision,
+  ProbeAction,
+  SitePack,
+} from "@/lib/api/types";
 
 export interface Contradiction {
   key: string;
@@ -47,8 +57,50 @@ export function locationLabel(pack: SitePack | undefined, id: string | null | un
   return pack?.locations.find((l) => l.id === id)?.label ?? id;
 }
 
-export function probeLabel(pack: SitePack | undefined, id: string) {
+export function probeLabel(pack: SitePack | undefined, id: string | null | undefined) {
+  if (!id) return "Unknown check";
   return pack?.probes.find((p) => p.id === id)?.label ?? id.replace(/_/g, " ");
+}
+
+export type BeliefChangeAnswer = Pick<Observation, "participant_id" | "probe_id" | "outcome">;
+
+export interface RecordedBeliefChange {
+  before: BeliefSnapshot;
+  after: BeliefSnapshot;
+  answers: BeliefChangeAnswer[];
+}
+
+/** Resolve recorded event ids against the canonical observations in the investigation state. */
+export function latestBeliefChange(events: EventEnvelope[], observations: Observation[]): RecordedBeliefChange | null {
+  const ordered = [...new Map(events.map((event) => [event.seq, event])).values()].sort((a, b) => a.seq - b.seq);
+  const observationsById = new Map(observations.map((observation) => [observation.id, observation]));
+  let change: RecordedBeliefChange | null = null;
+  let prior: { index: number; belief: BeliefSnapshot } | null = null;
+
+  ordered.forEach((event, index) => {
+    if (event.type !== "BeliefUpdated" || !Array.isArray(event.payload.hypotheses)) return;
+    const belief = event.payload as unknown as BeliefSnapshot;
+    if (prior) {
+      const answers = ordered.slice(prior.index + 1, index).flatMap((item) => {
+        if (item.type !== "ObservationRecorded") return [];
+        const observationId = item.payload.observation_id;
+        const observation = typeof observationId === "string" ? observationsById.get(observationId) : undefined;
+        if (observation) {
+          return [{ participant_id: observation.participant_id, probe_id: observation.probe_id, outcome: observation.outcome }];
+        }
+        // Fall back to the event's own public fields: the core nests them under `evidence`; older
+        // preview logs used the flat Observation shape. Anything incomplete is skipped, not shown.
+        const evidence = item.payload.evidence;
+        const fields = (evidence && typeof evidence === "object" ? evidence : item.payload) as Partial<Observation>;
+        return typeof fields.participant_id === "string" && typeof fields.probe_id === "string" && typeof fields.outcome === "string"
+          ? [{ participant_id: fields.participant_id, probe_id: fields.probe_id, outcome: fields.outcome }]
+          : [];
+      });
+      if (answers.length) change = { before: prior.belief, after: belief, answers };
+    }
+    prior = { index, belief };
+  });
+  return change;
 }
 
 export function participantName(state: InvestigationState | undefined, id: string | null | undefined) {
@@ -96,6 +148,31 @@ export function bits(b: number | null | undefined) {
 export function duration(seconds: number) {
   if (seconds < 90) return `${Math.round(seconds)} s`;
   return `${(seconds / 60).toFixed(1)} min`;
+}
+
+/**
+ * Plain-language reason for the chosen check. The engine's own explanation is written for
+ * engineers (bits, expected loss, raw ids), so this reads the chosen candidate's structured
+ * fields instead: its time cost and the fact that the planner ranked it first.
+ */
+export function checkRationale(plan: PlanDecision, personName: string): string {
+  const chosen = plan.candidates.find((c) => plan.action && sameAction(c.action, plan.action));
+  if (!chosen) return "Pramana expects this check to help the investigation most among the checks available.";
+  const minutes = Math.max(1, Math.round(chosen.cost_s / 60));
+  return `Pramana expects this check to help the investigation most among the checks available, for about ${minutes} min of ${personName}'s time.`;
+}
+
+/** Why the planner stopped without a decision: the check that would help, if one is blocked. */
+export function abstainRationale(plan: PlanDecision, pack: SitePack | undefined): string {
+  const base = "Pramana did not reach a confident answer, so it is not recommending an action yet.";
+  const blocked = plan.infeasible[0];
+  if (!blocked) return base;
+  const reasons = blocked.reasons.length ? ` (${blocked.reasons.join("; ")})` : "";
+  return `${base} A check that would help is blocked: ${probeLabel(pack, blocked.probe_id)} at ${locationLabel(pack, blocked.location_id)}${reasons}.`;
+}
+
+function sameAction(a: ProbeAction, b: ProbeAction) {
+  return a.participant_id === b.participant_id && a.probe_id === b.probe_id && a.location_id === b.location_id;
 }
 
 export function clock(iso: string) {

@@ -256,7 +256,7 @@ export function EvidenceLedger({ state, pack }: { state: InvestigationState; pac
       {rows.length === 0 ? (
         <EmptyState className="py-10" title={state.observations.length ? "Nothing matches" : "No evidence yet"} body={state.observations.length ? "Try another filter." : "Observations appear here as people answer."} />
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <div tabIndex={0} role="region" aria-label="Observations table" className="mt-3 overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
           <table className="w-full min-w-[760px] text-left text-[13px]">
             <caption className="sr-only">Observations, newest first</caption>
             <thead className="text-[11px] uppercase tracking-[0.06em] text-muted">
@@ -284,7 +284,7 @@ export function EvidenceLedger({ state, pack }: { state: InvestigationState; pac
 function LedgerRow({ o, state, pack }: { o: Observation; state: InvestigationState; pack?: SitePack }) {
   const tone = outcomeTone(o.outcome);
   return (
-    <tr className={clsx("align-top", o.state !== "committed" && "opacity-55")}>
+    <tr className={clsx("align-top", o.state !== "committed" && "bg-white/[.02]")}>
       <td className="py-3 pr-3 font-mono text-[12px] text-muted">{clock(o.committed_at)}</td>
       <td className="py-3 pr-3">
         <span className="block text-fg">{participantName(state, o.participant_id)}</span>
@@ -569,6 +569,17 @@ function ApprovalCard({
         </div>
       </dl>
       <p className="mt-2 text-[13px] text-fg-2">{a.rationale}</p>
+      <p className="mt-1 text-[12px] text-fg-2">
+        Requested by {a.requested_by ? (me && a.requested_by === me.userId ? `${me.displayName} (you)` : a.requested_by) : "an unrecorded account"}.{" "}
+        {a.requested_by
+          ? "The requester cannot approve their own request."
+          : "Pramana did not record who asked, so it cannot confirm that the approver is someone else."}
+      </p>
+      {a.status === "pending" ? (
+        <p className="mt-1 text-[12px] text-fg-2">
+          If approved, the participant can collect a single-use permission for this repair. It expires five minutes after collection.
+        </p>
+      ) : null}
       {a.approver_id ? (
         <p className="mt-1 text-[12px] text-muted">
           {a.status === "denied" ? "Denied" : "Approved"} by {me && a.approver_id === me.userId ? `${me.displayName} (you)` : a.approver_id}
@@ -607,7 +618,7 @@ function ApprovalCard({
         title={confirm === "approve" ? "Approve this repair?" : "Deny this repair?"}
         description={
           confirm === "approve"
-            ? `${participantName(state, a.participant_id)} will receive a capability to ${a.action_label.toLowerCase()} on ${a.target}. It expires five minutes after it is collected.`
+            ? `${participantName(state, a.participant_id)} can collect a single-use permission to ${a.action_label.toLowerCase()} on ${a.target}. It expires five minutes after collection.`
             : "The repair will not go ahead. The investigation keeps its diagnosis."
         }
         footer={

@@ -26,6 +26,7 @@ import asyncio
 import contextlib
 import io
 import json
+import math
 import os
 import secrets
 import socket
@@ -33,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -51,8 +53,6 @@ from pramana_contracts.tokens import (  # noqa: E402
     public_key_b64,
 )
 from pramana_core.language.extraction import RuleExtractor  # noqa: E402
-
-DATABASE = "pramana_load_pf"
 
 # One answer per observable value, in the bots' clip languages; checked against the extractor.
 ANSWERS: dict[str, dict[str, str]] = {
@@ -113,9 +113,9 @@ def make_clips(directory: Path) -> None:
             (directory / f"{lang}__{value}.wav").write_bytes(gnani_emulator.encode_clip(text))
 
 
-def reset_database() -> str:
+def reset_database(database: str) -> str:
     # The load test downgrades this database to base: it must be listed in PRAMANA_DB_NAMES.
-    db_guard.require_listed_database(DATABASE)
+    db_guard.require_listed_database(database)
     dev_db.run(
         dev_db.pg_bin("createdb"),
         "-h",
@@ -124,10 +124,10 @@ def reset_database() -> str:
         str(dev_db.PORT),
         "-U",
         dev_db.USER,
-        DATABASE,
+        database,
         check=False,
     )
-    url = f"postgresql+asyncpg://{dev_db.USER}@localhost:{dev_db.PORT}/{DATABASE}"
+    url = f"postgresql+asyncpg://{dev_db.USER}@localhost:{dev_db.PORT}/{database}"
     from alembic import command
     from alembic.config import Config
 
@@ -299,7 +299,7 @@ async def drive(
 
     sampler = asyncio.create_task(sample(sim_pid))
     n = 0
-    while time.time() < deadline:
+    while n < args.investigations if args.investigations is not None else time.time() < deadline:
         n += 1
         r = await one_run(core, sim, clips, n)
         runs.append(r)
@@ -333,8 +333,12 @@ def report(
     half = len(core_mem) // 2
     core_slope = memory_slope_mb_per_min(result["core_memory_mb"])
     sim_slope = memory_slope_mb_per_min(result["sim_memory_mb"])
-    memory_gate = memory_growth_gate(
-        result["core_memory_mb"], result["sim_memory_mb"], limit_mb_per_min=0.5
+    memory_gate = (
+        None
+        if args.investigations is not None
+        else memory_growth_gate(
+            result["core_memory_mb"], result["sim_memory_mb"], limit_mb_per_min=0.5
+        )
     )
     max_streams = max((g.get("open_streams", 0) for g in result["governor"]), default=None)
     cap = next((g["limits"]["max_streams"] for g in result["governor"] if "limits" in g), None)
@@ -344,7 +348,8 @@ def report(
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT
         ).stdout.strip(),
         "gnani": "emulated (scripts/gnani_emulator.py); no Gnani service was called",
-        "minutes": args.minutes,
+        "minutes": args.minutes if args.investigations is None else None,
+        "investigations_requested": args.investigations,
         "runs": len(runs),
         "runs_ok": ok_runs,
         "runs_correct": sum(r["correct"] for r in runs),
@@ -386,19 +391,25 @@ def report(
         and not summary["call_errors"]
         and emulator["streams_now"] == 0
         and (cap is None or emulator["streams_max"] <= cap)
-        and memory_gate
+        and (memory_gate is None or memory_gate)
     )
     summary["passed"] = passed
     out.mkdir(parents=True, exist_ok=True)
     (out / "summary.json").write_text(
         json.dumps(summary, indent=1, ensure_ascii=False), encoding="utf-8"
     )
+    duration = (
+        f"Exactly {args.investigations} full investigation"
+        f"{'s' if args.investigations != 1 else ''}, three"
+        if args.investigations is not None
+        else f"{args.minutes} minutes of back-to-back investigations, three"
+    )
     lines = [
         "# Load test report (generated; do not edit)",
         "",
         f"Commit `{summary['git_sha']}`. Gnani was **emulated**; the simulator, core,",
         "PostgreSQL, call sockets, recognizer sessions, extractor, engine, approvals and",
-        f"verification were real. {args.minutes} minutes of back-to-back investigations, three",
+        f"verification were real. {duration}",
         "participants each, up to three questions in flight, question audio streamed to every",
         "call.",
         "",
@@ -425,7 +436,14 @@ def report(
         f"{summary['core_memory_mb_mean_second_half']} |",
         f"| Core RSS slope after warm-up (MB/min) | {core_slope} |",
         f"| Simulator RSS slope after warm-up (MB/min) | {sim_slope} |",
-        f"| Memory growth gate (<= 0.5 MB/min each) | {'passed' if memory_gate else 'FAILED'} |",
+        (
+            "| Memory growth gate (<= 0.5 MB/min each) | not sampled for fixed-count run |"
+            if memory_gate is None
+            else (
+                f"| Memory growth gate (<= 0.5 MB/min each) | "
+                f"{'passed' if memory_gate else 'FAILED'} |"
+            )
+        ),
         "",
         f"**Result: {'passed' if passed else 'FAILED'}.**",
     ]
@@ -434,20 +452,229 @@ def report(
     return passed
 
 
+def _event_time(event: dict[str, Any]) -> float | None:
+    value = event.get("timestamp")
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def latency_samples(log_path: Path) -> dict[str, list[float]]:
+    """Build privacy-safe per-hop durations from structured voice_hop log events."""
+    traces: dict[str, dict[str, dict[str, Any]]] = {}
+    for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("event") != "voice_hop" or not isinstance(event.get("trace_id"), str):
+            continue
+        hop = event.get("hop")
+        if isinstance(hop, str):
+            traces.setdefault(event["trace_id"], {})[hop] = event
+
+    names = (
+        "capture_duration",
+        "capture_to_proxy_commit",
+        "upstream_connect",
+        "commit_to_transcript",
+        "extraction",
+        "answer_to_next_question_tts",
+        "tts_to_playback",
+        "turn_total",
+    )
+    samples = {name: [] for name in names}
+    for events in traces.values():
+        capture = events.get("capture_end")
+        commit = events.get("proxy_commit_received")
+        if capture and isinstance(capture.get("capture_duration_ms"), (int, float)):
+            samples["capture_duration"].append(float(capture["capture_duration_ms"]))
+        capture_at = _event_time(capture or {})
+        commit_at = _event_time(commit or {})
+        if capture_at is not None and commit_at is not None:
+            samples["capture_to_proxy_commit"].append(max(0.0, (commit_at - capture_at) * 1000))
+        connected = events.get("upstream_connected")
+        if connected and isinstance(connected.get("duration_ms"), (int, float)):
+            samples["upstream_connect"].append(float(connected["duration_ms"]))
+        transcript = events.get("transcript_received")
+        if transcript and isinstance(transcript.get("since_commit_ms"), (int, float)):
+            samples["commit_to_transcript"].append(float(transcript["since_commit_ms"]))
+        extraction = events.get("extraction_complete")
+        if extraction:
+            if isinstance(extraction.get("duration_ms"), (int, float)):
+                samples["extraction"].append(float(extraction["duration_ms"]))
+            if isinstance(extraction.get("total_turn_ms"), (int, float)):
+                samples["turn_total"].append(float(extraction["total_turn_ms"]))
+        next_tts = events.get("next_question_tts_first_byte")
+        extraction_at = _event_time(extraction or {})
+        next_tts_at = _event_time(next_tts or {})
+        if extraction_at is not None and next_tts_at is not None:
+            samples["answer_to_next_question_tts"].append(
+                max(0.0, (next_tts_at - extraction_at) * 1000)
+            )
+        tts = events.get("tts_first_byte")
+        playback = events.get("playback_started")
+        tts_at = _event_time(tts or {})
+        playback_at = _event_time(playback or {})
+        if tts_at is not None and playback_at is not None:
+            samples["tts_to_playback"].append(max(0.0, (playback_at - tts_at) * 1000))
+    return samples
+
+
+def _percentile(values: list[float], percentile: int) -> float:
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(percentile / 100 * len(ordered)) - 1)]
+
+
+def write_latency_report(
+    path: Path, log_path: Path, emulator: dict[str, Any], args: argparse.Namespace
+) -> None:
+    samples = latency_samples(log_path)
+    total_turn_ms = sum(samples["turn_total"])
+    synthetic_capture_ms = sum(samples["capture_duration"])
+    non_capture_turn_ms = max(0.0, total_turn_ms - synthetic_capture_ms)
+    provider_placeholder_ms = (
+        int(emulator["transcripts"]) * gnani_emulator.STT_PLACEHOLDER_DELAY_S * 1000
+        + int(emulator["tts_sse"])
+        * gnani_emulator.TTS_CHUNKS_PER_REQUEST
+        * gnani_emulator.TTS_CHUNK_PLACEHOLDER_DELAY_S
+        * 1000
+    )
+    capture_share_total = synthetic_capture_ms / total_turn_ms if total_turn_ms else None
+    provider_share_total = provider_placeholder_ms / total_turn_ms if total_turn_ms else None
+    provider_share_non_capture = (
+        min(1.0, provider_placeholder_ms / non_capture_turn_ms) if non_capture_turn_ms else None
+    )
+    local_share_non_capture = (
+        1.0 - provider_share_non_capture if provider_share_non_capture is not None else None
+    )
+    labels = {
+        "capture_duration": "Client capture duration (synthetic fixture clips)",
+        "capture_to_proxy_commit": "Capture-end frame to proxy commit",
+        "upstream_connect": "Proxy upstream WebSocket connect",
+        "commit_to_transcript": "Commit to transcript at proxy",
+        "extraction": "Extraction and engine update",
+        "answer_to_next_question_tts": "Answer extraction to next question TTS first byte",
+        "tts_to_playback": "TTS first byte to browser playback start",
+        "turn_total": "Total server turn time",
+    }
+    lines = [
+        "# Voice latency waterfall: emulator, not Gnani performance",
+        "",
+        f"Generated by scripts/load_test.py with exactly {args.investigations} full "
+        f"investigation{'s' if args.investigations != 1 else ''} on "
+        f"{time.strftime('%Y-%m-%d', time.gmtime())}.",
+        "",
+        "**This is emulator, not Gnani performance.** The harness used synthetic answer clips and "
+        "silent synthetic question audio. It verifies the integration path and local code timing; "
+        "it measures no provider quality or latency.",
+        "",
+        f"The run completed {args.investigations} full investigation"
+        f"{'s' if args.investigations != 1 else ''}. The bot capture-end "
+        "duration comes from its synthetic PCM fixture, not a physical microphone. Browser "
+        "clients send the same capture-end control frame.",
+        "",
+        "| Hop | Samples | p50 ms | p95 ms |",
+        "|---|---:|---:|---:|",
+    ]
+    for key, label in labels.items():
+        values = samples[key]
+        if values:
+            lines.append(
+                f"| {label} | {len(values)} | {_percentile(values, 50):.1f} | "
+                f"{_percentile(values, 95):.1f} |"
+            )
+        else:
+            lines.append(f"| {label} | 0 | n/a | n/a |")
+    lines.extend(
+        [
+            "",
+            "## Time ownership estimate",
+            "",
+            f"- Fixed provider placeholder delays: {provider_placeholder_ms:.0f} ms summed across "
+            f"{emulator['transcripts']} realtime STT transcripts and {emulator['tts_sse']} TTS "
+            "streams. The emulator injects 50 ms per STT transcript and 50 ms before each of "
+            "three TTS chunks.",
+            f"- Summed measured server turn time: {total_turn_ms:.0f} ms.",
+            f"- Synthetic answer audio transmission: {synthetic_capture_ms:.0f} ms, "
+            + (
+                f"{capture_share_total * 100:.1f}% of measured turn time. "
+                if capture_share_total is not None
+                else "n/a of measured turn time because no turn samples were recorded. "
+            )
+            + (
+                "This is the test bot sending fixture audio at real-time cadence, "
+                "not Pramana code or Gnani."
+            ),
+            "- Provider placeholders: "
+            + (
+                f"{provider_share_total * 100:.1f}% of total measured turn time, and "
+                if provider_share_total is not None
+                else "n/a of total measured turn time because no turn samples were recorded, and "
+            )
+            + (
+                f"{provider_share_non_capture * 100:.1f}% after excluding synthetic answer audio."
+                if provider_share_non_capture is not None
+                else "n/a after excluding synthetic answer audio because no time remains."
+            ),
+            "- Remaining non-capture time: "
+            + (
+                f"{local_share_non_capture * 100:.1f}% after excluding provider placeholders. "
+                "It includes Pramana code, local transport and host scheduling, so it is not a "
+                "pure application-code measurement."
+                if local_share_non_capture is not None
+                else "n/a because the sample contains no non-capture turn time."
+            ),
+            "",
+            "These shares compare summed per-turn durations, not wall-clock investigation time. "
+            "The synthetic audio duration is recorded from capture_end and removed before the "
+            "provider-versus-local split. Fixed emulator sleeps define the provider placeholder "
+            "portion; HTTP/WebSocket scheduling and local host timing remain in local time. REST "
+            "second-decode responses have no artificial delay. A live Gnani rehearsal and "
+            "consented human speech are still needed to measure end-to-end voice quality or "
+            "latency.",
+            "",
+            "Re-run scripts/load_test.py with --investigations N and --latency-report to refresh.",
+        ]
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
     ap.add_argument("--minutes", type=float, default=10.0)
+    ap.add_argument("--investigations", type=int, help="run exactly N full investigations")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--database", default=os.environ.get("E2E_DATABASE"))
+    ap.add_argument("--latency-report", type=Path)
     ap.add_argument("--sample-s", type=float, default=5.0)
+    ap.add_argument(
+        "--fault",
+        choices=("none", "drop", "429", "5xx", "slow", "partial", "malformed", "noise"),
+        default="none",
+    )
+    ap.add_argument("--noise-seed", type=int, default=7)
     args = ap.parse_args()
 
-    url = reset_database()
+    if args.investigations is not None and args.investigations < 1:
+        ap.error("--investigations must be at least 1")
+    if args.latency_report is not None and args.investigations is None:
+        ap.error("--latency-report requires --investigations")
+    if not args.database:
+        ap.error("set E2E_DATABASE from this worktree .env or pass --database")
+    url = reset_database(args.database)
     signing = generate_private_key_b64()
     operator_key, automation_key = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
     emu_port, sim_port, core_port = free_port(), free_port(), free_port()
-    stats, emulator = gnani_emulator.serve_in_thread(emu_port)
+    stats, emulator = gnani_emulator.serve_in_thread(
+        emu_port, fault=args.fault, noise_seed=args.noise_seed
+    )
     env = {
         **os.environ,
         "PRAMANA_MODE": "dev",
@@ -459,11 +686,13 @@ def main() -> int:
         "SIM_ORACLE_KEY": "",
         "GNANI_API_KEY": "emulated-not-a-key",
         "GNANI_BASE_URL": f"http://127.0.0.1:{emu_port}",
+        "GNANI_PROTOCOL_EMULATOR": "true",
         "VOICE_DAILY_BUDGET_INR": "100000",  # emulated: nothing is spent
         "CORE_AUTOMATION_KEY": automation_key,
         "LLM_EXTRACTOR_PROVIDER": "none",
         "TTS_CACHE_DIR": "",
-        "LOG_LEVEL": "WARNING",
+        "LOG_LEVEL": "INFO" if args.latency_report else "WARNING",
+        "LOG_JSON": "true",
         "PYTHONIOENCODING": "utf-8",
     }
     os.environ["CORE_AUTOMATION_KEY"] = automation_key
@@ -529,13 +758,19 @@ def main() -> int:
                     sim_pid,
                 )
             )
+        for process in procs:
+            stop(process)
+        procs.clear()
+        files.close()
+        if args.latency_report is not None:
+            write_latency_report(args.latency_report, logs / "core.log", stats.as_dict(), args)
         ok = report(args.out, result, stats.as_dict(), args)
         return 0 if ok else 1
     finally:
         for p in procs:
             stop(p)
         files.close()
-        emulator.should_exit = True
+        gnani_emulator.stop_in_thread(emulator)
         logs_tmp.cleanup()
 
 

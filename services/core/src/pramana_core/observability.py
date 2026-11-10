@@ -6,20 +6,33 @@ audio, transcripts and secrets are never logged by default.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import json
 import logging
 import re
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable
 
 import structlog
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "X-Request-ID"
 log = structlog.get_logger("pramana")
+
+
+class _CancelledPoolTerminationFilter(logging.Filter):
+    """Hide expected async pool termination tracebacks when a request is cancelled."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (
+            record.name == "sqlalchemy.pool.impl.AsyncAdaptedQueuePool"
+            and record.getMessage().startswith("Exception terminating connection")
+            and record.exc_info is not None
+            and isinstance(record.exc_info[1], asyncio.CancelledError)
+        )
 
 
 def _logged_path(path: str) -> str:
@@ -28,6 +41,10 @@ def _logged_path(path: str) -> str:
 
 
 def configure_logging(level: str = "INFO", json: bool = True) -> None:
+    pool_logger = logging.getLogger("sqlalchemy.pool.impl.AsyncAdaptedQueuePool")
+    if not any(isinstance(item, _CancelledPoolTerminationFilter) for item in pool_logger.filters):
+        pool_logger.addFilter(_CancelledPoolTerminationFilter())
+
     processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
@@ -50,28 +67,150 @@ def _safe_request_id(value: str | None) -> str:
     return uuid.uuid4().hex
 
 
-class RequestContextMiddleware(BaseHTTPMiddleware):
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        rid = _safe_request_id(request.headers.get(REQUEST_ID_HEADER))
+class RequestContextMiddleware:
+    """Add request context without BaseHTTPMiddleware's cancellation task group."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "websocket":
+            await self._websocket(scope, receive, send)
+            return
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", ()))
+        rid = _safe_request_id(
+            headers.get(REQUEST_ID_HEADER.lower().encode("ascii"), b"").decode("latin-1")
+        )
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=rid)
-        request.state.request_id = rid
+        scope.setdefault("state", {})["request_id"] = rid
         start = time.perf_counter()
+        status_code: int | None = None
+        response_started = False
+        response_complete = False
+
+        async def send_with_context(message: Message) -> None:
+            nonlocal status_code, response_started, response_complete
+            if message["type"] == "http.response.start":
+                response_started = True
+                status_code = int(message["status"])
+                request_id_header = REQUEST_ID_HEADER.lower().encode("ascii")
+                message["headers"] = [
+                    (name, value)
+                    for name, value in message.get("headers", [])
+                    if name.lower() != request_id_header
+                ] + [(request_id_header, rid.encode("ascii"))]
+            elif message["type"] == "http.response.body" and not message.get("more_body", False):
+                response_complete = True
+            await send(message)
+
         try:
-            response = await call_next(request)
-        except Exception:
-            log.exception(
-                "request_failed", method=request.method, path=_logged_path(request.url.path)
-            )
+            await self.app(scope, receive, send_with_context)
+        except asyncio.CancelledError:
+            # Client disconnects and server shutdown cancel normal request tasks.
             raise
-        response.headers[REQUEST_ID_HEADER] = rid
-        log.info(
-            "request",
-            method=request.method,
-            path=_logged_path(request.url.path),
-            status=response.status_code,
-            ms=round((time.perf_counter() - start) * 1000, 1),
+        except Exception as exc:
+            # Exception text and tracebacks can contain request data, transcripts, or
+            # dependency-provided values. Keep the useful failure shape without logging them or
+            # letting the ASGI server log the original exception after a response is sent.
+            log.error(
+                "request_failed",
+                error_type=type(exc).__name__,
+                method=scope.get("method", ""),
+                path=_logged_path(scope.get("path", "")),
+                status=status_code or 500,
+            )
+            if not response_started:
+                response = JSONResponse(
+                    {
+                        "error": {
+                            "code": "INTERNAL",
+                            "message": "internal error",
+                            "request_id": rid,
+                        }
+                    },
+                    status_code=500,
+                )
+                with contextlib.suppress(Exception):
+                    await response(scope, receive, send_with_context)
+                    # A disconnected client may make even the sanitized response unsendable.
+            elif not response_complete:
+                with contextlib.suppress(Exception):
+                    await send_with_context(
+                        {"type": "http.response.body", "body": b"", "more_body": False}
+                    )
+                    # The peer may have disconnected during a streaming response.
+        else:
+            if status_code is not None:
+                log.info(
+                    "request",
+                    method=scope.get("method", ""),
+                    path=_logged_path(scope.get("path", "")),
+                    status=status_code,
+                    ms=round((time.perf_counter() - start) * 1000, 1),
+                )
+        finally:
+            structlog.contextvars.clear_contextvars()
+
+    async def _websocket(self, scope: Scope, receive: Receive, send: Send) -> None:
+        headers = dict(scope.get("headers", ()))
+        rid = _safe_request_id(
+            headers.get(REQUEST_ID_HEADER.lower().encode("ascii"), b"").decode("latin-1")
         )
-        return response
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id=rid)
+        scope.setdefault("state", {})["request_id"] = rid
+        accepted = False
+        closed = False
+
+        async def send_with_context(message: Message) -> None:
+            nonlocal accepted, closed
+            if message["type"] == "websocket.accept":
+                accepted = True
+                request_id_header = REQUEST_ID_HEADER.lower().encode("ascii")
+                message["headers"] = [
+                    (name, value)
+                    for name, value in message.get("headers", [])
+                    if name.lower() != request_id_header
+                ] + [(request_id_header, rid.encode("ascii"))]
+            elif message["type"] == "websocket.close":
+                closed = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_context)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error(
+                "websocket_request_failed",
+                error_type=type(exc).__name__,
+                path=_logged_path(scope.get("path", "")),
+            )
+            with contextlib.suppress(Exception):
+                if accepted and not closed:
+                    await send_with_context(
+                        {
+                            "type": "websocket.send",
+                            "text": json.dumps(
+                                {
+                                    "type": "error",
+                                    "code": "INTERNAL",
+                                    "message": "internal error",
+                                    "request_id": rid,
+                                },
+                                separators=(",", ":"),
+                            ),
+                        }
+                    )
+                if not closed:
+                    await send_with_context(
+                        {"type": "websocket.close", "code": 1011, "reason": "internal error"}
+                    )
+                # The peer may have disconnected before the generic close could be sent.
+        finally:
+            structlog.contextvars.clear_contextvars()

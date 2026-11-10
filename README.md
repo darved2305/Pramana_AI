@@ -1,17 +1,62 @@
 # Pramana: an AI that investigates what it cannot see
 
-Pramana diagnoses physical faults (a building's Wi-Fi, power and network) that have no sensors.
-It does this by asking consenting people what they can observe, by voice or text, in English,
-Hindi, Marathi and Hinglish. **Language models handle language; deterministic Bayesian code makes
-the decisions; humans authorise consequential actions.**
+When a building's Wi-Fi or power fails without sensors, the useful evidence is with people already
+there: a student with a phone, a guard with keys, or a technician near a panel. Pramana asks those
+people what they can safely observe, combines conflicting answers, then recommends a next step or
+abstains. **Language models help interpret language; a deterministic Bayesian engine makes the
+diagnosis; a separate human approves consequential repairs.**
 
-Built for the Great Indian AI Internship Challenge 2026 (Gnani AI). Product spec: `docs/PRODUCT.md`.
-Engineering plan: `docs/PLAN.md`. Current status and evidence: `docs/engineering/STATUS_2026-11-07.md`.
-Next steps: `docs/engineering/HANDOFF.md`.
+The diagnosis engine, event log, approvals, and Gnani adapters are executable software. The campus,
+faults, and participant cards are simulated; the Nov 10 committed rehearsal was text mode, with no
+real-site or speech-quality result claimed.
+
+Built for the Great Indian AI Internship Challenge 2026 by Gnani AI. Pramana integrates **Gnani
+Prisma v3.0** for realtime and REST speech recognition and **Timbre v3.0** for streamed speech
+synthesis. Hinglish (`hi-en`) questions route to **Timbre v2.5 Poorvi** because Timbre v3.0 has no
+Hinglish voice. These are the versions in the code and dated integration evidence. The local quick
+start uses no Gnani key. Dated Gnani rehearsals used synthetic participants, except for one
+documented mixed run with a team member on a phone; they do not establish speech accuracy or latency.
+
+Current documentation status: [Nov 10 doc and evidence closeout](docs/engineering/STATUS_2026-11-10.md).
+The production status report is dated Nov 10 in its header
+([production evidence](docs/engineering/STATUS_PRODUCTION_2026-11-09.md)); its filename retains the
+Nov 9 label. The [Nov 8 operational handoff](docs/engineering/HANDOFF.md) is historical. Start with
+the [product spec](docs/PRODUCT.md), [evaluation and caveats](docs/EVALUATION.md), or
+[artifact index](docs/engineering/ARTIFACT_INDEX.md).
+
+## Five-minute judge path
+
+1. **Watch:** no selected public recording is documented in this repository. External posting status
+   is unknown. The [demo runbook](docs/DEMO.md) has the shot list and the
+   [Nov 10 local rehearsal timeline](eval/reports/demo-rehearsal-2026-11-10-s1/timeline.txt).
+2. **Run:** after the prerequisites in [Run it](#run-it), start the local app with one command:
+   `uv run python scripts/dev.py --demo`.
+3. **Sign in locally:** use `demo-operator@local.test` with password `local-demo-operator-2026`.
+   This account is created only in the local demo database. The password is for this demo only.
+4. **Investigate:** create a new investigation with the campus model. Add Riya as a student at
+   `F3_R304`, Mahesh as a security guard at `GUARD_DESK`, and Imran as an electrician at
+   `MAINT_ROOM`; mark Riya as the reporter. Use the report "Floor 3 pe WiFi nahi chal raha, kuch
+   khul nahi raha", seed `19`, and the specified scenario `CB_C2_7` / `tripped`. Confirm that the
+   people agreed to be contacted, then start it.
+5. **Answer:** open **Participant links**, create a link for each person and open it. Read each
+   person's own simulation card and submit that answer. Return to the operator page and wait for
+   **Decided**.
+6. **Approve and verify:** choose **Propose repair** and select **Reset a tripped breaker: Breaker
+   C2-7 (IDF-2 rack) at distribution board DB-C2**. Sign in in a separate session as
+   `demo-approver@local.test` with password `local-demo-approver-2026`, open the investigation and
+   approve it. Return to Imran's participant link, collect permission, go to the panel and report
+   the repair. Answer the verification questions from the participant cards until the investigation
+   is **Verified**.
+7. **Reveal and replay:** on the operator page choose **Reveal ground truth**, confirm the reveal,
+   then open **Replay**. The integrity panel should say **Replay identical** and **Log unchanged
+   since the reveal**.
+8. **Read:** open the [current doc status](docs/engineering/STATUS_2026-11-10.md),
+   [generated evaluation evidence](docs/EVALUATION.md), and
+   [artifact index](docs/engineering/ARTIFACT_INDEX.md).
 
 The budget Cloud Run starter and its readiness checklist are documented in
-[`docs/engineering/DEPLOY_BUDGET_GCP.md`](docs/engineering/DEPLOY_BUDGET_GCP.md). It is separate from
-the larger `infra/gcp` reference and must use the approved Mumbai database before real data.
+[`docs/engineering/DEPLOY_BUDGET_GCP.md`](docs/engineering/DEPLOY_BUDGET_GCP.md). The team-only
+stage described there is separate from the local practice demo.
 
 ## What is real, what is simulated
 
@@ -19,7 +64,37 @@ the larger `infra/gcp` reference and must use the approved Mumbai database befor
 |---|---|
 | The Bayesian engine, the planner, the scheduler and every number they produce | The building (`packs/campus_block_c.yaml`), its faults, and what each person "sees" |
 | The API, PostgreSQL event log, exact replay, sign-in, approvals | Participants in automated tests and the voice bots (they observe only through their own simulator token) |
-| Gnani Prisma v3.0 (speech recognition) and Timbre (speech), live, behind rate, concurrency and budget guards | |
+| Implemented Gnani adapters: Prisma v3.0 realtime and REST STT; Timbre v3.0 TTS and v2.5 Poorvi for Hinglish. Prior live runs are dated in [voice provenance](docs/engineering/VOICE_PROVENANCE.md). The local quick start disables Gnani. | The campus pack, faults, participant cards, and automated voice participants. The Nov 10 committed run is text mode with simulator cards, not live speech. |
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    browser["Browser: operator, approver, participants"] -->|"authenticated requests and answers"| core["Core: deterministic engine, auth, event log"]
+    core <-->|"append events and rebuild replay"| db[("PostgreSQL")]
+    core -->|"signed, participant-scoped request"| cards
+    cards["Participant-scoped simulated observations"] -->|"observation, not hidden truth"| core
+    core -->|"close, then request reveal"| gate["Simulator reveal gate"]
+    gate -->|"verified reveal after a decision or abstention"| core
+    subgraph sealed["Simulator service boundary: sealed truth"]
+        cards
+        repair["Simulated repair endpoint"]
+        truth[("Sealed fault")]
+        truth -->|"simulated card facts"| cards
+        gate --> truth
+    end
+    core <-->|"guarded STT and TTS"| gnani["Gnani Prisma v3.0 and Timbre v3.0/v2.5"]
+    core -->|"language extraction fallback only"| llm["LLM gateway"]
+    core -->|"approval request"| approver["Separate human approver"]
+    approver -->|"approval or denial"| core
+    core -->|"single-use repair capability"| repair
+    repair -->|"simulated intervention"| truth
+```
+
+The core does not contain the sealed fault or a route to read it while the investigation is open.
+The simulator returns only a participant-scoped observation during an investigation and exposes
+the reveal after the investigation reaches a decision or abstention and closes. Approval is a
+separate human role; the LLM gateway can help interpret language but does not decide.
 
 The hidden fault is sealed inside the simulator service. A SHA-256 commitment is published when
 the investigation is created; the core holds no key to read the fault, and the reveal (operators
@@ -73,7 +148,7 @@ only) is available only after a decision or abstention.
 | Console for operators and approvers: live events (with a polling fallback), causes, plan reasoning, evidence ledger, approvals, replay, participant directory, evaluation reports | `apps/web/tests-real/console.spec.ts` |
 | Participant page from a personal link: only their own question, simulated surroundings, tap, text or voice answers, incoming call with consent | `apps/web/tests-real/call.spec.ts`, `live-only.spec.ts` |
 | Parallel calls with withdrawal | `packages/engine/tests/test_parallel.py`, `services/core/tests/test_parallel_calls.py`, `apps/web/tests-real/parallel.spec.ts`; three live-Gnani S1 bot rehearsals all verified, correct and replay-identical (`eval/reports/demo-freeze-2026-11-07/`) |
-| Voice on live Gnani: three open-source voice bots, and one real person on a phone over a free tunnel, each reached a verified, correct repair | `scripts/voice_bot_run.py`, `docs/engineering/STAGING.md` |
+| Voice on live Gnani: three synthetic-bot S1 runs and one earlier mixed run with a team member on an Android phone are documented; take-specific provenance and limits are in `docs/engineering/VOICE_PROVENANCE.md` | `scripts/voice_bot_run.py`, `docs/engineering/GNANI_INTEGRATION.md`, `docs/engineering/VOICE_PROVENANCE.md` |
 | Streamed question audio (Timbre SSE), cached for reuse | `services/core/tests/test_media_ws.py`, `apps/web/tests/streamed-audio.spec.ts` |
 | Sign-in with server sessions, operator and approver roles, CSRF header, join tokens kept out of URLs | `docs/adr/0010-authentication.md`, `services/core/tests/test_auth*.py` |
 | Presence checks (S7): a decisive answer from a restricted place someone walked to is confirmed by reading a label only someone there can see; the core never learns the expected value | ADR 0014, `services/core/tests/test_testimony_api.py`, `test_media_ws.py`; live-Gnani honest/adversary bot readings passed/failed as expected, both investigations abstained (`eval/reports/demo-freeze-2026-11-07/NOTES.md`) |
@@ -92,19 +167,54 @@ counts and exit codes: `eval/reports/verification-2026-11-07/report.md`. CI runs
 
 ## Results so far (simulated building, logic mode)
 
-From generated reports only; nothing below is typed by hand.
+All evaluation numbers below come from committed reports and are checked against their summary files.
 
-- **Benchmark** (`eval/reports/benchmark-2026-11-05/`, 300 scenarios; reproduced exactly on the
-  release candidate in `eval/reports/benchmark-2026-11-07-rc1/`): our planner succeeds in
-  84.7% of scenarios against 64.0% for a checklist and 56.3% for random questions, with about half
-  as many questions (differences significant). It is **not** significantly better than greedy
-  entropy (83.3%). Where nobody present can tell the causes apart it abstains 68% of the time.
-- **Parallel calls** (ADR 0011): asking up to three people at once cuts the simulated time to a
-  conclusion by about a third with no significant change in success, at the cost of about two
-  more questions per investigation.
-- **Stopping-rule calibration** (`eval/reports/calibration-2026-11-05/`): abstaining more is not
-  possible without losing accuracy; valuing people's time at half would raise success by 2.7
-  points (significant) for 0.37 more questions. Not adopted yet.
+**Benchmark** (`eval/reports/benchmark-2026-11-10-heldout/summary.json`; run commit `56382dc`, frozen code `cfca50bf31959f828c77936580632c9a9bf3f7ad`, seeds 40000-40299). This logic-mode run completed 300 scenarios per policy with no failed episodes. The generated mix was 197 single, 40 pair, 16 no-fault and 47 access-limited cases (`scenario-manifest.json`). Historical success retains RC1's pair credit; honest success excludes pair abstentions because pair identifiability is unknown. E's historical success was 83.3%, and its honest success was 80.3%. After Holm correction, honest success was higher for E than the checklist (p=1.72924e-15, adjusted p=6.91696e-15) and random selection (p=2.26252e-19, adjusted p=1.13126e-18). The registered comparisons did not show an honest-success difference between E and greedy entropy (adjusted p=1) or E with three-way parallel scheduling (adjusted p=1); we do not claim E beats greedy entropy. The LLM baseline was unavailable because no provider credential was configured and paid providers were not allowed. The requested 20000-20299 seeds had prior use, so the committed protocol uses the searched disjoint 40000-40299 range; it also records the 300-scenario shortfall against the broader 500-scenario target.
+
+| Policy | Historical success | Honest success | Completed | Failed |
+|---|---:|---:|---:|---:|
+| E_ours | 83.3% | 80.3% | 300 | 0 |
+| A_checklist | 63.0% | 57.7% | 300 | 0 |
+| C_random | 60.7% | 50.3% | 300 | 0 |
+| D_greedy_entropy | 84.7% | 82.0% | 300 | 0 |
+| E_parallel3 | 83.0% | 78.3% | 300 | 0 |
+
+For E, 29/40 pair episodes had a first useful action, while 3/40 reached full pair resolution through repair, verification, reopen and follow-up diagnosis. The other policies' denominators and rates are below.
+
+| Policy | Pair episodes | First useful action | Full pair resolution | Resolution n |
+|---|---:|---:|---:|---:|
+| E_ours | 40 | 72.5% | 7.5% | 40 |
+| A_checklist | 40 | 40.0% | 2.5% | 40 |
+| C_random | 40 | 22.5% | 0.0% | 40 |
+| D_greedy_entropy | 40 | 75.0% | 7.5% | 40 |
+| E_parallel3 | 40 | 57.5% | 2.5% | 40 |
+
+Registered paired tests use honest success, probes and effort. Intervals and all outcome denominators are in `report.md` and `summary.json`.
+
+| Outcome | Comparison | Paired n | p | Holm p |
+|---|---|---:|---:|---:|
+| success | A_checklist | 300 | 1.72924e-15 | 6.91696e-15 |
+| success | B_llm | 0 | n/a | n/a |
+| success | C_random | 300 | 2.26252e-19 | 1.13126e-18 |
+| success | D_greedy_entropy | 300 | 0.522397 | 1 |
+| success | E_parallel3 | 300 | 0.361595 | 1 |
+| probes | A_checklist | 300 | 1.46818e-49 | 7.34089e-49 |
+| probes | B_llm | 0 | n/a | n/a |
+| probes | C_random | 300 | 1.66514e-38 | 6.66056e-38 |
+| probes | D_greedy_entropy | 300 | 4.75357e-12 | 9.50714e-12 |
+| probes | E_parallel3 | 300 | 1.54863e-35 | 4.64588e-35 |
+| effort_s | A_checklist | 300 | 1.43803e-50 | 7.19016e-50 |
+| effort_s | B_llm | 0 | n/a | n/a |
+| effort_s | C_random | 300 | 1.53253e-49 | 6.13011e-49 |
+| effort_s | D_greedy_entropy | 300 | 7.22868e-13 | 1.44574e-12 |
+| effort_s | E_parallel3 | 300 | 3.06103e-40 | 9.18309e-40 |
+
+Fixed question and effort curves, the calibration diagram, raw budget episodes, scenario manifest and all source tables are committed in `eval/reports/benchmark-2026-11-10-heldout/`.
+
+- **Parallel calls** (ADR 0011): in this heldout run, K=3 reduced mean simulated time to conclusion from 197.81s to 124.34s. The paired E-minus-K3 difference was 73.47s [64.31, 82.99] (descriptive bootstrap interval). K=3 used more diagnostic probes and participant effort than K=1 after Holm adjustment (p=4.64588e-35 and p=9.18309e-40). Its honest-success difference was not significant after Holm; that does not establish equal success.
+- **Stopping-rule calibration** (`eval/reports/calibration-2026-11-05/`): in the explored
+  variants, valuing people's time at half increased the historical success metric by 2.7
+  points for 0.37 more questions. This is exploratory and was not adopted.
 - **Extraction.** Before attribution tuning, main's rules-only extractor scored 47/80 on the first
   fresh set and 26/40 on a second fresh set. The first had 7 invented, 20 missed and 1 wrong
   outcome; the second had 2 invented, 7 missed and 2 wrong outcomes. These are main's blind
@@ -125,10 +235,28 @@ Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), Node 20+, and a native 
 (Docker is not needed).
 
 ```bash
-uv run python scripts/dev_env.py                # once: .env with fresh keys (add GNANI_API_KEY for voice)
-uv run python -m pramana_core.auth.bootstrap --email you@example.com --name You --roles operator
-uv run python -m pramana_core.auth.bootstrap --email approver@example.com --name Approver --roles approver
+uv sync
+uv run python scripts/dev_env.py
+cd apps/web && npm ci && cd ../..
+uv run python scripts/dev.py --demo
 ```
+
+Open http://localhost:3002 and sign in with `demo-operator@local.test` / `local-demo-operator-2026`.
+The demo supervisor creates that operator and `demo-approver@local.test` /
+`local-demo-approver-2026` in the local database after migrations. These credentials are local-demo
+only. If either account already exists, its existing password is kept. The demo uses a synthetic
+identity and no paid voice provider. Press Ctrl+C to stop the services; the database server stays
+up. The first run can take longer while the console compiles.
+
+Voice requests stay on the local protocol emulator. It recognizes encoded test clips rather than
+ordinary speech, so use the text practice cards for the guided investigation.
+
+The generator selects a unique local database for a new checkout and preserves existing settings.
+To use another database, set both `DATABASE_URL` and `PRAMANA_DB_NAMES` in `.env`. The supervisor
+initializes the selected database and applies migrations before starting core. To create password
+accounts, first run the supervisor once so migrations finish, then run
+`uv run python -m pramana_core.auth.bootstrap --email you@example.com --name You --roles operator`.
+The command prompts for a local password.
 
 Start the stack with the project Python directly on Windows. `uv run` can report its own
 Ctrl-Break status `0xC000013A` after the services have stopped:
@@ -147,9 +275,8 @@ Use `--core-port`, `--sim-port` and `--web-port` if a port is taken. With `make`
 `make dev`, `make dev-web`, `make check`, `make e2e`. The `make dev` and `make dev-web` targets
 select the direct project Python on Windows and `uv run` on POSIX.
 
-Then open http://localhost:3002, sign in, and create an investigation (choose "People asked at
-once" for parallel calls). Open each participant's link from **Participant links** and answer from
-their "What you can see here (simulation)" card. Phones need HTTPS: see `docs/engineering/STAGING.md`.
+For the regular stack, configure sign-in first. Phones need HTTPS: see
+`docs/engineering/STAGING.md`.
 
 Checks:
 

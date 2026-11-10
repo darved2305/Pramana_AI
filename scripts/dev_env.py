@@ -26,15 +26,29 @@ def main() -> None:
         "SIM_ORACLE_KEY": secrets.token_urlsafe(24),
         "CORE_AUTOMATION_KEY": secrets.token_urlsafe(24),
     }
-    out = []
-    for line in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
-        key = line.split("=", 1)[0].strip() if "=" in line else ""
-        if key in values and not existing.get(key):
-            out.append(f"{key}={values[key]}")
-        elif key and existing.get(key):
-            out.append(f"{key}={existing[key]}")
-        else:
-            out.append(line)
+    # A new checkout gets a unique database, never the shared default database.
+    if not env_path.exists():
+        db_name = "pramana_dev_" + secrets.token_hex(6)
+        values["DATABASE_URL"] = f"postgresql+asyncpg://pramana@localhost:5433/{db_name}"
+        values["PRAMANA_DB_NAMES"] = db_name
+
+    if env_path.exists():
+        # Retain every existing line, including unknown settings and comments.
+        out = env_path.read_text(encoding="utf-8").splitlines()
+        present = set(existing)
+        for index, line in enumerate(out):
+            key = line.split("=", 1)[0].strip() if "=" in line else ""
+            if key in values and not existing.get(key):
+                out[index] = f"{key}={values[key]}"
+        for line in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
+            key = line.split("=", 1)[0].strip() if "=" in line else ""
+            if key and not key.startswith("#") and key not in present:
+                out.append(f"{key}={values[key]}" if key in values else line)
+    else:
+        out = []
+        for line in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
+            key = line.split("=", 1)[0].strip() if "=" in line else ""
+            out.append(f"{key}={values[key]}" if key in values else line)
     env_path.write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"wrote {env_path} (secrets not printed)")
 

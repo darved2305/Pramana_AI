@@ -1,9 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { answerTruthfully, openParticipant } from "./helpers";
 
-const output = path.resolve(process.cwd(), "../../.cache/review-shots");
+const output = process.env.PRAMANA_REVIEW_SHOTS ? path.resolve(process.env.PRAMANA_REVIEW_SHOTS) : path.resolve(process.cwd(), "../../.cache/review-shots");
+const diagnostics = path.resolve(process.cwd(), "../../.cache/review-shots");
 let runId = "";
 let steps: { label: string; path: string; width: number; documentWidth: number; screenshot: string }[] = [];
 let signals: { kind: string; page: string; detail: string }[] = [];
@@ -21,7 +23,10 @@ function safeUrl(value: string) {
 
 function watch(page: Page) {
   page.on("console", (message) => {
-    if (message.type() === "error") signals.push({ kind: "console", page: safeUrl(page.url()), detail: message.text() });
+    if (message.type() === "error") {
+      const kind = message.text().startsWith("Failed to load resource:") ? "network-console" : "console";
+      signals.push({ kind, page: safeUrl(page.url()), detail: message.text() });
+    }
   });
   page.on("pageerror", (error) => signals.push({ kind: "pageerror", page: safeUrl(page.url()), detail: error.message }));
   page.on("requestfailed", (request) =>
@@ -34,6 +39,41 @@ function watch(page: Page) {
   });
 }
 
+function expectedHttpFailure(detail: string) {
+  const match = detail.match(/^(\d{3}) https?:\/\/[^/]+(.*)$/);
+  if (!match) return false;
+  const status = Number(match[1]);
+  const pathname = match[2].split(/[?#]/, 1)[0];
+  if (status === 401) {
+    return [
+      "/api/core/v1/auth/session",
+      "/api/core/v1/investigations",
+      "/api/core/v1/me",
+      "/api/core/v1/participants",
+    ].includes(pathname);
+  }
+  if (status === 403 || status === 410) return pathname === "/api/core/v1/invitations/accept";
+  if (status === 404) {
+    return (
+      pathname === "/review-page-that-does-not-exist" ||
+      pathname === "/api/core/v1/invitations/accept" ||
+      /^\/api\/core\/v1\/orgs\/[^/]+\/sites\/[^/]+\/draft$/.test(pathname)
+    );
+  }
+  if (status === 409 || status === 412) {
+    return /^\/api\/core\/v1\/orgs\/[^/]+\/sites\/[^/]+\/draft$/.test(pathname);
+  }
+  return false;
+}
+
+function expectedRequestAbort(detail: string, title: string) {
+  if (detail.endsWith("net::ERR_ABORTED")) return true;
+  return (
+    title === "real Chrome review: offline messages do not expose internal setup details" &&
+    /^GET https?:\/\/[^/]+\/api\/core\/(?:health|v1\/orgs\/[^/]+\/home): net::ERR_FAILED$/.test(detail)
+  );
+}
+
 async function capture(page: Page, label: string) {
   await page.evaluate(() => document.fonts.ready.then(() => true));
   await page.evaluate(async () => {
@@ -44,59 +84,47 @@ async function capture(page: Page, label: string) {
     await Promise.all(active.map((animation) => animation.finished.catch(() => undefined)));
   });
   const original = page.viewportSize() ?? { width: 1440, height: 900 };
+  const originalScrollY = await page.evaluate(() => window.scrollY);
+  const viewports = [
+    { width: 1440, height: 900 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+  ];
   const file = (width: number) => path.join(output, `${runId}-${label}-${width}.png`);
 
-  await page.screenshot({ path: file(original.width) });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(80);
-  const layout = await page.evaluate(() => {
-    // On setup pages the brand and the skip button share one header; they must not touch at phone width.
-    const header = document.querySelector("header");
-    const skip = header ? [...header.querySelectorAll("button")].find((b) => /skip setup/i.test(b.textContent ?? "")) : undefined;
-    const brand = header?.querySelector("svg")?.parentElement?.getBoundingClientRect();
-    return {
-    width: innerWidth,
-    headerGap: skip && brand ? Math.round(skip.getBoundingClientRect().left - brand.right) : null,
-    documentWidth: document.documentElement.scrollWidth,
-    offenders: [...document.body.querySelectorAll("*")]
-      .filter((element) => {
-        // Content inside a scroll box does not widen the page, except absolutely positioned
-        // content, which escapes a scroll box that is not itself positioned.
-        if (["absolute", "fixed"].includes(getComputedStyle(element).position)) return true;
-        let parent = element.parentElement;
-        while (parent && parent !== document.body) {
-          const css = getComputedStyle(parent);
-          if (["auto", "scroll", "hidden", "clip"].includes(css.overflowX)) return false;
-          parent = parent.parentElement;
-        }
-        return true;
-      })
-      .map((element) => {
-        const rect = element.getBoundingClientRect();
-        return {
-          tag: element.tagName,
-          className: typeof element.className === "string" ? element.className : "",
-          text: element.textContent?.trim().slice(0, 60),
-          left: Math.round(rect.left),
-          right: Math.round(rect.right),
-          width: Math.round(rect.width),
-        };
-      })
-      .filter((element) => element.width > 0 && element.right > innerWidth + 1)
-      .sort((a, b) => b.right - a.right)
-      .slice(0, 8),
-    };
-  });
-  const phoneShot = file(390);
-  const desktopScrollY = await page.evaluate(() => window.scrollY);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  await page.screenshot({ path: phoneShot });
-  steps.push({ label, path: safeUrl(page.url()), width: layout.width, documentWidth: layout.documentWidth, screenshot: path.relative(path.resolve(process.cwd(), "../.."), phoneShot) });
-  if (layout.headerGap !== null) expect(layout.headerGap, `${label} header items touch at 390 px`).toBeGreaterThanOrEqual(8);
-  expect(layout.documentWidth, `${label} overflows at 390 px: ${JSON.stringify(layout.offenders)}`).toBeLessThanOrEqual(390);
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    if (label === "landing" && viewport.width === 390) {
+      for (const capability of ["हिन्दी", "मराठी", "English", "Hinglish", "Voice", "Tap"]) {
+        await expect(page.getByText(capability, { exact: true })).toBeVisible();
+      }
+    }
+    const layout = await page.evaluate(() => {
+      // Content in a positioned scroll box is allowed to scroll inside that box, not widen the page.
+      const header = document.querySelector("header");
+      const skip = header ? [...header.querySelectorAll("button")].find((b) => /skip setup/i.test(b.textContent ?? "")) : undefined;
+      const brand = header?.querySelector("svg")?.parentElement?.getBoundingClientRect();
+      return {
+        width: innerWidth,
+        headerGap: skip && brand ? Math.round(skip.getBoundingClientRect().left - brand.right) : null,
+        documentWidth: document.documentElement.scrollWidth,
+        bodyWidth: document.body.scrollWidth,
+      };
+    });
+    expect(layout.documentWidth, `${label} page width at ${viewport.width}px`).toBeLessThanOrEqual(viewport.width);
+    expect(layout.bodyWidth, `${label} body width at ${viewport.width}px`).toBeLessThanOrEqual(viewport.width);
+    if (viewport.width === 390 && layout.headerGap !== null) expect(layout.headerGap, `${label} header items touch at 390 px`).toBeGreaterThanOrEqual(8);
+
+    const axe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(axe.violations.map((violation) => ({ id: violation.id, targets: violation.nodes.map((node) => node.target) })), `${label} accessibility at ${viewport.width}px`).toEqual([]);
+
+    await page.screenshot({ path: file(viewport.width) });
+    steps.push({ label, path: safeUrl(page.url()), width: viewport.width, documentWidth: layout.documentWidth, screenshot: path.relative(path.resolve(process.cwd(), "../.."), file(viewport.width)) });
+  }
   await page.setViewportSize(original);
-  await page.evaluate((y) => window.scrollTo(0, y), desktopScrollY);
+  await page.evaluate((y) => window.scrollTo(0, y), originalScrollY);
 }
 
 test.beforeEach(async ({ page }, info) => {
@@ -104,17 +132,28 @@ test.beforeEach(async ({ page }, info) => {
   steps = [];
   signals = [];
   mkdirSync(output, { recursive: true });
+  mkdirSync(diagnostics, { recursive: true });
   watch(page);
 });
 
 test.afterEach(async ({}, info) => {
-  mkdirSync(output, { recursive: true });
-  writeFileSync(path.join(output, `${runId}-network.json`), JSON.stringify({ title: info.title, steps, signals }, null, 2), "utf8");
+  expect(signals.filter((signal) => signal.kind === "pageerror" || signal.kind === "console"), "JavaScript errors").toEqual([]);
+  expect(
+    signals.filter((signal) => signal.kind === "requestfailed" && !expectedRequestAbort(signal.detail, info.title)),
+    "unexpected failed requests",
+  ).toEqual([]);
+  expect(
+    signals.filter((signal) => signal.kind === "http" && !expectedHttpFailure(signal.detail)),
+    "unexpected HTTP error responses",
+  ).toEqual([]);
+  mkdirSync(diagnostics, { recursive: true });
+  writeFileSync(path.join(diagnostics, `${runId}-network.json`), JSON.stringify({ title: info.title, steps, signals }, null, 2), "utf8");
 });
 
 test("real Chrome review: first-time owner can finish setup on a phone", async ({ page, browser }) => {
   test.setTimeout(240_000);
-  await page.goto("/");
+  const landingResponse = await page.goto("/");
+  expect(landingResponse?.headers()["content-security-policy"]).not.toContain("unsafe-eval");
   await capture(page, "landing");
 
   await page.getByRole("link", { name: /Open the console/ }).first().click();
@@ -127,6 +166,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
 
   await page.getByRole("link", { name: "Continue with Google" }).click();
   await expect(page.getByRole("heading", { name: "Pramana local mock sign-in" })).toBeVisible();
+  await expect(page.getByText("Local demo sign-in. No Google account is used.")).toBeVisible();
   await capture(page, "mock-google");
   const state = new URL(page.url()).searchParams.get("state");
   expect(state).toBeTruthy();
@@ -212,6 +252,7 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
       status: string;
       questions_asked: number;
       pending_question: { text: string; action: { participant_id: string; probe_id: string } } | null;
+      observations: { participant_id: string; probe_id: string; outcome: string }[];
       participants: { id: string; display_name: string }[];
       site_id: string;
       site_model_id: string;
@@ -261,10 +302,13 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
     const phone = await phoneFor(question.action.participant_id);
     const probeLabel = model.spec.probes.find((probe: { id: string }) => probe.id === question.action.probe_id)?.label;
     expect(probeLabel).toBeTruthy();
+    const participant = practiceState.participants.find((item) => item.id === question.action.participant_id);
+    expect(participant).toBeTruthy();
     await expect(phone.getByRole("heading", { level: 1 })).toHaveText(question.text);
+    await expect(phone.getByTestId("participant-current-step").locator("p").last()).toHaveText(/Why this check:\s*\S+/);
     await expect(phone.getByRole("button", { name: "Accept", exact: true })).toHaveCSS("background-color", "rgb(255, 252, 247)");
     await expect(phone.locator("main")).not.toContainText(nonGenericPracticeCopy);
-    await phone.screenshot({ path: path.join(output, `${runId}-practice-participant-pending-${answered}-390.png`) });
+    await capture(phone, `practice-participant-pending-${answered}`);
     await expect(phone.locator("main")).not.toContainText(/hostel/i);
     const before = practiceState.questions_asked;
     await answerTruthfully(phone, question.text, probeLabel, false);
@@ -327,7 +371,6 @@ test("real Chrome review: first-time owner can finish setup on a phone", async (
   await expect(page.getByRole("heading", { name: "Nothing was observed here" })).toBeVisible();
   await capture(page, "page-not-found");
 
-  expect(signals.filter((x) => x.kind === "pageerror")).toEqual([]);
 });
 
 test("real Chrome review: drafts warn about changes in another tab", async ({ page, context }) => {

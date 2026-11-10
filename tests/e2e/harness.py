@@ -19,6 +19,7 @@ The tests are skipped, with the reason shown, when PostgreSQL is unreachable.
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -60,9 +61,25 @@ def e2e_database_url() -> str:
 
 @contextmanager
 def temporary_work_directory(*, parent: Path | None = None) -> Iterator[Path]:
-    """Create an e2e work directory that is removed after the fixture finishes."""
-    with tempfile.TemporaryDirectory(prefix="pramana-e2e-", dir=parent) as directory:
-        yield Path(directory)
+    """Create an e2e work directory that is removed after the fixture finishes.
+
+    On Windows a killed service's grandchild (uv starts the Python process) can keep its log file
+    open for a moment after the tree kill returns, so removal retries briefly before giving up.
+    """
+    directory = Path(tempfile.mkdtemp(prefix="pramana-e2e-", dir=parent))
+    try:
+        yield directory
+    finally:
+        for attempt in range(50):
+            try:
+                shutil.rmtree(directory)
+                break
+            except FileNotFoundError:
+                break
+            except PermissionError:
+                if attempt == 49:
+                    raise
+                time.sleep(0.2)
 
 
 async def ensure_database(url: str) -> None:

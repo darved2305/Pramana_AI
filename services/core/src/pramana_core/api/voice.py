@@ -59,6 +59,7 @@ async def voice_status(request: Request) -> dict[str, object]:
     return {
         "configured": g.configured,
         "provider": g.provider,
+        "protocol_emulator": g.protocol_emulator,
         "provider_host": urlsplit(g.base_url).hostname,
         "stt_model": "prisma-v3.0",
         "tts_models": ["timbre-v3.0", "timbre-v2.5"],
@@ -75,7 +76,7 @@ async def voice_usage(request: Request) -> dict[str, object]:
     return {
         "spent_today_inr": round(await ledger.spent_today(), 4),
         "by_service": by_service,
-        **g.governor.status(),
+        **await g.governor.shared_status(),
     }
 
 
@@ -169,7 +170,13 @@ async def _pump(ws: WebSocket, upstream: GnaniSttStream, send: Any, max_s: float
                     break
                 await upstream.send_pcm(chunk)
             elif msg.get("text") is not None:
-                kind = json.loads(msg["text"]).get("type")
+                try:
+                    control = json.loads(msg["text"])
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(control, dict):
+                    continue
+                kind = control.get("type")
                 if kind == "commit":
                     await upstream.commit()
                 elif kind == "stop":
@@ -195,6 +202,8 @@ async def _relay_upstream(upstream: GnaniSttStream, send: object) -> None:
             speech_end = ev.received_at
             await send(MediaServerMessage(type="processing"))
         elif ev.type == "transcript":
+            if ev.raw.get("is_final") is False:
+                continue
             eos_ms = (ev.received_at - speech_end) * 1000 if speech_end else None
             speech_end = None
             latency = ev.raw.get("latency")

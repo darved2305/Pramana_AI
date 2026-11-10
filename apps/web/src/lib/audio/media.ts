@@ -30,6 +30,10 @@ export interface MediaReady {
   language: string;
   outcomes: string[];
   model_confirmed: boolean;
+  provider?: string;
+  protocol_emulator?: boolean;
+  stt_model?: string;
+  tts_model?: string;
 }
 
 export interface MediaError {
@@ -102,6 +106,9 @@ export class QuestionMediaSession {
   private ws: WebSocket | null = null;
   private ctx: AudioContext | null = null;
   private mic: MediaStream | null = null;
+  private micGeneration = 0;
+  private captureStartedAt: number | null = null;
+  private playbackNotified = false;
   private node: AudioWorkletNode | null = null;
   private tts: { utt: number; bytes: number; chunks: ArrayBuffer[] } | null = null;
   private playing: AudioBufferSourceNode | null = null;
@@ -143,7 +150,14 @@ export class QuestionMediaSession {
           this.onAudio(ev.data as ArrayBuffer);
           return;
         }
-        const msg = JSON.parse(ev.data) as { type: string } & Record<string, unknown>;
+        let msg: { type: string } & Record<string, unknown>;
+        try {
+          const parsed: unknown = JSON.parse(ev.data);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+          msg = parsed as typeof msg;
+        } catch {
+          return;
+        }
         if ((callPid ? msg.type === "ringing" : msg.type === "ready") && !settled) {
           settled = true;
           resolve(msg as unknown as MediaReady);
@@ -176,29 +190,46 @@ export class QuestionMediaSession {
   /** Start streaming the microphone. Call from a user gesture (autoplay and mic policies). */
   async startMic(): Promise<void> {
     if (this.node) return;
-    this.mic = await navigator.mediaDevices.getUserMedia({
+    this.stopMic();
+    const generation = this.micGeneration;
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
-    const ctx = this.audioContext();
-    await ctx.audioWorklet.addModule(this.options.workletUrl ?? "/worklets/pcm16-capture.js");
-    const src = ctx.createMediaStreamSource(this.mic);
-    const node = new AudioWorkletNode(ctx, "pcm16-capture", { numberOfInputs: 1, numberOfOutputs: 0 });
-    node.port.onmessage = (e: MessageEvent) => {
-      if (e.data instanceof ArrayBuffer) {
-        if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(e.data);
-      } else if (e.data?.type === "level") {
-        this.handlers.onLevel?.(e.data.rms as number);
-      }
-    };
-    src.connect(node);
-    this.node = node;
-    this.setState("listening");
+    if (generation !== this.micGeneration) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw new Error("microphone setup was cancelled");
+    }
+    this.mic = stream;
+    try {
+      const ctx = this.audioContext();
+      await ctx.audioWorklet.addModule(this.options.workletUrl ?? "/worklets/pcm16-capture.js");
+      if (generation !== this.micGeneration) throw new Error("microphone setup was cancelled");
+      const src = ctx.createMediaStreamSource(stream);
+      const node = new AudioWorkletNode(ctx, "pcm16-capture", { numberOfInputs: 1, numberOfOutputs: 0 });
+      this.node = node;
+      node.port.onmessage = (e: MessageEvent) => {
+        if (e.data instanceof ArrayBuffer) {
+          if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(e.data);
+        } else if (e.data?.type === "level") {
+          this.handlers.onLevel?.(e.data.rms as number);
+        }
+      };
+      src.connect(node);
+      this.captureStartedAt = performance.now();
+      this.setState("listening");
+    } catch (error) {
+      if (generation === this.micGeneration) this.stopMic();
+      throw error;
+    }
   }
 
   /** End of the answer (push-to-talk release): flush the last partial frame and commit. */
   commit(): void {
     this.node?.port.postMessage({ type: "flush" });
     // Let the flushed frame reach the socket before the commit.
+    const captureDurationMs = this.captureStartedAt === null ? null : performance.now() - this.captureStartedAt;
+    this.sendControl({ type: "capture_end", capture_duration_ms: captureDurationMs });
+    this.captureStartedAt = null;
     setTimeout(() => this.sendControl({ type: "commit" }), 30);
     this.setState("processing");
   }
@@ -267,6 +298,7 @@ export class QuestionMediaSession {
         this.handlers.onReady?.(msg as unknown as MediaReady);
         break;
       case "tts_start":
+        this.playbackNotified = false;
         if (msg.format === "pcm_s16le") {
           this.stopPlayback();
           this.tts = null;
@@ -368,6 +400,10 @@ export class QuestionMediaSession {
       if (st.ended && !st.sources.length) this.finishStream();
     };
     src.start(at);
+    if (!this.playbackNotified) {
+      this.playbackNotified = true;
+      this.sendControl({ type: "playback_started" });
+    }
   }
 
   private finishStream(): void {
@@ -401,6 +437,10 @@ export class QuestionMediaSession {
       this.playing = src;
       this.setState("speaking");
       src.start();
+      if (!this.playbackNotified) {
+        this.playbackNotified = true;
+        this.sendControl({ type: "playback_started" });
+      }
     } catch {
       this.handlers.onError?.({ code: "MEDIA_PLAYBACK_FAILED", message: "could not play the question", status: 0, fatal: false });
     }
@@ -432,6 +472,7 @@ export class QuestionMediaSession {
   }
 
   private stopMic(): void {
+    this.micGeneration++;
     this.node?.disconnect();
     this.node = null;
     this.mic?.getTracks().forEach((t) => t.stop());

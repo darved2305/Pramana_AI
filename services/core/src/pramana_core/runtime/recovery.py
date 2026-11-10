@@ -12,8 +12,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..db import acting_as_job, acting_for
 from ..investigations import InvestigationService
 from ..observability import log
+
+RECOVERY_JOB = "startup-recovery"
 
 
 @dataclass
@@ -38,14 +41,16 @@ class RecoveryReport:
 async def recover(svc: InvestigationService, limit: int = 1000) -> RecoveryReport:
     report = RecoveryReport()
     try:
-        ids = await svc.open_investigations(limit)
+        with acting_as_job(RECOVERY_JOB):
+            investigations = await svc.open_investigations(limit)
     except Exception as exc:  # database down at boot: /ready reports it; do not crash
         log.warning("recovery_skipped", reason=type(exc).__name__)
         return report
-    for inv_id in ids:
+    for org_id, inv_id in investigations:
         report.checked += 1
         try:
-            check = await svc.replay(inv_id, warm_cache=True)
+            with acting_for(org_id):
+                check = await svc.replay(inv_id, warm_cache=True, startup_recovery=True)
         except Exception as exc:
             report.failed.append(inv_id)
             log.error("recovery_failed", investigation_id=inv_id, error=type(exc).__name__)
@@ -73,15 +78,17 @@ async def recover(svc: InvestigationService, limit: int = 1000) -> RecoveryRepor
             recorded_sha256=check.recorded_sha256,
         )
         try:
-            await svc.record_engine_error(
-                inv_id,
-                {
-                    "reason": "replay_mismatch",
-                    "replayed_sha256": check.replayed_sha256,
-                    "recorded_sha256": check.recorded_sha256,
-                    "events_replayed": check.events_replayed,
-                },
-            )
+            with acting_for(org_id):
+                await svc.record_engine_error(
+                    inv_id,
+                    {
+                        "reason": "replay_mismatch",
+                        "replayed_sha256": check.replayed_sha256,
+                        "recorded_sha256": check.recorded_sha256,
+                        "events_replayed": check.events_replayed,
+                    },
+                    startup_recovery=True,
+                )
         except Exception as exc:
             log.error("recovery_event_failed", investigation_id=inv_id, error=type(exc).__name__)
     log.info("recovery_done", **report.as_dict())

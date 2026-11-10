@@ -303,8 +303,12 @@ class Run:
                     {"type": "start", "token": self.tokens[pid]["token"], "play": self.args.play}
                 )
             )
+            playback_notified = False
             async for raw in ws:
                 if isinstance(raw, bytes):
+                    if not playback_notified:
+                        await ws.send(json.dumps({"type": "playback_started"}))
+                        playback_notified = True
                     continue  # question audio: a real phone would play it
                 m = json.loads(raw)
                 kind = m["type"]
@@ -317,6 +321,7 @@ class Run:
                     self.question_kind[pid] = m.get("kind", "probe")
                     self.start_speaker(pid, self.turn(ws, pid, lang, m))
                 elif kind == "tts_end":
+                    playback_notified = False
                     if pid in self.t_answer:
                         self.next_ms.append((time.monotonic() - self.t_answer.pop(pid)) * 1000)
                     await ws.send(json.dumps({"type": "playback_done"}))
@@ -456,6 +461,14 @@ class Run:
             if i < len(voice) <= i + FRAME:
                 self.t_eos[pid] = time.monotonic() + 0.032  # this frame ends the voice
             await asyncio.sleep(0.032)  # real-time cadence
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "capture_end",
+                    "capture_duration_ms": len(audio) * 1000 / (2 * 16000),
+                }
+            )
+        )
         await ws.send(json.dumps({"type": "commit"}))
 
     async def phase(self) -> None:

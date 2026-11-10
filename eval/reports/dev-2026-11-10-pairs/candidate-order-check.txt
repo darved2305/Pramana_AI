@@ -1,0 +1,2 @@
+E_ours: pair episodes=42 eligible=2 affected=0 []
+D_greedy_entropy: pair episodes=42 eligible=0 affected=0 []

@@ -8,8 +8,62 @@
  *
  * Participants answer truthfully from what their simulated surroundings card shows.
  */
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test as base, type BrowserContext, type Page } from "@playwright/test";
-import { answerTruthfully, api, seedDirectory, signIn } from "./helpers";
+import { answerTruthfully, api, signIn } from "./helpers";
+
+const reviewOutput = process.env.PRAMANA_REVIEW_SHOTS ? path.resolve(process.env.PRAMANA_REVIEW_SHOTS) : path.resolve(process.cwd(), "../../.cache/review-shots");
+const reviewSizes = [
+  { width: 1440, height: 900 },
+  { width: 768, height: 1024 },
+  { width: 390, height: 844 },
+];
+
+async function addDemoParticipant(
+  page: Page,
+  person: { name: string; role: string; skill: string; location: string },
+) {
+  await page.getByRole("button", { name: /Add participant|Add someone new/ }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Add participant" });
+  await dialog.getByLabel("Name").fill(person.name);
+  if (person.role !== "Student") {
+    const defaultRole = dialog.getByRole("button", { name: "Student", exact: true });
+    if ((await defaultRole.getAttribute("aria-pressed")) === "true") await defaultRole.click();
+    await dialog.getByRole("button", { name: person.role, exact: true }).click();
+  }
+  await dialog.getByLabel("Skill").selectOption(person.skill);
+  await dialog.getByLabel("Current location").selectOption(person.location);
+  await dialog.getByRole("button", { name: "Add and select" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: new RegExp(`^${person.name}`) })).toBeChecked();
+}
+
+async function captureReviewState(page: Page, label: string) {
+  const original = page.viewportSize() ?? reviewSizes[0];
+  const originalY = await page.evaluate(() => window.scrollY);
+  mkdirSync(reviewOutput, { recursive: true });
+  for (const viewport of reviewSizes) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(() => document.fonts.ready.then(() => true));
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const active = document.documentElement
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.playState === "running" && animation.effect?.getTiming().iterations !== Infinity);
+      await Promise.all(active.map((animation) => animation.finished.catch(() => undefined)));
+    });
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(width, `${label} has horizontal overflow at ${viewport.width}px`).toBeLessThanOrEqual(viewport.width);
+    const axe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(axe.violations.map((v) => ({ id: v.id, targets: v.nodes.map((node) => node.target) })), `${label} accessibility at ${viewport.width}px`).toEqual([]);
+    await page.screenshot({ path: path.join(reviewOutput, `m1-${label}-${viewport.width}.png`) });
+  }
+  await page.setViewportSize(original);
+  await page.evaluate((y) => window.scrollTo(0, y), originalY);
+}
 
 // Fixture teardown has its own budget and runs even if an assertion fails. Start every close
 // together: four sequential closes once consumed the entire remaining investigation budget.
@@ -34,6 +88,8 @@ interface State {
   id: string;
   status: string;
   questions_asked: number;
+  participants: { id: string; display_name: string }[];
+  observations: { participant_id: string; probe_id: string; outcome: string }[];
   pending_question: { id: string; text: string; action: { participant_id: string; probe_id: string; requires_move: boolean } } | null;
   plan: { decision_class?: string | null };
   belief: { repair?: { fixed_probability: number } | null };
@@ -41,8 +97,8 @@ interface State {
   ground_truth?: { correct?: boolean | null; reveal?: { commitment_verified?: boolean } } | null;
 }
 
-test("M1: S1 from the console to a verified repair", async ({ page, sessionPage, request }) => {
-  await seedDirectory(request);
+test("README judge path: diagnosis, approval, reveal and replay", async ({ page, sessionPage, request }) => {
+  test.setTimeout(300_000);
   const pack = await api<{ probes: { id: string; label: string }[] }>(request, "GET", "/v1/packs/campus_block_c");
   const label = (probe: string) => pack.probes.find((x) => x.id === probe)?.label ?? probe;
 
@@ -53,13 +109,30 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   });
 
   // 1. The operator creates S1 in the console.
-  await signIn(page, "operator", "/app/investigations/new");
+  await signIn(page, "demoOperator", "/app/investigations/new");
   const next = () => page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByText(/floors, \d+ places/)).toBeVisible();
   await next();
   await page.getByLabel("What is wrong?").fill("Floor 3 pe WiFi nahi chal raha, kuch khul nahi raha");
   await next();
-  for (const name of ["Riya", "Mahesh", "Imran"]) await page.getByRole("checkbox", { name: new RegExp(`^${name}`) }).check({ force: true }); // styled, visually hidden input
+  await addDemoParticipant(page, {
+    name: "Riya",
+    role: "Student",
+    skill: "lay",
+    location: "F3_R304",
+  });
+  await addDemoParticipant(page, {
+    name: "Mahesh",
+    role: "Security guard",
+    skill: "access",
+    location: "GUARD_DESK",
+  });
+  await addDemoParticipant(page, {
+    name: "Imran",
+    role: "Electrician",
+    skill: "technician",
+    location: "MAINT_ROOM",
+  });
   await page.getByRole("listitem").filter({ hasText: "Riya" }).getByLabel("Reported it").check();
   await next(); // participants
   await next(); // languages
@@ -76,6 +149,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   await page.getByRole("button", { name: "Start investigation" }).click();
   await expect(page).toHaveURL(/\/app\/investigations\/inv_[0-9A-HJKMNP-TV-Z]{26}$/);
   const invId = page.url().split("/").pop() as string;
+  await captureReviewState(page, "investigation-question");
 
   // 2. Personal links from the console.
   await page.getByRole("button", { name: "Participant links" }).first().click();
@@ -92,6 +166,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
     people[pid] = await sessionPage(true);
     await people[pid].goto(url);
   }
+  await captureReviewState(people.p_riya, "participant-question");
 
   // A participant link is not a staff session: it cannot open the console.
   const peek = people.p_riya;
@@ -106,13 +181,28 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   while (state.pending_question && answered < 8) {
     const { participant_id, probe_id } = state.pending_question.action;
     const before = state.questions_asked;
-    await answerTruthfully(people[participant_id], state.pending_question.text, label(probe_id), answered === 0);
+    const probeLabel = label(probe_id);
+    await answerTruthfully(people[participant_id], state.pending_question.text, probeLabel, answered === 0);
     answered++;
     await expect.poll(async () => (state = await api<State>(request, "GET", `/v1/investigations/${invId}`)).questions_asked > before || !state.pending_question).toBe(true);
+    if (answered === 3) {
+      const observation = state.observations.at(-1);
+      const participant = state.participants.find((item) => item.id === participant_id);
+      expect(participant).toBeTruthy();
+      expect(observation?.participant_id).toBe(participant_id);
+      expect(observation?.probe_id).toBe(probe_id);
+      const change = page.locator('[aria-labelledby="change-title"]');
+      await expect(page.getByText("This screen failed to load", { exact: true })).toHaveCount(0);
+      await expect(change).toContainText(participant!.display_name);
+      await expect(change).toContainText(probeLabel);
+      await expect(change).toContainText(observation!.outcome.replace(/_/g, " "));
+    }
   }
+  expect(answered).toBeGreaterThanOrEqual(3);
   expect(state.status).toBe("decided");
   expect(state.plan.decision_class).toBe("DISPATCH_ELECTRICIAN_DB_C2");
   expect(state.questions_asked).toBeLessThanOrEqual(6);
+  await captureReviewState(page, "investigation-decision");
 
   // The console followed along without a reload, over the event stream.
   expect(streams.length).toBeGreaterThan(0);
@@ -122,22 +212,26 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   // 4. The operator proposes the repair.
   await page.getByRole("button", { name: "Propose repair", exact: true }).click();
   const propose = page.getByRole("dialog", { name: "Propose a repair" });
+  await captureReviewState(page, "repair-proposal");
   // The model's options: this decision covers two breakers, so the operator picks the one found.
   await propose.getByLabel("Repair").selectOption({ label: "Reset a tripped breaker: Breaker C2-7 (IDF-2 rack) at distribution board DB-C2" });
   await propose.getByRole("button", { name: "Send for approval" }).click();
   await expect(page.getByText("Awaiting approval").first()).toBeVisible();
   // The operator cannot approve their own request.
   await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeDisabled();
+  await captureReviewState(page, "approval-requested");
 
   // 5. An approver approves in their own session; the approval records their account.
   const approver = await sessionPage();
-  await signIn(approver, "approver", `/app/investigations/${invId}`);
+  await signIn(approver, "demoApprover", `/app/investigations/${invId}`);
   // Revealing is for operators only: an approver is not offered the button.
   await expect(approver.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   await expect(approver.getByRole("button", { name: "Reveal ground truth" })).toHaveCount(0);
+  await captureReviewState(approver, "approval-ready");
   await approver.getByRole("button", { name: "Approve", exact: true }).click();
   await approver.getByRole("dialog").getByRole("button", { name: "Approve", exact: true }).click();
-  await expect(approver.getByText(/Approved by Asha Approver \(you\)/)).toBeVisible();
+  await expect(approver.getByText(/Approved by Demo approver \(you\)/)).toBeVisible();
+  await captureReviewState(approver, "approval-approved");
   state = await api<State>(request, "GET", `/v1/investigations/${invId}`);
   expect(state.status).toBe("acting");
   const me = await approver.request.get("/api/core/v1/auth/session");
@@ -146,10 +240,12 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   // 6. The electrician collects the capability, goes to the panel, resets and reports.
   const imran = people.p_imran;
   await expect(imran.getByRole("heading", { name: "You are cleared to act" })).toBeVisible({ timeout: 20_000 });
+  await captureReviewState(imran, "repair-authorized");
   await imran.getByRole("button", { name: "Collect permission" }).click();
   await imran.getByRole("button", { name: "I am at the panel" }).click();
   await imran.getByRole("button", { name: "I have done it" }).click();
   await expect.poll(async () => (state = await api<State>(request, "GET", `/v1/investigations/${invId}`)).status).toBe("verifying");
+  await captureReviewState(page, "repair-verification");
 
   // 7. Verification questions, answered from what people now see.
   let checks = 0;
@@ -164,6 +260,7 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   expect(state.status).toBe("verified");
   expect(state.belief.repair?.fixed_probability ?? 0).toBeGreaterThanOrEqual(0.97);
   await expect(page.getByText("Verified").first()).toBeVisible();
+  await captureReviewState(page, "repair-verified");
 
   // 8. Reveal: the sealed fault matches the commitment and the decision was right.
   await page.getByRole("button", { name: "Reveal ground truth" }).first().click();
@@ -171,11 +268,13 @@ test("M1: S1 from the console to a verified repair", async ({ page, sessionPage,
   await expect.poll(async () => (state = await api<State>(request, "GET", `/v1/investigations/${invId}`)).status).toBe("closed");
   expect(state.ground_truth?.correct).toBe(true);
   expect(state.ground_truth?.reveal?.commitment_verified).toBe(true);
+  await captureReviewState(page, "investigation-revealed");
 
   // 9. The replay page shows the core's own check: the rebuilt belief and the sealed log.
   await page.goto(`/app/investigations/${invId}/replay`);
   const integrity = page.getByRole("status", { name: "Integrity" });
   await expect(integrity).toContainText("Replay identical");
   await expect(integrity).toContainText("Log unchanged since the reveal");
+  await captureReviewState(page, "investigation-replay");
 
 });

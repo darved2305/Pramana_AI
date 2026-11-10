@@ -40,6 +40,7 @@ from .auth.deps import participant_public_key
 from .auth.google import GoogleSignIn
 from .auth.oidc import GoogleOidc
 from .auth.service import AuthService, LoginThrottle
+from .body_limit import BodyLimitMiddleware
 from .cursors import CursorCodec
 from .db import Database, make_engine
 from .directory import make_queries
@@ -119,6 +120,7 @@ def create_app(
             api_key=cfg.gnani_api_key.get_secret_value() if cfg.gnani_api_key else None,
             base_url=cfg.gnani_base_url,
             timeout_s=cfg.gnani_timeout_s,
+            protocol_emulator=cfg.gnani_protocol_emulator,
             governor=VoiceGovernor(
                 GovernorLimits(
                     stt_rest_per_min=cfg.gnani_stt_rest_per_min,
@@ -205,7 +207,17 @@ def create_app(
             log.info("shutdown")
 
     app = FastAPI(title="Pramana core", version="0.1.0", lifespan=lifespan)
-    app.add_middleware(RequestContextMiddleware)
+
+    def body_limit(path: str) -> int:
+        if path == "/v1/voice/stt" or (
+            (path.startswith("/v1/investigations/") or path.startswith("/v1/orgs/"))
+            and path.endswith("/answers/voice")
+        ):
+            return cfg.voice_max_upload_bytes + 64 * 1024
+        if path == "/v1/auth/login" or path.startswith("/v1/consent-links/"):
+            return 64 * 1024
+        return 4 * 1024 * 1024
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.cors_origins,
@@ -220,6 +232,10 @@ def create_app(
         ],
         expose_headers=["X-Request-ID", "ETag", "Idempotent-Replayed"],
     )
+    app.add_middleware(
+        BodyLimitMiddleware, limit_for_path=body_limit, cors_origins=cfg.cors_origins
+    )
+    app.add_middleware(RequestContextMiddleware)
     install_error_handlers(app)
 
     @app.get("/health")

@@ -70,6 +70,10 @@ for (const who of [
     await page.route("**/api/core/v1/investigations/inv_self1/stream**", (r) => r.abort());
     await page.goto("/app/investigations/inv_self1");
     const panel = page.locator("[aria-labelledby=appr-title]");
+    await expect(panel).toContainText(who.asked ? "Requested by Bo Both (you)" : "Requested by u_both");
+    await expect(panel).toContainText("The requester cannot approve their own request");
+    await expect(panel).toContainText("single-use permission");
+    await expect(panel).toContainText("expires five minutes after collection");
     const approve = panel.getByRole("button", { name: "Approve", exact: true });
     await expect(approve).toBeVisible();
     if (who.asked) {

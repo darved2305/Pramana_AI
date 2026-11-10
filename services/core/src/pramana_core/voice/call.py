@@ -100,6 +100,7 @@ class ParticipantCall:
         self.send_lock = asyncio.Lock()
         self.play = True
         self.questions = 0
+        self.last_answer_trace_id: str | None = None
 
     async def send(self, msg: dict[str, Any]) -> None:
         async with self.send_lock:
@@ -238,6 +239,8 @@ class ParticipantCall:
                 self.max_s,
                 call=self.call,
                 send_lock=self.send_lock,
+                previous_trace_id=self.last_answer_trace_id,
+                on_answer_trace=self._remember_answer_trace,
             )
             self.questions += 1
             await turn.turn(q, self.play)
@@ -245,6 +248,9 @@ class ParticipantCall:
                 await self.fire(CallEvent.CLOSED)
                 await self._release("said later")
                 return "later"
+
+    def _remember_answer_trace(self, trace_id: str) -> None:
+        self.last_answer_trace_id = trace_id
 
     async def _next_question(self) -> Any:
         """The pending question addressed to this person, waiting up to ``IDLE_WAIT_S``."""

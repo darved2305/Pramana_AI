@@ -118,6 +118,7 @@ class GnaniSttStream:
         self.model_confirmed = (not expect_v3) or ("language_code" in cfg)
         self._pending = bytearray()
         self._bytes_sent = 0
+        self.max_audio_bytes: int | None = None
 
     @property
     def audio_seconds_sent(self) -> float:
@@ -125,6 +126,11 @@ class GnaniSttStream:
         return self._bytes_sent / (2 * SAMPLE_RATE)
 
     async def _send_frame(self, frame: bytes) -> None:
+        if (
+            self.max_audio_bytes is not None
+            and self._bytes_sent + len(frame) > self.max_audio_bytes
+        ):
+            raise VoiceError(429, "VOICE_STREAM_LIMIT", "voice stream audio limit reached")
         await self._ws.send(frame)
         self._bytes_sent += len(frame)
 
@@ -151,6 +157,8 @@ class GnaniSttStream:
                 try:
                     payload = json.loads(msg)
                 except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
                     continue
                 yield SttStreamEvent(str(payload.get("type", "")), payload, time.perf_counter())
         except websockets.ConnectionClosed as exc:
@@ -204,11 +212,13 @@ class GnaniClient:
         api_key: str | None,
         base_url: str,
         timeout_s: float,
+        protocol_emulator: bool = False,
         governor: VoiceGovernor | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._key = api_key
         self.base_url = base_url.rstrip("/")
+        self.protocol_emulator = protocol_emulator and provider_of(self.base_url) != "gnani"
         self._timeout = timeout_s
         # Every call goes through a governor; tests get conservative in-memory defaults.
         self.governor = governor or VoiceGovernor(GovernorLimits(), MemoryLedger())
@@ -547,12 +557,18 @@ class GnaniClient:
         except Exception as exc:
             await ws.close()
             raise VoiceError(502, "VOICE_STREAM_FAILED", "no connected message") from exc
-        if first.get("type") != "connected":
+        if not isinstance(first, dict) or first.get("type") != "connected":
             await ws.close()
-            raise VoiceError(
-                502, "VOICE_STREAM_FAILED", str(first.get("message", "unexpected first message"))
+            message = (
+                first.get("message", "unexpected first message")
+                if isinstance(first, dict)
+                else "unexpected non-object first message"
             )
+            raise VoiceError(502, "VOICE_STREAM_FAILED", str(message))
         stream = GnaniSttStream(ws, first, expect_v3=(model == PRISMA_V3))
+        stream.max_audio_bytes = (
+            int(self.governor.limits.max_stream_s * 2 * SAMPLE_RATE) // FRAME_BYTES * FRAME_BYTES
+        )
         if not stream.model_confirmed:
             log.warning("gnani_model_not_confirmed", requested=model)
         return stream

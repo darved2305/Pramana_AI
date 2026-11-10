@@ -137,17 +137,17 @@ export default function NewInvestigationPage() {
         subtitle="Tell Pramana what is wrong and who can help. It will decide whom to ask, and what, one question at a time."
       />
 
-      <nav aria-label="Steps" className="overflow-x-auto pb-1 [scrollbar-width:none]">
-        <ol className="flex min-w-max items-center gap-1">
+      <nav aria-label="Steps" className="pb-1">
+        <ol className="grid grid-cols-2 gap-1 sm:grid-cols-4 xl:flex xl:min-w-max xl:items-center xl:gap-1">
           {STEPS.map((s, i) => (
-            <li key={s} className="flex items-center gap-1">
+            <li key={s} className="flex min-w-0 items-center gap-1">
               <button
                 type="button"
                 onClick={() => (i < step ? go(i) : i === step + 1 ? go(i) : undefined)}
                 disabled={i > step + 1}
                 aria-current={i === step ? "step" : undefined}
                 className={clsx(
-                  "flex h-9 items-center gap-2 rounded-full px-3 text-[13px] font-medium transition-colors",
+                  "flex h-9 min-w-0 w-full items-center gap-2 rounded-full px-2 text-[13px] font-medium transition-colors sm:px-3 xl:w-auto",
                   i === step ? "bg-accent-soft text-accent" : i < step ? "text-fg hover:bg-white/[.05]" : "text-muted",
                 )}
               >
@@ -159,9 +159,9 @@ export default function NewInvestigationPage() {
                 >
                   {i < step ? <IconCheck className="h-3 w-3" /> : i + 1}
                 </span>
-                {s}
+                <span>{s}</span>
               </button>
-              {i < STEPS.length - 1 ? <span className="h-px w-4 bg-line" aria-hidden /> : null}
+              {i < STEPS.length - 1 ? <span className="hidden h-px w-4 bg-line xl:block" aria-hidden /> : null}
             </li>
           ))}
         </ol>
@@ -185,7 +185,7 @@ export default function NewInvestigationPage() {
                       <Select {...a} value={packId} onChange={(e) => setPackId(e.target.value)}>
                         {(packs.data ?? [{ id: packId, title: packId }]).map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.title} ({p.id})
+                          {p.title}
                           </option>
                         ))}
                       </Select>

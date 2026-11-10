@@ -62,6 +62,16 @@ class Ours:
             return plan.action
         return _engine_conclusion(engine)
 
+    def next_at_budget(self, engine: Engine, history: History) -> Step:
+        """Keep selecting with this policy's ranking after its operational stop rule fires."""
+        plan = engine.plan()
+        if plan.kind == PlanKind.ASK and plan.action is not None:
+            return plan.action
+        if plan.candidates:
+            return plan.candidates[0].action
+        menu = engine.menu()
+        return menu[0][0] if menu else _engine_conclusion(engine)
+
 
 class ParallelOurs(Ours):
     """E with up to ``max_parallel`` people asked at once (docs/adr/0011). Run by
@@ -96,6 +106,10 @@ class RandomFeasible:
             return _engine_conclusion(engine)
         return self._rng.choice(menu)[0]
 
+    def next_at_budget(self, engine: Engine, history: History) -> Step:
+        menu = engine.menu()
+        return self._rng.choice(menu)[0] if menu else _engine_conclusion(engine)
+
 
 # A reasonable standard operating procedure a campus network admin might write: check the
 # reporter's phone and surroundings, then other people, then the closets, then the panel.
@@ -129,6 +143,14 @@ class Checklist:
         snap = engine.snapshot()
         if snap.map_decision_probability >= self.config.tau_hi:
             return Conclusion(snap.map_decision, snap.map_decision_probability)
+        action = self.next_at_budget(engine, history)
+        if isinstance(action, ProbeAction):
+            return action
+        if snap.map_decision_probability >= self.config.tau_lo:
+            return Conclusion(snap.map_decision, snap.map_decision_probability)
+        return Conclusion(None, snap.map_decision_probability)
+
+    def next_at_budget(self, engine: Engine, history: History) -> Step:
         menu = [a for a, _ in engine.menu()]
         for probe_id, who in CHECKLIST:
             for a in menu:
@@ -141,9 +163,7 @@ class Checklist:
                 if who not in ("reporter", "others", "anywhere") and a.location_id != who:
                     continue
                 return a
-        if snap.map_decision_probability >= self.config.tau_lo:
-            return Conclusion(snap.map_decision, snap.map_decision_probability)
-        return Conclusion(None, snap.map_decision_probability)
+        return Conclusion(None, engine.snapshot().map_decision_probability)
 
 
 def baseline_policies() -> list[Policy]:

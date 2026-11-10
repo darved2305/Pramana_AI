@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
+import anyio
 from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -343,9 +344,13 @@ class InvestigationService:
             report=Report.model_validate(row.request["report"]),
         )
 
-    async def _load_row(self, session: AsyncSession, inv_id: str, lock: bool) -> InvestigationRow:
+    async def _load_row(
+        self, session: AsyncSession, inv_id: str, lock: bool, *, startup_recovery: bool = False
+    ) -> InvestigationRow:
         stmt = select(InvestigationRow).where(InvestigationRow.id == inv_id)
         org = current_org.get()
+        if startup_recovery and org is None:
+            raise not_found("investigation")
         if org is not None:
             stmt = stmt.where(InvestigationRow.org_id == org)
         elif self.require_saved_models:
@@ -361,7 +366,11 @@ class InvestigationService:
             inspect(row).info["pinned_model"] = await self.site_models.load(
                 row.site_id, row.site_model_id
             )
-        elif self.require_saved_models or org is not None:
+        # Startup can inspect old demo rows that have no saved site model, but only after
+        # selecting them inside their organization context. Tenant routes keep the normal guard.
+        elif (row.site_id is not None or row.site_model_id is not None) or (
+            (self.require_saved_models or org is not None) and not startup_recovery
+        ):
             raise not_found("investigation")
         return row
 
@@ -1256,36 +1265,49 @@ class InvestigationService:
             row.org_id = org
             inspect(row).info["pinned_model"] = pinned
         engine = Engine(model, list(req.participants), self._engine_config)
-        async with self._lock(inv_id), self.db.transaction() as session:
-            session.add(row)
-            await session.flush()
-            if vault is not None and pinned is not None:
-                await self._keep_request(session, vault, row, pinned.site_id, req)
-            self._event(
-                session,
-                inv_id,
-                "InvestigationCreated",
-                {
-                    "pack_id": pack.pack,
-                    **(
-                        {
-                            "site_id": ids.encode("site", pinned.site_id),
-                            "site_model_id": ids.encode("model", pinned.model_id),
-                            "model_sha256": pinned.spec_sha256.hex(),
-                        }
-                        if pinned
-                        else {}
-                    ),
-                    "scenario_id": scenario.scenario_id,
-                    "commitment": scenario.commitment,
-                    "participants": stored["participants"],
-                    "engine_model_version": MODEL_VERSION,
-                },
-            )
-            self._event(session, inv_id, "ReportReceived", stored["report"])
-            await self._intake(session, row, engine, req)
-            await self._schedule(session, row, engine)
-            row.version = 1
+        try:
+            async with self._lock(inv_id), self.db.transaction() as session:
+                session.add(row)
+                await session.flush()
+                if vault is not None and pinned is not None:
+                    await self._keep_request(session, vault, row, pinned.site_id, req)
+                self._event(
+                    session,
+                    inv_id,
+                    "InvestigationCreated",
+                    {
+                        "pack_id": pack.pack,
+                        **(
+                            {
+                                "site_id": ids.encode("site", pinned.site_id),
+                                "site_model_id": ids.encode("model", pinned.model_id),
+                                "model_sha256": pinned.spec_sha256.hex(),
+                            }
+                            if pinned
+                            else {}
+                        ),
+                        "scenario_id": scenario.scenario_id,
+                        "commitment": scenario.commitment,
+                        "participants": stored["participants"],
+                        "engine_model_version": MODEL_VERSION,
+                    },
+                )
+                self._event(session, inv_id, "ReportReceived", stored["report"])
+                await self._intake(session, row, engine, req)
+                await self._schedule(session, row, engine)
+                row.version = 1
+        except BaseException:
+            # Scenario creation is an external write. Close that world if its database record
+            # cannot commit, so no participant can continue in an orphaned investigation.
+            with anyio.CancelScope(shield=True):
+                try:
+                    await self.sim.close(scenario.scenario_id)
+                except Exception as compensation_error:
+                    log.error(
+                        "simulator_compensation_failed",
+                        error_type=type(compensation_error).__name__,
+                    )
+            raise
         self._cache_engine(inv_id, row.version, engine)
         log.info("investigation_created", investigation_id=inv_id, status=row.status)
         return await self.get(inv_id)
@@ -2405,14 +2427,18 @@ class InvestigationService:
             )
         return int(head or 0)
 
-    async def replay(self, inv_id: str, *, warm_cache: bool = False) -> ReplayCheck:
+    async def replay(
+        self, inv_id: str, *, warm_cache: bool = False, startup_recovery: bool = False
+    ) -> ReplayCheck:
         """Rebuild the engine from the event log alone and compare it with the recorded belief.
 
         The recorded belief is the last ``BeliefUpdated`` payload, which every command that
         changes the belief appends. Both are compared as canonical JSON, byte for byte.
         """
         async with self._lock(inv_id), self.db.read() as session:
-            row = await self._load_row(session, inv_id, lock=False)
+            row = await self._load_row(
+                session, inv_id, lock=False, startup_recovery=startup_recovery
+            )
             engine, n = await self._rebuild(session, row)
             created = (
                 await session.execute(
@@ -2458,20 +2484,22 @@ class InvestigationService:
             else seal == {"sha256": log_digest(log[:seal_at]), "events": seal_at},
         )
 
-    async def open_investigations(self, limit: int = 1000) -> list[str]:
-        """Investigations whose story is not over (everything but ``closed``), oldest first."""
+    async def open_investigations(self, limit: int = 1000) -> list[tuple[uuid.UUID, str]]:
+        """Open investigation tenant contexts and IDs, oldest first."""
         async with self.db.read() as session:
             rows = await session.execute(
-                select(InvestigationRow.id)
+                select(InvestigationRow.org_id, InvestigationRow.id)
                 .where(InvestigationRow.status != InvestigationStatus.CLOSED.value)
                 .order_by(InvestigationRow.created_at)
                 .limit(limit)
             )
-            return [r for (r,) in rows.all()]
+            return list(rows.all())
 
-    async def record_engine_error(self, inv_id: str, payload: dict[str, Any]) -> None:
+    async def record_engine_error(
+        self, inv_id: str, payload: dict[str, Any], *, startup_recovery: bool = False
+    ) -> None:
         async with self._lock(inv_id), self.db.transaction() as session:
-            await self._load_row(session, inv_id, lock=True)
+            await self._load_row(session, inv_id, lock=True, startup_recovery=startup_recovery)
             self._event(session, inv_id, "EngineError", payload)
 
 

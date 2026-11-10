@@ -1,0 +1,487 @@
+{
+  "git_sha": "63c4254",
+  "python": "3.13.14",
+  "seeds": [
+    60000,
+    60299
+  ],
+  "scenario_mix": {
+    "single": 202,
+    "pair": 42,
+    "no_fault": 17,
+    "access_limited": 39
+  },
+  "scenario_manifest": {
+    "total": 300,
+    "strata": {
+      "single": 202,
+      "pair": 42,
+      "no_fault": 17,
+      "access_limited": 39
+    },
+    "behaviors": {
+      "implemented": [
+        "single_fault",
+        "pair_fault",
+        "no_fault",
+        "access_limited",
+        "sampled_participant_reliability",
+        "hedging",
+        "lay_hearsay"
+      ],
+      "proposed_not_in_this_generator": [
+        "unmodelled_fault",
+        "changing_world",
+        "map_drift",
+        "correlated_error",
+        "stale_answer",
+        "call_drop",
+        "generic_adversary"
+      ]
+    }
+  },
+  "policies": {
+    "E_ours": {
+      "n": 300,
+      "failed_runs": 0,
+      "success_rate": 0.7866666666666666,
+      "honest_success_rate": 0.7633333333333333,
+      "decision_accuracy": 0.8960396039603961,
+      "decided": 202,
+      "accuracy_on_identifiable": 0.7010309278350515,
+      "false_confidence_rate": 0.016666666666666666,
+      "abstention_recall": 0.75,
+      "accuracy_when_unidentifiable_but_decided": 0.875,
+      "pair_accuracy": 0.7380952380952381,
+      "pair_first_useful_action_rate": 0.6666666666666666,
+      "pair_full_resolution_rate": 0.0,
+      "pair_outcome_denominator": 42,
+      "pair_resolution_denominator": 42,
+      "pair_repairs_mean": 0.16666666666666666,
+      "pair_resolution_extra_probes_mean": 0.14285714285714285,
+      "justified_abstentions": 48,
+      "abstentions_with_unknown_identifiability": 7,
+      "abstention_precision": 0.5612244897959183,
+      "justified_abstention_precision": 0.4897959183673469,
+      "justified_abstention_recall": 0.75,
+      "probes_mean": 5.956666666666667,
+      "probes_median": 5.0,
+      "effort_s_mean": 205.29,
+      "people_mean": 2.59,
+      "hit_step_limit": 0,
+      "wall_s_mean": 205.29,
+      "withdrawn_mean": 0.0,
+      "presence_challenges_mean": 0.0,
+      "calibration": [
+        {
+          "bin": 1,
+          "low": 0.0,
+          "high": 0.1,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 202
+        },
+        {
+          "bin": 2,
+          "low": 0.1,
+          "high": 0.2,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 202
+        },
+        {
+          "bin": 3,
+          "low": 0.2,
+          "high": 0.3,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 202
+        },
+        {
+          "bin": 4,
+          "low": 0.3,
+          "high": 0.4,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 202
+        },
+        {
+          "bin": 5,
+          "low": 0.4,
+          "high": 0.5,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 202
+        },
+        {
+          "bin": 6,
+          "low": 0.5,
+          "high": 0.6,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 202
+        },
+        {
+          "bin": 7,
+          "low": 0.6,
+          "high": 0.7,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 202
+        },
+        {
+          "bin": 8,
+          "low": 0.7,
+          "high": 0.8,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 202
+        },
+        {
+          "bin": 9,
+          "low": 0.8,
+          "high": 0.9,
+          "count": 64,
+          "mean_confidence": 0.8562897194875403,
+          "accuracy": 0.75,
+          "denominator": 202
+        },
+        {
+          "bin": 10,
+          "low": 0.9,
+          "high": 1.0,
+          "count": 138,
+          "mean_confidence": 0.9431199548389351,
+          "accuracy": 0.9637681159420289,
+          "denominator": 202
+        }
+      ],
+      "strata": {
+        "single": {
+          "n": 202,
+          "false_confidence_n": 4,
+          "false_confidence_rate": 0.019801980198019802,
+          "abstentions": 46,
+          "abstention_rate": 0.22772277227722773,
+          "justified_abstentions": 12,
+          "unknown_identifiability_abstentions": 0
+        },
+        "pair": {
+          "n": 42,
+          "false_confidence_n": 1,
+          "false_confidence_rate": 0.023809523809523808,
+          "abstentions": 7,
+          "abstention_rate": 0.16666666666666666,
+          "justified_abstentions": 0,
+          "unknown_identifiability_abstentions": 7
+        },
+        "no_fault": {
+          "n": 17,
+          "false_confidence_n": 0,
+          "false_confidence_rate": 0.0,
+          "abstentions": 10,
+          "abstention_rate": 0.5882352941176471,
+          "justified_abstentions": 1,
+          "unknown_identifiability_abstentions": 0
+        },
+        "access_limited": {
+          "n": 39,
+          "false_confidence_n": 0,
+          "false_confidence_rate": 0.0,
+          "abstentions": 35,
+          "abstention_rate": 0.8974358974358975,
+          "justified_abstentions": 35,
+          "unknown_identifiability_abstentions": 0
+        }
+      }
+    },
+    "D_greedy_entropy": {
+      "n": 300,
+      "failed_runs": 0,
+      "success_rate": 0.81,
+      "honest_success_rate": 0.7933333333333333,
+      "decision_accuracy": 0.927536231884058,
+      "decided": 207,
+      "accuracy_on_identifiable": 0.7422680412371134,
+      "false_confidence_rate": 0.023333333333333334,
+      "abstention_recall": 0.71875,
+      "accuracy_when_unidentifiable_but_decided": 0.8888888888888888,
+      "pair_accuracy": 0.7619047619047619,
+      "pair_first_useful_action_rate": 0.7619047619047619,
+      "pair_full_resolution_rate": 0.0,
+      "pair_outcome_denominator": 42,
+      "pair_resolution_denominator": 42,
+      "pair_repairs_mean": 0.11904761904761904,
+      "pair_resolution_extra_probes_mean": 0.16666666666666666,
+      "justified_abstentions": 46,
+      "abstentions_with_unknown_identifiability": 5,
+      "abstention_precision": 0.5483870967741935,
+      "justified_abstention_precision": 0.4946236559139785,
+      "justified_abstention_recall": 0.71875,
+      "probes_mean": 5.006666666666667,
+      "probes_median": 4.0,
+      "effort_s_mean": 253.04666666666665,
+      "people_mean": 2.33,
+      "hit_step_limit": 0,
+      "wall_s_mean": 253.04666666666665,
+      "withdrawn_mean": 0.0,
+      "presence_challenges_mean": 0.0,
+      "calibration": [
+        {
+          "bin": 1,
+          "low": 0.0,
+          "high": 0.1,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 207
+        },
+        {
+          "bin": 2,
+          "low": 0.1,
+          "high": 0.2,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 207
+        },
+        {
+          "bin": 3,
+          "low": 0.2,
+          "high": 0.3,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 207
+        },
+        {
+          "bin": 4,
+          "low": 0.3,
+          "high": 0.4,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 207
+        },
+        {
+          "bin": 5,
+          "low": 0.4,
+          "high": 0.5,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 207
+        },
+        {
+          "bin": 6,
+          "low": 0.5,
+          "high": 0.6,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 207
+        },
+        {
+          "bin": 7,
+          "low": 0.6,
+          "high": 0.7,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 207
+        },
+        {
+          "bin": 8,
+          "low": 0.7,
+          "high": 0.8,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null,
+          "denominator": 207
+        },
+        {
+          "bin": 9,
+          "low": 0.8,
+          "high": 0.9,
+          "count": 62,
+          "mean_confidence": 0.8579696403974549,
+          "accuracy": 0.8709677419354839,
+          "denominator": 207
+        },
+        {
+          "bin": 10,
+          "low": 0.9,
+          "high": 1.0,
+          "count": 145,
+          "mean_confidence": 0.9451686173180258,
+          "accuracy": 0.9517241379310345,
+          "denominator": 207
+        }
+      ],
+      "strata": {
+        "single": {
+          "n": 202,
+          "false_confidence_n": 5,
+          "false_confidence_rate": 0.024752475247524754,
+          "abstentions": 44,
+          "abstention_rate": 0.21782178217821782,
+          "justified_abstentions": 11,
+          "unknown_identifiability_abstentions": 0
+        },
+        "pair": {
+          "n": 42,
+          "false_confidence_n": 2,
+          "false_confidence_rate": 0.047619047619047616,
+          "abstentions": 5,
+          "abstention_rate": 0.11904761904761904,
+          "justified_abstentions": 0,
+          "unknown_identifiability_abstentions": 5
+        },
+        "no_fault": {
+          "n": 17,
+          "false_confidence_n": 0,
+          "false_confidence_rate": 0.0,
+          "abstentions": 10,
+          "abstention_rate": 0.5882352941176471,
+          "justified_abstentions": 1,
+          "unknown_identifiability_abstentions": 0
+        },
+        "access_limited": {
+          "n": 39,
+          "false_confidence_n": 0,
+          "false_confidence_rate": 0.0,
+          "abstentions": 34,
+          "abstention_rate": 0.8717948717948718,
+          "justified_abstentions": 34,
+          "unknown_identifiability_abstentions": 0
+        }
+      }
+    }
+  },
+  "paired_vs_E": {
+    "D_greedy_entropy": {
+      "success": {
+        "mean": -0.023333333333333334,
+        "ci95_low": -0.06666666666666667,
+        "ci95_high": 0.02,
+        "n": 300.0
+      },
+      "honest_success": {
+        "mean": -0.03,
+        "ci95_low": -0.07333333333333333,
+        "ci95_high": 0.013333333333333334,
+        "n": 300.0
+      },
+      "probes": {
+        "mean": 0.95,
+        "ci95_low": 0.66,
+        "ci95_high": 1.2566666666666666,
+        "n": 300.0
+      },
+      "effort_s": {
+        "mean": -47.75666666666667,
+        "ci95_low": -61.35008333333334,
+        "ci95_high": -33.97641666666667,
+        "n": 300.0
+      },
+      "wall_s": {
+        "mean": -47.75666666666667,
+        "ci95_low": -61.35008333333334,
+        "ci95_high": -33.97641666666667,
+        "n": 300.0
+      }
+    }
+  },
+  "primary_tests": {
+    "success_definition": "correct decision or abstention where identifiability is false; pair abstention is not success",
+    "success": {
+      "A_checklist": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "B_llm": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "C_random": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "D_greedy_entropy": {
+        "n": 300,
+        "p": 0.2220528201560228,
+        "p_holm": 1.0
+      },
+      "E_parallel3": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      }
+    },
+    "probes": {
+      "A_checklist": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "B_llm": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "C_random": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "D_greedy_entropy": {
+        "n": 300,
+        "p": 1.4914339803006863e-10,
+        "p_holm": 7.457169901503432e-10
+      },
+      "E_parallel3": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      }
+    },
+    "effort_s": {
+      "A_checklist": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "B_llm": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "C_random": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      },
+      "D_greedy_entropy": {
+        "n": 300,
+        "p": 4.212049926983482e-12,
+        "p_holm": 2.106024963491741e-11
+      },
+      "E_parallel3": {
+        "n": 0,
+        "p": null,
+        "p_holm": null
+      }
+    }
+  }
+}

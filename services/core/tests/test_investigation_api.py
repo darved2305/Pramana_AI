@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
@@ -11,8 +12,12 @@ import pytest
 from core_testkit import body, core_settings
 from fastapi.testclient import TestClient
 from participant_bot import answer_pending, run_to_conclusion
+from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from pramana_core.db import EventRow, InvestigationRow
+from pramana_core.llm import LlmTimeoutError
 from pramana_core.main import create_app
 
 pytestmark = pytest.mark.db
@@ -74,6 +79,7 @@ def test_runtime_engine_and_lock_caches_stay_bounded(core: TestClient) -> None:
 def test_create_returns_belief_plan_and_first_question(core: TestClient) -> None:
     inv = create(core, fault="CB_C2_7.tripped")
     assert inv["status"] == "investigating"
+    assert "ground_truth" not in inv
     assert len(inv["sealed_commitment"]) == 64
     # The report "WiFi nahi chal raha, kuch khul nahi raha" was extracted as internet_works=no.
     assert [(o["probe_id"], o["outcome"]) for o in inv["observations"]] == [
@@ -211,6 +217,55 @@ def test_answer_validation(core: TestClient) -> None:
     assert core.get("/v1/investigations/inv_missing").status_code == 404
 
 
+def test_llm_gateway_timeout_falls_back_without_partial_answer_writes(
+    core: TestClient,
+) -> None:
+    inv = create(core, fault="CB_C2_7.tripped")
+    question = inv["pending_question"]
+    extractor = core.app.state.investigations.extractor  # type: ignore[attr-defined]
+    original_llm = extractor.llm
+
+    class TimedOutGateway:
+        def complete_json(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise LlmTimeoutError("test gateway timeout")
+
+    before_events = core.get(f"/v1/investigations/{inv['id']}/events").json()
+    before_count = len(before_events)
+    try:
+        extractor.llm = TimedOutGateway()
+        response = core.post(
+            f"/v1/investigations/{inv['id']}/answers",
+            json={
+                "question_id": question["id"],
+                "participant_id": question["action"]["participant_id"],
+                "text": "display pe koi picture nahi hai",
+            },
+        )
+    finally:
+        extractor.llm = original_llm
+
+    assert response.status_code == 200, response.text
+    assert response.json()["extraction"]["method"] == "rules"
+    assert response.json()["extraction"]["outcome"] == "unknown"
+    after_events = core.get(f"/v1/investigations/{inv['id']}/events").json()
+    assert len(after_events) > before_count
+    delta = after_events[before_count:]
+    assert sum(event["type"] == "ObservationRecorded" for event in delta) == 1
+    state = core.get(f"/v1/investigations/{inv['id']}").json()
+    assert state["status"] == "investigating"
+    assert state["pending_question"] is not None
+    next_question = state["pending_question"]
+    recovered = core.post(
+        f"/v1/investigations/{inv['id']}/answers",
+        json={
+            "question_id": next_question["id"],
+            "participant_id": next_question["action"]["participant_id"],
+            "text": "haan",
+        },
+    )
+    assert recovered.status_code == 200, recovered.text
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -297,12 +352,13 @@ def test_failed_command_rolls_back_everything(core: TestClient, monkeypatch: Any
         raise RuntimeError("simulated crash after the observation was recorded")
 
     monkeypatch.setattr(svc, "_apply_plan", boom)
-    # TestClient re-raises server errors; a real server answers 500 {"error": {"code": "INTERNAL"}}.
-    with pytest.raises(RuntimeError, match="simulated crash"):
-        core.post(
-            f"/v1/investigations/{inv['id']}/answers",
-            json={"question_id": q["id"], "participant_id": "p_riya", "outcome": "no_network"},
-        )
+    response = core.post(
+        f"/v1/investigations/{inv['id']}/answers",
+        json={"question_id": q["id"], "participant_id": "p_riya", "outcome": "no_network"},
+    )
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL"
+    assert "simulated crash" not in response.text
     monkeypatch.undo()
     after = core.get(f"/v1/investigations/{inv['id']}").json()
     assert after["pending_question"]["id"] == q["id"]
@@ -358,3 +414,89 @@ def test_returned_plan_is_the_one_that_chose_the_pending_question(core: TestClie
     events = core.get(f"/v1/investigations/{inv['id']}/events").json()
     last_plan = [e for e in events if e["type"] == "PlanComputed"][-1]["payload"]
     assert inv["plan"] == last_plan
+
+
+def test_database_failure_after_simulator_create_compensates_and_recovers(
+    core: TestClient,
+) -> None:
+    sim_app = core.sim_app  # type: ignore[attr-defined]
+    store = sim_app.state.store
+    original_ids = set(store._items)
+    db = core.app.state.db  # type: ignore[union-attr]
+
+    @asynccontextmanager
+    async def unavailable_transaction():
+        raise OperationalError("insert investigation", {}, RuntimeError("connection lost"))
+        yield  # pragma: no cover
+
+    original_transaction = db.transaction
+    db.transaction = unavailable_transaction
+    try:
+        failed = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+    finally:
+        db.transaction = original_transaction
+
+    assert failed.status_code == 503, failed.text
+    assert failed.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+    created_ids = set(store._items) - original_ids
+    assert len(created_ids) == 1
+    scenario = store._items[created_ids.pop()]
+    assert scenario.status.value == "closed"
+
+    engine = create_async_engine(core.app.state.settings.database_url)
+    try:
+
+        async def row_counts() -> tuple[int, int]:
+            async with engine.connect() as connection:
+                investigations = await connection.exec_driver_sql(
+                    "select count(*) from investigations"
+                )
+                events = await connection.exec_driver_sql("select count(*) from events")
+                return investigations.scalar_one(), events.scalar_one()
+
+        assert asyncio.run(row_counts()) == (0, 0)
+    finally:
+        asyncio.run(engine.dispose())
+
+    recovered = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+    assert recovered.status_code == 201, recovered.text
+
+
+def test_simulator_outage_returns_retryable_error_without_partial_rows_and_recovers(
+    core: TestClient,
+) -> None:
+    sim = core.app.state.sim  # type: ignore[union-attr]
+    original_http = sim._http
+
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("simulator down", request=request)
+
+    sim._http = httpx.AsyncClient(
+        base_url="http://sim.test",
+        headers={"X-Operator-Key": "test-operator-key"},
+        transport=httpx.MockTransport(unavailable),
+    )
+
+    async def counts() -> tuple[int, int]:
+        async with core.app.state.db.read() as session:  # type: ignore[union-attr]
+            investigations = await session.scalar(
+                select(func.count()).select_from(InvestigationRow)
+            )
+            events = await session.scalar(select(func.count()).select_from(EventRow))
+        return int(investigations or 0), int(events or 0)
+
+    try:
+        before = core.portal.call(counts)  # type: ignore[attr-defined]
+        response = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+        assert response.status_code == 503, response.text
+        assert response.json()["error"]["code"] == "SIM_UNAVAILABLE"
+        assert core.portal.call(counts) == before  # type: ignore[attr-defined]
+    finally:
+        core.portal.call(sim._http.aclose)  # type: ignore[attr-defined]
+        sim._http = original_http
+
+    recovered = core.post("/v1/investigations", json=body(fault="CB_C2_7.tripped"))
+    assert recovered.status_code == 201, recovered.text
+    after = core.portal.call(counts)  # type: ignore[attr-defined]
+    assert after[0] == before[0] + 1
+    assert after[1] > before[1]

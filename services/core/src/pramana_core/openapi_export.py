@@ -17,6 +17,8 @@ def build() -> dict[str, Any]:
     # Placeholder settings: the spec does not depend on secrets or connections.
     settings = Settings(
         **{  # type: ignore[arg-type]
+            # Never connected to: a named database only satisfies the explicit-selection rule.
+            "DATABASE_URL": "postgresql+asyncpg://openapi@localhost:5433/openapi_export",
             "SIM_OPERATOR_KEY": "x",
             "PARTICIPANT_SIGNING_KEY": "x",
             "GNANI_API_KEY": "",

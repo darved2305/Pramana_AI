@@ -1,0 +1,41 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:06.000
+Time-compressed highlights: A new operator signs in through the local mock.
+
+2
+00:00:06.000 --> 00:00:12.000
+Question 1: On your phone, open the list of available networks. Is this site's network missing, still connecting, or connected?
+
+3
+00:00:12.000 --> 00:00:18.000
+Facilities technician (simulated) answered from the simulated site card: connected.
+
+4
+00:00:18.000 --> 00:00:24.000
+The investigation reached DISPATCH_ELECTRICIAN_DB_C2.
+
+5
+00:00:24.000 --> 00:00:30.000
+Approval requested for Reset a tripped breaker on CB_C2_7.
+
+6
+00:00:30.000 --> 00:00:36.000
+The separate approver approved the repair.
+
+7
+00:00:36.000 --> 00:00:42.000
+The approved participant reported the simulated repair.
+
+8
+00:00:42.000 --> 00:00:48.000
+The investigation status is verified.
+
+9
+00:00:48.000 --> 00:00:54.000
+Reveal: CB_C2_7 tripped; commitment verified: true.
+
+10
+00:00:54.000 --> 00:01:00.000
+Replay identical across 56 events.

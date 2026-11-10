@@ -66,7 +66,8 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   measures end-of-speech → transcript latency).
 - A usage governor (`voice/governor.py`): rate windows below the account's 60/min, at most 16
   of the 20 concurrent sessions, one REST call in flight, and a daily rupee budget checked
-  before every call and persisted in PostgreSQL.
+  before every call, with PostgreSQL reservations, rate windows and capacity shared across core
+  instances. Expired reservations are charged conservatively; see GNANI_INTEGRATION.md.
 - Voice turns inside an investigation: `GET /v1/investigations/{id}/questions/{qid}/audio`
   (cached, so a replay costs nothing) and `POST /v1/investigations/{id}/answers/voice`
   (question-conditioned STT, then the same extraction and engine path as typed answers). This
@@ -77,18 +78,23 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   allows one open session per token, opens a Prisma v3.0 session with that question's context
   (language candidates, `codemix`, answer keyterms, `x-min-segment-ms` 100), sends the question
   audio in 16 KiB binary chunks, relays `speech_start`/`processing`/`transcript`, and submits
-  the first non-empty transcript through the normal answer path. Empty transcripts record
+  the first non-empty final transcript through the normal answer path; explicitly non-final
+  transcripts are ignored. Empty transcripts record
   nothing; a question answered elsewhere ends the session with `409 QUESTION_NOT_PENDING`;
   governor refusals arrive as typed error frames and close code 4429. Protocol coverage is in
   `tests/test_media_ws.py`. Nov 7 live-Gnani participant-call rehearsals exercise the same
   per-question media implementation, including S7 label readings; participants were synthetic
   bots (`eval/reports/demo-freeze-2026-11-07/NOTES.md`). Presence turns carry their question kind,
   no probe answer choices and no probe vocabulary hints.
+- Malformed JSON and non-object control frames received from the upstream stream or by the
+  browser client are ignored, so a later valid control frame can still be processed.
 - **Browser capture** (`apps/web/public/worklets/pcm16-capture.js`): an AudioWorklet that
   low-pass filters (63-tap windowed sinc) and resamples 48/44.1 kHz input to 16 kHz mono PCM16
   in 1,024-byte frames; `node apps/web/scripts/check-pcm-worklet.mjs` checks frame size, rate,
   passband gain and 12 kHz rejection. `apps/web/src/lib/audio/media.ts` is the client, with
-  barge-in (playback stops on `speech_start`).
+  barge-in (playback stops on `speech_start`). If capture setup fails after microphone access,
+  the client stops the acquired tracks and leaves tap answers and retry available. Run
+  `cd apps/web && node --test scripts/media-mic.test.mjs` for the setup failure checks.
 - **Call runtime skeleton** (`calls/runtime.py`): the PLAN §12 state machine as an explicit
   transition table, with an injected clock for the 30 s ring, 8 s re-prompt (once) and 20 s
   unavailable timers, utterance ids for dropping stale audio, and a preemption hook. Every
@@ -138,4 +144,22 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   with three questions in flight, verified repairs and identical replay. These are integration
   checks with synthetic voices, not the missing three-human M2 milestone.
 - Sustained emulated-load results and human/phone limitations are recorded in STATUS_2026-11-07.md.
-- Published latency figures. Measurements exist but stay private under the Gnani EULA.
+- No Gnani latency figures are published. VOICE_LATENCY_EMULATOR.md reports local synthetic timing
+  and does not describe provider performance.
+
+## Recovery and emulator measurement
+
+- If a participant socket closes during capture or submission, the browser fetches the investigation
+  again before offering another attempt. An answer already accepted is not submitted again. If the
+  question remains pending, voice, tap and text remain available. Browser tests cover both drop
+  points; the server emulator matrix checks that recovery records at most one observation and keeps
+  replay identical.
+- The local emulator can drop an upstream stream, return a 429 or 5xx response, delay the first TTS
+  byte, send a partial transcript or malformed frame, and add deterministic seeded noise to
+  synthetic PCM. The fault matrix drives each mode through the core and local PostgreSQL without
+  contacting Gnani.
+- Structured voice_hop events record capture, proxy, upstream, transcript, extraction,
+  next-question TTS and playback timings under a random trace id. They contain no audio or
+  transcript content. scripts/load_test.py runs a fixed number of emulator investigations and
+  writes p50/p95 hops. VOICE_LATENCY_EMULATOR.md is explicitly emulator-only, not Gnani
+  performance. Provider measurements stay private under the Gnani EULA.

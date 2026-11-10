@@ -55,7 +55,7 @@ export default function ParticipantsPage() {
       <PageHeader
         title="Participants"
         eyebrow={preview ? <PreviewBadge /> : undefined}
-        subtitle="The people Pramana can ask. Each has roles that decide what they can check, a place they are now, and the languages they speak."
+        subtitle="Simulated people Pramana can ask. Each has roles that decide what they can check, a place they are now, and the languages they speak."
         actions={
           <Button variant="primary" size="lg" onClick={() => setEditing("new")} disabled={!canEdit} title={preview ? "Disabled in preview" : !canEdit ? "Needs the operator role" : undefined}>
             <IconPlus className="h-4 w-4" /> Add participant
@@ -146,7 +146,7 @@ export default function ParticipantsPage() {
                   <dt className="text-muted">Asked in</dt>
                   <dd className="text-right">
                     {langLabel(p.languages.template_language)}
-                    {p.languages.codemix ? " (mixed)" : ""}
+                    {p.languages.codemix && p.languages.template_language !== "hi-en" ? " (mixed)" : ""}
                   </dd>
                 </div>
               </dl>

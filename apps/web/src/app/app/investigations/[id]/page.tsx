@@ -19,13 +19,13 @@ import {
 import { IconArrowLeft, IconCopy, IconLink, IconLock, IconPlay } from "@/components/ui/icons";
 import { BuildingMap } from "@/components/app/BuildingMap";
 import { Avatar } from "@/components/app/Avatar";
-import { DecisionBar, DiagnosisPanel, HypothesisPanel, ReasoningPanel } from "@/components/console/BeliefPanels";
+import { BeliefChange, DecisionBar, DiagnosisPanel, HypothesisPanel, ReasoningPanel } from "@/components/console/BeliefPanels";
 import { ApprovalPanel, ContradictionPanel, ConversationPanel, EvidenceLedger, TestimonyPanel } from "@/components/console/ActivityPanels";
 import { ForecastPanel } from "@/components/console/ForecastPanel";
-import { useInvestigation, useInvestigationPack } from "@/lib/data/hooks";
+import { useEventLog, useInvestigation, useInvestigationPack } from "@/lib/data/hooks";
 import { useCurrentUser } from "@/lib/data/session";
 import { hasRole } from "@/lib/api/auth";
-import { STATUS_LABEL, STATUS_TONE, findContradictions, locationLabel, outcomeWord, participantName, probeLabel, relative } from "@/lib/data/derive";
+import { STATUS_LABEL, STATUS_TONE, abstainRationale, checkRationale, findContradictions, locationLabel, outcomeWord, participantName, pct, probeLabel, relative } from "@/lib/data/derive";
 import { ApiError, describeError } from "@/lib/api/http";
 import { encodeJoin } from "@/lib/join";
 import { useOptionalWorkspace } from "@/lib/org/context";
@@ -38,6 +38,7 @@ export default function CommandCenterPage() {
 
 function CommandCenterRoute({ id }: { id: string }) {
   const feed = useInvestigation(id);
+  const log = useEventLog(id);
   const pack = useInvestigationPack(feed.state);
   const [linksOpen, setLinksOpen] = useState(false);
   const [revealOpen, setRevealOpen] = useState(false);
@@ -67,6 +68,7 @@ function CommandCenterRoute({ id }: { id: string }) {
       pack={pack.data}
       packError={pack.status === "error" ? pack.error : null}
       feed={feed}
+      events={[...(log.data ?? []), ...feed.events]}
       readOnly={readOnly}
       onLinks={() => setLinksOpen(true)}
       onReveal={() => setRevealOpen(true)}
@@ -82,6 +84,7 @@ function CommandCenter({
   pack,
   packError,
   feed,
+  events,
   readOnly,
   onLinks,
   onReveal,
@@ -91,6 +94,7 @@ function CommandCenter({
   pack?: SitePack;
   packError: unknown;
   feed: ReturnType<typeof useInvestigation>;
+  events: Parameters<typeof BeliefChange>[0]["events"];
   readOnly: boolean;
   onLinks: () => void;
   onReveal: () => void;
@@ -117,6 +121,7 @@ function CommandCenter({
   return (
     <div className="flex flex-col gap-4">
       <BackLink />
+      <CurrentStep state={s} pack={pack} />
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -142,6 +147,7 @@ function CommandCenter({
             {s.report.affected_location_id ? ` at ${locationLabel(pack, s.report.affected_location_id)}` : ""} · {pack?.title ?? s.pack_id} ·{" "}
             <span className="font-mono text-[12px]">{s.id}</span>
           </p>
+          <p className="mt-1 text-[13px] text-fg-2">The building and its fault are simulated.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <ButtonLink href={`${scope.base}/investigations/${s.id}/replay`}>
@@ -276,6 +282,8 @@ function CommandCenter({
         <ReasoningPanel state={s} pack={pack} />
       </div>
 
+      <BeliefChange events={events} state={s} pack={pack} />
+
       <EvidenceLedger state={s} pack={pack} />
 
       <TestimonyPanel state={s} pack={pack} />
@@ -295,6 +303,45 @@ function CommandCenter({
         />
       ) : null}
     </div>
+  );
+}
+
+function CurrentStep({ state, pack }: { state: InvestigationState; pack?: SitePack }) {
+  const questions = state.pending_questions?.length ? state.pending_questions : state.pending_question ? [state.pending_question] : [];
+  const matchesPlan = (q: typeof questions[number]) => state.plan.kind === "ask" &&
+    q.action.participant_id === state.plan.action?.participant_id &&
+    q.action.probe_id === state.plan.action?.probe_id && q.action.location_id === state.plan.action?.location_id;
+  const question = questions.find(matchesPlan) ?? questions[0];
+  const stopped = !question && ["decided", "abstained", "awaiting_approval", "acting", "verified", "not_verified", "closed"].includes(state.status) &&
+    (state.plan.kind === "decide" || state.plan.kind === "abstain");
+  const decisionId = state.plan.decision_class ?? state.belief.map_decision;
+  const decision = state.belief.decisions.find((item) => item.id === decisionId)?.label
+    ?? pack?.decision_classes.find((item) => item.id === decisionId)?.label;
+  const reason = stopped
+    ? state.plan.kind === "abstain"
+      ? abstainRationale(state.plan, pack)
+      : state.plan.moderate_confidence
+        ? "Confidence is moderate: nobody available can check anything more."
+        : "The recorded evidence supports this recommendation."
+    : question && matchesPlan(question)
+      ? checkRationale(state.plan, participantName(state, question.action.participant_id))
+      : "This check is expected to help narrow the reported problem.";
+  if (!question && !stopped) return null;
+  return (
+    <section aria-label="Current step" aria-live="polite" className="rounded-[12px] border border-info/40 bg-info/[.06] p-4">
+      {stopped ? (
+        <>
+          <h2 className="text-[13px] font-medium text-info">{state.plan.kind === "abstain" ? "Stopped without a decision" : "Decision"}</h2>
+          {state.plan.kind === "decide" ? <p className="mt-1 text-[17px] text-fg">{decision ?? "Decision recorded"} ({pct(state.plan.decision_probability ?? state.belief.map_decision_probability)} confidence)</p> : null}
+        </>
+      ) : question ? (
+        <>
+          <h2 className="text-[13px] font-medium text-info">Waiting for {participantName(state, question.action.participant_id)}</h2>
+          <p lang={question.language === "hi-en" ? "hi-Latn" : question.language} className="mt-1 text-[17px] text-fg">{question.text}</p>
+        </>
+      ) : null}
+      <p className="mt-2 text-[13px] text-fg-2">{reason}</p>
+    </section>
   );
 }
 

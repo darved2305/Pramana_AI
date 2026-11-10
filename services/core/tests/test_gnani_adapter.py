@@ -45,6 +45,63 @@ def client(handler: Any, key: str | None = "k") -> GnaniClient:
     return GnaniClient(key, "https://api.vachana.ai", 5, transport=httpx.MockTransport(handler))
 
 
+async def test_stream_ignores_malformed_and_non_object_frames() -> None:
+    class Socket:
+        close_code = 1000
+        close_reason = ""
+
+        async def __aiter__(self) -> Any:
+            for frame in ("{", "null", "[]", '{"type":"transcript","text":"yes"}'):
+                yield frame
+
+    stream = GnaniSttStream(Socket(), {}, False)  # type: ignore[arg-type]
+    events = [event async for event in stream.events()]
+    assert [event.type for event in events] == ["transcript", "closed"]
+
+
+async def test_stream_rejects_non_object_connected_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Socket:
+        close_code = 1000
+        close_reason = ""
+        closed = False
+
+        async def recv(self) -> str:
+            return "[]"
+
+        async def close(self) -> None:
+            self.closed = True
+
+    socket = Socket()
+
+    async def connect(*args: Any, **kwargs: Any) -> Socket:
+        return socket
+
+    monkeypatch.setattr(gmod.websockets, "connect", connect)
+    g = client(lambda _: httpx.Response(200))
+    with pytest.raises(VoiceError) as exc:
+        await g.open_stream(["hi-IN"])
+    assert exc.value.code == "VOICE_STREAM_FAILED"
+    assert socket.closed
+    await g.aclose()
+
+
+async def test_stream_never_sends_audio_beyond_reserved_limit() -> None:
+    class Socket:
+        def __init__(self) -> None:
+            self.frames: list[bytes] = []
+
+        async def send(self, frame: bytes) -> None:
+            self.frames.append(frame)
+
+    socket = Socket()
+    stream = GnaniSttStream(socket, {}, False)  # type: ignore[arg-type]
+    stream.max_audio_bytes = 1024
+    with pytest.raises(VoiceError) as exc:
+        await stream.send_pcm(bytes(2048))
+    assert exc.value.code == "VOICE_STREAM_LIMIT"
+    assert len(socket.frames) == 1
+
+
 def test_wav_duration() -> None:
     assert wav_duration_s(wav(1.5)) == pytest.approx(1.5)
     assert wav_duration_s(b"not a wav") is None
@@ -302,6 +359,46 @@ def test_browser_stream_relay_end_to_end(fake: FakeGnani, migrated_db: str) -> N
         assert seen == ["speech_start", "processing", "transcript"]
 
 
+def test_browser_stream_relay_ignores_non_final_transcripts(
+    fake: FakeGnani, migrated_db: str
+) -> None:
+    fake.partial_transcript = "not yet final"
+    app = create_app(core_settings(migrated_db, GNANI_API_KEY="k", GNANI_BASE_URL=fake.base_url))
+    with TestClient(app) as c, c.websocket_connect("/v1/voice/stream") as ws:
+        ws.send_text(json.dumps({"type": "start", "language_code": ["mr-IN", "hi-IN"]}))
+        assert json.loads(ws.receive_text()) == {"type": "ready", "model_confirmed": True}
+        ws.send_bytes(b"\x01\x00" * 600)
+        ws.send_text(json.dumps({"type": "commit"}))
+        transcripts = []
+        while not transcripts:
+            msg = json.loads(ws.receive_text())
+            if msg["type"] == "transcript":
+                transcripts.append(msg["text"])
+        assert transcripts == ["बंद आहे"]
+
+
+def test_browser_stream_ignores_malformed_and_non_object_control_frames(
+    fake: FakeGnani, migrated_db: str
+) -> None:
+    app = create_app(core_settings(migrated_db, GNANI_API_KEY="k", GNANI_BASE_URL=fake.base_url))
+    with TestClient(app) as c, c.websocket_connect("/v1/voice/stream") as ws:
+        ws.send_text(json.dumps({"type": "start", "language_code": ["mr-IN", "hi-IN"]}))
+        assert json.loads(ws.receive_text()) == {"type": "ready", "model_confirmed": True}
+        ws.send_text("{")
+        ws.send_text("null")
+        ws.send_text("[]")
+        ws.send_bytes(b"\x01\x00" * 600)
+        ws.send_text(json.dumps({"type": "commit"}))
+        seen = []
+        while True:
+            msg = json.loads(ws.receive_text())
+            seen.append(msg["type"])
+            if msg["type"] == "transcript":
+                break
+        assert msg["text"] == "बंद आहे"
+        assert seen == ["speech_start", "processing", "transcript"]
+
+
 def test_browser_stream_requires_start_message(migrated_db: str) -> None:
     app = create_app(core_settings(migrated_db, GNANI_API_KEY="k"))
     with TestClient(app) as c, c.websocket_connect("/v1/voice/stream") as ws:
@@ -430,8 +527,14 @@ def test_voice_status_names_the_provider_the_core_actually_calls(migrated_db: st
         status = c.get("/v1/voice/status").json()
         assert (status["provider"], status["provider_host"]) == ("gnani", "api.vachana.ai")
     emulated = create_app(
-        core_settings(migrated_db, GNANI_API_KEY="k", GNANI_BASE_URL="http://127.0.0.1:8190")
+        core_settings(
+            migrated_db,
+            GNANI_API_KEY="k",
+            GNANI_BASE_URL="http://127.0.0.1:8190",
+            GNANI_PROTOCOL_EMULATOR=True,
+        )
     )
     with TestClient(emulated) as c:
         status = c.get("/v1/voice/status").json()
         assert (status["provider"], status["provider_host"]) == ("other", "127.0.0.1")
+        assert status["protocol_emulator"] is True
