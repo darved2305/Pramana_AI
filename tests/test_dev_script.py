@@ -137,7 +137,22 @@ def test_http_ok_against_a_real_socket() -> None:
     assert not dev.http_ok(f"http://127.0.0.1:{port}/health", timeout_s=0.5)  # closed port
 
 
-def test_service_env_points_the_core_at_the_chosen_simulator() -> None:
+def use_checkout_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A checkout .env that selects a database, so tests never depend on the developer's own."""
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=postgresql+asyncpg://local/selected"
+        + chr(10)
+        + "PRAMANA_DB_NAMES=selected"
+        + chr(10),
+        encoding="utf-8",
+    )
+
+
+def test_service_env_points_the_core_at_the_chosen_simulator(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    use_checkout_env(monkeypatch, tmp_path)
     env = dev.service_env(dev.parse_args(["--core-port", "8030", "--sim-port", "8130"]), {})
     assert env["SIM_URL"] == "http://127.0.0.1:8130"
     assert env["CORE_PORT"] == "8030"
@@ -146,7 +161,10 @@ def test_service_env_points_the_core_at_the_chosen_simulator() -> None:
     assert "http://localhost:3002" in env["CORS_ORIGINS"]
 
 
-def test_service_env_keeps_explicit_cors_settings() -> None:
+def test_service_env_keeps_explicit_cors_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    use_checkout_env(monkeypatch, tmp_path)
     env = dev.service_env(dev.parse_args([]), {"CORS_ORIGINS": '["https://x"]'})
     assert env["CORS_ORIGINS"] == '["https://x"]'
 
