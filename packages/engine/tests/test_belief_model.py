@@ -410,3 +410,29 @@ def test_s1_reaches_the_electrician_dispatch_in_at_most_six_questions(
     assert plan.decision_class == "DISPATCH_ELECTRICIAN_DB_C2"
     assert plan.decision_probability >= 0.95
     assert asked <= 6
+
+
+@pytest.mark.parametrize("mean", [0.5005, 0.75, 0.9995])
+@pytest.mark.parametrize("concentration", [0.05, 0.999, 1 - 1e-9, 1.0, 1 + 1e-9, 1.001, 1e4])
+def test_beta_rule_extreme_shapes(mean: float, concentration: float) -> None:
+    nodes = 8
+    r, w = (np.asarray(v) for v in beta_reliability_rule(mean, concentration, nodes))
+    x = (r - 0.5) / 0.5
+    a = (2 * mean - 1) * concentration
+    b = concentration - a
+    expected = 1.0
+    assert np.all(np.isfinite(r)) and np.all(w > 0)
+    assert w.sum() == pytest.approx(1.0, abs=1e-14)
+    for degree in range(2 * nodes):
+        if degree:
+            expected *= (a + degree - 1) / (a + b + degree - 1)
+        assert w @ x**degree == pytest.approx(expected, abs=2e-12)
+
+
+def test_concentration_one_investigation(campus: DomainPack, campus_model: CompiledModel) -> None:
+    eng = Engine(campus_model, ANALYST, EngineConfig(reliability_concentration=1))
+    eng.observe(Evidence("p_riya", "internet_works", "F3_R304", "no"))
+    _, kind = _investigate(campus, eng, World(campus, frozenset({("SW_C2", "dead")})))
+    assert np.isfinite(eng.posterior()).all()
+    assert eng.posterior().sum() == pytest.approx(1)
+    assert kind != PlanKind.ASK
