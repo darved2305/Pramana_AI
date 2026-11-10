@@ -77,7 +77,8 @@ lines (`voice/gnani.py`, `api/voice.py`), and its wire format is pinned by tests
   allows one open session per token, opens a Prisma v3.0 session with that question's context
   (language candidates, `codemix`, answer keyterms, `x-min-segment-ms` 100), sends the question
   audio in 16 KiB binary chunks, relays `speech_start`/`processing`/`transcript`, and submits
-  the first non-empty transcript through the normal answer path. Empty transcripts record
+  the first non-empty final transcript through the normal answer path; explicitly non-final
+  transcripts are ignored. Empty transcripts record
   nothing; a question answered elsewhere ends the session with `409 QUESTION_NOT_PENDING`;
   governor refusals arrive as typed error frames and close code 4429. Protocol coverage is in
   `tests/test_media_ws.py`. Nov 7 live-Gnani participant-call rehearsals exercise the same
