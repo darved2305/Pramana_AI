@@ -125,10 +125,23 @@ Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), Node 20+, and a native 
 (Docker is not needed).
 
 ```bash
-uv run python scripts/dev_env.py                # once: .env with fresh keys (add GNANI_API_KEY for voice)
-uv run python -m pramana_core.auth.bootstrap --email you@example.com --name You --roles operator
-uv run python -m pramana_core.auth.bootstrap --email approver@example.com --name Approver --roles approver
+uv sync
+uv run python scripts/dev_env.py
+cd apps/web && npm ci && cd ../..
+uv run python scripts/dev.py --demo
 ```
+
+Open http://localhost:3002 and use the mock sign-in for `local@gmail.com`. Create a practice
+investigation and answer using the simulated participant cards. The demo uses a synthetic
+identity and no paid voice provider. Press Ctrl+C to stop the services; the database server stays
+up. The first run can take longer while the console compiles.
+
+The generator selects a unique local database for a new checkout and preserves existing settings.
+To use another database, set both `DATABASE_URL` and `PRAMANA_DB_NAMES` in `.env`. The supervisor
+initializes the selected database and applies migrations before starting core. To create password
+accounts, first run the supervisor once so migrations finish, then run
+`uv run python -m pramana_core.auth.bootstrap --email you@example.com --name You --roles operator`.
+The command prompts for a local password.
 
 Start the stack with the project Python directly on Windows. `uv run` can report its own
 Ctrl-Break status `0xC000013A` after the services have stopped:
@@ -147,9 +160,8 @@ Use `--core-port`, `--sim-port` and `--web-port` if a port is taken. With `make`
 `make dev`, `make dev-web`, `make check`, `make e2e`. The `make dev` and `make dev-web` targets
 select the direct project Python on Windows and `uv run` on POSIX.
 
-Then open http://localhost:3002, sign in, and create an investigation (choose "People asked at
-once" for parallel calls). Open each participant's link from **Participant links** and answer from
-their "What you can see here (simulation)" card. Phones need HTTPS: see `docs/engineering/STAGING.md`.
+For the regular stack, configure sign-in first. Phones need HTTPS: see
+`docs/engineering/STAGING.md`.
 
 Checks:
 

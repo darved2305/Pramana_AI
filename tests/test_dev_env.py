@@ -33,4 +33,3 @@ def test_new_environment_selects_private_database(tmp_path, monkeypatch):
     values = dict(line.split("=", 1) for line in (tmp_path / ".env").read_text().splitlines())
     assert values["DATABASE_URL"].endswith("/" + values["PRAMANA_DB_NAMES"])
     assert values["PRAMANA_DB_NAMES"] != "pramana"
-

@@ -129,6 +129,7 @@ class Options:
     web: bool = False
     skip_db: bool = False
     timeout_s: float = 60.0
+    demo: bool = False
 
 
 def _port(value: str) -> int:
@@ -140,6 +141,7 @@ def _port(value: str) -> int:
 
 def parse_args(argv: Sequence[str] | None = None) -> Options:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--demo", action="store_true", help="start the local console with mock sign-in")
     p.add_argument("--web", action="store_true", help="also start the Next.js dev server")
     p.add_argument("--core-port", type=_port, default=8000)
     p.add_argument("--sim-port", type=_port, default=8100)
@@ -149,12 +151,13 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     )
     p.add_argument("--timeout", type=float, default=60.0, help="readiness timeout in seconds")
     a = p.parse_args(argv)
-    ports = [a.core_port, a.sim_port] + ([a.web_port] if a.web else [])
+    a.web = a.web or a.demo
+    ports = [a.core_port, a.sim_port] + ([a.web_port] if a.web else []) + ([8410] if a.demo else [])
     if len(set(ports)) != len(ports):
         p.error(f"ports must differ: {ports}")
     if a.timeout <= 0:
         p.error("--timeout must be positive")
-    return Options(a.core_port, a.sim_port, a.web_port, a.web, a.skip_db, a.timeout)
+    return Options(a.core_port, a.sim_port, a.web_port, a.web, a.skip_db, a.timeout, a.demo)
 
 
 def say(msg: str) -> None:
@@ -288,6 +291,19 @@ def service_env(opts: Options, base: dict[str, str] | None = None) -> dict[str, 
         PRAMANA_SIM_URL=f"http://127.0.0.1:{opts.sim_port}",
         PYTHONUNBUFFERED="1",
     )
+    if opts.demo:
+        env.update(
+            PRAMANA_MODE="dev",
+            OIDC_ISSUER="http://localhost:8410",
+            OIDC_DISCOVERY_URL="http://localhost:8410/.well-known/openid-configuration",
+            GOOGLE_OAUTH_CLIENT_ID="pramana-local",
+            GOOGLE_OAUTH_CLIENT_SECRET="local-only",
+            OIDC_REDIRECT_URL=f"http://localhost:{opts.web_port}/api/core/v1/auth/google/callback",
+            GNANI_API_KEY="",
+            LLM_EXTRACTOR_PROVIDER="none",
+            GMAIL_ADDRESS="",
+            GMAIL_APP_PASSWORD="",
+        )
     origins = [f"http://localhost:{opts.web_port}", "http://localhost:3000"]
     origin_json = "[" + ",".join(f'"{o}"' for o in origins) + "]"
     env.setdefault("CORS_ORIGINS", origin_json)
@@ -301,6 +317,10 @@ def children(opts: Options, env: dict[str, str]) -> list[Child]:
         Child("sim", [py, "-m", "pramana_sim"], env),
         Child("core", [py, "-m", "pramana_core"], env),
     ]
+    if opts.demo:
+        out.insert(
+            0, Child("oidc", [py, str(ROOT / "scripts" / "mock_oidc.py"), "--port", "8410"], env)
+        )
     if opts.web:
         npm = shutil.which("npm") or "npm"
         out.append(
@@ -350,6 +370,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         env = prepare(opts)
         procs = children(opts, env)
         checks = {
+            "oidc": "http://127.0.0.1:8410/.well-known/openid-configuration",
             "sim": f"http://127.0.0.1:{opts.sim_port}/health",
             "core": f"http://127.0.0.1:{opts.core_port}/ready",
             "web": f"http://127.0.0.1:{opts.web_port}/",
@@ -370,6 +391,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             + (f"\n      web   http://localhost:{opts.web_port}" if opts.web else "")
             + "\n      Ctrl+C stops everything."
         )
+        if opts.demo:
+            say(
+                "[dev] Use the local mock sign-in for local@gmail.com, "
+                "then start a practice investigation."
+            )
         while all(c.alive() for c in procs):
             time.sleep(0.5)
         dead = [c.name for c in procs if not c.alive()]

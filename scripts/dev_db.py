@@ -17,6 +17,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
 PORT = int(os.environ.get("PRAMANA_DB_PORT", "5433"))
 USER = "pramana"
 DATABASES = tuple(d.strip() for d in os.environ.get("PRAMANA_DB_NAMES", "").split(",") if d.strip())

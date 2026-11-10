@@ -275,3 +275,12 @@ def test_service_env_requires_database(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(dev, "ROOT", tmp_path)
     with pytest.raises(ValueError, match="DATABASE_URL"):
         dev.service_env(dev.Options(), {})
+
+
+def test_demo_uses_local_mock_identity_and_no_live_voice() -> None:
+    opts = dev.parse_args(["--demo"])
+    env = dev.service_env(opts, {"DATABASE_URL": "postgresql+asyncpg://localhost/safe"})
+    assert opts.web
+    assert env["OIDC_ISSUER"] == "http://localhost:8410"
+    assert env["GNANI_API_KEY"] == ""
+    assert [child.name for child in dev.children(opts, env)] == ["oidc", "sim", "core", "web"]
