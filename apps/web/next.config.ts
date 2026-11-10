@@ -15,6 +15,7 @@ const developmentScripts = process.env.NODE_ENV === "production" ? "" : " 'unsaf
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  devIndicators: false,
   // A label only: the core address the build was made for. The proxy reads PRAMANA_CORE_URL at runtime.
   env: { NEXT_PUBLIC_CORE_ADDRESS: new URL(CORE_URL).host },
   poweredByHeader: false,
